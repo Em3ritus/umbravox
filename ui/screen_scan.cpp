@@ -192,7 +192,8 @@ void drawDial(Canvas& c, const State& s) {
         // mapping would change blink behaviour in the 1..39 band.
         drawSeal(c, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND,
                  s.frame, found, foundAngle,
-                 s.alertActive ? (uint8_t)(s.alertConf * 85) : 0);
+                 s.alertActive ? (uint8_t)(s.alertConf * 85) : 0,
+                 searchLift(s.set.sweep, s.frame));
     } else {
         latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);
 

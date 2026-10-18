@@ -28,6 +28,14 @@ void ray(Canvas& c, int ox, int oy, float deg, int cx, int cy, int R, uint16_t c
 
 float beamOf(uint32_t frame) { return (float)((frame * 5) % 360); }
 
+// The candle's gutter, about -1.9..1.9. One place, so the rings and the
+// seal's brightness flicker together and cannot drift apart.
+float gutter(uint32_t frame) {
+    return sinf((float)frame * 0.41f)
+         + 0.6f * sinf((float)frame * 1.07f)
+         + 0.3f * sinf((float)frame * 2.3f);
+}
+
 } // namespace
 
 bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist) {
@@ -51,6 +59,12 @@ bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist) {
         default:
             return (((int)beamOf(frame) - angle + 360) % 360) <= 26;
     }
+}
+
+int searchLift(uint8_t mode, uint32_t frame) {
+    if (mode != SW_CANDLE) return -1;
+    int v = 150 + (int)lrintf(gutter(frame) * 45.0f);
+    return v < 40 ? 40 : v > 255 ? 255 : v;
 }
 
 void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
@@ -124,9 +138,7 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
     case SW_CANDLE: {
         // No beam. The circle is lit from the middle by something guttering,
         // and what is in it is simply there to be seen.
-        const float g = sinf((float)frame * 0.41f)
-                      + 0.6f * sinf((float)frame * 1.07f)
-                      + 0.3f * sinf((float)frame * 2.3f);
+        const float g = gutter(frame);
         const int jx = (int)lrintf(1.6f * sinf((float)frame * 0.23f));
         const int jy = (int)lrintf(1.2f * sinf((float)frame * 0.31f));
         for (int t = 0; t < 4; t++) {

@@ -107,13 +107,13 @@ constexpr int BLINK_EVERY = 200;
 
 void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
               int rBound, uint32_t frame, bool found, int foundAngle,
-              uint8_t heat) {
+              uint8_t heat, int liftOverride) {
     // A double-thump, not a sine. A sine is what every interface does when it
     // wants to look alive and it reads as a bulb; two quick beats and a
     // longer rest is the shape of something with a heart in it.
     const int p = (int)(frame % 30);
     const int d = p < 5 ? 5 - p : (p >= 8 && p < 12) ? 12 - p : 0;
-    const int lift = 118 + d * 26;
+    const int lift = liftOverride >= 0 ? liftOverride : 118 + d * 26;
 
     figure(c, cx, cy, rStar,
            Canvas::mix(pal::VOID, pal::EDGE_LIT, 160, 255),

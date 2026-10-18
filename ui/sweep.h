@@ -23,4 +23,15 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
 // it only shows what is already known.
 bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist);
 
+// How brightly the centrepiece should burn this frame, for searches that
+// light the field instead of sweeping it.
+//
+// Returns -1 when the mode has no opinion and the centrepiece should use its
+// own rhythm. The candle returns an absolute 0..255: it IS the light in the
+// circle, so it overrides the heartbeat rather than adding to it.
+//
+// The candle is primarily a BAPH0MAU5 mode: AETHERSCAN has no bitmap
+// centrepiece to light, so there it remains just the faint rings.
+int searchLift(uint8_t mode, uint32_t frame);
+
 } // namespace ui
