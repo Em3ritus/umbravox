@@ -23,9 +23,15 @@ Measured on the board (ESP32-C5 rev 1.0, 1 core, 16MB flash):
 draw   6 ms    the whole canvas, every frame
 blit   7 ms    2 rects, 6689 of 19200 px      (35 ms before dirty rects)
 heap   flat over 6060 frames, WiFi + BLE + GPS all running
-RAM    28.3% -- 92,676 of 327,680 bytes
+RAM    34.5% -- 113,108 of 327,680 bytes  (111,052 before the second theme)
+Flash  49.1% -- 1,544,642 bytes           (1,535,510 before the second theme)
 PSRAM  8 MB, holding the dedup tables
 ```
+
+The draw and blit figures above predate the BAPH0MAU5 theme and have not been
+re-measured. The RAM figure was 28.3% (92,676 bytes) when first recorded; the
+tree had already grown to 111,052 bytes before the theme work, which itself
+cost 2,056 bytes of RAM and 9,132 of flash.
 
 ### PSRAM
 

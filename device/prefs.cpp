@@ -25,6 +25,9 @@ void write(const ui::Settings& s) {
     nvs.putUChar("bands",   s.bands);
     nvs.putUChar("alertmin", s.alertMin);
     nvs.putUChar("idle",    s.idleIdx);
+    // Every field settingsEqual compares must also be stored here and read in
+    // load(), or the save timer never settles and hammers flash. Anyone who
+    // takes the `reserved` byte for a new setting must add it to both.
     nvs.putUChar("theme",   s.theme);
     nvs.putUChar("sweep",   s.sweep);
     stored = s;
@@ -58,8 +61,8 @@ bool load(ui::Settings& s) {
     in.bands   = nvs.getUChar("bands",   s.bands);
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
-    in.theme   = nvs.getUChar("theme",  s.theme);
-    in.sweep   = nvs.getUChar("sweep",  s.sweep);
+    in.theme    = nvs.getUChar("theme",    s.theme);
+    in.sweep    = nvs.getUChar("sweep",    s.sweep);
 
     // Anything out of range is treated as corrupt and pulled back in, not
     // trusted because it came off flash.
