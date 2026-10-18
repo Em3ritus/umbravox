@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **There is no version control.** This project is not a git repository and is staying that way. Every step that would normally commit instead runs `private/checkpoint.sh <name>`, created in Task 1. Never run `git init`.
+- **Work happens on the `baph0mau5-theme` branch.** The repository was initialised at the start of execution; commit `866d4df` is AETHERSCAN exactly as it stood before any of this work. Commit at the end of every task. Never merge to `master` — that is the human's call.
 - **AETHERSCAN must render byte-for-byte as it does today.** The contract is `private/baseline/MANIFEST.md5`, nine screens at `--frame 0 --scale 4`. `scan.png` is `2886dd6c61e38ada6f4f3c00afd35fcb`.
 - **Never edit a `pal::` call site.** If a change seems to require editing one of the 239 references in the nine screen files, the seam is wrong — fix the seam.
 - Build flags stay `-std=c++17 -O2 -Wall -Wextra`. New code compiles with no new warnings.
@@ -36,7 +36,6 @@ Five failure modes the spec implies that no task's happy path exercises. Each ha
 ## File Structure
 
 **Created:**
-- `private/checkpoint.sh` — snapshots the source tree; stands in for commits.
 - `ui/palette.cpp` — the theme table and `setTheme`. The only file that knows a theme exists.
 - `ui/sigil.h` — generated 4bpp seal bitmaps and feature offsets.
 - `ui/seal.h`, `ui/seal.cpp` — the BAPH0MAU5 centrepiece: bitmap blit, witchfire tints, procedural figure, alchemical marks.
@@ -62,45 +61,16 @@ Five failure modes the spec implies that no task's happy path exercises. Each ha
 
 ### Task 1: Build plumbing — test and regression targets
 
-Nothing else in this plan can be verified without this. The four existing host tests have never been wired into the build, and with no version control there is no `git stash` to fall back on.
+Nothing else in this plan can be verified without this. The four existing host tests have never been wired into the build: they each carry their own `main()` and have never been compiled by anything.
 
 **Files:**
-- Create: `private/checkpoint.sh`
 - Modify: `sim/Makefile`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `make -C sim test` (builds and runs every host test, non-zero on failure), `make -C sim regress` (renders nine screens and checks them against `private/baseline/MANIFEST.md5`), `private/checkpoint.sh <name>`.
+- Produces: `make -C sim test` (builds and runs every host test, non-zero on failure) and `make -C sim regress` (renders nine screens and checks them against `private/baseline/MANIFEST.md5`).
 
-- [ ] **Step 1: Write the checkpoint script**
-
-Create `private/checkpoint.sh`:
-
-```sh
-#!/bin/sh
-# Stands in for a commit. This project has no version control, so each task
-# ends by snapshotting the source into private/checkpoints/ instead.
-#
-# Usage: private/checkpoint.sh 02-palette-runtime
-set -e
-[ -n "$1" ] || { echo "usage: $0 <name>" >&2; exit 1; }
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
-DEST="$ROOT/private/checkpoints/$1"
-rm -rf "$DEST"
-mkdir -p "$DEST"
-cp -r "$ROOT/ui" "$ROOT/device" "$DEST/"
-mkdir -p "$DEST/sim"
-cp "$ROOT/sim/Makefile" "$DEST/sim/"
-cp "$ROOT"/sim/*.cpp "$ROOT"/sim/*.h "$DEST/sim/"
-echo "checkpoint: $DEST"
-```
-
-- [ ] **Step 2: Make it executable and verify it runs**
-
-Run: `chmod +x private/checkpoint.sh && private/checkpoint.sh 01-plumbing && ls private/checkpoints/01-plumbing`
-Expected: prints the destination, and the listing shows `device  sim  ui`.
-
-- [ ] **Step 3: Add the test and regress targets**
+- [ ] **Step 1: Add the test and regress targets**
 
 In `sim/Makefile`, replace the line `.PHONY: run sheet clean` with the block below, and add it above that line:
 
@@ -153,7 +123,7 @@ regress: $(BIN)
 
 Note `test_settings` has a rule but is deliberately **not** in `TESTS` yet — its source does not exist until Task 3, and a `test` target that cannot build is a target nobody runs.
 
-- [ ] **Step 4: Verify both targets work against the unchanged tree**
+- [ ] **Step 2: Verify both targets work against the unchanged tree**
 
 Run: `cd sim && make clean && make -s && make -s regress`
 Expected: `regress: AETHERSCAN unchanged`
@@ -163,10 +133,11 @@ Expected: four `== test_*` blocks, each ending `all passed`, exit 0.
 
 If `regress` fails here, before any source has been touched, the baseline is wrong — stop and re-capture it. Do not proceed.
 
-- [ ] **Step 5: Checkpoint**
+- [ ] **Step 5: Commit**
 
 ```bash
-private/checkpoint.sh 01-plumbing
+git add -A
+git commit -m "build: wire the host tests into make, add a regress target"
 ```
 
 ---
@@ -379,10 +350,11 @@ Expected: `cmp` reports the files differ. If they are identical, `setTheme` is n
 Run: `cd sim && make clean && make 2>&1 | grep -i warn`
 Expected: no output.
 
-- [ ] **Step 7: Checkpoint**
+- [ ] **Step 7: Commit**
 
 ```bash
-private/checkpoint.sh 02-palette-runtime
+git add -A
+git commit -m "refactor: make the palette runtime-switchable per theme"
 ```
 
 ---
@@ -579,10 +551,11 @@ Expected: five `== test_*` blocks, each ending `all passed`, exit 0.
 Run: `cd sim && make -s && make -s regress`
 Expected: `regress: AETHERSCAN unchanged`
 
-- [ ] **Step 8: Checkpoint**
+- [ ] **Step 8: Commit**
 
 ```bash
-private/checkpoint.sh 03-settings
+git add -A
+git commit -m "feat: add theme and sweep settings with a host-tested comparator"
 ```
 
 ---
@@ -711,10 +684,11 @@ Run: `./aethersim /tmp/g1.png --theme 1 --frame 0 --scale 4`
 
 Open `/tmp/g1.png`. Expected: the circle is larger and lower than on theme 0, and there is no spectrum bar under it. The rune ring is still the centrepiece — the seal arrives in Task 6.
 
-- [ ] **Step 7: Checkpoint**
+- [ ] **Step 7: Commit**
 
 ```bash
-private/checkpoint.sh 04-dial-geometry
+git add -A
+git commit -m "refactor: move the dial geometry into the theme table"
 ```
 
 ---
@@ -883,10 +857,11 @@ Run: `echo '#include "ui/sigil.h"
 int main(){ return ui::FACE[0] + ui::BIG[0]; }' > /tmp/sigil_check.cpp && g++ -std=c++17 -I. -o /tmp/sigil_check /tmp/sigil_check.cpp && echo "compiles"`
 Expected: `compiles`
 
-- [ ] **Step 4: Checkpoint**
+- [ ] **Step 4: Commit**
 
 ```bash
-private/checkpoint.sh 05-sigil-asset
+git add -A
+git commit -m "feat: generate the Baph0mau5 seal bitmaps from the artwork"
 ```
 
 ---
@@ -1146,10 +1121,11 @@ Run: `./aethersim /tmp/seal.png --theme 1 --frame 26 --scale 4`
 
 Open `/tmp/seal.png`. Expected: a chalk-white horned face inside the circle, with horns, X-eyes, teeth and the beard pentacle all legible, and eight alchemical marks around the band. If the face reads as a blur, `ui/sigil.h` was generated with the wrong parameters — re-run Task 5.
 
-- [ ] **Step 6: Checkpoint**
+- [ ] **Step 6: Commit**
 
 ```bash
-private/checkpoint.sh 06-seal
+git add -A
+git commit -m "feat: draw the Baph0mau5 centrepiece"
 ```
 
 ---
@@ -1438,10 +1414,11 @@ with `uint8_t sweepId = ui::SW_RADAR;` declared beside `themeId`, and set `s.set
 
 Expected: five distinguishable images — a rotating beam, two beams from the eyes, an expanding ring, five turning limbs, and no beam at all.
 
-- [ ] **Step 7: Checkpoint**
+- [ ] **Step 7: Commit**
 
 ```bash
-private/checkpoint.sh 07-sweeps
+git add -A
+git commit -m "feat: add the five dial searches"
 ```
 
 ---
@@ -1499,10 +1476,11 @@ Expected: `regress: AETHERSCAN unchanged`, all five tests pass.
 
 This is a pure refactor. Any difference means a label or the panel moved.
 
-- [ ] **Step 4: Checkpoint**
+- [ ] **Step 4: Commit**
 
 ```bash
-private/checkpoint.sh 08-dial-parameterised
+git add -A
+git commit -m "refactor: let drawDialAt take its geometry as arguments"
 ```
 
 ---
@@ -1738,10 +1716,11 @@ Run: `./aethersim /tmp/aspect.png --screen aspect --theme 1 --frame 26 --scale 4
 
 Open it. Expected: a header reading ASPECT, a live seal in the upper half, and two rows reading `THEME  -  BAPH0MAU5  +` and `SWEEP  -  RADAR  +`.
 
-- [ ] **Step 8: Checkpoint**
+- [ ] **Step 8: Commit**
 
 ```bash
-private/checkpoint.sh 09-aspect-screen
+git add -A
+git commit -m "feat: add the ASPECT screen and its grimoire tile"
 ```
 
 ---
@@ -1823,10 +1802,11 @@ Using the existing timing instrumentation that produced the README's `draw 6 ms 
 
 Record all three in the README's measurement block. If BAPH0MAU5 is materially worse than AETHERSCAN, the fallbacks in spec order are: cache the seal's static pixels, drop the star, reduce the face to 2bpp.
 
-- [ ] **Step 8: Checkpoint**
+- [ ] **Step 8: Commit**
 
 ```bash
-private/checkpoint.sh 10-persistence
+git add -A
+git commit -m "feat: persist theme and sweep across a power cycle"
 ```
 
 ---
