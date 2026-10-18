@@ -15,14 +15,20 @@ constexpr int COL_L_X   = 2,  COL_L_W = 56;
 constexpr int COL_R_X   = 61, COL_R_W = 97;
 constexpr int TILE_H    = 28;
 constexpr int TILE_Y[3] = {13, 43, 73};
-constexpr int DIAL_Y    = 13, DIAL_H = 70;
-constexpr int SPEC_Y    = 85, SPEC_H = 16;
-constexpr int DIAL_CX   = COL_R_X + COL_R_W / 2;   // 109
-constexpr int DIAL_CY   = 48;
-constexpr int R_FIELD   = 22;            // inner circle: where contacts live
-constexpr int R_RUNES   = 26;            // rune ring centreline
-constexpr int R_BOUND   = 31;            // outer circle
-constexpr int R_STAR    = 20;            // inscribed heptagram
+// The dial's geometry is part of the theme, not of the layout: the two
+// themes want different sizes, and the alternative is a dial that fits one
+// of them badly. These are written by pal::setTheme().
+//
+// They stay in ui:: under the names they always had, so screen_scan.cpp and
+// nav.cpp read them unchanged -- which is the point of this file. The code
+// that draws the dial and the code that decides whether a finger landed on
+// it must agree, and they still cannot disagree.
+//
+// SPEC_H == 0 means the theme has no spectrum strip.
+extern int DIAL_Y, DIAL_H;
+extern int DIAL_CX, DIAL_CY;
+extern int R_FIELD, R_RUNES, R_BOUND, R_STAR;
+extern int SPEC_Y, SPEC_H;
 
 // CODEX
 constexpr int BODY_Y    = 13;

@@ -1,4 +1,11 @@
 #include "palette.h"
+#include "layout.h"
+
+namespace ui {
+int DIAL_Y, DIAL_H, DIAL_CX, DIAL_CY;
+int R_FIELD, R_RUNES, R_BOUND, R_STAR;
+int SPEC_Y, SPEC_H;
+} // namespace ui
 
 namespace pal {
 
@@ -19,6 +26,9 @@ namespace {
 struct Row {
     const char* name;
     uint8_t  sweeps;                 // bitmask over Sweep
+    int16_t dialY, dialH, dialCx, dialCy;
+    int16_t rField, rRunes, rBound, rStar;
+    int16_t specY, specH;
     uint16_t void_, panel, grid, edge, edgeLit;
     uint16_t dim, text, bright;
     uint16_t witch, witchHi, bone;
@@ -32,6 +42,7 @@ struct Row {
 constexpr Row THEMES[TH_COUNT] = {
     {   "AETHERSCAN",
         0b11101,                     // every sweep but the gaze
+        13, 70, 109, 48,   22, 26, 31, 20,   85, 16,
         rgb(0x07,0x04,0x0E), rgb(0x13,0x0B,0x22), rgb(0x18,0x0F,0x2C),
         rgb(0x2E,0x1F,0x52), rgb(0x56,0x36,0x97),
         rgb(0x6B,0x4F,0x9E), rgb(0xC2,0xAB,0xE4), rgb(0xF2,0xE8,0xFF),
@@ -48,6 +59,7 @@ constexpr Row THEMES[TH_COUNT] = {
     },
     {   "BAPH0MAU5",
         0b11111,                     // all five
+        13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
         rgb(0x06,0x03,0x0C), rgb(0x13,0x09,0x21), rgb(0x1D,0x11,0x33),
         rgb(0x3C,0x20,0x62), rgb(0x74,0x3C,0xB4),
         rgb(0x7E,0x56,0xBC), rgb(0xCA,0xB0,0xEA), rgb(0xFF,0xFA,0xFF),
@@ -78,6 +90,12 @@ void setTheme(uint8_t id) {
     for (int i = 0; i < 4; i++) RAMP[i] = t.ramp[i];
     MAGENTA = t.magenta; ICE = t.ice; GREEN = t.green;
     AMBER = t.amber; RED = t.red;
+
+    ui::DIAL_Y  = t.dialY;  ui::DIAL_H  = t.dialH;
+    ui::DIAL_CX = t.dialCx; ui::DIAL_CY = t.dialCy;
+    ui::R_FIELD = t.rField; ui::R_RUNES = t.rRunes;
+    ui::R_BOUND = t.rBound; ui::R_STAR  = t.rStar;
+    ui::SPEC_Y  = t.specY;  ui::SPEC_H  = t.specH;
 }
 
 // The globals are zero-initialised, which is black on black. Nothing should

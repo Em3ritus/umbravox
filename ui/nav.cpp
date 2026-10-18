@@ -95,8 +95,9 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
         }
         // The spectrum opens the mesh. It is the obvious target: the
         // spectrum is about channels, and the mesh screen is about who is
-        // covering which.
-        if (hit(x, y, COL_R_X, SPEC_Y, COL_R_W, SPEC_H)) {
+        // covering which. A theme without a strip has nothing there, and a
+        // tap into empty panel must not navigate.
+        if (SPEC_H > 0 && hit(x, y, COL_R_X, SPEC_Y, COL_R_W, SPEC_H)) {
             n.screen = SCR_MESH;
             return true;
         }

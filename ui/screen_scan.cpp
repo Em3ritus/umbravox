@@ -521,7 +521,7 @@ void markDirty(Dirty& d, const State& s, const State& p, bool first) {
     bool spec = s.chan != p.chan || s.on5 != p.on5;
     for (int i = 0; !spec && i < CH24; i++) spec = s.load24[i] != p.load24[i];
     for (int i = 0; !spec && i < CH5;  i++) spec = s.load5[i]  != p.load5[i];
-    if (spec) d.add(COL_R_X, SPEC_Y, COL_R_W, SPEC_H);
+    if (spec && SPEC_H > 0) d.add(COL_R_X, SPEC_Y, COL_R_W, SPEC_H);
 
     dirtyChrome(d, s, p);
 }
@@ -537,7 +537,7 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     drawTile(c, TILE_Y[2], "BLE",   s.ble,              pal::GREEN);
     drawDial(c, s);
     drawAlert(c, s);
-    drawSpectrum(c, s);
+    if (SPEC_H > 0) drawSpectrum(c, s);
     drawFooter(c, s);
     drawReticle(c, s);
 
