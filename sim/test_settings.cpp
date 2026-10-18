@@ -20,6 +20,19 @@ static void check(const char* what, bool ok) {
 int main() {
     using namespace ui;
 
+    // Adding a field to Settings must not quietly widen what this test treats
+    // as padding. A byte the constructor never writes is indistinguishable
+    // from padding by the heuristic below -- which is true of real padding,
+    // and equally true of a new field someone declared without a default
+    // member initializer. That field would be skipped, and skipping a field
+    // is the exact failure this test exists to catch.
+    //
+    // So: grow the struct and this assert fires. Give every new field a
+    // default initializer, then update the size here deliberately.
+    static_assert(sizeof(Settings) == 10,
+                  "Settings changed size -- see the padding note above, and "
+                  "confirm every field has a default member initializer");
+
     printf("equality covers every field:\n");
     {
         // Walk the struct a byte at a time. A field added later but left out
@@ -41,6 +54,14 @@ int main() {
         // least one mutation survive -- otherwise it was never exercised.
         static const unsigned char MASKS[] = {0xFF, 0x01, 0x02, 0x04, 0x10};
         bool exercised[sizeof(Settings)] = {};
+        // Exactly one padding byte is expected today (offset 9). A field with
+        // an initializer that takes that slot makes the count drop, and a
+        // deliberate update here is the point.
+        int padBytes = 0;
+        for (size_t off = 0; off < sizeof(Settings); off++)
+            if (z[off] != f[off]) padBytes++;
+        check("padding is exactly the expected 1 byte", padBytes == 1);
+
         int missed = 0;
         for (int th = 0; th < pal::TH_COUNT; th++) {
             Settings base;

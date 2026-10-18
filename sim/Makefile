@@ -22,7 +22,7 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) $(TESTS) test_settings *.png
+	rm -f $(BIN) $(TESTS) *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
@@ -46,10 +46,7 @@ test_wifi_auth: test_wifi_auth.cpp ../ui/wifi_auth.cpp ../ui/wifi_auth.h
 # a hand-picked subset that breaks each time a screen grows a dependency.
 SRC_NOMAIN = $(filter-out main_sim.cpp,$(SRC))
 
-test_settings: test_settings.cpp $(SRC_NOMAIN) \
-    ../ui/canvas.h ../ui/demo.h ../ui/font5x7.h ../ui/layout.h ../ui/model.h \
-    ../ui/nav.h ../ui/palette.h ../ui/runes.h ../ui/screens.h \
-    ../ui/signatures.h ../ui/wifi_auth.h
+test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_settings.cpp $(SRC_NOMAIN) -lm
 
 TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings

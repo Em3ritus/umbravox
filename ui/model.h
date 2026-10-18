@@ -43,15 +43,20 @@ struct Sighting {
     uint8_t chan;
 };
 
-// The adjustable things. Each of these is a knob we found a real reason for
-// while building: the backlight because the panel is bright in the dark, and
-// the other three because they are the capture trade-offs that were measured
-// rather than guessed.
 // How the dial searches the field. A sweep finds by bearing, a pulse by
 // distance, and a candle not at all -- these are different instruments, not
 // different decorations, so the id travels with the setting.
 enum Sweep : uint8_t { SW_RADAR = 0, SW_GAZE, SW_PULSE, SW_STAR, SW_CANDLE, SW_COUNT };
 
+// The adjustable things. Each of these is a knob we found a real reason for
+// while building: the backlight because the panel is bright in the dark, and
+// the other three because they are the capture trade-offs that were measured
+// rather than guessed.
+//
+// Every field here must carry a default member initializer. The host test in
+// sim/test_settings.cpp infers padding from the bytes the constructor leaves
+// untouched, so a field without an initializer reads as padding and escapes
+// the comparator check.
 struct Settings {
     // Minimum confidence an alert must carry to interrupt. This is the knob
     // that makes signature matching usable: most evidence is weak, and an
