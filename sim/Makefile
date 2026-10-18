@@ -17,23 +17,23 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) *.png
+	rm -f $(BIN) $(TESTS) test_settings *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
 # being built is a test that stops failing, and nobody notices.
 UI_CORE = ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/palette.cpp
 
-test_chanplan: test_chanplan.cpp ../device/chanplan.h
+test_chanplan: test_chanplan.cpp ../device/chanplan.h ../device/mesh.h ../ui/model.h
 	$(CXX) $(CXXFLAGS) -I../ui -o $@ test_chanplan.cpp -lm
 
-test_gnss: test_gnss.cpp ../ui/gnss.cpp
+test_gnss: test_gnss.cpp ../ui/gnss.cpp ../ui/gnss.h
 	$(CXX) $(CXXFLAGS) -o $@ test_gnss.cpp ../ui/gnss.cpp -lm
 
-test_signatures: test_signatures.cpp ../ui/signatures.cpp
+test_signatures: test_signatures.cpp ../ui/signatures.cpp ../ui/signatures.h
 	$(CXX) $(CXXFLAGS) -o $@ test_signatures.cpp ../ui/signatures.cpp -lm
 
-test_wifi_auth: test_wifi_auth.cpp ../ui/wifi_auth.cpp
+test_wifi_auth: test_wifi_auth.cpp ../ui/wifi_auth.cpp ../ui/wifi_auth.h
 	$(CXX) $(CXXFLAGS) -o $@ test_wifi_auth.cpp ../ui/wifi_auth.cpp -lm
 
 test_settings: test_settings.cpp ../ui/nav.cpp ../ui/screen_grimoire.cpp $(UI_CORE)
@@ -51,15 +51,20 @@ test: $(TESTS)
 # version control there is nothing to diff against after the fact, so the
 # baseline was captured up front and this target is the contract.
 SCREENS = scan codex detail domain mesh omens echoes grimoire attune
-REGRESS_DIR = /tmp/aether-regress
+
+MANIFEST = $(CURDIR)/../private/baseline/MANIFEST.md5
 
 regress: $(BIN)
-	@mkdir -p $(REGRESS_DIR)
-	@for s in $(SCREENS); do \
-	   ./$(BIN) $(REGRESS_DIR)/$$s.png --screen $$s --frame 0 --scale 4 >/dev/null; \
-	 done
-	@cd $(REGRESS_DIR) && md5sum -c --quiet \
-	   $(CURDIR)/../private/baseline/MANIFEST.md5 \
-	 && echo "regress: AETHERSCAN unchanged"
+	@[ -f $(MANIFEST) ] || { \
+	   echo "regress: no baseline at $(MANIFEST)" >&2; \
+	   echo "  see private/baseline/README.txt to re-capture it" >&2; exit 1; }
+	@set -e; \
+	 d=$$(mktemp -d); \
+	 trap 'rm -rf "$$d"' EXIT; \
+	 for s in $(SCREENS); do \
+	   ./$(BIN) "$$d/$$s.png" --screen $$s --frame 0 --scale 4 >/dev/null; \
+	 done; \
+	 cd "$$d" && md5sum -c --quiet $(MANIFEST); \
+	 echo "regress: AETHERSCAN unchanged"
 
 .PHONY: run sheet clean test regress
