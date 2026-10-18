@@ -119,39 +119,50 @@ void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
            Canvas::mix(pal::VOID, pal::EDGE_LIT, 160, 255),
            Canvas::mix(pal::VOID, pal::WITCH,    130, 255));
 
-    Tint tint[6];
+    // Every push below is guarded by remaining capacity, so the array size and
+    // the guards cannot disagree.
+    constexpr int MAX_TINT = 6;
+    Tint tint[MAX_TINT];
     int n = 0;
+    auto push = [&](const Tint& v) { if (n < MAX_TINT) tint[n++] = v; };
 
     if (heat) {
         // POSSESSION. The fire spreads as the evidence mounts, so a glance at
         // the dial says how bad it is without reading a number.
-        if (heat >= 40)  { tint[n++] = Tint{EYE_L_X, EYE_L_Y, 4, false};
-                           tint[n++] = Tint{EYE_R_X, EYE_R_Y, 4, false}; }
-        if (heat >= 110) { tint[n++] = Tint{-15, -8, 8, false};
-                           tint[n++] = Tint{ 15, -8, 8, false}; }
-        if (heat >= 180) { tint[n++] = Tint{PENTA_X, PENTA_Y, 6, false}; }
-        if (heat >= 235) { n = 0; tint[n++] = Tint{0, 0, rField, false}; }
+        if (heat >= 40)  { push(Tint{EYE_L_X, EYE_L_Y, 4, false});
+                           push(Tint{EYE_R_X, EYE_R_Y, 4, false}); }
+        if (heat >= 110) { push(Tint{-15, -8, 8, false});
+                           push(Tint{ 15, -8, 8, false}); }
+        if (heat >= 180) { push(Tint{PENTA_X, PENTA_Y, 6, false}); }
+        if (heat >= 235) { n = 0; push(Tint{0, 0, rField, false}); }
     } else {
         // The eyes answer a FINDING, not the clock. Tying the flare to the
         // search's position instead made the face strobe on a timer.
         if (found) {
             const int lean = foundAngle > 180 ? -1 : 1;
-            tint[n++] = Tint{EYE_L_X + lean, EYE_L_Y, 4, false};
-            tint[n++] = Tint{EYE_R_X + lean, EYE_R_Y, 4, false};
+            push(Tint{EYE_L_X + lean, EYE_L_Y, 4, false});
+            push(Tint{EYE_R_X + lean, EYE_R_Y, 4, false});
         }
         // The pentacle beats once per channel dwell, which makes the seal the
         // clock as well as the field.
-        if ((frame % 22) < 4) tint[n++] = Tint{PENTA_X, PENTA_Y, 5, false};
+        if ((frame % 22) < 4) push(Tint{PENTA_X, PENTA_Y, 5, false});
     }
 
     // The flame above the horns licks: the patch that catches grows and
     // shrinks. At this size a flame is a handful of strokes disagreeing.
     const int lick = 3 + (int)(2.4f * sinf((float)frame * 0.37f));
-    if (n < 6) tint[n++] = Tint{FLAME_X, FLAME_Y, lick, false};
+    push(Tint{FLAME_X, FLAME_Y, lick, false});
 
-    if ((frame % BLINK_EVERY) < 2 && n < 5) {
-        tint[n++] = Tint{EYE_L_X, EYE_L_Y, 4, true};
-        tint[n++] = Tint{EYE_R_X, EYE_R_Y, 4, true};
+    // The blink is deliberately the lowest-priority tint: it happens only when
+    // the seal is idle, so a face that is possessed or has just found something
+    // is never caught napping. That rule is stated here as a condition rather
+    // than left to push order (first matching tint wins) or to whether the
+    // array happens to have room. Idle never fills the array, so the capacity
+    // test is a guard, not a rule.
+    const bool idle = !heat && !found;
+    if (idle && (frame % BLINK_EVERY) < 2 && n + 2 <= MAX_TINT) {
+        push(Tint{EYE_L_X, EYE_L_Y, 4, true});
+        push(Tint{EYE_R_X, EYE_R_Y, 4, true});
     }
 
     blit(c, FACE, FACE_W, FACE_H, cx, cy, lift, rField - 1, tint, n);
