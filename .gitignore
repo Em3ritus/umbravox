@@ -1,0 +1,15 @@
+sim/aethersim
+sim/*.png
+.pio/
+
+# Working material, not source: the two-way drop box, the pre-change render
+# baseline, and the per-task snapshots the plan takes. Large binaries, and
+# git history supersedes the snapshots once it exists.
+private/
+
+# Host test binaries. Built by `make -C sim test`, never committed.
+sim/test_chanplan
+sim/test_gnss
+sim/test_signatures
+sim/test_wifi_auth
+sim/test_settings

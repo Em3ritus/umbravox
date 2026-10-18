@@ -1,0 +1,482 @@
+#include "blescan.h"
+#include <Arduino.h>
+#include <BLEDevice.h>
+#include <BLEScan.h>
+#include <BLEAdvertisedDevice.h>
+#include "signatures.h"
+#include <esp_heap_caps.h>
+#include <Print.h>
+#include "csv.h"
+#include "gpstrack.h"
+#include "gnss.h"
+#include <math.h>
+
+namespace blescan {
+namespace {
+
+constexpr uint16_t BLE_INTERVAL_MS = 100;
+uint8_t duty = 30;                                // % of the radio BLE takes
+
+// Also PSRAM-backed. BLE sees far more distinct addresses than WiFi does,
+// because most of them are randomised and rotate every few minutes.
+constexpr int TABLE  = 4096;                      // distinct addresses tracked
+constexpr int RECENT = 16;                        // blips BLE may put on the dial
+
+// Per-device detail, mirroring what capture keeps for access points. BLE
+// addresses rotate, so none of this is long-lived -- but within a drive it
+// is the difference between "38:4B:C2" and "Tile".
+struct Extra {
+    char     name[ui::SSID_MAX];
+    int32_t  lat7, lon7;              // at the strongest sighting
+    int32_t  firstLat7, firstLon7;    // where it was first heard
+    uint32_t firstEpoch;
+    uint32_t firstMs, lastMs;
+    int8_t   bestRssi;
+    uint8_t  threat, conf;
+    bool     located, hasFirst, following;
+};
+
+// --- following -----------------------------------------------------------
+//
+// "A tracker is nearby" is not a finding: in a car park half the phones in
+// range are near a tracker. "A tracker has been within earshot for twenty
+// minutes and two kilometres" is a different statement entirely, and it is
+// the one worth interrupting someone for.
+//
+// This works better than it might sound. An AirTag rotates its address every
+// 15 minutes while it is with its owner -- but a tag that has been separated
+// from its owner holds one for 24 hours, specifically so that it can be
+// detected. The dangerous case is the detectable one.
+constexpr uint32_t FOLLOW_MIN_MS = 8UL * 60UL * 1000UL;   // minutes together
+constexpr int32_t  FOLLOW_MIN_M  = 500;                   // and distance moved
+constexpr uint32_t FOLLOW_SCAN_MS = 5000;
+uint16_t nFollowing = 0;
+
+// Equirectangular approximation. Exact enough below a few kilometres, and
+// it avoids a trig call per device per sweep.
+int32_t metresBetween(int32_t aLat, int32_t aLon, int32_t bLat, int32_t bLon) {
+    const float latDeg = (float)aLat / 1e7f;
+    const float dN = ((float)(bLat - aLat) / 1e7f) * 111320.0f;
+    const float dE = ((float)(bLon - aLon) / 1e7f) * 111320.0f *
+                     cosf(latDeg * 3.14159265f / 180.0f);
+    return (int32_t)sqrtf(dN * dN + dE * dE);
+}
+
+uint8_t  (*addrs)[6] = nullptr;
+int8_t*  rssis = nullptr;
+Extra*   extra = nullptr;
+bool*    used_ = nullptr;
+uint32_t nUsed = 0;
+
+// Insertion order, so the codex can list newest first without sorting.
+uint16_t* order_ = nullptr;
+uint32_t  nOrder = 0;
+
+struct Blip { uint16_t angle; uint8_t dist; uint32_t lastMs; bool live; };
+Blip recent_[RECENT];
+
+ui::AlertRec alert_;
+volatile uint32_t nAdverts = 0, nUnique = 0;
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+uint32_t hashAddr(const uint8_t* a) {
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < 6; i++) { h ^= a[i]; h *= 16777619u; }
+    return h;
+}
+
+// BLE advertisers are weaker than APs, so the dial scale differs: -40dBm is
+// on top of us, -100 rides the outer ring. Using the WiFi mapping here would
+// push every tag to the edge.
+uint8_t rssiToDist(int rssi) {
+    int d = ((-rssi) - 40) * 100 / 60;
+    if (d < 0) d = 0;
+    if (d > 100) d = 100;
+    return (uint8_t)d;
+}
+
+class Cb : public BLEAdvertisedDeviceCallbacks {
+    void onResult(BLEAdvertisedDevice dev) override {
+        const uint8_t* a = dev.getAddress().getNative();
+        const int rssi = dev.getRSSI();
+
+        // Walk the raw advertisement rather than using the parsed
+        // accessors.
+        //
+        // getManufacturerData() returns a String and getServiceUUID() builds
+        // a BLEUUID; with shouldParse on, that allocated roughly 17 bytes per
+        // advert that never came back, and the device ran out of heap and
+        // rebooted about every 45 seconds. The payload is a flat list of
+        // length-prefixed AD structures -- reading it costs nothing.
+        uint16_t company = 0, svc = 0;
+        const uint8_t* nameP = nullptr;
+        uint8_t nameLen = 0;
+        const uint8_t* pl = dev.getPayload();
+        const size_t   pn = dev.getPayloadLength();
+        for (size_t i = 0; pl && i + 1 < pn; ) {
+            const uint8_t len = pl[i];
+            if (len == 0 || i + len >= pn + 1) break;   // malformed; stop
+            const uint8_t type = pl[i + 1];
+            const uint8_t* val = pl + i + 2;
+            const uint8_t vlen = (uint8_t)(len - 1);
+
+            // 0x02/0x03: incomplete/complete list of 16-bit service UUIDs.
+            if ((type == 0x02 || type == 0x03) && vlen >= 2 && !svc)
+                svc = (uint16_t)(val[0] | (val[1] << 8));
+            // 0xFF: manufacturer specific, opening with the SIG company id.
+            else if (type == 0xFF && vlen >= 2 && !company)
+                company = (uint16_t)(val[0] | (val[1] << 8));
+            // 0x09 complete local name, 0x08 shortened. Prefer the complete
+            // one, but take a short name over nothing.
+            else if ((type == 0x09 || (type == 0x08 && !nameP)) && vlen) {
+                nameP = val;
+                nameLen = vlen;
+            }
+
+            i += len + 1;
+        }
+
+        const ui::Hit sig = ui::matchBle(svc, company);
+
+        portENTER_CRITICAL(&mux);
+        nAdverts++;
+        if (sig.threat != ui::TH_NONE &&
+            (sig.conf >= alert_.conf || (millis() - alert_.atMs) > 6000)) {
+            alert_.threat = sig.threat;
+            alert_.conf   = sig.conf;
+            alert_.why    = sig.why;
+            // Named by the tail of the address, as the codex rows are.
+            static const char* HD = "0123456789ABCDEF";
+            int k = 0;
+            for (int b = 3; b < 6; b++) {
+                alert_.name[k++] = HD[(a[b] >> 4) & 0xF];
+                alert_.name[k++] = HD[a[b] & 0xF];
+                if (b < 5) alert_.name[k++] = ':';
+            }
+            alert_.name[k] = 0;
+            alert_.atMs = millis();
+        }
+        const uint32_t h = hashAddr(a);
+        int slot = -1;
+        const int home = (int)(h % TABLE);
+        for (int probe = 0; probe < TABLE; probe++) {
+            const int i = (home + probe) % TABLE;
+            if (!used_[i]) {
+                if (nUsed < TABLE) {
+                    used_[i] = true;
+                    for (int k = 0; k < 6; k++) addrs[i][k] = a[k];
+                    rssis[i] = (int8_t)rssi;
+                    extra[i] = Extra{};
+                    extra[i].bestRssi = -127;
+                    extra[i].firstEpoch = ui::Gnss::utcEpoch(millis());
+                    extra[i].firstMs = millis();
+                    {
+                        int32_t la, lo;
+                        if (gpstrack::at(millis(), 0, la, lo)) {
+                            extra[i].firstLat7 = la;
+                            extra[i].firstLon7 = lo;
+                            extra[i].hasFirst = true;
+                        }
+                    }
+                    order_[nOrder++] = (uint16_t)i;
+                    nUsed++;
+                    nUnique++;
+                    slot = i;
+                }
+                break;
+            }
+            bool same = true;
+            for (int k = 0; k < 6; k++) if (addrs[i][k] != a[k]) { same = false; break; }
+            if (same) { rssis[i] = (int8_t)rssi; slot = i; break; }
+        }
+
+        // Name and position, recorded at the strongest sighting.
+        if (slot >= 0) {
+            extra[slot].lastMs = millis();
+            if (sig.threat != ui::TH_NONE && sig.conf >= extra[slot].conf) {
+                extra[slot].threat = sig.threat;
+                extra[slot].conf   = sig.conf;
+            }
+            if (nameP && !extra[slot].name[0]) {
+                int k = 0;
+                for (; k < (int)ui::SSID_MAX - 1 && k < nameLen; k++) {
+                    const char ch = (char)nameP[k];
+                    extra[slot].name[k] = (ch >= 32 && ch < 127) ? ch : '.';
+                }
+                extra[slot].name[k] = 0;
+            }
+            if ((int8_t)rssi > extra[slot].bestRssi) {
+                int32_t la, lo;
+                if (gpstrack::at(millis(), 0, la, lo)) {
+                    extra[slot].lat7 = la;
+                    extra[slot].lon7 = lo;
+                    extra[slot].located = true;
+                    extra[slot].bestRssi = (int8_t)rssi;
+                }
+            }
+        }
+
+        Blip& b = recent_[h % RECENT];
+        b.angle  = (uint16_t)(h % 360);
+        b.dist   = rssiToDist(rssi);
+        b.lastMs = millis();
+        b.live   = true;
+        portEXIT_CRITICAL(&mux);
+    }
+};
+
+Cb cb;
+BLEScan* scan = nullptr;
+
+} // namespace
+
+void begin() {
+    // Allocate before touching any of it. PSRAM if it is there, internal if
+    // it is not -- the code should still run on a board without it.
+    addrs  = (uint8_t(*)[6])heap_caps_malloc(6 * TABLE, MALLOC_CAP_SPIRAM);
+    rssis  = (int8_t*)heap_caps_malloc(TABLE, MALLOC_CAP_SPIRAM);
+    used_  = (bool*)heap_caps_malloc(TABLE, MALLOC_CAP_SPIRAM);
+    extra  = (Extra*)heap_caps_malloc(sizeof(Extra) * TABLE, MALLOC_CAP_SPIRAM);
+    order_ = (uint16_t*)heap_caps_malloc(sizeof(uint16_t) * TABLE, MALLOC_CAP_SPIRAM);
+    const bool inPsram = addrs && rssis && used_ && order_ && extra;
+    if (!inPsram) {
+        free(addrs); free(rssis); free(used_); free(order_); free(extra);
+        addrs  = (uint8_t(*)[6])calloc(TABLE, 6);
+        rssis  = (int8_t*)calloc(TABLE, 1);
+        used_  = (bool*)calloc(TABLE, 1);
+        order_ = (uint16_t*)calloc(TABLE, sizeof(uint16_t));
+        extra  = (Extra*)calloc(TABLE, sizeof(Extra));
+    }
+    if (!addrs || !rssis || !used_ || !order_ || !extra) {
+        Serial.println("blescan: FATAL -- no room for the address table");
+        for (;;) delay(1000);
+    }
+    Serial.printf("blescan: %d address slots in %s\n",
+                  TABLE, inPsram ? "PSRAM" : "internal RAM");
+
+    for (int i = 0; i < TABLE;  i++) used_[i] = false;
+    nOrder = 0;
+    for (int i = 0; i < RECENT; i++) recent_[i].live = false;
+
+    BLEDevice::init("");
+    scan = BLEDevice::getScan();
+    // shouldParse stays false: the raw payload is all the signature matcher
+    // needs, and parsing leaks.
+    scan->setAdvertisedDeviceCallbacks(&cb, /*wantDuplicates=*/true, /*shouldParse=*/false);
+    scan->setActiveScan(false);     // listen only
+
+    // Duty cycle is a direct trade against WiFi, because there is one radio.
+    //
+    // Measured: window 99 of interval 100 (99% duty) took WiFi from 7 APs and
+    // 30 frames down to 2 APs and 3 frames -- BLE was starving the sniffer.
+    // 30 of 100 leaves the sniffer most of the air while still catching
+    // advertisers, which repeat every few hundred ms anyway.
+    scan->setInterval(BLE_INTERVAL_MS);
+    scan->setWindow((uint16_t)(BLE_INTERVAL_MS * duty / 100));
+
+    // duration 0 = run until stopped.
+    scan->start(0, nullptr, false);
+    Serial.println("capture: BLE passive scan started");
+}
+
+void fill(ui::State& s, uint32_t nowMs) {
+    portENTER_CRITICAL(&mux);
+    const uint32_t u = nUnique;
+    Blip snap[RECENT];
+    for (int i = 0; i < RECENT; i++) snap[i] = recent_[i];
+    portEXIT_CRITICAL(&mux);
+
+    s.ble = (uint16_t)(u > 65535 ? 65535 : u);
+
+    int n = s.nContacts;
+    for (int i = 0; i < RECENT && n < ui::MAX_CONTACTS; i++) {
+        if (!snap[i].live) continue;
+        const uint32_t age = nowMs - snap[i].lastMs;
+        if (age > 60000) continue;
+        ui::Contact& c = s.contacts[n++];
+        c.angle = snap[i].angle;
+        c.dist  = snap[i].dist;
+        c.band  = ui::BAND_BLE;
+        c.age   = (uint8_t)(age / 240 > 255 ? 255 : age / 240);
+    }
+    s.nContacts = (uint8_t)n;
+}
+
+namespace {
+const char* HEXDIG = "0123456789ABCDEF";
+}
+
+void fillDetail(ui::State& s, int index, uint32_t nowMs) {
+    s.detail = ui::Detail{};
+    if (index < 0 || (uint32_t)index >= nOrder) return;
+    const uint16_t slot = order_[nOrder - 1 - index];
+
+    ui::Detail& d = s.detail;
+    d.valid = true;
+    for (int k = 0; k < 6; k++) d.mac[k] = addrs[slot][k];
+    d.rssi = rssis[slot];
+    d.band = ui::BAND_BLE;
+    d.chan = 0;
+    // BLE advertisers are not tracked individually over time the way APs
+    // are: the address usually rotates, so a history would be a history of
+    // several devices wearing the same name.
+    d.histN = 0;
+    d.firstAgoS = d.lastAgoS = 0;
+    (void)nowMs;
+}
+
+uint16_t sightCount() { return (uint16_t)(nOrder > 65535 ? 65535 : nOrder); }
+
+void fillSights(ui::State& s, int offset) {
+    s.totalSights = sightCount();
+    int n = 0, skipped = 0;
+    for (int i = (int)nOrder - 1; i >= 0 && n < ui::MAX_SIGHTS; i--) {
+        if (skipped < offset) { skipped++; continue; }
+        const uint16_t slot = order_[i];
+        ui::Sighting& g = s.sights[n++];
+
+        // BLE addresses are frequently randomised, so the OUI is often
+        // meaningless. The last three octets are what distinguishes one
+        // advertiser from another on screen.
+        const uint8_t* a = addrs[slot];
+        if (extra[slot].name[0]) {
+            int k = 0;
+            for (; k < ui::SSID_MAX - 1 && extra[slot].name[k]; k++)
+                g.ssid[k] = extra[slot].name[k];
+            g.ssid[k] = 0;
+        } else {
+            int k = 0;
+            for (int b = 3; b < 6; b++) {
+                g.ssid[k++] = HEXDIG[(a[b] >> 4) & 0xF];
+                g.ssid[k++] = HEXDIG[a[b] & 0xF];
+                if (b < 5) g.ssid[k++] = ':';
+            }
+            g.ssid[k] = 0;
+        }
+        for (int m = 0; m < 6; m++) g.mac[m] = a[m];
+        g.rssi = rssis[slot];
+        g.band = ui::BAND_BLE;
+        g.chan = 0;
+    }
+    s.nSights = (uint8_t)n;
+}
+
+// Swept on a timer rather than per advert: the distance maths is cheap but
+// not free, and nothing here changes meaningfully inside five seconds.
+void tick(uint32_t nowMs) {
+    static uint32_t lastScan = 0;
+    if (!extra || nowMs - lastScan < FOLLOW_SCAN_MS) return;
+    lastScan = nowMs;
+
+    int32_t la, lo;
+    if (!gpstrack::at(nowMs, 0, la, lo)) return;    // no fix: no distance
+
+    uint16_t following = 0;
+    for (uint32_t i = 0; i < nOrder; i++) {
+        const uint16_t slot = order_[i];
+        Extra& e = extra[slot];
+        if (e.threat != ui::TH_TRACKER || !e.hasFirst) continue;
+        if ((nowMs - e.firstMs) < FOLLOW_MIN_MS) continue;
+        if ((nowMs - e.lastMs) > 120000) continue;   // gone; not following
+
+        const int32_t moved = metresBetween(e.firstLat7, e.firstLon7, la, lo);
+        if (moved < FOLLOW_MIN_M) continue;
+
+        following++;
+        if (e.following) continue;                   // already reported
+        e.following = true;
+
+        portENTER_CRITICAL(&mux);
+        alert_.threat = ui::TH_FOLLOW;
+        alert_.conf   = ui::CONF_HIGH;
+        alert_.why    = "TRAVELLED WITH YOU";
+        if (e.name[0]) {
+            int k = 0;
+            for (; k < ui::ALERT_NAME - 1 && e.name[k]; k++) alert_.name[k] = e.name[k];
+            alert_.name[k] = 0;
+        } else {
+            // Formatted wide and then truncated on purpose: the address plus
+            // an unbounded distance can exceed the 20-byte alert name, which
+            // -Wformat-truncation is right to object to.
+            char wide[40];
+            if (moved >= 1000)
+                snprintf(wide, sizeof wide, "%02X:%02X:%02X %d.%dKM",
+                         addrs[slot][3], addrs[slot][4], addrs[slot][5],
+                         (int)(moved / 1000), (int)((moved % 1000) / 100));
+            else
+                snprintf(wide, sizeof wide, "%02X:%02X:%02X %dM",
+                         addrs[slot][3], addrs[slot][4], addrs[slot][5], (int)moved);
+            int k = 0;
+            for (; k < ui::ALERT_NAME - 1 && wide[k]; k++) alert_.name[k] = wide[k];
+            alert_.name[k] = 0;
+        }
+        alert_.atMs = nowMs;
+        portEXIT_CRITICAL(&mux);
+
+        Serial.printf("blescan: tracker %02X:%02X:%02X has followed %ldm over %lus\n",
+                      addrs[slot][3], addrs[slot][4], addrs[slot][5],
+                      (long)moved, (unsigned long)((nowMs - e.firstMs) / 1000));
+    }
+    nFollowing = following;
+}
+
+uint16_t followCount() { return nFollowing; }
+
+void setDuty(uint8_t pct) {
+    if (pct > 100) pct = 100;
+    if (pct == duty || !scan) return;
+    duty = pct;
+    scan->stop();
+    if (duty == 0) return;        // 0 means hand the whole radio to WiFi
+    scan->setWindow((uint16_t)(BLE_INTERVAL_MS * duty / 100));
+    scan->start(0, nullptr, false);
+}
+
+void reset() {
+    portENTER_CRITICAL(&mux);
+    for (int i = 0; i < TABLE;  i++) used_[i] = false;
+    for (int i = 0; i < RECENT; i++) recent_[i].live = false;
+    nUsed = 0; nOrder = 0; nAdverts = 0; nUnique = 0;
+    alert_ = ui::AlertRec{};
+    for (int i = 0; i < TABLE; i++) extra[i] = Extra{};
+    nFollowing = 0;
+    portEXIT_CRITICAL(&mux);
+}
+
+bool lastAlert(ui::AlertRec& out) {
+    portENTER_CRITICAL(&mux);
+    out = alert_;
+    portEXIT_CRITICAL(&mux);
+    return out.threat != ui::TH_NONE;
+}
+
+uint32_t exportRows(Print& out, uint32_t& skipped) {
+    char mac[20], name[48], la[20], lo[20], when[24];
+    uint32_t rows = 0;
+
+    for (uint32_t i = 0; i < nOrder; i++) {
+        const uint16_t slot = order_[i];
+        const Extra& e = extra[slot];
+        if (!e.located || !e.firstEpoch) { skipped++; continue; }
+
+        csv::mac(mac, addrs[slot]);
+        csv::quote(e.name, name, sizeof name);
+        csv::deg7(la, e.lat7);
+        csv::deg7(lo, e.lon7);
+        csv::stampUtc(when, e.firstEpoch);
+
+        // Type BLE, and "Misc [LE]" in the AuthMode column -- the
+        // convention Bluetooth rows use there, where WiFi puts its cipher
+        // suite. Channel is 0: BLE advertises on three, and we do not know
+        // which one carried this.
+        out.printf("%s,%s,Misc [LE],%s,0,%d,%s,%s,0,%u,BLE\n",
+                   mac, name, when, (int)rssis[slot], la, lo, 30u);
+        rows++;
+    }
+    return rows;
+}
+
+uint32_t uniques() { return nUnique; }
+uint32_t adverts() { return nAdverts; }
+
+} // namespace blescan

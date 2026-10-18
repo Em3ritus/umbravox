@@ -1,0 +1,118 @@
+#include "touch.h"
+#include <Arduino.h>
+#include <SPI.h>
+#include "canvas.h"
+
+namespace touch {
+namespace {
+
+constexpr int8_t PIN_SCK  = 6;
+constexpr int8_t PIN_MISO = 2;
+constexpr int8_t PIN_MOSI = 7;
+constexpr int8_t PIN_CS   = 1;      // touch CS; the panel is on 23
+
+// 2MHz. The XPT2046 datasheet allows a little more, but the conversion needs
+// settling time and there is nothing to gain here -- a whole poll is five
+// 24-bit transfers.
+constexpr uint32_t SPI_HZ = 2000000;
+
+// Measured on this panel by tapping the four corners, not taken from the
+// board's published constants.
+//
+// The published numbers were close on *range* but said nothing about
+// assignment, and the assignment is where this goes wrong: the touch layer
+// does not share the display's rotation. Raw X runs high at the top of the
+// screen and low at the bottom, so it carries screen Y; raw Y runs high on
+// the left and low on the right, so it carries screen X. Both are inverted.
+//
+//   corner        rawX   rawY
+//   top-left      3545   3474
+//   top-right     3340    409
+//   bottom-right   496    320
+//   bottom-left    500   3524
+//   centre        2096   1910
+constexpr uint16_t CAL_X_BOTTOM = 350,  CAL_X_TOP  = 3720;   // rawX -> screen Y
+constexpr uint16_t CAL_Y_RIGHT  = 240,  CAL_Y_LEFT = 3640;   // rawY -> screen X
+
+// Below this the panel is not being pressed, it is just noise.
+constexpr uint16_t Z_THRESHOLD = 400;
+
+// Control bytes: start bit, channel, 12-bit differential mode.
+constexpr uint8_t CMD_X  = 0xD0;
+constexpr uint8_t CMD_Y  = 0x90;
+constexpr uint8_t CMD_Z1 = 0xB0;
+constexpr uint8_t CMD_Z2 = 0xC0;
+
+uint16_t xfer(uint8_t cmd) {
+    SPI.transfer(cmd);
+    const uint8_t hi = SPI.transfer(0x00);
+    const uint8_t lo = SPI.transfer(0x00);
+    return (uint16_t)(((hi << 8) | lo) >> 3);   // 12 bits, left-aligned
+}
+
+int cmpU16(const void* a, const void* b) {
+    const uint16_t x = *(const uint16_t*)a, y = *(const uint16_t*)b;
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+// Median of three. Resistive panels are noisy and a single sample will
+// occasionally land anywhere; the median throws out the flyer without the lag
+// an averaging filter would add.
+uint16_t median3(uint8_t cmd) {
+    uint16_t v[3];
+    for (int i = 0; i < 3; i++) v[i] = xfer(cmd);
+    qsort(v, 3, sizeof(uint16_t), cmpU16);
+    return v[1];
+}
+
+// `hi` is the raw value at screen coordinate 0, so the mapping runs backwards.
+int16_t mapInv(uint16_t raw, uint16_t lo, uint16_t hi, int16_t out) {
+    if (hi <= lo) return 0;
+    if (raw < lo) raw = lo;
+    if (raw > hi) raw = hi;
+    long v = (long)(hi - raw) * out / (hi - lo);
+    if (v < 0) v = 0;
+    if (v >= out) v = out - 1;
+    return (int16_t)v;
+}
+
+} // namespace
+
+void begin() {
+    pinMode(PIN_CS, OUTPUT);
+    digitalWrite(PIN_CS, HIGH);
+    // Same pins, same peripheral as the panel. -1 for CS: we drive it, so the
+    // driver must not also try to.
+    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
+    Serial.println("touch: XPT2046 on CS 1, polled (no IRQ line on this board)");
+}
+
+Point read() {
+    Point p;
+
+    SPI.beginTransaction(SPISettings(SPI_HZ, MSBFIRST, SPI_MODE0));
+    digitalWrite(PIN_CS, LOW);
+    const uint16_t z1 = xfer(CMD_Z1);
+    const uint16_t z2 = xfer(CMD_Z2);
+    const uint16_t rx = median3(CMD_X);
+    const uint16_t ry = median3(CMD_Y);
+    digitalWrite(PIN_CS, HIGH);
+    SPI.endTransaction();
+
+    // Standard XPT2046 pressure estimate: rises as the plates are pushed
+    // together, so a larger number means a firmer press.
+    const int z = (int)z1 + 4095 - (int)z2;
+    p.z    = (uint16_t)(z < 0 ? 0 : z);
+    p.rawX = rx;
+    p.rawY = ry;
+    p.down = (p.z > Z_THRESHOLD) && rx > 100 && ry > 100;
+
+    if (p.down) {
+        // Axes crossed: raw Y gives screen X, raw X gives screen Y.
+        p.x = mapInv(ry, CAL_Y_RIGHT,  CAL_Y_LEFT, ui::W);
+        p.y = mapInv(rx, CAL_X_BOTTOM, CAL_X_TOP,  ui::H);
+    }
+    return p;
+}
+
+} // namespace touch
