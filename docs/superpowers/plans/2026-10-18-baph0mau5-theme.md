@@ -903,6 +903,15 @@ void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
               int rBound, uint32_t frame, bool found, int foundAngle,
               uint8_t heat);
 
+// Where the eyes sit, as offsets from the seal's centre.
+//
+// This exists so that ui/sigil.h is included by exactly one translation unit.
+// Its arrays are `const` at namespace scope and therefore internal linkage,
+// so a second #include does not fail to link -- it silently compiles another
+// 7.5 KB copy of them into that object file. The gaze needs these two numbers
+// and nothing else from the header.
+void sealEyes(int& lx, int& rx, int& y);
+
 } // namespace ui
 ```
 
@@ -1085,6 +1094,10 @@ void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
         const int lum = near < 50 ? 255 - near * 2 : 90;
         mark5(c, k, rx, ry, Canvas::mix(pal::VOID, pal::BONE, lum, 255));
     }
+}
+
+void sealEyes(int& lx, int& rx, int& y) {
+    lx = EYE_L_X; rx = EYE_R_X; y = EYE_L_Y;
 }
 
 } // namespace ui
@@ -1353,11 +1366,16 @@ In `sim/Makefile` line 7, append ` ../ui/sweep.cpp` to `SRC`.
 In `ui/screen_scan.cpp`, add `#include "sweep.h"`. Delete the existing sweep block (the `TAIL = 40` loop and the two `polar`/`c.line` calls after it) and replace with:
 
 ```cpp
+    int eyeLx, eyeRx, eyeY;
+    sealEyes(eyeLx, eyeRx, eyeY);
     drawSearch(c, s.set.sweep, DIAL_CX, DIAL_CY, R_FIELD,
-               EYE_L_X, EYE_R_X, EYE_L_Y, s.frame);
+               eyeLx, eyeRx, eyeY, s.frame);
 ```
 
-Add `#include "sigil.h"` for the eye offsets.
+`seal.h` is already included from Task 6. **Do not include `sigil.h` here** — its
+arrays are `const` at namespace scope, so a second include compiles another
+7.5 KB copy of them into this object file rather than failing to link, which is
+the kind of waste that never announces itself.
 
 Replace the contact hot test. Change:
 
@@ -1489,7 +1507,7 @@ git commit -m "refactor: let drawDialAt take its geometry as arguments"
 
 **Files:**
 - Create: `ui/screen_aspect.cpp`
-- Modify: `ui/screens.h`, `ui/nav.h`, `ui/nav.cpp`, `ui/screen_grimoire.cpp`, `ui/layout.h`, `sim/Makefile:7`, `sim/main_sim.cpp`
+- Modify: `ui/screens.h`, `ui/nav.h`, `ui/nav.cpp`, `ui/screen_grimoire.cpp`, `ui/layout.h`, `device/main.cpp`, `sim/Makefile:7`, `sim/main_sim.cpp`
 
 **Interfaces:**
 - Consumes: `drawDialAt` from Task 8; `pal::themeName`, `pal::sweepMask` from Task 2; `settingsEqual`, `clampSettings` from Task 3.
@@ -1510,7 +1528,7 @@ In `ui/layout.h`, add:
 // sweep by; the rows reuse ATTUNE's button geometry so the controls are the
 // same object in both places.
 constexpr int ASP_CY     = 45;      // preview centre
-constexpr int ASP_R      = 30;      // preview outer bound
+constexpr int ASP_R      = 32;      // preview outer bound
 constexpr int ASP_ROW_Y  = 78;      // first picker row
 constexpr int ASP_ROW_H  = 12;
 constexpr int ASP_ROWS   = 2;       // THEME, SWEEP
@@ -1576,10 +1594,18 @@ void drawAspect(Canvas& c, const State& s, Dirty* d) {
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
 
-    // The preview. R_RUNES and R_STAR are scaled from the preview's own
-    // radius rather than taken from the theme, so the proportions hold at a
-    // size neither theme was drawn for.
-    drawDialAt(c, s, W / 2, ASP_CY, ASP_R - 9, ASP_R - 5, ASP_R - 11, ASP_R);
+    // Scale the ACTIVE theme's own radii down to the preview's bound, so the
+    // proportions hold whichever theme is selected -- a fixed set of radii
+    // fits one theme and mangles the other.
+    //
+    // FACE is a fixed bitmap and does not scale with them, so on BAPH0MAU5 the
+    // preview crops the seal to its middle: horns and eyes, which is the part
+    // that identifies it. That is a preview behaving like a window onto the
+    // dial, not a defect.
+    const int pf = R_FIELD * ASP_R / R_BOUND;
+    const int pr = R_RUNES * ASP_R / R_BOUND;
+    const int ps = R_STAR  * ASP_R / R_BOUND;
+    drawDialAt(c, s, W / 2, ASP_CY, pf, pr, ps, ASP_R);
 
     for (int r = 0; r < ASP_ROWS; r++) {
         const int y = ASP_ROW_Y + r * ASP_ROW_H;
