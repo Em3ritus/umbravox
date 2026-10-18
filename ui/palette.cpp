@@ -38,9 +38,9 @@ constexpr Row THEMES[TH_COUNT] = {
         rgb(0x9D,0x7B,0xFF), rgb(0xD6,0xC2,0xFF), rgb(0xC9,0xB8,0x97),
         rgb(0x9D,0x7B,0xFF), rgb(0xD6,0xC2,0xFF),
         rgb(0xD6,0xC2,0xFF), rgb(0xF2,0xE8,0xFF),
-        // No bitmap centrepiece here, but a working grey ramp rather than
-        // four copies of VOID: a placeholder that renders nothing is the
-        // kind that survives to a release.
+        // No bitmap centrepiece here, but a working ramp from the theme's own
+        // darkest to brightest (VOID, EDGE, DIM, BRIGHT) rather than a
+        // placeholder that renders nothing -- that kind survives to a release.
         { rgb(0x07,0x04,0x0E), rgb(0x2E,0x1F,0x52),
           rgb(0x6B,0x4F,0x9E), rgb(0xF2,0xE8,0xFF) },
         rgb(0xD0,0x2B,0xB4), rgb(0x6F,0xD3,0xF5), rgb(0x4A,0xDE,0x80),
@@ -79,6 +79,23 @@ void setTheme(uint8_t id) {
     MAGENTA = t.magenta; ICE = t.ice; GREEN = t.green;
     AMBER = t.amber; RED = t.red;
 }
+
+// The globals are zero-initialised, which is black on black. Nothing should
+// ever read a colour before setTheme() runs -- but "should" is doing a lot of
+// work there, and the failure mode is a dead screen with no other symptom.
+// Pointing the palette at AETHERSCAN during static init makes the question
+// moot rather than leaving it to call order.
+//
+// Safe against static-initialisation order: THEMES is constexpr and so is
+// constant-initialised before any dynamic initialisation runs, and nothing
+// anywhere reads a pal:: value during static init -- every use is a local
+// inside a function.
+namespace {
+struct DefaultTheme {
+    DefaultTheme() { setTheme(TH_AETHERSCAN); }
+};
+const DefaultTheme _defaultTheme;
+} // namespace
 
 const char* themeName(uint8_t id) { return row(id).name; }
 uint8_t     sweepMask(uint8_t id) { return row(id).sweeps; }
