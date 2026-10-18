@@ -1335,7 +1335,7 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
 
     default: {
         // The radar. One hot edge with a cubic afterglow.
-        const int TAIL = 44;
+        const int TAIL = 40;
         for (int d = TAIL; d >= 1; d--) {
             const int fade = TAIL - d;
             const int lum = 255 * fade * fade * fade / (TAIL * TAIL * TAIL);
