@@ -7,7 +7,7 @@ namespace prefs {
 namespace {
 
 constexpr const char* NS  = "aether";
-constexpr uint8_t     VER = 3;          // bump when the layout changes
+constexpr uint8_t     VER = 4;          // bump when the layout changes
 constexpr uint32_t    SETTLE_MS = 2000;
 
 Preferences   nvs;
@@ -25,6 +25,8 @@ void write(const ui::Settings& s) {
     nvs.putUChar("bands",   s.bands);
     nvs.putUChar("alertmin", s.alertMin);
     nvs.putUChar("idle",    s.idleIdx);
+    nvs.putUChar("theme",   s.theme);
+    nvs.putUChar("sweep",   s.sweep);
     stored = s;
     lastSeen = s;
 }
@@ -56,6 +58,8 @@ bool load(ui::Settings& s) {
     in.bands   = nvs.getUChar("bands",   s.bands);
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
+    in.theme   = nvs.getUChar("theme",  s.theme);
+    in.sweep   = nvs.getUChar("sweep",  s.sweep);
 
     // Anything out of range is treated as corrupt and pulled back in, not
     // trusted because it came off flash.
@@ -64,8 +68,9 @@ bool load(ui::Settings& s) {
     stored = in;
     lastSeen = in;
 
-    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u\n",
-                  in.bright, in.dwellMs, in.bleDuty, in.bands, in.alertMin);
+    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u, theme %u, sweep %u\n",
+                  in.bright, in.dwellMs, in.bleDuty, in.bands, in.alertMin,
+                  in.theme, in.sweep);
     return true;
 }
 
