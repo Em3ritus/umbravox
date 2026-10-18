@@ -54,13 +54,15 @@ int main() {
         // least one mutation survive -- otherwise it was never exercised.
         static const unsigned char MASKS[] = {0xFF, 0x01, 0x02, 0x04, 0x10};
         bool exercised[sizeof(Settings)] = {};
-        // Exactly one padding byte is expected today (offset 9). A field with
-        // an initializer that takes that slot makes the count drop, and a
-        // deliberate update here is the point.
+        // Settings has no padding (the `reserved` member fills the slack
+        // byte), so every byte the constructor leaves untouched is a field
+        // someone forgot to initialise. Zero is what makes this heuristic
+        // exact rather than approximate: with any slack, such a field could
+        // hide in it with sizeof and the count unchanged.
         int padBytes = 0;
         for (size_t off = 0; off < sizeof(Settings); off++)
             if (z[off] != f[off]) padBytes++;
-        check("padding is exactly the expected 1 byte", padBytes == 1);
+        check("no padding, no uninitialised field", padBytes == 0);
 
         int missed = 0;
         for (int th = 0; th < pal::TH_COUNT; th++) {

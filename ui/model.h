@@ -72,6 +72,15 @@ struct Settings {
     // it is stored the same way and clamped by the same function.
     uint8_t  theme   = 0;     // pal::ThemeId
     uint8_t  sweep   = 0;     // Sweep
+    // Not a setting. It fills the byte the compiler would otherwise leave as
+    // slack, so Settings has NO padding -- which is what lets the host test
+    // treat "a byte the constructor never writes" as unambiguously a field
+    // someone forgot to initialise. With slack present, such a field hides in
+    // it: same sizeof, same padding count, every check green.
+    //
+    // If you need another setting, take this byte and the static_assert in
+    // sim/test_settings.cpp will tell you to re-check the arithmetic.
+    uint8_t  reserved = 0;
 };
 
 // Seconds of no touch before the backlight drops. 0 means never.

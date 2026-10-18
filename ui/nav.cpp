@@ -206,7 +206,8 @@ bool settingsEqual(const Settings& a, const Settings& b) {
     return a.alertMin == b.alertMin && a.bright  == b.bright  &&
            a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
-           a.theme    == b.theme    && a.sweep   == b.sweep;
+           a.theme    == b.theme    && a.sweep   == b.sweep   &&
+           a.reserved == b.reserved;
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {
