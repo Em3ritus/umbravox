@@ -1,6 +1,7 @@
 #include "sweep.h"
 #include "palette.h"
 #include "model.h"
+#include "layout.h"
 #include <math.h>
 
 namespace ui {
@@ -36,14 +37,46 @@ float gutter(uint32_t frame) {
          + 0.3f * sinf((float)frame * 2.3f);
 }
 
+// The pulse's leading ring, in pixels. Drawing and detection both read this,
+// so they cannot disagree. Guarded so a tiny field cannot divide by zero.
+int pulseSpan(int rField) { return rField - 2 > 1 ? rField - 2 : 1; }
+int pulseHead(uint32_t frame, int rField) {
+    return 2 + (int)(frame * 1.15f) % pulseSpan(rField);
+}
+
+int nearDeg(float beam, float a) {
+    const int da = ((int)(beam - a) % 360 + 360) % 360;
+    return da < 180 ? da : 360 - da;
+}
+
 } // namespace
+
+int searchMarkLum(uint8_t mode, uint32_t frame, float markAngle, int floorLum) {
+    int near;
+    switch (mode) {
+        case SW_PULSE:
+        case SW_CANDLE:
+            return (255 + floorLum) / 2;
+        case SW_STAR: {
+            const float spin = (float)frame * 2.4f;
+            near = 180;
+            for (int k = 0; k < 5; k++) {
+                const int n = nearDeg(spin + (float)k * 72.0f, markAngle);
+                if (n < near) near = n;
+            }
+            break;
+        }
+        default:
+            near = nearDeg(beamOf(frame), markAngle);
+    }
+    return near < 50 ? 255 - near * 2 : floorLum;
+}
 
 bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist) {
     switch (mode) {
         case SW_PULSE: {
-            const int r  = (int)(frame * 1.15f) % 31;
-            const int dp = dist * 29 / 100;
-            const int d  = dp - r;
+            const int dp = dist * (R_FIELD - 3) / 100;
+            const int d  = dp - pulseHead(frame, R_FIELD);
             return d <= 0 && d > -5;
         }
         case SW_STAR: {
@@ -98,8 +131,8 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
         // A ring leaves the centre and dies at the bound. It finds by
         // DISTANCE rather than bearing -- near things answer first -- which
         // reads as divination rather than a dish going round.
-        const int span = rField - 2;
-        const int r0 = 2 + (int)(frame * 1.15f) % span;
+        const int span = pulseSpan(rField);
+        const int r0 = pulseHead(frame, rField);
         for (int t = 0; t < 6; t++) {
             const int r = r0 - t * 2;
             if (r < 2 || r > rField - 1) continue;

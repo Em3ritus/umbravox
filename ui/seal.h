@@ -16,10 +16,11 @@ namespace ui {
 //   found       the search has just turned a contact up; the eyes answer it
 //   foundAngle  its bearing, so the eyes can lean a pixel toward it
 //   liftOverride  absolute 0..255 brightness (128 = unmodified, below sinks toward VOID, above brightens), or -1 for the seal's own heartbeat
+//   sweepMode     which search is active; the mark band follows it
 //   heat        0..255 possession -- how far the fire has spread. 0 is idle.
 void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
               int rBound, uint32_t frame, bool found, int foundAngle,
-              uint8_t heat, int liftOverride = -1);
+              uint8_t heat, int liftOverride = -1, uint8_t sweepMode = 0);
 
 // Where the eyes sit, as offsets from the seal's centre.
 //

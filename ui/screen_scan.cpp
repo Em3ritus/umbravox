@@ -173,9 +173,6 @@ void drawDial(Canvas& c, const State& s) {
     c.textRight(COL_R_X + COL_R_W - 4, DIAL_Y + 3, ch, pal::DIM);
     c.text(COL_R_X + 3, DIAL_Y + DIAL_H - 9, "-90", pal::DIM);
 
-    // The sweep is shared by both themes, so its angle lives out here.
-    const float beam = (float)((s.frame * 5) % 360);
-
     // The eyes answer a finding, so the seal needs to know whether the search
     // has just turned one up and roughly where.
     bool found = false;
@@ -193,7 +190,7 @@ void drawDial(Canvas& c, const State& s) {
         drawSeal(c, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND,
                  s.frame, found, foundAngle,
                  s.alertActive ? (uint8_t)(s.alertConf * 85) : 0,
-                 searchLift(s.set.sweep, s.frame));
+                 searchLift(s.set.sweep, s.frame), s.set.sweep);
     } else {
         latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);
 
@@ -221,9 +218,7 @@ void drawDial(Canvas& c, const State& s) {
             const float a = spin + (float)k * (360.0f / (float)RUNE_N);
             int rx, ry;
             polar(DIAL_CX, DIAL_CY, R_RUNES, a, rx, ry);
-            const int da = ((int)(beam - a) % 360 + 360) % 360;
-            const int near = da < 180 ? da : 360 - da;
-            const int lum = near < 50 ? 255 - near * 2 : 100;
+            const int lum = searchMarkLum(s.set.sweep, s.frame, a, 100);
             rune5c(c, k, rx, ry, Canvas::mix(pal::VOID, pal::BONE, lum, 255));
         }
     }

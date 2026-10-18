@@ -21,7 +21,21 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
 // Every mode needs its own answer and they are not interchangeable: a sweep
 // finds by BEARING, a pulse by DISTANCE, and a wash does not find at all --
 // it only shows what is already known.
+//
+// `dist` is 0..100 and is mapped to a radius exactly as the dial places its
+// blips: dist * (R_FIELD - 3) / 100, against the live ui::R_FIELD. The pulse
+// detects against the same ring radius that drawSearch draws.
 bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist);
+
+// How brightly a mark on the ring should burn, for a mark at this bearing.
+//
+// The ring used to key off an implicit radar beam, which is wrong for the
+// searches that have no bearing at all -- it animated to a beam that was not
+// drawn. Each mode answers for itself: the ones that sweep light the marks
+// they pass, and the ones that do not simply hold them steady.
+// `floorLum` is the level of a mark the search is not near (the two rings
+// have always used different floors).
+int searchMarkLum(uint8_t mode, uint32_t frame, float markAngle, int floorLum);
 
 // How brightly the centrepiece should burn this frame, for searches that
 // light the field instead of sweeping it.

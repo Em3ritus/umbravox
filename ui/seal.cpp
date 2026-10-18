@@ -1,4 +1,5 @@
 #include "seal.h"
+#include "sweep.h"
 #include "palette.h"
 #include "sigil.h"
 #include <math.h>
@@ -115,7 +116,7 @@ constexpr int BLINK_EVERY = 200;
 
 void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
               int rBound, uint32_t frame, bool found, int foundAngle,
-              uint8_t heat, int liftOverride) {
+              uint8_t heat, int liftOverride, uint8_t sweepMode) {
     // A double-thump, not a sine. A sine is what every interface does when it
     // wants to look alive and it reads as a bulb; two quick beats and a
     // longer rest is the shape of something with a heart in it.
@@ -178,17 +179,14 @@ void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
     c.circle(cx, cy, rField, pal::EDGE_LIT);
     c.circle(cx, cy, rBound, pal::EDGE_LIT);
 
-    // The band walks against the search. Marks near the beam take its light;
+    // The band walks against the search. Marks near the search take its light;
     // the rest sit back, so the ring never reads as a plain border.
-    const float beam = (float)((frame * 5) % 360);
     const float spin = -(float)frame * 0.7f;
     for (int k = 0; k < MARK_N * 2; k++) {
         const float a = spin + (float)k * (360.0f / (MARK_N * 2));
         int rx, ry;
         polar(cx, cy, (float)rRunes, a, rx, ry);
-        const int da = ((int)(beam - a) % 360 + 360) % 360;
-        const int near = da < 180 ? da : 360 - da;
-        const int lum = near < 50 ? 255 - near * 2 : 90;
+        const int lum = searchMarkLum(sweepMode, frame, a, 90);
         mark5(c, k, rx, ry, Canvas::mix(pal::VOID, pal::BONE, lum, 255));
     }
 }
