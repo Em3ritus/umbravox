@@ -19,4 +19,47 @@ sheet: $(BIN)
 clean:
 	rm -f $(BIN) *.png
 
-.PHONY: run sheet clean
+# The host tests each carry their own main(), so each links as its own
+# binary. They are listed explicitly rather than globbed: a test that stops
+# being built is a test that stops failing, and nobody notices.
+UI_CORE = ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/palette.cpp
+
+test_chanplan: test_chanplan.cpp ../device/chanplan.h
+	$(CXX) $(CXXFLAGS) -I../ui -o $@ test_chanplan.cpp -lm
+
+test_gnss: test_gnss.cpp ../ui/gnss.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_gnss.cpp ../ui/gnss.cpp -lm
+
+test_signatures: test_signatures.cpp ../ui/signatures.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_signatures.cpp ../ui/signatures.cpp -lm
+
+test_wifi_auth: test_wifi_auth.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_wifi_auth.cpp ../ui/wifi_auth.cpp -lm
+
+test_settings: test_settings.cpp ../ui/nav.cpp ../ui/screen_grimoire.cpp $(UI_CORE)
+	$(CXX) $(CXXFLAGS) -o $@ test_settings.cpp ../ui/nav.cpp \
+	    ../ui/screen_grimoire.cpp $(UI_CORE) -lm
+
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth
+
+test: $(TESTS)
+	@rc=0; for t in $(TESTS); do \
+	   echo "== $$t"; ./$$t || rc=1; done; \
+	 exit $$rc
+
+# AETHERSCAN must render exactly as it did before this work started. With no
+# version control there is nothing to diff against after the fact, so the
+# baseline was captured up front and this target is the contract.
+SCREENS = scan codex detail domain mesh omens echoes grimoire attune
+REGRESS_DIR = /tmp/aether-regress
+
+regress: $(BIN)
+	@mkdir -p $(REGRESS_DIR)
+	@for s in $(SCREENS); do \
+	   ./$(BIN) $(REGRESS_DIR)/$$s.png --screen $$s --frame 0 --scale 4 >/dev/null; \
+	 done
+	@cd $(REGRESS_DIR) && md5sum -c --quiet \
+	   $(CURDIR)/../private/baseline/MANIFEST.md5 \
+	 && echo "regress: AETHERSCAN unchanged"
+
+.PHONY: run sheet clean test regress
