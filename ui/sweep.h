@@ -27,7 +27,7 @@ bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist);
 // light the field instead of sweeping it.
 //
 // Returns -1 when the mode has no opinion and the centrepiece should use its
-// own rhythm. The candle returns an absolute 0..255: it IS the light in the
+// own rhythm. The candle returns an absolute 0..255 (128 = seal as drawn): it IS the light in the
 // circle, so it overrides the heartbeat rather than adding to it.
 //
 // The candle is primarily a BAPH0MAU5 mode: AETHERSCAN has no bitmap

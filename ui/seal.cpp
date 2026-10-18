@@ -33,7 +33,7 @@ uint16_t ramp16live(int lv) {
 struct Tint { int x, y, r; bool dark; };
 
 void blit(Canvas& c, const uint8_t* bm, int bw, int bh, int cx, int cy,
-          int lift, int clipR, const Tint* tint, int nTint) {
+          int lift, bool bidir, int clipR, const Tint* tint, int nTint) {
     const int x0 = cx - bw / 2, y0 = cy - bh / 2;
     for (int j = 0; j < bh; j++)
         for (int i = 0; i < bw; i++) {
@@ -56,8 +56,16 @@ void blit(Canvas& c, const uint8_t* bm, int bw, int bh, int cx, int cy,
                 continue;
             }
             const uint16_t a = ramp16(lv);
-            c.pixel(px, py, lift ? Canvas::mix(a, ramp16(lv < 13 ? lv + 2 : 15),
-                                               lift, 255) : a);
+            const uint16_t up = ramp16(lv < 13 ? lv + 2 : 15);
+            if (!bidir) {
+                c.pixel(px, py, lift ? Canvas::mix(a, up, lift, 255) : a);
+            } else if (lift < 128) {
+                // Overridden light (the candle): below the midpoint the seal
+                // sinks toward the void, 25% of its colour at the darkest.
+                c.pixel(px, py, Canvas::mix(pal::VOID, a, 64 + lift * 191 / 128, 255));
+            } else {
+                c.pixel(px, py, Canvas::mix(a, up, (lift - 128) * 2, 255));
+            }
         }
 }
 
@@ -165,7 +173,7 @@ void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
         push(Tint{EYE_R_X, EYE_R_Y, 4, true});
     }
 
-    blit(c, FACE, FACE_W, FACE_H, cx, cy, lift, rField - 1, tint, n);
+    blit(c, FACE, FACE_W, FACE_H, cx, cy, lift, liftOverride >= 0, rField - 1, tint, n);
 
     c.circle(cx, cy, rField, pal::EDGE_LIT);
     c.circle(cx, cy, rBound, pal::EDGE_LIT);

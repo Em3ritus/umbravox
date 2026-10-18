@@ -63,8 +63,9 @@ bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist) {
 
 int searchLift(uint8_t mode, uint32_t frame) {
     if (mode != SW_CANDLE) return -1;
-    int v = 150 + (int)lrintf(gutter(frame) * 45.0f);
-    return v < 40 ? 40 : v > 255 ? 255 : v;
+    // 128 is the seal as drawn; the gutter swings it into the dark and back.
+    int v = 128 + (int)lrintf(gutter(frame) * 67.0f);
+    return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
 void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
