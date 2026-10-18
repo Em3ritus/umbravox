@@ -5,7 +5,12 @@ CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = aethersim
 SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp
-HDR = ../ui/demo.h ../ui/canvas.h ../ui/font5x7.h ../ui/runes.h ../ui/palette.h ../ui/model.h ../ui/screens.h png_writer.h
+# Every ui header, found rather than listed. The hand-written list silently
+# omitted nav.h, layout.h, signatures.h and wifi_auth.h, so editing any of
+# them left aethersim stale -- and a stale binary makes `regress` pass while
+# testing code that no longer exists. Later tasks add headers here; a wildcard
+# cannot forget them.
+HDR = $(wildcard ../ui/*.h) png_writer.h
 
 $(BIN): $(SRC) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRC) -lm
