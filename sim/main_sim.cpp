@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
         ui::State s = ui::demoState(f);
         s.set.sweep = sweepId;
         s.set.theme = themeId;   // the screens branch on the setting, not the palette
+        ui::clampSettings(s.set); // the device cannot reach an impossible pairing; neither may the sim
         const bool codex  = !strcmp(which, "codex");
         const bool attune = !strcmp(which, "attune");
         const bool detail = !strcmp(which, "detail");

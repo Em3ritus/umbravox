@@ -29,6 +29,25 @@ void ray(Canvas& c, int ox, int oy, float deg, int cx, int cy, int R, uint16_t c
 
 float beamOf(uint32_t frame) { return (float)((frame * 5) % 360); }
 
+// The star's limbs. Drawing, the mark band and detection all read these, so
+// a change to the spin, the limb count or the tail length moves all three.
+constexpr int   STAR_N    = 5;
+constexpr float STAR_STEP = 360.0f / STAR_N;
+constexpr int   STAR_TAIL = 14;
+
+float starLimb(uint32_t frame, int k) {
+    return (float)frame * 2.4f + (float)k * STAR_STEP;
+}
+// Brightness of the tail d degrees behind a limb; drawn only if >= 12.
+int starTailLum(int d) { return 200 * (STAR_TAIL - d) / STAR_TAIL; }
+// The farthest d the drawing actually lights. Detection uses this, not a
+// restated number, so a contact is "found" exactly where a tail is visible.
+int starReach() {
+    int d = STAR_TAIL;
+    while (d > 0 && starTailLum(d) < 12) d--;
+    return d;
+}
+
 // The candle's gutter, about -1.9..1.9. One place, so the rings and the
 // seal's brightness flicker together and cannot drift apart.
 float gutter(uint32_t frame) {
@@ -58,10 +77,9 @@ int searchMarkLum(uint8_t mode, uint32_t frame, float markAngle, int floorLum) {
         case SW_CANDLE:
             return (255 + floorLum) / 2;
         case SW_STAR: {
-            const float spin = (float)frame * 2.4f;
             near = 180;
-            for (int k = 0; k < 5; k++) {
-                const int n = nearDeg(spin + (float)k * 72.0f, markAngle);
+            for (int k = 0; k < STAR_N; k++) {
+                const int n = nearDeg(starLimb(frame, k), markAngle);
                 if (n < near) near = n;
             }
             break;
@@ -84,10 +102,10 @@ bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist, int rField
             return d <= 0 && d > -5;
         }
         case SW_STAR: {
-            const float spin = (float)frame * 2.4f;
-            for (int k = 0; k < 5; k++) {
-                const int d = (((int)(spin + (float)k * 72.0f) - angle) % 360 + 360) % 360;
-                if (d <= 20) return true;
+            const int reach = starReach();
+            for (int k = 0; k < STAR_N; k++) {
+                const int d = (((int)starLimb(frame, k) - angle) % 360 + 360) % 360;
+                if (d <= reach) return true;
             }
             return false;
         }
@@ -159,13 +177,12 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
     case SW_STAR: {
         // The inscribed figure is the search. Five limbs means the dial
         // refreshes five times a revolution, so nothing waits a whole turn.
-        const float spin = (float)frame * 2.4f;
-        for (int k = 0; k < 5; k++)
-            for (int d = 14; d >= 0; d--) {
-                const int lum = 200 * (14 - d) / 14;
+        for (int k = 0; k < STAR_N; k++)
+            for (int d = STAR_TAIL; d >= 0; d--) {
+                const int lum = starTailLum(d);
                 if (lum < 12) continue;
                 int x, y;
-                polar(cx, cy, (float)(rField - 1), spin + (float)k * 72.0f - (float)d, x, y);
+                polar(cx, cy, (float)(rField - 1), starLimb(frame, k) - (float)d, x, y);
                 c.line(cx, cy, x, y,
                        Canvas::mix(pal::VOID, d ? pal::SWEEP : pal::SWEEP_HI,
                                    d ? lum / 4 : 140, 255));

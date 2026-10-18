@@ -20,7 +20,11 @@ namespace ui {
 //   heat        0..255 possession -- how far the fire has spread. 0 is idle.
 void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
               int rBound, uint32_t frame, bool found, int foundAngle,
-              uint8_t heat, int liftOverride = -1, uint8_t sweepMode = 0);
+              uint8_t heat, int liftOverride, uint8_t sweepMode);
+
+// The inscribed figure alone, one colour, for chrome that must carry the
+// active theme's sigil (the alert card).
+void sealFigure(Canvas& c, int cx, int cy, int r, uint16_t col);
 
 // Where the eyes sit, as offsets from the seal's centre.
 //

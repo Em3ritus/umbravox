@@ -372,6 +372,31 @@ draws five tails where the radar draws one. Nothing here has been timed on
 hardware. If the frame cost is unacceptable the fallbacks, in order, are:
 cache the seal's static pixels, drop the star, or reduce the face to 2bpp.
 
+**Update after final review: float is soft-emulated, and the gaze is the cost
+centre.** The risk paragraph above guessed at the seal blit and the star. The
+build artifacts say otherwise:
+
+- `Tag_RISCV_arch` on the UI objects has **no `f` extension**, and they
+  reference `__addsf3`, `__mulsf3`, `__divsf3` and `__fixsfsi`. Every float
+  operation in `ui/` is a library call, and every `sinf`/`cosf`/`lrintf` is a
+  soft-float routine.
+- Measured per-frame call counts on the SCAN screen (from the final review):
+
+  | theme | sweep | trig calls | `lrintf` calls |
+  |---|---|---|---|
+  | 0 | radar | 169 | 170 |
+  | 1 | star | 259 | 260 |
+  | 1 | **gaze** | 203 | **4,472** |
+
+- The gaze is a 25x outlier. `ray()` in `ui/sweep.cpp` walks a float
+  `t += 0.7f` with two `lrintf` per step across about 42 rays. The seal blit
+  is integer-only and the star is only 1.5x the radar, so the fallback list
+  above does not touch the real cost.
+- Candidate fix, **not applied** (unmeasured): replace `ray()`'s float walk with
+  an integer Bresenham walk from the origin to the clipped endpoint.
+- **When measuring on hardware, compare radar against gaze specifically.** A
+  radar-versus-star comparison would pass and miss the problem.
+
 ## Out of scope for this work
 
 - **The boot splash.** Designed and rendered, and the `BIG` asset is specified

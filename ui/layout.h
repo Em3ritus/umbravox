@@ -64,7 +64,7 @@ constexpr int SET_MINUS_X = 114, SET_PLUS_X = 136, SET_BTN_W = 18, SET_BTN_H = 1
 // sweep by; the rows reuse ATTUNE's button geometry so the controls are the
 // same object in both places.
 constexpr int ASP_CY     = 45;      // preview centre
-constexpr int ASP_R      = 32;      // preview outer bound
+constexpr int ASP_R      = 30;      // preview outer bound
 constexpr int ASP_ROW_Y  = 78;      // first picker row
 constexpr int ASP_ROW_H  = 12;
 constexpr int ASP_ROWS   = 2;       // THEME, SWEEP

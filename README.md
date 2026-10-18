@@ -185,6 +185,36 @@ Two notes for anyone extending it:
 - The alert **fades rather than latches**, so a card on the glass means the
   thing is still in range.
 
+### ASPECT
+
+What the instrument looks like, as opposed to how it captures. It is a
+separate screen, reached from the grimoire, because ATTUNE is full: `ui/layout.h`
+documents seven rows as its ceiling and all seven are used.
+
+Two pickers, each a label with a `-` and `+`:
+
+| | choices | effect |
+|---|---|---|
+| THEME | AETHERSCAN / BAPH0MAU5 | the palette, the dial geometry and the centrepiece |
+| SWEEP | RADAR / GAZE / PULSE / STAR / CANDLE | how the dial searches the field |
+
+Above them is a **live preview**: it calls the real dial code with the radii
+scaled down to a 30px bound, rather than drawing a picture of a dial. A
+picture would drift from the dial it describes. FACE is a fixed bitmap and does
+not scale, so on BAPH0MAU5 the preview crops the seal to its middle -- horns and
+eyes -- which is a window onto the dial rather than a defect.
+
+The sweeps a theme offers are part of the theme: GAZE (two beams from the
+seal's eyes) exists only on BAPH0MAU5. Changing theme to one that does not
+offer the current sweep resets it to RADAR rather than keeping a preference
+that would draw nothing meaningful.
+
+**The candle is deliberately subtle.** It has no beam: the circle is lit from
+the middle by a guttering flame, and the rings and the seal's brightness
+flicker together, a few percent at a time. Contacts are simply there to be seen
+rather than found. If it looks almost still next to the others, that is the
+design, not a stalled animation.
+
 ### ATTUNE
 
 ![attune](docs/attune.png)
@@ -220,10 +250,10 @@ already reserves it.
 | | |
 |---|---|
 | **Tiles** | WiFi total, 5 GHz subset, BLE. The stripe colour on each tile is the same colour that band's contacts use on the dial, so the tiles double as the dial's key. |
-| **Circle** | Three bounds: the inner field where contacts live, the band the runes walk, and the outer bound. Inscribed inside is a {7/3} heptagram -- seven points, each joined to the one three along. It is drawn deliberately faint: the figure should read as *inscribed*, not lit, because the contacts are the only thing on the dial that is data. |
-| **Runes** | Sixteen marks walking the band, slowly and against the sweep. Those near the beam catch the light and those away from it fall back, so the ring reads as consecrated rather than as a flat border. |
+| **Circle** | Three bounds: the inner field where contacts live, the band the runes walk, and the outer bound. (The radii and the figure belong to the active theme; this table describes AETHERSCAN, and BAPH0MAU5 is covered under ASPECT.) Inscribed inside is a {7/3} heptagram -- seven points, each joined to the one three along. It is drawn deliberately faint: the figure should read as *inscribed*, not lit, because the contacts are the only thing on the dial that is data. |
+| **Runes** | On AETHERSCAN, sixteen marks walking the band, slowly and against the sweep. Those near the beam catch the light and those away from it fall back, so the ring reads as consecrated rather than as a flat border. |
 | **Field** | Radius is RSSI -- the `-90` labels the outer ring. **Angle is not a bearing.** There is no magnetometer, and RSSI alone cannot give direction. The intent is a stable hash of the BSSID, so a given AP always sits in the same spot and you can watch the field move as you drive. |
-| **Sweep** | Cosmetic, but it earns its place: a contact's fade is driven by how long since the beam crossed it, which on the device is just `millis()` since last seen. Stale contacts decay so the dial does not silt up. |
+| **Sweep** | Cosmetic, but it earns its place: with the radar, a contact's fade is driven by how long since the beam crossed it, which on the device is just `millis()` since last seen. (The candle draws no beam, so nothing is ever just crossed; contacts there are simply present.) Stale contacts decay so the dial does not silt up. |
 | **Spectrum** | 13 bars for 2.4 GHz, 8 for the 5 GHz subset we hop, split by a gap. The parked channel is drawn bright with a tick above it. |
 | **Footer** | GPS fix and satellite count, card status and log file, uptime. |
 
@@ -236,6 +266,10 @@ screenshot.
 
 ## Layout
 
+The block below is AETHERSCAN's. The dial geometry is per-theme: the radii
+live in the theme table in `ui/palette.cpp`, and BAPH0MAU5 has a larger
+circle and no spectrum strip.
+
 ```
 0        HEADER   sigil - AETHERSCAN - band badge - battery
 13 ..100 TILES    x2  w56     CIRCLE  x61 w97 h70
@@ -244,8 +278,10 @@ screenshot.
 103      FOOTER   fix - card/log - uptime
 ```
 
-Everything is a named constant at the top of `ui/screen_scan.cpp`. Magic
-numbers in a 160px layout are how screens drift a pixel and nobody notices.
+Screen geometry is named constants in `ui/layout.h`; the dial's radii are the
+exception, held in the theme table in `ui/palette.cpp` because they differ per
+theme. Magic numbers in a 160px layout are how screens drift a pixel and
+nobody notices.
 
 ## Device build
 
@@ -523,12 +559,19 @@ ui/      compiles for BOTH the PC and the device
                  real collector lands -- nothing else in ui/ depends on it.
   screens.h      screen entry points
   screen_scan.cpp AETHERSCAN
+  screen_aspect.cpp ASPECT: theme and sweep pickers and the live dial preview
+  palette.h/cpp  the theme table: colours, dial radii, offered sweeps
+  seal.h/cpp     the BAPH0MAU5 centrepiece: face bitmap, drawn figure, mark band
+  sweep.h/cpp    the five searches, and the detection that matches each
+  sigil.h        generated face bitmap; do not edit by hand
 sim/     PC only
   png_writer.h   zlib-free PNG
   main_sim.cpp   writes frames
   Makefile
 device/  board only
   main.cpp       owns the panel, the backlight and the 1:2 blit. That is all.
+tools/
+  gen_sigil.py   generates ui/sigil.h from the source art
 platformio.ini
 ```
 
@@ -539,8 +582,15 @@ platformio.ini
 ./aethersim out.png --scale 2       320x240 -- exactly what the panel shows
 ./aethersim out.png --frame 40      pick a point in the sweep
 ./aethersim out.png --sheet 6       out-000.png .. out-005.png
+./aethersim out.png --theme 1       0 AETHERSCAN, 1 BAPH0MAU5
+./aethersim out.png --sweep 3       0 radar, 1 gaze, 2 pulse, 3 star, 4 candle
+./aethersim out.png --screen aspect the appearance screen
 make sheet                          six frames, for checking motion
 ```
+
+`--theme` and `--sweep` are the only way to see the second theme in the
+simulator. Settings are clamped as the device clamps them, so `--theme 0
+--sweep 1` renders the radar: the gaze is not offered on AETHERSCAN.
 
 Always check `--scale 2` before believing a layout. Everything is legible at
 4x; the panel is not 4x.

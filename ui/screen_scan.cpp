@@ -55,8 +55,9 @@ void polar(int cx, int cy, int r, float deg, int& x, int& y) {
 }
 
 // The {7/3} heptagram: seven points, each joined to the one three along.
-// Shared with the dial, so the alert is inscribed with the same figure the
-// circle is -- the ward is part of the same working, not separate chrome.
+// AETHERSCAN's figure. The alert is inscribed with the active theme's own
+// figure -- the ward is part of the same working, not separate chrome -- so
+// alertFigure() below picks this or the seal's diamond-and-triangles.
 void heptagram(Canvas& c, int cx, int cy, int r, uint16_t col) {
     int sx[7], sy[7];
     for (int k = 0; k < 7; k++)
@@ -278,6 +279,11 @@ uint32_t noise(uint32_t a, uint32_t b) {
 
 } // namespace
 
+void alertFigure(Canvas& c, const State& s, int cx, int cy, int r, uint16_t col) {
+    if (s.set.theme == pal::TH_BAPH0MAU5) sealFigure(c, cx, cy, r, col);
+    else                                  heptagram(c, cx, cy, r, col);
+}
+
 void drawAlert(Canvas& c, const State& s) {
     if (!s.alertActive || s.alertThreat == TH_NONE) return;
 
@@ -293,17 +299,17 @@ void drawAlert(Canvas& c, const State& s) {
     c.fill(X, Y, Wd, Hd, pal::VOID);
     const int mx = X + Wd / 2, my = Y + Hd / 2;
 
-    // 1. The strike: a sigil slams down. The heptagram arrives oversized and
+    // 1. The strike: a sigil slams down. The figure arrives oversized and
     //    contracts onto the card while the colour wash decays out of it.
     if (age < ALERT_FLARE_MS) {
         const int k = ALERT_FLARE_MS - age;
         c.fill(X, Y, Wd, Hd, Canvas::mix(pal::VOID, edge, k, ALERT_FLARE_MS * 2));
-        heptagram(c, mx, my, 30 + k / 5, Canvas::mix(edge, pal::BRIGHT, k, ALERT_FLARE_MS));
+        alertFigure(c, s, mx, my, 30 + k / 5, Canvas::mix(edge, pal::BRIGHT, k, ALERT_FLARE_MS));
         return;
     }
 
     // The figure stays, faint, under everything that follows.
-    heptagram(c, mx, my, 30, Canvas::mix(pal::VOID, edge, 1, 5));
+    alertFigure(c, s, mx, my, 30, Canvas::mix(pal::VOID, edge, 1, 5));
 
     // 2. The ward closes: the border traces itself from top-centre, both
     //    ways at once, and only locks shut at the end.

@@ -191,6 +191,10 @@ void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
     }
 }
 
+void sealFigure(Canvas& c, int cx, int cy, int r, uint16_t col) {
+    figure(c, cx, cy, r, col, col);
+}
+
 void sealEyes(int& lx, int& rx, int& y) {
     lx = EYE_L_X; rx = EYE_R_X; y = EYE_L_Y;
 }
