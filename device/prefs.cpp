@@ -16,12 +16,6 @@ ui::Settings  stored;                   // what is believed to be on flash
 ui::Settings  lastSeen;                 // value at the previous tick
 uint32_t      steadyAt = 0;             // when it last stopped changing
 
-bool same(const ui::Settings& a, const ui::Settings& b) {
-    return a.bright == b.bright && a.dwellMs == b.dwellMs &&
-           a.bleDuty == b.bleDuty && a.bands == b.bands &&
-           a.alertMin == b.alertMin && a.idleIdx == b.idleIdx;
-}
-
 void write(const ui::Settings& s) {
     if (!ready) return;
     nvs.putUChar("ver",     VER);
@@ -82,19 +76,19 @@ void tick(const ui::Settings& s, uint32_t nowMs) {
     // the difference from flash never fires: that difference persists until
     // the write, so the deadline is pushed back every tick and the write the
     // deadline was supposed to trigger never happens.
-    if (!same(s, lastSeen)) {
+    if (!ui::settingsEqual(s, lastSeen)) {
         lastSeen = s;
         steadyAt = nowMs;
         return;
     }
-    if (!same(s, stored) && (nowMs - steadyAt) >= SETTLE_MS) {
+    if (!ui::settingsEqual(s, stored) && (nowMs - steadyAt) >= SETTLE_MS) {
         write(s);
         Serial.println("prefs: saved");
     }
 }
 
 void flush(const ui::Settings& s) {
-    if (!same(s, stored)) write(s);
+    if (!ui::settingsEqual(s, stored)) write(s);
 }
 
 } // namespace prefs

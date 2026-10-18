@@ -2,6 +2,7 @@
 #include "layout.h"
 #include "signatures.h"
 #include "screens.h"
+#include "palette.h"
 
 namespace ui {
 namespace {
@@ -194,6 +195,18 @@ void clampSettings(Settings& s) {
     if (s.bleDuty > 100) s.bleDuty = 100;
     if (s.bands > 2)     s.bands = 0;
     if (s.idleIdx >= IDLE_N) s.idleIdx = 2;
+    if (s.theme >= pal::TH_COUNT) s.theme = pal::TH_AETHERSCAN;
+    if (s.sweep >= SW_COUNT)      s.sweep = SW_RADAR;
+    // A sweep the active theme does not offer is not a preference to be
+    // preserved; it is a sweep that would draw nothing meaningful.
+    if (!(pal::sweepMask(s.theme) & (1 << s.sweep))) s.sweep = SW_RADAR;
+}
+
+bool settingsEqual(const Settings& a, const Settings& b) {
+    return a.alertMin == b.alertMin && a.bright  == b.bright  &&
+           a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
+           a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
+           a.theme    == b.theme    && a.sweep   == b.sweep;
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {

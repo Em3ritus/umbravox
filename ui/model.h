@@ -47,6 +47,11 @@ struct Sighting {
 // while building: the backlight because the panel is bright in the dark, and
 // the other three because they are the capture trade-offs that were measured
 // rather than guessed.
+// How the dial searches the field. A sweep finds by bearing, a pulse by
+// distance, and a candle not at all -- these are different instruments, not
+// different decorations, so the id travels with the setting.
+enum Sweep : uint8_t { SW_RADAR = 0, SW_GAZE, SW_PULSE, SW_STAR, SW_CANDLE, SW_COUNT };
+
 struct Settings {
     // Minimum confidence an alert must carry to interrupt. This is the knob
     // that makes signature matching usable: most evidence is weak, and an
@@ -58,6 +63,10 @@ struct Settings {
     uint8_t  bleDuty = 30;    // 0..100 % of the radio BLE may take
     uint8_t  bands   = 0;     // 0 both, 1 = 2.4 only, 2 = 5 only
     uint8_t  idleIdx = 2;     // index into IDLE_S; 0 = never dim
+    // Appearance. Not a capture trade-off like the rest of this struct, but
+    // it is stored the same way and clamped by the same function.
+    uint8_t  theme   = 0;     // pal::ThemeId
+    uint8_t  sweep   = 0;     // Sweep
 };
 
 // Seconds of no touch before the backlight drops. 0 means never.

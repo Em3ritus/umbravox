@@ -36,11 +36,18 @@ test_signatures: test_signatures.cpp ../ui/signatures.cpp ../ui/signatures.h
 test_wifi_auth: test_wifi_auth.cpp ../ui/wifi_auth.cpp ../ui/wifi_auth.h
 	$(CXX) $(CXXFLAGS) -o $@ test_wifi_auth.cpp ../ui/wifi_auth.cpp -lm
 
-test_settings: test_settings.cpp ../ui/nav.cpp ../ui/screen_grimoire.cpp $(UI_CORE)
-	$(CXX) $(CXXFLAGS) -o $@ test_settings.cpp ../ui/nav.cpp \
-	    ../ui/screen_grimoire.cpp $(UI_CORE) -lm
+# nav.cpp reaches every screen, and the screens share chrome and name tables,
+# so this links the same sources as the simulator (minus its main) rather than
+# a hand-picked subset that breaks each time a screen grows a dependency.
+SRC_NOMAIN = $(filter-out main_sim.cpp,$(SRC))
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth
+test_settings: test_settings.cpp $(SRC_NOMAIN) \
+    ../ui/canvas.h ../ui/demo.h ../ui/font5x7.h ../ui/layout.h ../ui/model.h \
+    ../ui/nav.h ../ui/palette.h ../ui/runes.h ../ui/screens.h \
+    ../ui/signatures.h ../ui/wifi_auth.h
+	$(CXX) $(CXXFLAGS) -o $@ test_settings.cpp $(SRC_NOMAIN) -lm
+
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \

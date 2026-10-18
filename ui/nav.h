@@ -46,4 +46,12 @@ bool navTouch(Nav& n, Settings& set, bool down, int16_t x, int16_t y);
 // stepping a knob cannot disagree about what is valid.
 void clampSettings(Settings& s);
 
+// True when two Settings hold the same values.
+//
+// This lives beside the struct rather than in device/prefs.cpp, where the
+// comparison used to be: prefs.cpp cannot be built on a host, and a
+// comparator that forgets a field stops the save timer from ever firing --
+// which looks exactly like "the setting does not persist" and nothing else.
+bool settingsEqual(const Settings& a, const Settings& b);
+
 } // namespace ui
