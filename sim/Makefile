@@ -49,7 +49,10 @@ SRC_NOMAIN = $(filter-out main_sim.cpp,$(SRC))
 test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_settings.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings
+test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
+
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \

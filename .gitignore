@@ -13,3 +13,4 @@ sim/test_gnss
 sim/test_signatures
 sim/test_wifi_auth
 sim/test_settings
+sim/test_nav
