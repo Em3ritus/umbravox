@@ -4,6 +4,8 @@
 #include "runes.h"
 #include "layout.h"
 #include "signatures.h"
+#include "seal.h"
+#include "nav.h"
 #include <math.h>
 
 namespace ui {
@@ -170,37 +172,44 @@ void drawDial(Canvas& c, const State& s) {
     c.textRight(COL_R_X + COL_R_W - 4, DIAL_Y + 3, ch, pal::DIM);
     c.text(COL_R_X + 3, DIAL_Y + DIAL_H - 9, "-90", pal::DIM);
 
-    latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);
-
-    // The inscribed figure. A {7/3} heptagram: seven points, each joined to
-    // the one three along. Static, so the rune ring is the only thing moving
-    // and the two do not fight.
-    heptagram(c, DIAL_CX, DIAL_CY, R_STAR, Canvas::mix(pal::PANEL, pal::WITCH, 1, 3));
-
-    // Range rings and crosshair, under everything live.
-    c.dottedCircle(DIAL_CX, DIAL_CY, 14, pal::EDGE, 2);
-    c.dottedCircle(DIAL_CX, DIAL_CY, 7,  pal::EDGE, 2);
-    for (int i = -R_FIELD; i <= R_FIELD; i += 3) {
-        c.pixel(DIAL_CX + i, DIAL_CY, pal::EDGE);
-        c.pixel(DIAL_CX, DIAL_CY + i, pal::EDGE);
-    }
-
-    // The circle proper: field bound, rune band, outer bound.
-    c.circle(DIAL_CX, DIAL_CY, R_FIELD, pal::EDGE_LIT);
-    c.circle(DIAL_CX, DIAL_CY, R_BOUND, pal::EDGE_LIT);
-
-    // Runes walk the band, slowly and against the sweep. Dimming the ones
-    // away from the beam keeps the ring from reading as a flat border.
+    // The sweep is shared by both themes, so its angle lives out here.
     const float beam = (float)((s.frame * 5) % 360);
-    const float spin = -(float)s.frame * 0.7f;
-    for (int k = 0; k < RUNE_N; k++) {
-        const float a = spin + (float)k * (360.0f / (float)RUNE_N);
-        int rx, ry;
-        polar(DIAL_CX, DIAL_CY, R_RUNES, a, rx, ry);
-        const int da = ((int)(beam - a) % 360 + 360) % 360;
-        const int near = da < 180 ? da : 360 - da;
-        const int lum = near < 50 ? 255 - near * 2 : 100;
-        rune5c(c, k, rx, ry, Canvas::mix(pal::VOID, pal::BONE, lum, 255));
+
+    if (s.set.theme == pal::TH_BAPH0MAU5) {
+        drawSeal(c, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND,
+                 s.frame, /*found=*/false, /*foundAngle=*/0, /*heat=*/0);
+    } else {
+        latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);
+
+        // The inscribed figure. A {7/3} heptagram: seven points, each joined to
+        // the one three along. Static, so the rune ring is the only thing moving
+        // and the two do not fight.
+        heptagram(c, DIAL_CX, DIAL_CY, R_STAR, Canvas::mix(pal::PANEL, pal::WITCH, 1, 3));
+
+        // Range rings and crosshair, under everything live.
+        c.dottedCircle(DIAL_CX, DIAL_CY, 14, pal::EDGE, 2);
+        c.dottedCircle(DIAL_CX, DIAL_CY, 7,  pal::EDGE, 2);
+        for (int i = -R_FIELD; i <= R_FIELD; i += 3) {
+            c.pixel(DIAL_CX + i, DIAL_CY, pal::EDGE);
+            c.pixel(DIAL_CX, DIAL_CY + i, pal::EDGE);
+        }
+
+        // The circle proper: field bound, rune band, outer bound.
+        c.circle(DIAL_CX, DIAL_CY, R_FIELD, pal::EDGE_LIT);
+        c.circle(DIAL_CX, DIAL_CY, R_BOUND, pal::EDGE_LIT);
+
+        // Runes walk the band, slowly and against the sweep. Dimming the ones
+        // away from the beam keeps the ring from reading as a flat border.
+        const float spin = -(float)s.frame * 0.7f;
+        for (int k = 0; k < RUNE_N; k++) {
+            const float a = spin + (float)k * (360.0f / (float)RUNE_N);
+            int rx, ry;
+            polar(DIAL_CX, DIAL_CY, R_RUNES, a, rx, ry);
+            const int da = ((int)(beam - a) % 360 + 360) % 360;
+            const int near = da < 180 ? da : 360 - da;
+            const int lum = near < 50 ? 255 - near * 2 : 100;
+            rune5c(c, k, rx, ry, Canvas::mix(pal::VOID, pal::BONE, lum, 255));
+        }
     }
 
     // Sweep: one bright leading edge with a cubic afterglow. Linear over this

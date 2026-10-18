@@ -51,6 +51,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < n; i++) {
         const uint32_t f = sheet > 0 ? (uint32_t)(frame + i * 12) : (uint32_t)frame;
         ui::State s = ui::demoState(f);
+        s.set.theme = themeId;   // the screens branch on the setting, not the palette
         const bool codex  = !strcmp(which, "codex");
         const bool attune = !strcmp(which, "attune");
         const bool detail = !strcmp(which, "detail");
