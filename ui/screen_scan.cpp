@@ -5,6 +5,7 @@
 #include "layout.h"
 #include "signatures.h"
 #include "seal.h"
+#include "sweep.h"
 #include "nav.h"
 #include <math.h>
 
@@ -175,9 +176,23 @@ void drawDial(Canvas& c, const State& s) {
     // The sweep is shared by both themes, so its angle lives out here.
     const float beam = (float)((s.frame * 5) % 360);
 
+    // The eyes answer a finding, so the seal needs to know whether the search
+    // has just turned one up and roughly where.
+    bool found = false;
+    int  foundAngle = 0;
+    for (int i = 0; i < s.nContacts; i++)
+        if (searchTouches(s.set.sweep, s.frame, s.contacts[i].angle, s.contacts[i].dist)) {
+            found = true; foundAngle = s.contacts[i].angle; break;
+        }
+
     if (s.set.theme == pal::TH_BAPH0MAU5) {
+        // heat is alertConf * 85, and alertConf is one of CONF_LOW..CONF_OFF
+        // (0..3), so heat only ever takes the values 0, 85, 170 or 255.
+        // seal.cpp's blink gate depends on that discreteness: a continuous
+        // mapping would change blink behaviour in the 1..39 band.
         drawSeal(c, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND,
-                 s.frame, /*found=*/false, /*foundAngle=*/0, /*heat=*/0);
+                 s.frame, found, foundAngle,
+                 s.alertActive ? (uint8_t)(s.alertConf * 85) : 0);
     } else {
         latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);
 
@@ -212,20 +227,10 @@ void drawDial(Canvas& c, const State& s) {
         }
     }
 
-    // Sweep: one bright leading edge with a cubic afterglow. Linear over this
-    // few degrees fills in solid and reads as a torch, not a conjuring.
-    const int TAIL = 40;
-    for (int d = TAIL; d >= 1; d--) {
-        const int fade = TAIL - d;
-        const int lum = 255 * fade * fade * fade / (TAIL * TAIL * TAIL);
-        if (lum < 8) continue;
-        int x, y;
-        polar(DIAL_CX, DIAL_CY, R_FIELD - 1, beam - (float)d, x, y);
-        c.line(DIAL_CX, DIAL_CY, x, y, Canvas::mix(pal::VOID, pal::WITCH, lum, 255));
-    }
-    int bx, by;
-    polar(DIAL_CX, DIAL_CY, R_FIELD - 1, beam, bx, by);
-    c.line(DIAL_CX, DIAL_CY, bx, by, pal::WITCH_HI);
+    int eyeLx, eyeRx, eyeY;
+    sealEyes(eyeLx, eyeRx, eyeY);
+    drawSearch(c, s.set.sweep, DIAL_CX, DIAL_CY, R_FIELD,
+               eyeLx, eyeRx, eyeY, s.frame);
 
     // Contacts. Radius is RSSI. A blip the beam just crossed is drawn hot and
     // crossed; the rest decay so the field does not silt up.
@@ -234,8 +239,7 @@ void drawDial(Canvas& c, const State& s) {
         int x, y;
         polar(DIAL_CX, DIAL_CY, k.dist * (R_FIELD - 3) / 100, (float)k.angle, x, y);
 
-        const int behind = ((int)beam - (int)k.angle + 360) % 360;
-        const bool hot = behind <= 26;
+        const bool hot = searchTouches(s.set.sweep, s.frame, k.angle, k.dist);
         int lum = 255 - (int)k.age;
         if (lum < 115) lum = 115;
         if (hot) lum = 255;

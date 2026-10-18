@@ -32,6 +32,7 @@ int main(int argc, char** argv) {
     const char* out = (argc > 1 && argv[1][0] != '-') ? argv[1] : "aetherscan.png";
     int frame = 0, scale = 4, sheet = 0;
     uint8_t themeId = pal::TH_AETHERSCAN;
+    uint8_t sweepId = ui::SW_RADAR;
     const char* which = "scan";
 
     for (int i = 1; i < argc; i++) {
@@ -40,6 +41,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--sheet") && i + 1 < argc) sheet = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) which = argv[++i];
         else if (!strcmp(argv[i], "--theme") && i + 1 < argc) themeId = (uint8_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--sweep") && i + 1 < argc) sweepId = (uint8_t)atoi(argv[++i]);
     }
 
     // Nothing may draw before the palette points somewhere.
@@ -51,6 +53,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < n; i++) {
         const uint32_t f = sheet > 0 ? (uint32_t)(frame + i * 12) : (uint32_t)frame;
         ui::State s = ui::demoState(f);
+        s.set.sweep = sweepId;
         s.set.theme = themeId;   // the screens branch on the setting, not the palette
         const bool codex  = !strcmp(which, "codex");
         const bool attune = !strcmp(which, "attune");
