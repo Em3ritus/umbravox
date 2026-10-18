@@ -32,6 +32,20 @@ struct Dirty {
 // full-frame blit, which is what the first frame after a mode change wants.
 void drawScan(Canvas& c, const State& s, Dirty* d = nullptr);
 
+// The dial, drawn anywhere at any size.
+//
+// ASPECT previews the dial while you choose a theme and a sweep for it, and
+// the preview has to BE the dial rather than a picture of one -- the same
+// reason ui/layout.h exists. drawScan() calls this with the active theme's
+// geometry; ASPECT calls it with the preview's.
+//
+// What it does NOT do, so a second caller must: it draws no panel behind the
+// dial, it does not clip to one, and it marks no dirty region -- drawScan's
+// dirty rect is still derived from the DIAL_*/R_BOUND globals, not from these
+// arguments.
+void drawDialAt(Canvas& c, const State& s, int cx, int cy,
+                int rField, int rRunes, int rStar, int rBound);
+
 // CODEX -- the register of what has been found: one row per network, with
 // band, name, signal and channel. Scrolls.
 void drawCodex(Canvas& c, const State& s, Dirty* d = nullptr);

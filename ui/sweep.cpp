@@ -72,13 +72,15 @@ int searchMarkLum(uint8_t mode, uint32_t frame, float markAngle, int floorLum) {
     return near < 50 ? 255 - near * 2 : floorLum;
 }
 
+int pulseRing(uint32_t frame, int rField) { return pulseHead(frame, rField); }
+
 int contactRadius(int dist, int rField) { return dist * (rField - 3) / 100; }
 
-bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist) {
+bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist, int rField) {
     switch (mode) {
         case SW_PULSE: {
-            const int dp = contactRadius(dist, R_FIELD);
-            const int d  = dp - pulseHead(frame, R_FIELD);
+            const int dp = contactRadius(dist, rField);
+            const int d  = dp - pulseHead(frame, rField);
             return d <= 0 && d > -5;
         }
         case SW_STAR: {

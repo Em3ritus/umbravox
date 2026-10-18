@@ -164,94 +164,6 @@ void drawTile(Canvas& c, int y, const char* label, uint32_t value, uint16_t acce
     c.text(COL_L_X + 6, y + 12, buf, pal::BRIGHT, 2);
 }
 
-void drawDial(Canvas& c, const State& s) {
-    panel(c, COL_R_X, DIAL_Y, COL_R_W, DIAL_H,
-          Canvas::mix(pal::VOID, pal::PANEL, 1, 2), true);
-
-    char ch[8] = {'C', 'H', 0};
-    u2s(ch + 2, s.chan, 2);
-    c.textRight(COL_R_X + COL_R_W - 4, DIAL_Y + 3, ch, pal::DIM);
-    c.text(COL_R_X + 3, DIAL_Y + DIAL_H - 9, "-90", pal::DIM);
-
-    // The eyes answer a finding, so the seal needs to know whether the search
-    // has just turned one up and roughly where.
-    bool found = false;
-    int  foundAngle = 0;
-    for (int i = 0; i < s.nContacts; i++)
-        if (searchTouches(s.set.sweep, s.frame, s.contacts[i].angle, s.contacts[i].dist)) {
-            found = true; foundAngle = s.contacts[i].angle; break;
-        }
-
-    if (s.set.theme == pal::TH_BAPH0MAU5) {
-        // heat is alertConf * 85, and alertConf is one of CONF_LOW..CONF_OFF
-        // (0..3), so heat only ever takes the values 0, 85, 170 or 255.
-        // seal.cpp's blink gate depends on that discreteness: a continuous
-        // mapping would change blink behaviour in the 1..39 band.
-        drawSeal(c, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND,
-                 s.frame, found, foundAngle,
-                 s.alertActive ? (uint8_t)(s.alertConf * 85) : 0,
-                 searchLift(s.set.sweep, s.frame), s.set.sweep);
-    } else {
-        latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);
-
-        // The inscribed figure. A {7/3} heptagram: seven points, each joined to
-        // the one three along. Static, so the rune ring is the only thing moving
-        // and the two do not fight.
-        heptagram(c, DIAL_CX, DIAL_CY, R_STAR, Canvas::mix(pal::PANEL, pal::WITCH, 1, 3));
-
-        // Range rings and crosshair, under everything live.
-        c.dottedCircle(DIAL_CX, DIAL_CY, 14, pal::EDGE, 2);
-        c.dottedCircle(DIAL_CX, DIAL_CY, 7,  pal::EDGE, 2);
-        for (int i = -R_FIELD; i <= R_FIELD; i += 3) {
-            c.pixel(DIAL_CX + i, DIAL_CY, pal::EDGE);
-            c.pixel(DIAL_CX, DIAL_CY + i, pal::EDGE);
-        }
-
-        // The circle proper: field bound, rune band, outer bound.
-        c.circle(DIAL_CX, DIAL_CY, R_FIELD, pal::EDGE_LIT);
-        c.circle(DIAL_CX, DIAL_CY, R_BOUND, pal::EDGE_LIT);
-
-        // Runes walk the band, slowly and against the sweep. Dimming the ones
-        // away from the beam keeps the ring from reading as a flat border.
-        const float spin = -(float)s.frame * 0.7f;
-        for (int k = 0; k < RUNE_N; k++) {
-            const float a = spin + (float)k * (360.0f / (float)RUNE_N);
-            int rx, ry;
-            polar(DIAL_CX, DIAL_CY, R_RUNES, a, rx, ry);
-            const int lum = searchMarkLum(s.set.sweep, s.frame, a, 100);
-            rune5c(c, k, rx, ry, Canvas::mix(pal::VOID, pal::BONE, lum, 255));
-        }
-    }
-
-    int eyeLx, eyeRx, eyeY;
-    sealEyes(eyeLx, eyeRx, eyeY);
-    drawSearch(c, s.set.sweep, DIAL_CX, DIAL_CY, R_FIELD,
-               eyeLx, eyeRx, eyeY, s.frame);
-
-    // Contacts. Radius is RSSI. A blip the beam just crossed is drawn hot and
-    // crossed; the rest decay so the field does not silt up.
-    for (int i = 0; i < s.nContacts; i++) {
-        const Contact& k = s.contacts[i];
-        int x, y;
-        polar(DIAL_CX, DIAL_CY, contactRadius(k.dist, R_FIELD), (float)k.angle, x, y);
-
-        const bool hot = searchTouches(s.set.sweep, s.frame, k.angle, k.dist);
-        int lum = 255 - (int)k.age;
-        if (lum < 115) lum = 115;
-        if (hot) lum = 255;
-
-        const uint16_t col = Canvas::mix(pal::VOID, bandColor(k.band), lum, 255);
-        c.pixel(x, y, col);
-        if (hot) {
-            c.pixel(x - 1, y, col); c.pixel(x + 1, y, col);
-            c.pixel(x, y - 1, col); c.pixel(x, y + 1, col);
-            c.pixel(x, y, pal::BRIGHT);
-        }
-    }
-
-    c.pixel(DIAL_CX, DIAL_CY, pal::WITCH_HI);   // us
-}
-
 void drawSpectrum(Canvas& c, const State& s) {
     panel(c, COL_R_X, SPEC_Y, COL_R_W, SPEC_H, pal::PANEL);
 
@@ -537,6 +449,87 @@ void markDirty(Dirty& d, const State& s, const State& p, bool first) {
 
 } // namespace
 
+void drawDialAt(Canvas& c, const State& s, int cx, int cy,
+                int rField, int rRunes, int rStar, int rBound) {
+    // The eyes answer a finding, so the seal needs to know whether the search
+    // has just turned one up and roughly where.
+    bool found = false;
+    int  foundAngle = 0;
+    for (int i = 0; i < s.nContacts; i++)
+        if (searchTouches(s.set.sweep, s.frame, s.contacts[i].angle, s.contacts[i].dist, rField)) {
+            found = true; foundAngle = s.contacts[i].angle; break;
+        }
+
+    if (s.set.theme == pal::TH_BAPH0MAU5) {
+        // heat is alertConf * 85, and alertConf is one of CONF_LOW..CONF_OFF
+        // (0..3), so heat only ever takes the values 0, 85, 170 or 255.
+        // seal.cpp's blink gate depends on that discreteness: a continuous
+        // mapping would change blink behaviour in the 1..39 band.
+        drawSeal(c, cx, cy, rField, rRunes, rStar, rBound,
+                 s.frame, found, foundAngle,
+                 s.alertActive ? (uint8_t)(s.alertConf * 85) : 0,
+                 searchLift(s.set.sweep, s.frame), s.set.sweep);
+    } else {
+        latticeDisc(c, cx, cy, rField - 1);
+
+        // The inscribed figure. A {7/3} heptagram: seven points, each joined to
+        // the one three along. Static, so the rune ring is the only thing moving
+        // and the two do not fight.
+        heptagram(c, cx, cy, rStar, Canvas::mix(pal::PANEL, pal::WITCH, 1, 3));
+
+        // Range rings and crosshair, under everything live.
+        c.dottedCircle(cx, cy, 14, pal::EDGE, 2);
+        c.dottedCircle(cx, cy, 7,  pal::EDGE, 2);
+        for (int i = -rField; i <= rField; i += 3) {
+            c.pixel(cx + i, cy, pal::EDGE);
+            c.pixel(cx, cy + i, pal::EDGE);
+        }
+
+        // The circle proper: field bound, rune band, outer bound.
+        c.circle(cx, cy, rField, pal::EDGE_LIT);
+        c.circle(cx, cy, rBound, pal::EDGE_LIT);
+
+        // Runes walk the band, slowly and against the sweep. Dimming the ones
+        // away from the beam keeps the ring from reading as a flat border.
+        const float spin = -(float)s.frame * 0.7f;
+        for (int k = 0; k < RUNE_N; k++) {
+            const float a = spin + (float)k * (360.0f / (float)RUNE_N);
+            int rx, ry;
+            polar(cx, cy, rRunes, a, rx, ry);
+            const int lum = searchMarkLum(s.set.sweep, s.frame, a, 100);
+            rune5c(c, k, rx, ry, Canvas::mix(pal::VOID, pal::BONE, lum, 255));
+        }
+    }
+
+    int eyeLx, eyeRx, eyeY;
+    sealEyes(eyeLx, eyeRx, eyeY);
+    drawSearch(c, s.set.sweep, cx, cy, rField,
+               eyeLx, eyeRx, eyeY, s.frame);
+
+    // Contacts. Radius is RSSI. A blip the beam just crossed is drawn hot and
+    // crossed; the rest decay so the field does not silt up.
+    for (int i = 0; i < s.nContacts; i++) {
+        const Contact& k = s.contacts[i];
+        int x, y;
+        polar(cx, cy, contactRadius(k.dist, rField), (float)k.angle, x, y);
+
+        const bool hot = searchTouches(s.set.sweep, s.frame, k.angle, k.dist, rField);
+        int lum = 255 - (int)k.age;
+        if (lum < 115) lum = 115;
+        if (hot) lum = 255;
+
+        const uint16_t col = Canvas::mix(pal::VOID, bandColor(k.band), lum, 255);
+        c.pixel(x, y, col);
+        if (hot) {
+            c.pixel(x - 1, y, col); c.pixel(x + 1, y, col);
+            c.pixel(x, y - 1, col); c.pixel(x, y + 1, col);
+            c.pixel(x, y, pal::BRIGHT);
+        }
+    }
+
+    c.pixel(cx, cy, pal::WITCH_HI);   // us
+}
+
 void drawScan(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
 
@@ -544,7 +537,15 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);
     drawTile(c, TILE_Y[2], "BLE",   s.ble,              pal::GREEN);
-    drawDial(c, s);
+    panel(c, COL_R_X, DIAL_Y, COL_R_W, DIAL_H,
+          Canvas::mix(pal::VOID, pal::PANEL, 1, 2), true);
+    {
+        char ch[8] = {'C', 'H', 0};
+        u2s(ch + 2, s.chan, 2);
+        c.textRight(COL_R_X + COL_R_W - 4, DIAL_Y + 3, ch, pal::DIM);
+        c.text(COL_R_X + 3, DIAL_Y + DIAL_H - 9, "-90", pal::DIM);
+    }
+    drawDialAt(c, s, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND);
     drawAlert(c, s);
     if (SPEC_H > 0) drawSpectrum(c, s);
     drawFooter(c, s);

@@ -6,6 +6,7 @@
 #include "../ui/nav.h"
 #include "../ui/layout.h"
 #include "../ui/palette.h"
+#include "../ui/sweep.h"
 #include <stdio.h>
 
 static int fails = 0;
@@ -61,6 +62,28 @@ int main() {
             snprintf(buf, sizeof buf, "theme %d: tile %d opens CODEX with its filter", t, i);
             check(buf, n.screen == SCR_CODEX && n.filter == want[i]);
         }
+    }
+
+    // The pulse must find a contact exactly when the drawn ring is at that
+    // contact's radius, at ANY dial radius -- not only the active theme's.
+    // Byte-identical renders cannot catch this: on the scan screen the two
+    // radii are equal. 14 is neither theme's R_FIELD.
+    {
+        const int rf = 14;
+        bool differs = true, agree = true;
+        for (int t = 0; t < 2; t++) {
+            pal::setTheme((uint8_t)t);
+            if (R_FIELD == rf) differs = false;
+        }
+        check("test radius differs from both themes' R_FIELD", differs);
+        for (uint32_t f = 0; f < 200 && agree; f++)
+            for (int dist = 0; dist <= 100; dist++) {
+                const int head = pulseRing(f, rf);
+                const int dp   = contactRadius(dist, rf);
+                const bool want = (head - dp) >= 0 && (head - dp) < 5;
+                if (searchTouches(SW_PULSE, f, 0, dist, rf) != want) { agree = false; break; }
+            }
+        check("pulse detects at the drawn ring radius for rField 14", agree);
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

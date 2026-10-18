@@ -22,9 +22,15 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
 // finds by BEARING, a pulse by DISTANCE, and a wash does not find at all --
 // it only shows what is already known.
 //
-// `dist` is 0..100; the pulse detects against the same ring radius that
-// drawSearch draws, and the contact radius comes from contactRadius().
-bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist);
+// `dist` is 0..100. `rField` is the radius of the dial being drawn: the pulse
+// detects against the ring drawSearch draws at that radius, and the contact
+// radius comes from contactRadius(). Pass the same rField to both, or
+// detection and drawing disagree about where the ring is.
+bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist, int rField);
+
+// Radius in pixels of the pulse's leading ring at this frame, for a dial of
+// radius rField. The one value drawSearch and searchTouches both use.
+int pulseRing(uint32_t frame, int rField);
 
 // How brightly a mark on the ring should burn, for a mark at this bearing.
 //
