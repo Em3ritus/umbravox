@@ -23,6 +23,7 @@ const GrimoireEntry GRIMOIRE[GRIMOIRE_N] = {
     {SCR_MESH,   6,  "MESH"},
     {SCR_OMENS,  12, "OMENS"},
     {SCR_ATTUNE, 15, "ATTUNE"},
+    {SCR_ASPECT, 11, "ASPECT"},
 };
 
 void grimoireCell(int i, int& x, int& y, int& w, int& h) {

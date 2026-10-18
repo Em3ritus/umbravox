@@ -63,12 +63,14 @@ int main(int argc, char** argv) {
         const bool omens  = !strcmp(which, "omens");
         const bool echoes = !strcmp(which, "echoes");
         const bool grim   = !strcmp(which, "grimoire");
-        s.screen = attune ? ui::SCR_ATTUNE : detail ? ui::SCR_DETAIL
+        const bool aspect = !strcmp(which, "aspect");
+        s.screen = aspect ? ui::SCR_ASPECT : attune ? ui::SCR_ATTUNE : detail ? ui::SCR_DETAIL
                  : echoes ? ui::SCR_ECHOES : grim ? ui::SCR_GRIMOIRE
                  : omens ? ui::SCR_OMENS : domain ? ui::SCR_DOMAIN
                  : meshs ? ui::SCR_MESH : codex ? ui::SCR_CODEX : ui::SCR_SCAN;
         s.filter = ui::F_WIFI;
-        if (attune)      ui::drawAttune(c, s);
+        if (aspect)      ui::drawAspect(c, s);
+        else if (attune) ui::drawAttune(c, s);
         else if (meshs)  ui::drawMesh(c, s);
         else if (domain) ui::drawDomain(c, s);
         else if (omens)  ui::drawOmens(c, s);

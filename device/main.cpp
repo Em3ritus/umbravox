@@ -21,6 +21,7 @@
 #include "signatures.h"
 #include "nav.h"
 #include "layout.h"
+#include "palette.h"
 
 // ---- pins (RockBase NM-CYD-C5, confirmed against Documention/2-sch) -------
 // LCD, touch and the SD card all share one SPI bus.
@@ -287,7 +288,14 @@ void loop() {
     static ui::Nav nav;
     static ui::Settings set;
     static bool loaded = false;
-    if (!loaded) { prefs::load(set); loaded = true; }
+    if (!loaded) {
+        prefs::load(set);
+        loaded = true;
+        // Touch hit-testing reads the theme's geometry (dial, spectrum), and
+        // the first navTouch runs before the draw-time apply below. Same
+        // task, before any draw, so this is safe.
+        pal::setTheme(set.theme);
+    }
 
     const touch::Point tp = touch::read();
 
@@ -520,6 +528,22 @@ void loop() {
         return;
     }
     { static bool said = false; (void)said; }
+
+    // The palette and the dial geometry are the theme. Apply it before
+    // anything draws, and repaint everything when it changes -- the dirty
+    // regions of the old theme say nothing about the new one.
+    //
+    // This runs here, in the task that draws, and nowhere else: the palette
+    // globals are plain uint16_t with no atomics, so setTheme must never be
+    // called from a touch handler or another thread mid-draw. navTouch only
+    // edits `set`; the change takes effect here, at the top of the next draw.
+    static uint8_t lastTheme = 0xFF;
+    bool themeChanged = false;
+    if (lastTheme != s.set.theme) {
+        pal::setTheme(s.set.theme);
+        lastTheme = s.set.theme;
+        themeChanged = true;
+    }
     if      (nav.screen == ui::SCR_CODEX)  ui::drawCodex(canvas, s, &dirty);
     else if (nav.screen == ui::SCR_DETAIL) ui::drawDetail(canvas, s, &dirty);
     else if (nav.screen == ui::SCR_ECHOES) ui::drawEchoes(canvas, s, &dirty);
@@ -528,13 +552,22 @@ void loop() {
     else if (nav.screen == ui::SCR_DOMAIN) ui::drawDomain(canvas, s, &dirty);
     else if (nav.screen == ui::SCR_MESH)   ui::drawMesh(canvas, s, &dirty);
     else if (nav.screen == ui::SCR_ATTUNE) ui::drawAttune(canvas, s, &dirty);
+    else if (nav.screen == ui::SCR_ASPECT) ui::drawAspect(canvas, s, &dirty);
     else                                   ui::drawScan(canvas, s, &dirty);
 
     // A screen change invalidates every region the outgoing screen reported.
     // The incoming one has its own first-frame logic, but it has already run
     // for this frame, so force the repaint here.
     static bool justWoke = true;
-    if (switched || justWoke) {
+    // Load-bearing coupling: every screen keeps its own `static State prev` /
+    // `static bool first` for dirty tracking, and those mean nothing across a
+    // theme change. That is safe only because the theme can change solely
+    // while ASPECT is on screen, so the user always leaves via a screen
+    // switch, and `switched` forces this full blit, which clears the other
+    // screens' stale dirty state. A future navigation path that changes the
+    // theme or leaves ASPECT without setting `switched` will show leftover
+    // pixels from the old theme.
+    if (switched || justWoke || themeChanged) {
         dirty.clear();
         dirty.add(0, 0, ui::W, ui::H);
         justWoke = false;
@@ -561,7 +594,8 @@ void loop() {
              : nav.screen == ui::SCR_OMENS  ? "omens"
              : nav.screen == ui::SCR_DOMAIN ? "domn "
              : nav.screen == ui::SCR_MESH   ? "mesh "
-             : nav.screen == ui::SCR_ATTUNE ? "tune " : "scan ",
+             : nav.screen == ui::SCR_ATTUNE ? "tune "
+            : nav.screen == ui::SCR_ASPECT ? "aspct" : "scan ",
              (unsigned)(tDraw - t0), (unsigned)(tBlit - tDraw),
              (unsigned)cap::uniques(), (unsigned)cap::tableCap(),
              (unsigned)s.nets24, (unsigned)s.nets5,

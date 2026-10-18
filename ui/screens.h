@@ -46,6 +46,13 @@ void drawScan(Canvas& c, const State& s, Dirty* d = nullptr);
 void drawDialAt(Canvas& c, const State& s, int cx, int cy,
                 int rField, int rRunes, int rStar, int rBound);
 
+// ASPECT -- what the instrument looks like: the theme, and how the dial
+// searches the field.
+void drawAspect(Canvas& c, const State& s, Dirty* d = nullptr);
+
+// Display name for a Sweep id.
+const char* sweepName(uint8_t id);
+
 // CODEX -- the register of what has been found: one row per network, with
 // band, name, signal and channel. Scrolls.
 void drawCodex(Canvas& c, const State& s, Dirty* d = nullptr);
@@ -58,7 +65,7 @@ void drawEchoes(Canvas& c, const State& s, Dirty* d = nullptr);
 
 // GRIMOIRE -- the tile grid of every screen.
 struct GrimoireEntry { uint8_t screen; uint8_t rune; const char* label; };
-constexpr int GRIMOIRE_N = 7;
+constexpr int GRIMOIRE_N = 8;
 extern const GrimoireEntry GRIMOIRE[GRIMOIRE_N];
 void grimoireCell(int i, int& x, int& y, int& w, int& h);
 void drawGrimoire(Canvas& c, const State& s, Dirty* d = nullptr);

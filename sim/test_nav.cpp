@@ -7,6 +7,7 @@
 #include "../ui/layout.h"
 #include "../ui/palette.h"
 #include "../ui/sweep.h"
+#include "../ui/screens.h"
 #include <stdio.h>
 
 static int fails = 0;
@@ -84,6 +85,72 @@ int main() {
                 if (searchTouches(SW_PULSE, f, 0, dist, rf) != want) { agree = false; break; }
             }
         check("pulse detects at the drawn ring radius for rField 14", agree);
+    }
+
+    // ASPECT: tap the real buttons and watch the settings step. The sweep
+    // control must SKIP an unavailable id, not step onto it and be clamped
+    // back -- a control that bounces reads as broken.
+    {
+        auto tapBtn = [](Settings& st, int bx, int row) {
+            Nav n; n.screen = SCR_ASPECT;
+            const int x = bx + SET_BTN_W / 2;
+            const int y = ASP_ROW_Y + row * ASP_ROW_H + 1 + SET_BTN_H / 2;
+            navTouch(n, st, true,  (int16_t)x, (int16_t)y);
+            navTouch(n, st, false, (int16_t)x, (int16_t)y);
+        };
+        pal::setTheme(pal::TH_AETHERSCAN);
+        Settings st;
+        check("aspect: defaults are AETHERSCAN / RADAR",
+              st.theme == pal::TH_AETHERSCAN && st.sweep == SW_RADAR);
+        check("aspect: AETHERSCAN offers no gaze", !(pal::sweepMask(pal::TH_AETHERSCAN) & (1 << SW_GAZE)));
+
+        // Walk the sweep forward and back on AETHERSCAN; never land on gaze,
+        // and every press must actually change the value.
+        bool skips = true, moves = true;
+        for (int dir = 0; dir < 2; dir++) {
+            st.sweep = SW_RADAR;
+            for (int i = 0; i < 2 * SW_COUNT; i++) {
+                const uint8_t before = st.sweep;
+                tapBtn(st, dir ? SET_MINUS_X : SET_PLUS_X, 1);
+                if (st.sweep == before) moves = false;
+                if (st.sweep == SW_GAZE) skips = false;
+            }
+        }
+        check("aspect: every sweep tap changes the value on AETHERSCAN", moves);
+        check("aspect: sweep never lands on the gaze on AETHERSCAN", skips);
+        st.sweep = SW_RADAR; tapBtn(st, SET_PLUS_X, 1);
+        check("aspect: + from RADAR steps to PULSE, skipping GAZE", st.sweep == SW_PULSE);
+        tapBtn(st, SET_MINUS_X, 1);
+        check("aspect: - from PULSE returns to RADAR, skipping GAZE", st.sweep == SW_RADAR);
+        tapBtn(st, SET_MINUS_X, 1);
+        check("aspect: - from RADAR wraps to CANDLE", st.sweep == SW_CANDLE);
+
+        // Theme row steps and wraps; stepping carries the sweep into range.
+        st = Settings();
+        tapBtn(st, SET_PLUS_X, 0);
+        check("aspect: theme + steps to BAPH0MAU5", st.theme == pal::TH_BAPH0MAU5);
+        tapBtn(st, SET_PLUS_X, 0);
+        check("aspect: theme + wraps to AETHERSCAN", st.theme == pal::TH_AETHERSCAN);
+        tapBtn(st, SET_MINUS_X, 0);
+        check("aspect: theme - wraps to BAPH0MAU5", st.theme == pal::TH_BAPH0MAU5);
+
+        // On BAPH0MAU5 the gaze is reachable.
+        st.sweep = SW_RADAR; pal::setTheme(pal::TH_BAPH0MAU5);
+        tapBtn(st, SET_PLUS_X, 1);
+        check("aspect: + from RADAR reaches GAZE on BAPH0MAU5", st.sweep == SW_GAZE);
+
+        // Leaving BAPH0MAU5 while on the gaze must not strand the sweep.
+        st.theme = pal::TH_BAPH0MAU5; st.sweep = SW_GAZE;
+        tapBtn(st, SET_PLUS_X, 0);
+        check("aspect: theme change off BAPH0MAU5 resets an unavailable gaze",
+              st.theme == pal::TH_AETHERSCAN && st.sweep == SW_RADAR);
+
+        // The tile opens the screen.
+        Nav g; g.screen = SCR_GRIMOIRE; Settings gs;
+        int ax, ay, aw, ah; grimoireCell(GRIMOIRE_N - 1, ax, ay, aw, ah);
+        navTouch(g, gs, true,  (int16_t)(ax + aw / 2), (int16_t)(ay + ah / 2));
+        navTouch(g, gs, false, (int16_t)(ax + aw / 2), (int16_t)(ay + ah / 2));
+        check("grimoire: eighth tile opens ASPECT", g.screen == SCR_ASPECT);
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

@@ -51,7 +51,7 @@ constexpr int RANGE_N = (int)(sizeof(RANGES) / sizeof(RANGES[0]));
 // GRIMOIRE: the tile grid. Three columns of 50 fit 158 with 4px gutters.
 constexpr int GRIM_COLS = 3;
 constexpr int GRIM_X = 3, GRIM_Y = 15;
-constexpr int GRIM_W = 50, GRIM_H = 27, GRIM_GAP = 4;
+constexpr int GRIM_W = 50, GRIM_H = 26, GRIM_GAP = 4;
 
 // ATTUNE rows
 // Seven rows at 12px start at 14 and end at 98, inside a body that ends at
@@ -59,5 +59,14 @@ constexpr int GRIM_W = 50, GRIM_H = 27, GRIM_GAP = 4;
 constexpr int SET_Y     = 14;
 constexpr int SET_H     = 12;
 constexpr int SET_MINUS_X = 114, SET_PLUS_X = 136, SET_BTN_W = 18, SET_BTN_H = 10;
+
+// ASPECT: a live dial over two pickers. The preview is big enough to judge a
+// sweep by; the rows reuse ATTUNE's button geometry so the controls are the
+// same object in both places.
+constexpr int ASP_CY     = 45;      // preview centre
+constexpr int ASP_R      = 32;      // preview outer bound
+constexpr int ASP_ROW_Y  = 78;      // first picker row
+constexpr int ASP_ROW_H  = 12;
+constexpr int ASP_ROWS   = 2;       // THEME, SWEEP
 
 } // namespace ui

@@ -73,6 +73,24 @@ void adjust(Settings& st, int row, int dir) {
     }
 }
 
+// Step a theme or a sweep. The sweep steps to the next AVAILABLE id rather
+// than clamping: stepping onto the gaze on AETHERSCAN and being bounced back
+// reads as a broken control, not as an unavailable option.
+void adjustAspect(Settings& st, int row, int dir) {
+    if (row == 0) {
+        const int v = (int)st.theme + dir;
+        st.theme = (uint8_t)((v + pal::TH_COUNT) % pal::TH_COUNT);
+        clampSettings(st);          // the new theme may not offer this sweep
+        return;
+    }
+    const uint8_t mask = pal::sweepMask(st.theme);
+    int v = st.sweep;
+    for (int tries = 0; tries < SW_COUNT; tries++) {
+        v = (v + dir + SW_COUNT) % SW_COUNT;
+        if (mask & (1 << v)) { st.sweep = (uint8_t)v; return; }
+    }
+}
+
 // Returns true if the tap changed the screen.
 bool onTap(Nav& n, Settings& st, int x, int y) {
     if (n.screen == SCR_SCAN) {
@@ -180,6 +198,14 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
             }
             if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H)) adjust(st, r, -1);
             if (hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H)) adjust(st, r, +1);
+        }
+    }
+
+    if (n.screen == SCR_ASPECT) {
+        for (int r = 0; r < ASP_ROWS; r++) {
+            const int y0 = ASP_ROW_Y + r * ASP_ROW_H;
+            if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H)) adjustAspect(st, r, -1);
+            if (hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H)) adjustAspect(st, r, +1);
         }
     }
     return false;
