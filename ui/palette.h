@@ -1,9 +1,13 @@
-// Technomancer palette, occult register. RGB565 throughout -- what the panel
-// takes is what the canvas stores, and nothing converts in between.
+// Technomancer palette. RGB565 throughout -- what the panel takes is what the
+// canvas stores, and nothing converts in between.
+//
+// These are variables, not constants, so the theme can change at runtime
+// (pal::setTheme, driven by the table in palette.cpp). Every call site keeps
+// the name it always used: pal::WITCH is still pal::WITCH, it just reads the
+// current theme's value.
 //
 // The organising rule: chrome is WITCH (arcane violet), ceremony is BONE, and
-// the cold instrument cyan survives only as ICE, and only ever as *data*. That
-// one move is most of what separates a summoning circle from a dashboard.
+// the cold instrument cyan survives only as ICE, and only ever as *data*.
 #pragma once
 #include <stdint.h>
 
@@ -14,29 +18,54 @@ constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 // --- structure -----------------------------------------------------------
-constexpr uint16_t VOID     = rgb(0x07, 0x04, 0x0E); // page: near-black aubergine
-constexpr uint16_t PANEL    = rgb(0x13, 0x0B, 0x22); // card fill
-constexpr uint16_t GRID     = rgb(0x18, 0x0F, 0x2C); // lattice inside the circle
-constexpr uint16_t EDGE     = rgb(0x2E, 0x1F, 0x52); // card border, ring work
-constexpr uint16_t EDGE_LIT = rgb(0x56, 0x36, 0x97); // border, emphasised
+extern uint16_t VOID;       // page
+extern uint16_t PANEL;      // card fill
+extern uint16_t GRID;       // lattice inside the circle
+extern uint16_t EDGE;       // card border, ring work
+extern uint16_t EDGE_LIT;   // border, emphasised
 
 // --- type ----------------------------------------------------------------
-constexpr uint16_t DIM      = rgb(0x6B, 0x4F, 0x9E); // labels
-constexpr uint16_t TEXT     = rgb(0xC2, 0xAB, 0xE4); // body
-constexpr uint16_t BRIGHT   = rgb(0xF2, 0xE8, 0xFF); // emphasis
+extern uint16_t DIM;        // labels
+extern uint16_t TEXT;       // body
+extern uint16_t BRIGHT;     // emphasis
 
 // --- chrome: ours ---------------------------------------------------------
-constexpr uint16_t WITCH    = rgb(0x9D, 0x7B, 0xFF); // the sweep, live marks
-constexpr uint16_t WITCH_HI = rgb(0xD6, 0xC2, 0xFF); // witchlight, the hot edge
-constexpr uint16_t BONE     = rgb(0xC9, 0xB8, 0x97); // runes, inscription, ceremony
+extern uint16_t WITCH;      // live marks
+extern uint16_t WITCH_HI;   // the hot edge
+extern uint16_t BONE;       // runes, inscription, ceremony
+
+// --- the search -----------------------------------------------------------
+extern uint16_t SWEEP;      // the beam body
+extern uint16_t SWEEP_HI;   // its leading edge
+
+// --- the centrepiece, when a theme has a bitmap one ------------------------
+extern uint16_t LIVE;       // parts of the seal that are alight
+extern uint16_t LIVE_HI;
+extern uint16_t RAMP[4];    // the bitmap's four anchor levels, dark to light
 
 // --- data: theirs ---------------------------------------------------------
-constexpr uint16_t MAGENTA  = rgb(0xD0, 0x2B, 0xB4); // 2.4 GHz
-constexpr uint16_t ICE      = rgb(0x6F, 0xD3, 0xF5); // 5 GHz
-constexpr uint16_t GREEN    = rgb(0x4A, 0xDE, 0x80); // BLE, and "good"
+// These names are historical and mean the BAND, not the hue: MAGENTA is
+// 2.4 GHz, ICE is 5 GHz, GREEN is BLE. BAPH0MAU5 paints them green, white
+// and violet. Renaming them would mean editing all nine screen files, which
+// is the exact cost this seam exists to avoid.
+extern uint16_t MAGENTA;    // 2.4 GHz
+extern uint16_t ICE;        // 5 GHz
+extern uint16_t GREEN;      // BLE, and "good"
 
 // --- status: never used for data -----------------------------------------
-constexpr uint16_t AMBER    = rgb(0xF5, 0x9E, 0x0B);
-constexpr uint16_t RED      = rgb(0xEF, 0x44, 0x44);
+extern uint16_t AMBER;
+extern uint16_t RED;
+
+enum ThemeId : uint8_t { TH_AETHERSCAN = 0, TH_BAPH0MAU5, TH_COUNT };
+
+// Point the palette at a theme. An out-of-range id falls back to AETHERSCAN
+// rather than reading off the end of the table -- this is reached from NVS,
+// which can hold anything.
+void setTheme(uint8_t id);
+const char* themeName(uint8_t id);
+
+// Which sweeps this theme offers, as a bitmask over the Sweep enum. The gaze
+// needs eyes, and AETHERSCAN has a heptagram rather than a face.
+uint8_t sweepMask(uint8_t id);
 
 } // namespace pal
