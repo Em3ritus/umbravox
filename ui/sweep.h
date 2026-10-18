@@ -22,9 +22,8 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
 // finds by BEARING, a pulse by DISTANCE, and a wash does not find at all --
 // it only shows what is already known.
 //
-// `dist` is 0..100 and is mapped to a radius exactly as the dial places its
-// blips: dist * (R_FIELD - 3) / 100, against the live ui::R_FIELD. The pulse
-// detects against the same ring radius that drawSearch draws.
+// `dist` is 0..100; the pulse detects against the same ring radius that
+// drawSearch draws, and the contact radius comes from contactRadius().
 bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist);
 
 // How brightly a mark on the ring should burn, for a mark at this bearing.
@@ -47,5 +46,12 @@ int searchMarkLum(uint8_t mode, uint32_t frame, float markAngle, int floorLum);
 // The candle is primarily a BAPH0MAU5 mode: AETHERSCAN has no bitmap
 // centrepiece to light, so there it remains just the faint rings.
 int searchLift(uint8_t mode, uint32_t frame);
+
+// Where a contact sits on the dial, in pixels from the centre.
+//
+// Shared because detection and drawing must agree about it. They did not,
+// once: searchTouches carried its own copy of this arithmetic and the two
+// only matched at one dial radius, so blips lit where no ring was.
+int contactRadius(int dist, int rField);
 
 } // namespace ui

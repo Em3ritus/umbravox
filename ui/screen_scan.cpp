@@ -233,7 +233,7 @@ void drawDial(Canvas& c, const State& s) {
     for (int i = 0; i < s.nContacts; i++) {
         const Contact& k = s.contacts[i];
         int x, y;
-        polar(DIAL_CX, DIAL_CY, k.dist * (R_FIELD - 3) / 100, (float)k.angle, x, y);
+        polar(DIAL_CX, DIAL_CY, contactRadius(k.dist, R_FIELD), (float)k.angle, x, y);
 
         const bool hot = searchTouches(s.set.sweep, s.frame, k.angle, k.dist);
         int lum = 255 - (int)k.age;
