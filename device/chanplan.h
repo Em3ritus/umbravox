@@ -29,42 +29,57 @@ struct Plan { uint8_t n; uint8_t ch[mesh::MAX_ASSIGN]; bool camp; };
 // the busy 2.4GHz channels once there are enough that breadth is covered.
 inline constexpr uint8_t SOCIAL[] = {6, 11};     // the channels worth a whole radio
 
-// `campers` is how many of SOCIAL are getting a dedicated radio. Only those
-// come out of the sweep pool -- taking out both when only one is camped
-// leaves the other covered by nobody, which is exactly what it did.
-inline void bandLists(uint8_t* l24, int& n24, uint8_t* l5, int& n5, int campers) {
-    n24 = n5 = 0;
-    for (int i = 0; i < ui::CH24; i++) {
-        const uint8_t ch = ui::CHAN24[i];
-        if (ch == mesh::REPORT_CHAN) continue;          // the Core holds this
-        bool camped = false;
-        for (int c = 0; c < campers; c++) if (ch == SOCIAL[c]) camped = true;
-        if (camped) continue;
-        l24[n24++] = ch;
-    }
-    for (int i = 0; i < ui::CH5; i++) l5[n5++] = ui::CHAN5[i];
-}
+// Largest channel set planCluster will take. A coordinator's slice is a subset
+// of the band (13 + 25 channels at most), so this is generous.
+inline constexpr int MAX_POOL = 64;
 
-// Fill `plans` for `live` nodes.
-inline void planChannels(int live, Plan* plans) {
-    for (int i = 0; i < live; i++) { plans[i].n = 0; plans[i].camp = false; }
-    if (live <= 0) return;
+// Fill `plans` for `nNodes` nodes sharing the `nCh` channels in `channels`.
+//
+// The pool is whatever the caller hands over: planChannels passes the whole
+// band, a coordinator passes only its own slice. Nothing outside `channels`
+// is ever assigned. 5GHz is anything above channel 14.
+//
+// Only SOCIAL channels that are actually in the pool can be camped, and a
+// camper is only spent when there are enough radios (see below). Whatever is
+// left is swept, split by band in proportion to how many channels each has.
+inline void planCluster(const uint8_t* channels, int nCh, int nNodes, Plan* plans) {
+    for (int i = 0; i < nNodes; i++) { plans[i].n = 0; plans[i].camp = false; }
+    if (nNodes <= 0 || nCh <= 0) return;
+    if (nCh > MAX_POOL) nCh = MAX_POOL;
 
     // Dedicated campers only once there are three or more radios: with one
     // or two, every channel spent camping is breadth we cannot spare.
-    const int campers = live >= 4 ? 2 : live == 3 ? 1 : 0;
+    const int wantCamp = nNodes >= 4 ? 2 : nNodes == 3 ? 1 : 0;
+
+    // The first `wantCamp` SOCIAL channels that this pool actually holds.
+    uint8_t camped[2];
+    int campers = 0;
+    for (int s = 0; s < 2 && campers < wantCamp; s++) {
+        bool present = false;
+        for (int i = 0; i < nCh; i++) if (channels[i] == SOCIAL[s]) present = true;
+        if (present) camped[campers++] = SOCIAL[s];
+    }
     for (int i = 0; i < campers; i++) {
         plans[i].n = 1;
-        plans[i].ch[0] = SOCIAL[i];
+        plans[i].ch[0] = camped[i];
         plans[i].camp = true;
     }
 
-    uint8_t l24[16], l5[16];
+    // What is left to sweep, grouped by band. Only the camped SOCIAL channels
+    // come out -- taking out both when only one is camped leaves the other
+    // covered by nobody, which is exactly what it once did.
+    uint8_t l24[MAX_POOL], l5[MAX_POOL];
     int n24 = 0, n5 = 0;
-    bandLists(l24, n24, l5, n5, campers);
+    for (int i = 0; i < nCh; i++) {
+        const uint8_t ch = channels[i];
+        bool isCamped = false;
+        for (int c = 0; c < campers; c++) if (ch == camped[c]) isCamped = true;
+        if (isCamped) continue;
+        if (ch <= 14) l24[n24++] = ch; else l5[n5++] = ch;
+    }
 
-    const int sweepers = live - campers;
-    if (sweepers <= 0) return;
+    const int sweepers = nNodes - campers;
+    if (sweepers <= 0 || n24 + n5 == 0) return;
 
     if (sweepers == 1) {
         // One sweeper takes everything, band change per wrap and all --
@@ -76,10 +91,16 @@ inline void planChannels(int live, Plan* plans) {
     }
 
     // Two or more: split by band, in proportion to how many channels each
-    // band has, with at least one radio on each so neither goes unheard.
-    int s24 = (sweepers * n24 + (n24 + n5) / 2) / (n24 + n5);
-    if (s24 < 1) s24 = 1;
-    if (s24 > sweepers - 1) s24 = sweepers - 1;
+    // band has, with at least one radio on each so neither goes unheard --
+    // unless the pool only has one band, in which case it gets them all.
+    int s24;
+    if (n5 == 0)       s24 = sweepers;
+    else if (n24 == 0) s24 = 0;
+    else {
+        s24 = (sweepers * n24 + (n24 + n5) / 2) / (n24 + n5);
+        if (s24 < 1) s24 = 1;
+        if (s24 > sweepers - 1) s24 = sweepers - 1;
+    }
     const int s5 = sweepers - s24;
 
     int slot = campers;
@@ -95,5 +116,14 @@ inline void planChannels(int live, Plan* plans) {
     }
 }
 
+// Fill `plans` for `live` nodes over the whole band, less the channel the
+// Core holds for reporting.
+inline void planChannels(int live, Plan* plans) {
+    uint8_t all[ui::CH24 + ui::CH5];
+    int n = 0;
+    for (int i = 0; i < ui::CH24; i++) if (ui::CHAN24[i] != mesh::REPORT_CHAN) all[n++] = ui::CHAN24[i];
+    for (int i = 0; i < ui::CH5; i++) all[n++] = ui::CHAN5[i];
+    planCluster(all, n, live, plans);
+}
 
 } // namespace chanplan
