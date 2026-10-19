@@ -35,6 +35,9 @@ test_chanplan: test_chanplan.cpp ../device/chanplan.h ../device/mesh.h ../ui/mod
 test_wigle: test_wigle.cpp ../device/wigle.h
 	$(CXX) $(CXXFLAGS) -o $@ test_wigle.cpp -lm
 
+test_logging: test_logging.cpp ../device/logging.cpp ../device/logging.h ../device/sdlog.h
+	$(CXX) $(CXXFLAGS) -o $@ test_logging.cpp ../device/logging.cpp -lm
+
 test_csv: test_csv.cpp ../device/csv.h ../ui/gnss.cpp ../ui/gnss.h
 	$(CXX) $(CXXFLAGS) -o $@ test_csv.cpp ../ui/gnss.cpp -lm
 
@@ -58,7 +61,7 @@ test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
