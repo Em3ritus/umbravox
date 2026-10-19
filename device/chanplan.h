@@ -126,4 +126,35 @@ inline void planChannels(int live, Plan* plans) {
     planCluster(all, n, live, plans);
 }
 
+// --- band partitioning across coordinators --------------------------------
+//
+// With N coordinators the CYD splits the band into disjoint slices, one per
+// coordinator, each with its own report channel. A coordinator plans across
+// its slice (planCluster) and reports on its report channel; the CYD collects
+// on REPORT_CHAN, which is held out of every slice.
+struct Slice { uint8_t nChan; uint8_t chans[mesh::MAX_SLICE]; uint8_t reportChan; };
+
+// Fill `out` with one slice per coordinator and return how many were produced.
+// One coordinator takes the whole band. Two or more split it: slice 0 is 2.4GHz
+// less the collection channel and reports on SOCIAL[0]; slice 1 is all 5GHz and
+// reports on CHAN5[0]. The slices are disjoint and their report channels differ.
+inline int partition(int nCoord, Slice* out) {
+    if (nCoord <= 1) {
+        out[0].nChan = 0;
+        for (int i = 0; i < ui::CH24; i++)
+            if (ui::CHAN24[i] != mesh::REPORT_CHAN) out[0].chans[out[0].nChan++] = ui::CHAN24[i];
+        for (int i = 0; i < ui::CH5; i++) out[0].chans[out[0].nChan++] = ui::CHAN5[i];
+        out[0].reportChan = SOCIAL[0];     // ch6; the CYD collects on REPORT_CHAN
+        return 1;
+    }
+    out[0].nChan = 0;
+    for (int i = 0; i < ui::CH24; i++)
+        if (ui::CHAN24[i] != mesh::REPORT_CHAN) out[0].chans[out[0].nChan++] = ui::CHAN24[i];
+    out[0].reportChan = SOCIAL[0];         // ch6
+    out[1].nChan = 0;
+    for (int i = 0; i < ui::CH5; i++) out[1].chans[out[1].nChan++] = ui::CHAN5[i];
+    out[1].reportChan = ui::CHAN5[0];      // 36
+    return 2;
+}
+
 } // namespace chanplan

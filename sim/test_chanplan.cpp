@@ -92,6 +92,38 @@ int main() {
         check("planCluster stays within its band slice", only24);
     }
 
+    // Partitioning: 1 coordinator gets everything; 2 get disjoint slices with
+    // distinct report channels (Review Focus 1).
+    {
+        chanplan::Slice s1[2];
+        check("1 coordinator -> 1 slice", chanplan::partition(1, s1) == 1);
+        // 12 non-collection 2.4GHz channels plus 8 5GHz channels.
+        check("1 coordinator covers both bands",
+              s1[0].nChan == (ui::CH24 - 1) + ui::CH5);
+        bool s1HasReport = false;
+        for (int i = 0; i < s1[0].nChan; i++) if (s1[0].chans[i] == mesh::REPORT_CHAN) s1HasReport = true;
+        check("1 coordinator leaves the collection channel out", !s1HasReport);
+
+        chanplan::Slice s2[2];
+        check("2 coordinators -> 2 slices", chanplan::partition(2, s2) == 2);
+        check("distinct report channels", s2[0].reportChan != s2[1].reportChan);
+        check("report channels avoid the collection channel",
+              s2[0].reportChan != mesh::REPORT_CHAN && s2[1].reportChan != mesh::REPORT_CHAN);
+        check("slice 0 fits MAX_SLICE", s2[0].nChan <= mesh::MAX_SLICE);
+        check("slice 1 fits MAX_SLICE", s2[1].nChan <= mesh::MAX_SLICE);
+        // disjoint slices
+        bool overlap = false;
+        for (int i = 0; i < s2[0].nChan; i++)
+            for (int j = 0; j < s2[1].nChan; j++)
+                if (s2[0].chans[i] == s2[1].chans[j]) overlap = true;
+        check("2 coordinators get disjoint channel slices", !overlap);
+        // one is 2.4-only, the other 5GHz-only (band split)
+        bool a24 = true, b5 = true;
+        for (int i = 0; i < s2[0].nChan; i++) if (s2[0].chans[i] > 14) a24 = false;
+        for (int j = 0; j < s2[1].nChan; j++) if (s2[1].chans[j] <= 14) b5 = false;
+        check("2 coordinators split by band", a24 && b5);
+    }
+
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;
 }
