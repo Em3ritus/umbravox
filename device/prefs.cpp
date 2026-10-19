@@ -99,4 +99,14 @@ void flush(const ui::Settings& s) {
     if (!ui::settingsEqual(s, stored)) write(s);
 }
 
+void setLogging(bool on) {
+    if (!ready) return;
+    nvs.putUChar("logging", on ? 1 : 0);   // immediate: a brownout one second
+                                           // after start must still resume
+}
+
+bool loggingWas() {
+    return ready && nvs.getUChar("logging", 0) != 0;
+}
+
 } // namespace prefs
