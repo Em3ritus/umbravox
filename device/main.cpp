@@ -15,6 +15,8 @@
 #include "blescan.h"
 #include "touch.h"
 #include "prefs.h"
+#include "logging.h"
+#include "sdlog.h"
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
@@ -86,6 +88,9 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
     gfx->endWrite();
 }
 
+// Defined with the console helpers below; setup() hands it to logging.
+namespace { static uint32_t writeWigle(Print& out, uint32_t& skipped); }
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -116,6 +121,12 @@ void setup() {
     blescan::begin();
     meshcore::begin();
     touch::begin();
+    // Card first, then the session machine: it resumes into a fresh file when
+    // the last run ended mid-session. Known limitation (accepted): with no GPS
+    // date yet the filename is the dateless WD-NNNN counter, which is not
+    // persisted, so reboots before the first fix may reuse a name.
+    sdlog::begin();
+    logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
     Serial.printf("panel up @ %d MHz SPI, GPS on GPIO %d @ %d\n",
                   (int)(SPI_HZ / 1000000), (int)PIN_GPS_RX, GPS_BAUD);
 }
@@ -246,6 +257,7 @@ void loop() {
     cap::tick(millis());
     meshcore::tick(millis());
     blescan::tick(millis());
+    logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
 
     // With nodes in the mesh the Core stops sweeping and holds the report
     // channel. Measured: a sweeping Core hears only 4% of what a node sends,
@@ -280,7 +292,7 @@ void loop() {
     // and nothing failing. It went missing when the device stopped borrowing
     // demoState(), which had been setting it.
     s.frame = millis() / 16;
-    s.sdOk    = false;              // no card support yet; the footer says so
+    s.sdOk    = sdlog::present();
     cap::fill(s, millis());
     blescan::fill(s, millis());
     meshcore::fill(s, millis());
@@ -374,6 +386,12 @@ void loop() {
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
     applied = set;
     prefs::tick(set, millis());
+
+    if (nav.logToggleRequested) {
+        logging::toggle(millis(), ui::Gnss::utcEpoch(millis()));
+        prefs::setLogging(logging::wantsActive());
+        nav.logToggleRequested = false;
+    }
 
     if (nav.resetRequested) {
         nav.resetRequested = false;
@@ -544,6 +562,12 @@ void loop() {
     // globals are plain uint16_t with no atomics, so setTheme must never be
     // called from a touch handler or another thread mid-draw. navTouch only
     // edits `set`; the change takes effect here, at the top of the next draw.
+    // Publish the logging session for the footer, after any toggle above.
+    s.logState = (uint8_t)logging::state();
+    s.logSecs  = logging::sessionSecs(millis());
+    memset(s.logName, 0, sizeof s.logName);
+    strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
+
     static uint8_t lastTheme = 0xFF;
     bool themeChanged = false;
     if (lastTheme != s.set.theme) {
