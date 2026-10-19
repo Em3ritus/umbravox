@@ -153,6 +153,35 @@ int main() {
         check("grimoire: eighth tile opens ASPECT", g.screen == SCR_ASPECT);
     }
 
+    // The footer's SD status is the log control: a tap there raises the flag
+    // and stays on the scan screen; taps elsewhere do not.
+    {
+        pal::setTheme(pal::TH_AETHERSCAN);
+        Nav n = tapAt(LOG_X + LOG_W / 2, LOG_Y + LOG_H / 2);
+        check("log: tap on the control sets logToggleRequested", n.logToggleRequested);
+        check("log: tap on the control stays on SCAN", n.screen == SCR_SCAN);
+        check("log: control does not set resetRequested", !n.resetRequested);
+
+        Nav a = tapAt(LOG_X, LOG_Y);
+        Nav b = tapAt(LOG_X + LOG_W - 1, LOG_Y + LOG_H - 1);
+        check("log: region corners are inside the control",
+              a.logToggleRequested && b.logToggleRequested);
+
+        check("log: tap on the GPS side of the footer does not toggle",
+              !tapAt(LOG_X - 4, LOG_Y + LOG_H / 2).logToggleRequested);
+        check("log: tap on the clock side of the footer does not toggle",
+              !tapAt(LOG_X + LOG_W + 2, LOG_Y + LOG_H / 2).logToggleRequested);
+        check("log: tap on the tiles does not toggle",
+              !tapAt(COL_L_X + COL_L_W / 2, TILE_Y[0] + TILE_H / 2).logToggleRequested);
+        check("log: tap above the footer does not toggle",
+              !tapAt(LOG_X + LOG_W / 2, LOG_Y - 3).logToggleRequested);
+
+        Nav o; o.screen = SCR_OMENS; Settings os;
+        navTouch(o, os, true,  (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
+        navTouch(o, os, false, (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
+        check("log: the same spot on another screen does not toggle", !o.logToggleRequested);
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

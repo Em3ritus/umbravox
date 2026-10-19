@@ -33,6 +33,10 @@ struct Nav {
 
     // Set when the reset row is tapped; the caller clears it after acting.
     bool    resetRequested = false;
+
+    // Set when the log control on the scan screen is tapped; the caller acts
+    // on it (nav is pure UI and never touches the card) and clears it.
+    bool    logToggleRequested = false;
 };
 
 // Feed one poll of the touch panel. Returns true if the screen changed, which

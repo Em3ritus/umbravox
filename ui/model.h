@@ -175,6 +175,8 @@ struct State {
     // storage
     bool     sdOk = false;
     char     logName[12] = {0};   // 8.3-ish, as it lands on the card
+    uint8_t  logState = 0;        // 0 idle, 1 active, 2 no-card
+    uint32_t logSecs = 0;         // elapsed seconds of the active session
 
     // chrome
     uint32_t uptimeS = 0;

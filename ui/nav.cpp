@@ -119,6 +119,12 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
             n.screen = SCR_MESH;
             return true;
         }
+        // The footer's SD status is the log start/stop control. nav only
+        // reports the tap; whoever owns the card decides what it means.
+        if (hit(x, y, LOG_X, LOG_Y, LOG_W, LOG_H)) {
+            n.logToggleRequested = true;
+            return false;
+        }
         // The mark top-left opens the grimoire. It is the one control whose
         // meaning is constant: forward from here, back from anywhere else.
         if (hit(x, y, 0, 0, BACK_W, HDR_H)) {
