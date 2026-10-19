@@ -19,4 +19,10 @@ bool writeAtomic(const char* name,
                  uint32_t (*body)(Print&, uint32_t&),
                  uint32_t& rows, uint32_t& skipped);
 
+// Bring-up diagnostics (serial console). list() prints each root file as
+// "<size>  <name>"; dump() streams one file's bytes to `out` and returns
+// false if the card is absent or the file does not exist.
+void list(Print& out);
+bool dump(Print& out, const char* name);
+
 } // namespace sdlog

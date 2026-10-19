@@ -218,8 +218,19 @@ void pollConsole() {
                 logf("=== WIGLE END === %lu rows, %lu skipped "
                      "(no position or no UTC)\n",
                      (unsigned long)n, (unsigned long)skipped);
+            } else if (!strncmp(line, "SDLS", 4)) {
+                sdlog::list(Serial);
+            } else if (!strncmp(line, "SDCAT", 5)) {
+                const char* nm = line + 5;
+                while (*nm == ' ') nm++;
+                char path[40];
+                if (*nm != '/') { snprintf(path, sizeof path, "/%s", nm); nm = path; }
+                Serial.printf("=== SDCAT %s ===\n", nm);
+                if (!sdlog::dump(Serial, nm)) Serial.println("sdlog: no such file");
+                Serial.println("=== SDCAT END ===");
             } else {
-                Serial.printf("unknown command '%s' (try TEST or WIGLE)\n", line);
+                Serial.printf("unknown command '%s' "
+                              "(try TEST, WIGLE, SDLS, SDCAT <file>)\n", line);
             }
         } else if (n < 31) {
             line[n++] = c;

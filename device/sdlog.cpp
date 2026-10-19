@@ -76,4 +76,29 @@ bool writeAtomic(const char* name,
     return true;
 }
 
+void list(Print& out) {
+    if (!mounted) { out.println("sdlog: no card"); return; }
+    File root = SD.open("/");
+    if (!root) { out.println("sdlog: cannot open root"); return; }
+    for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+        out.printf("%8lu  %s\n", (unsigned long)f.size(), f.name());
+        f.close();
+    }
+    root.close();
+}
+
+bool dump(Print& out, const char* name) {
+    if (!mounted || !name || !name[0]) return false;
+    File f = SD.open(name, FILE_READ);
+    if (!f) return false;
+    uint8_t buf[256];
+    while (f.available()) {
+        const int k = f.read(buf, sizeof buf);
+        if (k <= 0) break;
+        out.write(buf, (size_t)k);
+    }
+    f.close();
+    return true;
+}
+
 } // namespace sdlog
