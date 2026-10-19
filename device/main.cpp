@@ -124,7 +124,9 @@ void setup() {
     // Card first, then the session machine: it resumes into a fresh file when
     // the last run ended mid-session. Known limitation (accepted): with no GPS
     // date yet the filename is the dateless WD-NNNN counter, which is not
-    // persisted, so reboots before the first fix may reuse a name.
+    // persisted, so a reboot before the first fix can reuse a name -- and a
+    // reused dateless name OVERWRITES (destroys) the earlier dateless session's
+    // file. Fix deferred to hardware: scan the card, count past any WD-*.CSV.
     sdlog::begin();
     logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
     Serial.printf("panel up @ %d MHz SPI, GPS on GPIO %d @ %d\n",
@@ -554,6 +556,12 @@ void loop() {
     }
     { static bool said = false; (void)said; }
 
+    // Publish the logging session for the footer, after any toggle above.
+    s.logState = (uint8_t)logging::state();
+    s.logSecs  = logging::sessionSecs(millis());
+    memset(s.logName, 0, sizeof s.logName);
+    strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
+
     // The palette and the dial geometry are the theme. Apply it before
     // anything draws, and repaint everything when it changes -- the dirty
     // regions of the old theme say nothing about the new one.
@@ -562,12 +570,6 @@ void loop() {
     // globals are plain uint16_t with no atomics, so setTheme must never be
     // called from a touch handler or another thread mid-draw. navTouch only
     // edits `set`; the change takes effect here, at the top of the next draw.
-    // Publish the logging session for the footer, after any toggle above.
-    s.logState = (uint8_t)logging::state();
-    s.logSecs  = logging::sessionSecs(millis());
-    memset(s.logName, 0, sizeof s.logName);
-    strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
-
     static uint8_t lastTheme = 0xFF;
     bool themeChanged = false;
     if (lastTheme != s.set.theme) {

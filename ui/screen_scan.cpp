@@ -228,13 +228,15 @@ void drawFooter(Canvas& c, const State& s) {
     if (s.logState == 1) {
         // Recording: a filled rune, REC and the elapsed mm:ss. That runs to
         // x=125, so the uptime clock gives up its seconds (HH:MM) to fit.
-        statRune(c, 64, ty + 1, pal::RED, true);
+        statRune(c, 64, ty + 1, pal::GREEN, true);
         char r[16] = {'R', 'E', 'C', ' ', 0};
-        const uint32_t m = s.logSecs / 60 > 99 ? 99 : s.logSecs / 60;
-        u2s(r + 4, m, 2);
+        // Saturate the whole field: anything past 99:59 reads 99:59.
+        uint32_t mm = s.logSecs / 60, ss = s.logSecs % 60;
+        if (mm > 99) { mm = 99; ss = 59; }
+        u2s(r + 4, mm, 2);
         r[6] = ':';
-        u2s(r + 7, s.logSecs % 60, 2);
-        c.text(72, ty, r, pal::RED);
+        u2s(r + 7, ss, 2);
+        c.text(72, ty, r, pal::GREEN);
         t[5] = 0;
         c.textRight(W - 3, ty, t, pal::DIM);
         return;
