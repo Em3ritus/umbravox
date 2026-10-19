@@ -15,6 +15,8 @@
 #include "blescan.h"
 #include "touch.h"
 #include "prefs.h"
+#include "logging.h"
+#include "sdlog.h"
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
@@ -22,6 +24,7 @@
 #include "nav.h"
 #include "layout.h"
 #include "palette.h"
+#include "wigle.h"
 
 // ---- pins (RockBase NM-CYD-C5, confirmed against Documention/2-sch) -------
 // LCD, touch and the SD card all share one SPI bus.
@@ -85,6 +88,9 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
     gfx->endWrite();
 }
 
+// Defined with the console helpers below; setup() hands it to logging.
+namespace { static uint32_t writeWigle(Print& out, uint32_t& skipped); }
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -115,6 +121,14 @@ void setup() {
     blescan::begin();
     meshcore::begin();
     touch::begin();
+    // Card first, then the session machine: it resumes into a fresh file when
+    // the last run ended mid-session. Known limitation (accepted): with no GPS
+    // date yet the filename is the dateless WD-NNNN counter, which is not
+    // persisted, so a reboot before the first fix can reuse a name -- and a
+    // reused dateless name OVERWRITES (destroys) the earlier dateless session's
+    // file. Fix deferred to hardware: scan the card, count past any WD-*.CSV.
+    sdlog::begin();
+    logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
     Serial.printf("panel up @ %d MHz SPI, GPS on GPIO %d @ %d\n",
                   (int)(SPI_HZ / 1000000), (int)PIN_GPS_RX, GPS_BAUD);
 }
@@ -159,6 +173,21 @@ constexpr uint32_t TEST_STEP_MS = 5000;
 int      testStep  = -1;          // -1 = not running
 uint32_t testAt    = 0;
 
+// Bridges the pure header sink to a Print, then appends both exporters.
+struct PrintSink : ui_wigle::Sink {
+    Print& p;
+    PrintSink(Print& pp) : p(pp) {}
+    void put(const char* s) override { p.print(s); }
+};
+
+static uint32_t writeWigle(Print& out, uint32_t& skipped) {
+    PrintSink sink(out);
+    ui_wigle::header(sink);
+    const uint32_t w = cap::exportRows(out, skipped);
+    const uint32_t b = blescan::exportRows(out, skipped);
+    return w + b;
+}
+
 void pollConsole() {
     static char line[32];
     static int  n = 0;
@@ -181,23 +210,14 @@ void pollConsole() {
                      (unsigned long)ln, (unsigned long)ns,
                      (unsigned long)meshcore::reportsRx());
             } else if (!strncmp(line, "WIGLE", 5)) {
-                // One file, two sources. Main owns the markers and the
-                // column header so the two exporters cannot disagree about
-                // them.
+                // One file, two sources. Main owns the markers; the header
+                // lives in wigle.h so Serial and the SD file cannot disagree.
                 Serial.println("=== WIGLE BEGIN ===");
-                Serial.println("WigleWifi-1.6,appRelease=aetherscan,"
-                               "model=NM-CYD-C5,release=1,device=esp32c5,"
-                               "display=,board=,brand=AETHERSCAN");
-                Serial.println("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,"
-                               "CurrentLatitude,CurrentLongitude,"
-                               "AltitudeMeters,AccuracyMeters,Type");
                 uint32_t skipped = 0;
-                const uint32_t w = cap::exportRows(Serial, skipped);
-                const uint32_t b = blescan::exportRows(Serial, skipped);
-                logf("=== WIGLE END === %lu rows (%lu wifi, %lu ble), "
-                     "%lu skipped (no position or no UTC)\n",
-                     (unsigned long)(w + b), (unsigned long)w,
-                     (unsigned long)b, (unsigned long)skipped);
+                const uint32_t n = writeWigle(Serial, skipped);
+                logf("=== WIGLE END === %lu rows, %lu skipped "
+                     "(no position or no UTC)\n",
+                     (unsigned long)n, (unsigned long)skipped);
             } else {
                 Serial.printf("unknown command '%s' (try TEST or WIGLE)\n", line);
             }
@@ -239,6 +259,7 @@ void loop() {
     cap::tick(millis());
     meshcore::tick(millis());
     blescan::tick(millis());
+    logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
 
     // With nodes in the mesh the Core stops sweeping and holds the report
     // channel. Measured: a sweeping Core hears only 4% of what a node sends,
@@ -273,7 +294,7 @@ void loop() {
     // and nothing failing. It went missing when the device stopped borrowing
     // demoState(), which had been setting it.
     s.frame = millis() / 16;
-    s.sdOk    = false;              // no card support yet; the footer says so
+    s.sdOk    = sdlog::present();
     cap::fill(s, millis());
     blescan::fill(s, millis());
     meshcore::fill(s, millis());
@@ -367,6 +388,12 @@ void loop() {
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
     applied = set;
     prefs::tick(set, millis());
+
+    if (nav.logToggleRequested) {
+        logging::toggle(millis(), ui::Gnss::utcEpoch(millis()));
+        prefs::setLogging(logging::wantsActive());
+        nav.logToggleRequested = false;
+    }
 
     if (nav.resetRequested) {
         nav.resetRequested = false;
@@ -528,6 +555,12 @@ void loop() {
         return;
     }
     { static bool said = false; (void)said; }
+
+    // Publish the logging session for the footer, after any toggle above.
+    s.logState = (uint8_t)logging::state();
+    s.logSecs  = logging::sessionSecs(millis());
+    memset(s.logName, 0, sizeof s.logName);
+    strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
 
     // The palette and the dial geometry are the theme. Apply it before
     // anything draws, and repaint everything when it changes -- the dirty

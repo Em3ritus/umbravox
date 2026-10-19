@@ -36,6 +36,11 @@ constexpr int BODY_H    = FOOT_Y - BODY_Y - 2;     // 88
 constexpr int ROW_H     = 12;
 constexpr int ROWS      = BODY_H / ROW_H;          // 7
 
+// The log start/stop control: the footer's SD status, rune and name. It stops
+// short of the clock at the right so the two never share a tap.
+constexpr int LOG_X = 62, LOG_W = 64;
+constexpr int LOG_Y = FOOT_Y + 1, LOG_H = 120 - FOOT_Y - 1;
+
 // The back control on CODEX and ATTUNE: the header's left end.
 constexpr int BACK_W    = 24;
 // The way in to ATTUNE: a mark in the header's spare middle.

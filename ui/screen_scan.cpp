@@ -222,12 +222,39 @@ void drawFooter(Canvas& c, const State& s) {
         c.text(11, ty, "NO FIX", fc);
     }
 
+    char t[12];
+    clock2s(t, s.uptimeS);
+
+    if (s.logState == 1) {
+        // Recording: a filled rune, REC and the elapsed mm:ss. That runs to
+        // x=125, so the uptime clock gives up its seconds (HH:MM) to fit.
+        statRune(c, 64, ty + 1, pal::GREEN, true);
+        char r[16] = {'R', 'E', 'C', ' ', 0};
+        // Saturate the whole field: anything past 99:59 reads 99:59.
+        uint32_t mm = s.logSecs / 60, ss = s.logSecs % 60;
+        if (mm > 99) { mm = 99; ss = 59; }
+        u2s(r + 4, mm, 2);
+        r[6] = ':';
+        u2s(r + 7, ss, 2);
+        c.text(72, ty, r, pal::GREEN);
+        t[5] = 0;
+        c.textRight(W - 3, ty, t, pal::DIM);
+        return;
+    }
+    if (s.logState == 2) {
+        // Start was asked for and there is no card: the name, struck.
+        statRune(c, 64, ty + 1, pal::RED, false);
+        c.text(72, ty, "NO CARD", pal::DIM);
+        c.hline(72, ty + 3, 7 * 6 - 1, pal::RED);
+        t[5] = 0;                    // "NO CARD" runs to x=113; HH:MM clears it
+        c.textRight(W - 3, ty, t, pal::DIM);
+        return;
+    }
+
     const uint16_t sc = s.sdOk ? pal::GREEN : pal::RED;
     statRune(c, 64, ty + 1, sc, s.sdOk);
     c.text(72, ty, s.sdOk ? s.logName : "NO CARD", s.sdOk ? pal::TEXT : sc);
 
-    char t[12];
-    clock2s(t, s.uptimeS);
     c.textRight(W - 3, ty, t, pal::DIM);
 }
 
@@ -402,7 +429,8 @@ void dirtyChrome(Dirty& d, const State& s, const State& p) {
         d.add(0, 0, W, HDR_H);
 
     if (s.uptimeS != p.uptimeS || s.sats != p.sats ||
-        s.gpsFix != p.gpsFix || s.sdOk != p.sdOk)
+        s.gpsFix != p.gpsFix || s.sdOk != p.sdOk ||
+        s.logState != p.logState || s.logSecs != p.logSecs)
         d.add(0, FOOT_Y, W, H - FOOT_Y);
 
     // The reticle needs two regions: where it is, and where it was.

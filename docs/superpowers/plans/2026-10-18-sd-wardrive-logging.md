@@ -736,7 +736,8 @@ Not tasks; a checklist to run when the NM-CYD-C5 and a card are in hand. Nothing
 3. **A flush does not corrupt the panel or touch.** Observe a flush mid-session.
 4. **Stop leaves a complete file; pulled power mid-flush leaves a valid file.** Stop and parse; then cut power during a write and confirm `<name>.csv` still parses (temp-then-rename). Review Focus 1.
 5. **Auto-resume.** Reboot mid-session; confirm it comes back `ACTIVE`, recording into a new file. Review Focus 3.
-6. **Record the measurements** in the README block (flush duration = the capture stall), alongside the theme-work figures already noted there.
+6. **Dateless resume must not overwrite.** On a dateless resume (reboot before GPS supplies a date), the `WD-NNNN.CSV` counter must be incremented PAST any `WD-*.CSV` already on the card (a card scan), so it cannot overwrite an earlier dateless session's file. Spec §7 requires this; it needs a card to implement and verify.
+7. **Record the measurements** in the README block (flush duration = the capture stall), alongside the theme-work figures already noted there.
 
 ---
 
