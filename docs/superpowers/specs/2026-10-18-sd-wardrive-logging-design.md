@@ -5,8 +5,9 @@ Design, 2026-10-18.
 ## Intent
 
 Make the platform produce the file it exists to produce: a WigleWifi-1.6 CSV
-on an SD card, written continuously while driving so a crash or brownout costs
-at most one flush interval.
+on an SD card. The driver opens a drive with a start control and closes it with
+stop; while a session is active the file is rewritten on a timer, so a crash or
+brownout costs at most one flush interval and the drive resumes on reboot.
 
 Everything upstream of the file already works. This is the last link.
 
@@ -38,9 +39,11 @@ timer, without losing the file to a crash.
 ## What is missing
 
 1. Mount the SD card.
-2. Write that same WiGLE stream to a file instead of (or as well as) `Serial`.
-3. Do it on a timer, crash-safely.
-4. Wire `s.sdOk` to the real mount state; name the file.
+2. Write that same WiGLE stream to a file, crash-safely (temp then rename).
+3. A start/stop session that gates the flush timer, with an on-screen control
+   and indicator, auto-resuming after a reboot that interrupted a session.
+4. Wire `s.sdOk` to the real mount state; name the session file; persist the
+   active flag so a reboot can resume.
 
 ## Architecture
 
@@ -79,17 +82,20 @@ namespace sdlog {
 // card is present or the mount fails. Never blocks the loop retrying.
 bool begin();
 
-// The whole flush: pick/keep the filename, open "<name>.tmp", call
-// writeWigle() into it, close, rename over "<name>". Returns success and
-// stashes last rows/skipped. A failure leaves the previous good file intact.
-bool flush(uint32_t nowEpoch);
+bool present();         // a card is mounted
 
-bool     ok();          // card mounted and last flush (if any) succeeded
-uint32_t lastRows();
-uint32_t lastSkipped();
+// Write a complete document to `name`, crash-safely: open "name.tmp", run
+// `body` into it, close, rename over "name". The previous good "name" survives
+// any failure. `logging` owns the name; `sdlog` owns the card mechanics.
+bool writeAtomic(const char* name, uint32_t (*body)(Print&, uint32_t&),
+                 uint32_t& rows, uint32_t& skipped);
 
 } // namespace sdlog
 ```
+
+`body` is `writeWigle` from §1 — `sdlog` knows nothing of WiGLE, only how to
+put a document on the card without a half-written file surviving. The session
+name and the rows/skipped bookkeeping belong to `logging`.
 
 ### 3. Crash-safe write: temp then rename
 
@@ -106,40 +112,105 @@ recorded position when a louder sighting arrives, so the correct row for a BSSID
 changes after it was first written, and an append-only file would carry stale
 positions. Full rewrite is the price of WiGLE wanting one correct row per AP.
 
-### 4. Trigger: a timer in `loop()`
+### 4. `logging` — the session state machine
 
-Every `FLUSH_MS` (start at 30000, a compile-time constant), the loop calls
-`sdlog::flush(utcEpoch)`. The flush runs synchronously in `loop()`; because the
-C5 is single-core and capture advances only when `loop()` calls `cap::tick`,
-capture naturally pauses for the duration of the flush and resumes after. No
-explicit hop pause is needed — the stall is the flush's own runtime.
+Logging is a session the user opens and closes, not a thing that happens
+whenever a card is present. This state machine is the one piece that is pure
+and host-testable; it owns *when* to write and calls `sdlog` to do the writing.
 
-`FLUSH_MS` is a constant, not a setting, for v1. ATTUNE is at its documented
-seven-row ceiling; a "log interval" knob is a separate small follow-up if
-wanted, and would belong on the appearance/settings work only after that
-screen gains room.
+```c
+namespace logging {
 
-### 5. Filename
+void begin(bool wasActive);  // at boot: resume if we died logging (see below)
+void toggle();               // the control calls this; a GPIO button could too
+void start();
+void stop();                 // forces a final flush, then closes the session
+void tick(uint32_t nowMs, uint32_t nowEpoch);  // runs the flush timer
+
+enum State : uint8_t { IDLE, ACTIVE, NO_CARD };
+State    state();
+uint32_t sessionSecs(uint32_t nowMs);  // for the REC indicator's clock
+
+} // namespace logging
+```
+
+- **Start** opens a new session file and begins the flush timer. If no card is
+  mounted, the state is `NO_CARD` and the intent is remembered, so inserting a
+  card then begins logging.
+- **Stop** forces one final flush — capturing the last interval — then closes
+  the session. A clean stop therefore leaves a file current to the second.
+- While `ACTIVE`, `tick` calls `sdlog::writeAtomic` with the session name and `writeWigle` every `FLUSH_MS` (start at 30000,
+  a compile-time constant). The flush runs synchronously in `loop()`; the C5 is
+  single-core and capture advances only when `loop()` calls `cap::tick`, so
+  capture pauses for the flush's runtime and resumes after. No explicit hop
+  pause is needed.
+
+`FLUSH_MS` is a constant, not a setting, for v1: ATTUNE is at its documented
+seven-row ceiling.
+
+**Input-agnostic by construction.** `toggle()` is the single entry point. The
+on-screen control calls it; a physical GPIO button, if one is added later,
+calls the same function from its debounced handler. No logging logic lives in
+the touch code or would live in a button ISR — they only call `toggle()`.
+
+### 5. The control and the indicator
+
+An on-screen touch control on the SCAN screen, because logging state must be
+visible exactly while you are scanning. It is both the indicator and the
+button:
+
+- `IDLE` — `○ LOG`, tappable to start.
+- `ACTIVE` — `● REC mm:ss`, the session clock running, tappable to stop. The
+  filled dot is the one unambiguous "you are recording" signal.
+- `NO_CARD` — `○ LOG` struck through or dimmed, so a tap that cannot start
+  logging does not look like one that failed silently.
+
+Exact placement is settled in the plan against the 160 px layout (the SCAN
+header's spare middle, or the footer). The hit region goes in `ui/layout.h`
+beside the others so draw and hit-test cannot drift, per that file's reason for
+existing. It renders and is tappable in the simulator.
+
+### 6. Boot and reboot: auto-resume
+
+The active flag is persisted the instant it changes (see §8), so a brownout or
+crash is survivable. At boot, `logging::begin(wasActive)` is told whether the
+device was logging when it last stopped running:
+
+- Was logging → resume into a **new** session file, indicator `ACTIVE`. A crash
+  never silently ends a drive; you keep recording until you press stop.
+- Was idle → start `IDLE`.
+
+Resuming into a new file rather than reopening the old one is deliberate: the
+pre-crash file is already a complete, uploadable document (temp-then-rename),
+and a fresh file after a reboot keeps each continuous span self-contained.
+
+### 7. Filename
 
 `utcEpoch` returns 0 until an RMC sentence has supplied a date (GGA carries
-time but not date; `gnss.h` is explicit that a GGA-only timestamp is "right
-about the hour and wrong about the year"). So:
+time but not date; `gnss.h` is explicit that a GGA-only stamp is "right about
+the hour and wrong about the year"). A session is named once, when it opens:
 
-- Once `utcEpoch` is nonzero at the first flush, name the file from it:
-  `WD-YYYYMMDD-HHMM.CSV` (8.3-friendly uppercase, as it lands on FAT).
-- If no date yet at the first flush, use `WD-0001.CSV`, incrementing past any
-  file that already exists, and keep that name for the session.
+- Date known → `WD-YYYYMMDD-HHMMSS.CSV` (seconds included, because start/stop/
+  start and reboots produce several sessions that must not collide).
+- No date yet → `WD-NNNN.CSV`, incrementing past any file already on the card.
 
-One file per power-up session; later flushes rewrite the same name.
+Later flushes within a session rewrite that same file.
 
-### 6. Status
+### 8. Status and persistence
 
-`s.sdOk = sdlog::ok()` so the footer stops asserting a card that was never
-checked (`main.cpp:276` currently hardcodes it false). Surface the last flush's
-`rows`/`skipped` where it is cheap — the gap between them is exactly "what will
-not upload to WiGLE", which is the one number a driver wants mid-session. The
-console `WIGLE` summary line already states it; a line in the MESH or a status
-screen is enough and no new screen is required.
+`s.sdOk = sdlog::present()` so the footer stops asserting a card that was never
+checked (`main.cpp:276` currently hardcodes it false). The last flush's
+`rows`/`skipped` surface where it is cheap — the gap between them is exactly
+"what will not upload to WiGLE", the one number a driver wants mid-session.
+
+The active flag is persisted in NVS **immediately on every start and stop**,
+not through the debounced `Settings` path. Logging state and preferences have
+different persistence needs: a preference can settle for two seconds before it
+is written, but if the flag that drives auto-resume is not on flash the instant
+you press start, a brownout one second later loses the fact that you were
+logging. So this is its own tiny NVS key (`prefs::setLogging(bool)`, an
+immediate write), kept out of the `Settings` struct and its round-trip. It is
+session state, not a knob.
 
 ## The primary risk: three devices on one SPI bus
 
@@ -176,6 +247,15 @@ a board.
   date-rollover the gnss comment warns about; `mac` formatting. This is where
   a silent format error would cost a whole drive's upload, so it is worth a
   test even though the code is written.
+- The `logging` state machine, with `sdlog` stubbed by a fake that records
+  calls instead of touching a card. A `test_logging` pins: start opens a
+  session and arms the timer; the timer flushes at `FLUSH_MS` and not before;
+  stop forces exactly one final flush and closes; `toggle` alternates;
+  `begin(true)` resumes into a new session while `begin(false)` stays idle;
+  `NO_CARD` is entered and left as a card appears. The state machine is where
+  the start/stop intent lives, so it is tested without hardware.
+- The on-screen control and its three indicator states render and are tappable
+  in the simulator.
 
 **Hardware-pending, cannot be host-tested:**
 - The SD mount, the physical write, the temp/rename, and the bus coexistence.
@@ -189,18 +269,26 @@ a board.
 | Claim | How |
 |---|---|
 | `csv.h` formats WiGLE-valid fields | `test_csv`, host, in the project idiom |
+| start/stop/toggle/resume/timer behave | `test_logging` against a fake `sdlog`, host |
 | `writeWigle` output is unchanged for Serial | `WIGLE` console output byte-compared before/after the header extraction |
+| The control shows the right state | sim render at `IDLE` / `ACTIVE` / `NO_CARD` |
 | Host suite and render regression still green | `make -s test`, `make -s regress` |
 | Firmware builds | `pio run -e nm-cyd-c5` |
 | **Card mounts, file is valid WiGLE** | **hardware: upload to WiGLE, or diff a card capture against a serial capture of the same table** |
 | **A flush does not corrupt panel or touch** | **hardware: observe a flush mid-session** |
-| **A pulled-power mid-flush leaves a valid file** | **hardware: cut power during a write, confirm `<name>.csv` still parses** |
+| **Stop leaves a complete file; pulled power mid-flush leaves a valid file** | **hardware: stop and parse; then cut power during a write and confirm `<name>.csv` still parses** |
+| **Auto-resume after a reboot while logging** | **hardware: reboot mid-session, confirm it resumes into a new file** |
 
-The last three are the real acceptance tests and all need a board. Nothing in
-this feature may be called verified on hardware until they pass.
+The hardware rows are the real acceptance tests and all need a board. Nothing
+in this feature may be called verified on hardware until they pass.
 
 ## Out of scope
 
+- A **physical GPIO start/stop button**. Decided for later, not now: the touch
+  control ships first and the logic is input-agnostic (`logging::toggle()`), so
+  a debounced button handler drops in with no change to the state machine once
+  a free GPIO is confirmed on the board. Eyes-free toggling while driving is
+  the reason to add it.
 - A log-interval setting (ATTUNE is full; a later follow-up).
 - Cellular/Bluetooth-beacon columns beyond what `exportRows` already emits.
 - Reading the card back, browsing logs on the device, or deleting them.
@@ -216,20 +304,18 @@ bus time on a serial sink nobody is reading. The `WIGLE` console command stays
 as-is for on-demand serial dumps when tethered. Two export paths, one shared
 `writeWigle` body.
 
-## End of a drive: the card file is the finished export
+## End of a drive: press stop, pull the card, upload
 
-There is no finalize step, and that is the point of the temp-then-rename write.
-At every instant the card holds `<name>.csv` as a **complete, valid,
-uploadable** document — the last full flush — never a partial one. When the
-drive ends: power off, pull the card, upload the `.csv` to WiGLE. Nothing has
-to be "closed" or "exported" first.
+Stop forces a final flush, so pressing it leaves the session file current to
+the second — a complete, valid WigleWifi-1.6 document ready to upload. Pull the
+card, upload the `.csv`. Nothing else to finalize.
 
-The one edge is the last interval: powering off between flushes loses up to
-`FLUSH_MS` (≤30 s) of the most recent captures from the card, which is the
-accepted cost of the continuous model. For a long drive that is negligible; the
-file is otherwise current to within 30 seconds the whole way.
+And because every flush is temp-then-rename, the file is a complete document at
+*every* instant, not only after stop. So the one remaining edge — power cut
+while `ACTIVE`, between flushes, without pressing stop — costs at most
+`FLUSH_MS` (≤30 s) of the most recent captures from that file, and auto-resume
+(§6) then continues the drive into a new file on reboot. A deliberate stop has
+no such gap.
 
-If a zero-loss clean stop is wanted later, the cheapest form is a `FLUSH`
-console command mirroring `WIGLE` (one forced flush, no UI), or a flush on a
-deliberate shutdown. Both are small follow-ups and neither is required for the
-card file to be a valid export at any power-off.
+Two ways to get the data off, both already covered: pull the card (primary), or
+`WIGLE` over serial while tethered (the existing command, unchanged).
