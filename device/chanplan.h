@@ -133,11 +133,14 @@ inline void planChannels(int live, Plan* plans) {
 // its slice (planCluster) and reports on its report channel; the CYD collects
 // on REPORT_CHAN, which is held out of every slice.
 struct Slice { uint8_t nChan; uint8_t chans[mesh::MAX_SLICE]; uint8_t reportChan; };
+static_assert(ui::CH24 - 1 + ui::CH5 <= mesh::MAX_SLICE,
+              "one-coordinator slice must fit MAX_SLICE");
 
 // Fill `out` with one slice per coordinator and return how many were produced.
 // One coordinator takes the whole band. Two or more split it: slice 0 is 2.4GHz
 // less the collection channel and reports on SOCIAL[0]; slice 1 is all 5GHz and
 // reports on CHAN5[0]. The slices are disjoint and their report channels differ.
+// Produces at most 2 slices (band-split); for nCoord>=3 it still returns 2 — callers must use the return value, not nCoord.
 inline int partition(int nCoord, Slice* out) {
     if (nCoord <= 1) {
         out[0].nChan = 0;

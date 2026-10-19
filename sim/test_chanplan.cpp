@@ -111,6 +111,14 @@ int main() {
               s2[0].reportChan != mesh::REPORT_CHAN && s2[1].reportChan != mesh::REPORT_CHAN);
         check("slice 0 fits MAX_SLICE", s2[0].nChan <= mesh::MAX_SLICE);
         check("slice 1 fits MAX_SLICE", s2[1].nChan <= mesh::MAX_SLICE);
+        // Exact sizes, so an empty slice cannot pass vacuously.
+        check("slice 0 is 2.4GHz less the collection channel", s2[0].nChan == ui::CH24 - 1);
+        check("slice 1 is all 5GHz", s2[1].nChan == ui::CH5);
+        // The collection channel is held out of every slice (not just slice 0).
+        bool reportInSlice = false;
+        for (int i = 0; i < s2[0].nChan; i++) if (s2[0].chans[i] == mesh::REPORT_CHAN) reportInSlice = true;
+        for (int j = 0; j < s2[1].nChan; j++) if (s2[1].chans[j] == mesh::REPORT_CHAN) reportInSlice = true;
+        check("2 coordinators: collection channel in no slice", !reportInSlice);
         // disjoint slices
         bool overlap = false;
         for (int i = 0; i < s2[0].nChan; i++)
