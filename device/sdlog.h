@@ -13,6 +13,8 @@ bool present();   // a card is mounted
 // Write `body` to `name`, atomically: open "name.tmp", run body into it, flush,
 // close, rename over "name". Returns true only if the rename succeeded, so a
 // failure anywhere leaves the previous good "name" untouched.
+// `name` must be an absolute path (a leading '/'), as SD.open requires.
+// `rows` and `skipped` are meaningful only when this returns true.
 bool writeAtomic(const char* name,
                  uint32_t (*body)(Print&, uint32_t&),
                  uint32_t& rows, uint32_t& skipped);
