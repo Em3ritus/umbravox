@@ -17,3 +17,6 @@ sim/test_wifi_auth
 sim/test_settings
 sim/test_nav
 ui/sigil.h.tmp
+
+# Isolated SDD worktrees
+.worktrees/
