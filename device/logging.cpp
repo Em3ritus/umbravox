@@ -15,11 +15,10 @@ bool     want = false;
 uint32_t startedMs = 0;
 uint32_t nextFlushMs = 0;
 uint32_t rows = 0, skipped = 0;
-// Names sessions when no date is known yet. NOT persisted: after a dateless
-// reboot it restarts at 1, so a new dateless session reuses WD-0001.CSV and
-// OVERWRITES (destroys) the earlier dateless session's file. Spec s7 wants the
-// counter advanced PAST any WD-*.CSV already on the card; that card scan is
-// deferred to hardware (plan, Hardware Acceptance).
+// Names sessions when no date is known yet. The in-memory counter restarts at
+// 0 each boot, so begin() seeds it from the card (sdlog::maxIndex scans for
+// existing WD-NNNN.CSV) to advance PAST them -- so a reboot before a GPS fix
+// cannot overwrite an earlier dateless session (spec s7).
 uint32_t counter = 0;
 char     name[32] = "";
 char     prevName[32] = "";  // the last session's file, never reused
@@ -83,6 +82,9 @@ void begin(bool wasActive, Body b, uint32_t nowMs, uint32_t nowEpoch) {
     st = IDLE;
     want = false;
     name[0] = 0;
+    // Advance the dateless counter past any WD-NNNN.CSV already on the card, so
+    // a reboot before a GPS fix cannot overwrite an earlier dateless session.
+    counter = sdlog::maxIndex("/WD-", ".CSV");
     if (wasActive) start(nowMs, nowEpoch);   // a fresh file, never the old one
 }
 

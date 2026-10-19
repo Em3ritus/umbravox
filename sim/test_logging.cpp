@@ -7,7 +7,8 @@
 #include <string.h>
 
 // --- fake sdlog -----------------------------------------------------------
-namespace { bool cardPresent = true; int writes = 0; char lastName[32]; }
+namespace { bool cardPresent = true; int writes = 0; char lastName[32];
+           uint32_t maxOnCard = 0; }
 namespace sdlog {
 bool begin() { return cardPresent; }
 bool present() { return cardPresent; }
@@ -17,6 +18,7 @@ bool writeAtomic(const char* name, uint32_t (*)(class Print&, uint32_t&),
     writes++; strncpy(lastName, name, sizeof lastName - 1);
     rows = 7; skipped = 1; return true;
 }
+uint32_t maxIndex(const char*, const char*) { return maxOnCard; }
 }
 
 static uint32_t fakeBody(class Print&, uint32_t&) { return 0; }
@@ -79,6 +81,15 @@ int main() {
     stop(50);
     begin(true, fakeBody, 60, 1792972800u + 60);
     check("a later session names a different file", strcmp(first, fileName()) != 0);
+
+    printf("dateless counter advances past files already on the card:\n");
+    // No date (epoch 0) -> the WD-NNNN counter path. It must scan the card and
+    // start past the highest existing WD file, so a reboot before a GPS fix
+    // cannot overwrite an earlier dateless session (spec s7).
+    cardPresent = true; maxOnCard = 7;
+    begin(false, fakeBody, 0, 0);
+    start(0, 0);
+    check("names past WD-0007 -> WD-0008", strcmp(fileName(), "/WD-0008.CSV") == 0);
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;

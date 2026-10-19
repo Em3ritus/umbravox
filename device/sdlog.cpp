@@ -101,4 +101,29 @@ bool dump(Print& out, const char* name) {
     return true;
 }
 
+uint32_t maxIndex(const char* prefix, const char* suffix) {
+    if (!mounted || !prefix || !suffix) return 0;
+    // f.name() returns the bare basename (no leading '/'), so compare the
+    // prefix without its leading '/' too.
+    if (prefix[0] == '/') prefix++;
+    const size_t plen = strlen(prefix);
+    File root = SD.open("/");
+    if (!root) return 0;
+    uint32_t hi = 0;
+    for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+        const char* nm = f.name();
+        if (nm[0] == '/') nm++;
+        if (!strncmp(nm, prefix, plen)) {
+            const char* p = nm + plen;
+            uint32_t v = 0;
+            bool any = false;
+            while (*p >= '0' && *p <= '9') { v = v * 10 + (uint32_t)(*p - '0'); p++; any = true; }
+            if (any && !strcmp(p, suffix) && v > hi) hi = v;
+        }
+        f.close();
+    }
+    root.close();
+    return hi;
+}
+
 } // namespace sdlog

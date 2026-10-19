@@ -25,4 +25,9 @@ bool writeAtomic(const char* name,
 void list(Print& out);
 bool dump(Print& out, const char* name);
 
+// Highest N among root files named "<prefix>NNNN<suffix>", or 0 if none.
+// `logging` uses it to advance the dateless session counter past files
+// already on the card, so a reboot before a GPS fix can't overwrite one.
+uint32_t maxIndex(const char* prefix, const char* suffix);
+
 } // namespace sdlog
