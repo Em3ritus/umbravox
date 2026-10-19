@@ -55,6 +55,10 @@ inline void stampUtc(char* out, uint32_t epoch) {
     const unsigned long d = doy - (153 * mp + 2) / 5 + 1;
     const unsigned long m = mp + (mp < 10 ? 3 : -9);
     y += (m <= 2);
+    if (y < 0) y = 0;
+    if (y > 9999) y = 9999;   // bound %04ld so the compiler can prove the
+                              // output fits; unreachable for any uint32 epoch
+                              // (max year ~2106), so behavior is unchanged
     snprintf(out, 24, "%04ld-%02lu-%02lu %02lu:%02lu:%02lu", y, m, d,
              (unsigned long)(rem / 3600), (unsigned long)((rem / 60) % 60),
              (unsigned long)(rem % 60));

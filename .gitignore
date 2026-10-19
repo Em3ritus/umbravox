@@ -16,6 +16,7 @@ sim/test_signatures
 sim/test_wifi_auth
 sim/test_settings
 sim/test_nav
+sim/test_csv
 ui/sigil.h.tmp
 
 # Isolated SDD worktrees

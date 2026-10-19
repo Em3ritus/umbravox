@@ -32,6 +32,9 @@ UI_CORE = ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/palette.cpp
 test_chanplan: test_chanplan.cpp ../device/chanplan.h ../device/mesh.h ../ui/model.h
 	$(CXX) $(CXXFLAGS) -I../ui -o $@ test_chanplan.cpp -lm
 
+test_csv: test_csv.cpp ../device/csv.h ../ui/gnss.cpp ../ui/gnss.h
+	$(CXX) $(CXXFLAGS) -o $@ test_csv.cpp ../ui/gnss.cpp -lm
+
 test_gnss: test_gnss.cpp ../ui/gnss.cpp ../ui/gnss.h
 	$(CXX) $(CXXFLAGS) -o $@ test_gnss.cpp ../ui/gnss.cpp -lm
 
@@ -52,7 +55,7 @@ test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
