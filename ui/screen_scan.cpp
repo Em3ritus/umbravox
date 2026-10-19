@@ -567,7 +567,10 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
 void drawScan(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
 
-    drawHeader(c, s, "AETHERSCAN");
+    // Title tracks the active theme. AETHERSCAN keeps its name (and its render
+    // baselines); the cult theme announces itself in full.
+    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
+                                                      : "AETHERSCAN");
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);
     drawTile(c, TILE_Y[2], "BLE",   s.ble,              pal::GREEN);
