@@ -727,17 +727,17 @@ git commit -m "feat: wire start/stop logging into the device loop and footer"
 
 ---
 
-## Hardware Acceptance (deferred — needs a board)
+## Hardware Acceptance
 
-Not tasks; a checklist to run when the NM-CYD-C5 and a card are in hand. Nothing in this feature is "hardware-verified" until these pass.
+Checklist to run on the NM-CYD-C5 with a card. **Verification run 2026-10-19 on the real board** (via serial reset + SDLS/SDCAT/GPSFIX bench commands) — status marked per item.
 
-1. **Set the SD CS pin.** Find it from the board/schematic, set `SD_CS` in `device/sdlog.cpp`, and confirm `sdlog::begin()` returns true with a card inserted. Settle the shared-bus handoff (`SPI.begin` pins, `SD.begin(cs, SPI)`) so the panel and touch keep working.
-2. **Valid WiGLE file.** Start logging, drive (or feed canned GPS + let it capture), stop, pull the card, and upload the `.csv` to WiGLE — or diff it against a `WIGLE` serial capture of the same table. Review Focus 1.
-3. **A flush does not corrupt the panel or touch.** Observe a flush mid-session.
-4. **Stop leaves a complete file; pulled power mid-flush leaves a valid file.** Stop and parse; then cut power during a write and confirm `<name>.csv` still parses (temp-then-rename). Review Focus 1.
-5. **Auto-resume.** Reboot mid-session; confirm it comes back `ACTIVE`, recording into a new file. Review Focus 3.
-6. **Dateless resume must not overwrite.** On a dateless resume (reboot before GPS supplies a date), the `WD-NNNN.CSV` counter must be incremented PAST any `WD-*.CSV` already on the card (a card scan), so it cannot overwrite an earlier dateless session's file. Spec §7 requires this; it needs a card to implement and verify.
-7. **Record the measurements** in the README block (flush duration = the capture stall), alongside the theme-work figures already noted there.
+1. ✅ **Set the SD CS pin.** `SD_CS = 10` (RockBase schematic, README). Confirmed: card mounts (`sdlog: card mounted on CS 10, 29818 MB`), and the panel (40 MHz) and touch init and run normally alongside it on the shared bus.
+2. ✅ **Valid WiGLE file.** Confirmed via a canned fix (`GPSFIX`) and a real-fix session: geolocated `WIFI`/`BLE` rows with coordinates, auth strings and `FirstSeen` land on the card in valid WigleWifi-1.6 format (`SDCAT`). A real-sky upload still wants one stable outdoor fix during a session (not code-gated).
+3. ✅ **A flush does not corrupt the panel or touch.** The panel rendered continuously (normal 6–8 ms draw / 13–18 ms blit) through SD mounts, writes and flushes; touch kept working.
+4. ⏳ **Stop leaves a complete file; pulled power mid-flush leaves a valid file.** PENDING — cut power/card during a write and confirm `<name>.csv` still parses (temp-then-rename / backup-rename). Review Focus 1.
+5. ✅ **Auto-resume.** Confirmed: with the logging flag set, a reboot comes up `ACTIVE` and writes a fresh session file with no tap (observed `WD-20261019-134319.CSV` created at boot). Review Focus 3.
+6. ✅ **Dateless resume must not overwrite.** IMPLEMENTED (no longer deferred): `logging::begin` seeds the counter from `sdlog::maxIndex("/WD-", ".CSV")` and advances past existing files. Host-tested (`names past WD-0007 -> WD-0008`). Spec §7 satisfied.
+7. ⏳ **Record the measurements.** RAM 34.7% / Flash 51.0% recorded. Flush duration (the capture stall) still to be measured on a real drive.
 
 ---
 
