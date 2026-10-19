@@ -7,17 +7,24 @@ namespace sdlog {
 namespace {
 bool mounted = false;
 
-// CONFIRM AGAINST THE BOARD. The NM-CYD-C5's SD chip-select is not documented
-// publicly; PIN_CS (23) is the LCD's, not this. SCK/MOSI/MISO (6/7/2) are the
-// shared bus. This value is a placeholder to be set from the schematic before
-// the card is expected to mount -- see the Hardware Acceptance section.
-constexpr int SD_CS = -1;
+// SD chip-select, confirmed against RockBase's NM-CYD-C5 schematic (see
+// README: "SD CS 10"). PIN_CS (23) is the LCD's, touch is CS 1; SCK/MOSI/MISO
+// (6/7/2) are the shared bus the SD joins on CS 10.
+constexpr int SD_CS = 10;
 }
 
 bool begin() {
-    // The panel and touch already own the SPI bus; SD shares it. The exact
-    // handoff (SPI.begin pins, SD.begin(cs, SPI)) is settled on hardware.
+    // touch::begin() has already brought up the shared SPI bus (SCK 6 / MISO 2
+    // / MOSI 7) on the global SPI instance, and the panel shares it under the
+    // HAL lock. SD joins the same bus on CS 10; SD.begin reuses the already-
+    // begun SPI and drives CS 10 itself, holding it high between transactions.
     mounted = (SD_CS >= 0) && SD.begin(SD_CS, SPI);
+    if (mounted) {
+        Serial.printf("sdlog: card mounted on CS %d, %llu MB\n",
+                      SD_CS, (unsigned long long)(SD.cardSize() >> 20));
+    } else {
+        Serial.printf("sdlog: no card / mount failed on CS %d\n", SD_CS);
+    }
     return mounted;
 }
 
