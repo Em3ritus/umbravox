@@ -209,10 +209,27 @@ this feature may be called verified on hardware until they pass.
   capture should become an authoritative local log with the mesh as telemetry
   on top. Named here so it is not forgotten; specified separately.
 
-## Open question for review
+## Serial: card-only timer, console command kept
 
-Whether the continuous flush should also keep writing to `Serial` (so a
-USB-tethered session still streams), or go silent on serial once a card is
-present. Leaning: keep the `WIGLE` command for on-demand serial dumps, but have
-the timer write only to the card, so a driver on battery is not spending bus
-time on a serial sink nobody is reading.
+Decided. The timer writes **only to the card**, so a battery session spends no
+bus time on a serial sink nobody is reading. The `WIGLE` console command stays
+as-is for on-demand serial dumps when tethered. Two export paths, one shared
+`writeWigle` body.
+
+## End of a drive: the card file is the finished export
+
+There is no finalize step, and that is the point of the temp-then-rename write.
+At every instant the card holds `<name>.csv` as a **complete, valid,
+uploadable** document — the last full flush — never a partial one. When the
+drive ends: power off, pull the card, upload the `.csv` to WiGLE. Nothing has
+to be "closed" or "exported" first.
+
+The one edge is the last interval: powering off between flushes loses up to
+`FLUSH_MS` (≤30 s) of the most recent captures from the card, which is the
+accepted cost of the continuous model. For a long drive that is negligible; the
+file is otherwise current to within 30 seconds the whole way.
+
+If a zero-loss clean stop is wanted later, the cheapest form is a `FLUSH`
+console command mirroring `WIGLE` (one forced flush, no UI), or a flush on a
+deliberate shutdown. Both are small follow-ups and neither is required for the
+card file to be a valid export at any power-off.
