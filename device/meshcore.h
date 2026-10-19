@@ -6,7 +6,7 @@
 
 namespace meshcore {
 
-constexpr int MAX_NODES = 8;
+constexpr int MAX_NODES = 16;
 
 struct NodeRec {
     uint8_t  mac[6];

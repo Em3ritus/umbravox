@@ -8,6 +8,7 @@
 #include "model.h"
 #include "capture.h"
 #include "chanplan.h"
+#include "phase.h"
 
 namespace meshcore {
 namespace {
@@ -185,6 +186,7 @@ void assignAll(uint32_t nowMs) {
         a.nChan = p.n;
         for (int k = 0; k < p.n; k++) a.chans[k] = p.ch[k];
         a.camp = p.camp;
+        a.phaseMs = (uint16_t)mesh_phase::offset(slot - 1, live, 2500 /* REPORT_MS */);
 
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
         nodes_[i].nChan = p.n;
