@@ -188,6 +188,17 @@ static uint32_t writeWigle(Print& out, uint32_t& skipped) {
     return w + b;
 }
 
+// Feed a synthesized NMEA sentence to the parser (computes the checksum), so a
+// canned fix can be injected over the console to test the geolocated-row path
+// without sky. `body` is everything between '$' and '*'.
+static void injectNmea(const char* body) {
+    uint8_t ck = 0;
+    for (const char* p = body; *p; p++) ck ^= (uint8_t)*p;
+    char s[96];
+    snprintf(s, sizeof s, "$%s*%02X", body, (unsigned)ck);
+    ui::Gnss::sentence(s, millis());
+}
+
 void pollConsole() {
     static char line[32];
     static int  n = 0;
@@ -228,9 +239,15 @@ void pollConsole() {
                 Serial.printf("=== SDCAT %s ===\n", nm);
                 if (!sdlog::dump(Serial, nm)) Serial.println("sdlog: no such file");
                 Serial.println("=== SDCAT END ===");
+            } else if (!strncmp(line, "GPSFIX", 6)) {
+                // Canned fix for bench testing without sky. Run it a few times
+                // over ~10s so re-heard APs get stamped located.
+                injectNmea("GPRMC,120000.00,A,3746.4940,N,12225.1640,W,0.0,0.0,190126,,,A");
+                injectNmea("GPGGA,120000.00,3746.4940,N,12225.1640,W,1,08,0.9,10.0,M,0.0,M,,");
+                Serial.println("gpsfix: injected 37.7749,-122.4194 (2026-01-19)");
             } else {
                 Serial.printf("unknown command '%s' "
-                              "(try TEST, WIGLE, SDLS, SDCAT <file>)\n", line);
+                              "(try TEST, WIGLE, SDLS, SDCAT <file>, GPSFIX)\n", line);
             }
         } else if (n < 31) {
             line[n++] = c;
