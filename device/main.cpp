@@ -22,6 +22,7 @@
 #include "nav.h"
 #include "layout.h"
 #include "palette.h"
+#include "wigle.h"
 
 // ---- pins (RockBase NM-CYD-C5, confirmed against Documention/2-sch) -------
 // LCD, touch and the SD card all share one SPI bus.
@@ -159,6 +160,21 @@ constexpr uint32_t TEST_STEP_MS = 5000;
 int      testStep  = -1;          // -1 = not running
 uint32_t testAt    = 0;
 
+// Bridges the pure header sink to a Print, then appends both exporters.
+struct PrintSink : ui_wigle::Sink {
+    Print& p;
+    PrintSink(Print& pp) : p(pp) {}
+    void put(const char* s) override { p.print(s); }
+};
+
+static uint32_t writeWigle(Print& out, uint32_t& skipped) {
+    PrintSink sink(out);
+    ui_wigle::header(sink);
+    const uint32_t w = cap::exportRows(out, skipped);
+    const uint32_t b = blescan::exportRows(out, skipped);
+    return w + b;
+}
+
 void pollConsole() {
     static char line[32];
     static int  n = 0;
@@ -181,23 +197,14 @@ void pollConsole() {
                      (unsigned long)ln, (unsigned long)ns,
                      (unsigned long)meshcore::reportsRx());
             } else if (!strncmp(line, "WIGLE", 5)) {
-                // One file, two sources. Main owns the markers and the
-                // column header so the two exporters cannot disagree about
-                // them.
+                // One file, two sources. Main owns the markers; the header
+                // lives in wigle.h so Serial and the SD file cannot disagree.
                 Serial.println("=== WIGLE BEGIN ===");
-                Serial.println("WigleWifi-1.6,appRelease=aetherscan,"
-                               "model=NM-CYD-C5,release=1,device=esp32c5,"
-                               "display=,board=,brand=AETHERSCAN");
-                Serial.println("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,"
-                               "CurrentLatitude,CurrentLongitude,"
-                               "AltitudeMeters,AccuracyMeters,Type");
                 uint32_t skipped = 0;
-                const uint32_t w = cap::exportRows(Serial, skipped);
-                const uint32_t b = blescan::exportRows(Serial, skipped);
-                logf("=== WIGLE END === %lu rows (%lu wifi, %lu ble), "
-                     "%lu skipped (no position or no UTC)\n",
-                     (unsigned long)(w + b), (unsigned long)w,
-                     (unsigned long)b, (unsigned long)skipped);
+                const uint32_t n = writeWigle(Serial, skipped);
+                logf("=== WIGLE END === %lu rows, %lu skipped "
+                     "(no position or no UTC)\n",
+                     (unsigned long)n, (unsigned long)skipped);
             } else {
                 Serial.printf("unknown command '%s' (try TEST or WIGLE)\n", line);
             }
