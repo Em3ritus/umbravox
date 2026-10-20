@@ -25,20 +25,6 @@ void u2s(char* out, uint32_t v, int pad = 0) {
     out[i] = 0;
 }
 
-void clock2s(char* out, uint32_t secs) {
-    char a[4], b[4], d[4];
-    u2s(a, secs / 3600, 2);
-    u2s(b, (secs / 60) % 60, 2);
-    u2s(d, secs % 60, 2);
-    int i = 0;
-    for (int k = 0; a[k]; k++) out[i++] = a[k];
-    out[i++] = ':';
-    for (int k = 0; b[k]; k++) out[i++] = b[k];
-    out[i++] = ':';
-    for (int k = 0; d[k]; k++) out[i++] = d[k];
-    out[i] = 0;
-}
-
 uint16_t bandColor(uint8_t band) {
     switch (band) {
         case BAND_24: return pal::MAGENTA;
@@ -159,12 +145,9 @@ void drawHeader(Canvas& c, const State& s, const char* title) {
     c.rect(0, 0, 11, HDR_H - 1, pal::EDGE_LIT);
     c.text(12, 2, title, pal::WITCH_HI);
 
-    // Way in to the knobs. Drawn in a live colour rather than bone, so it
-    // reads as a control instead of decoration.
-    if (s.screen == 0) {
-        rune5c(c, 12, OMENS_X + OMENS_W / 2,   5, pal::WITCH);   // the record
-        rune5c(c, 15, ATTUNE_X + ATTUNE_W / 2, 5, pal::WITCH);   // the knobs
-    }
+    // No cryptic header shortcut-marks any more: OMENS (alerts) and ATTUNE
+    // (settings) are reached from the menu button, which opens a labelled grid.
+    // That frees the masthead for the full wordmark and drops two mystery runes.
 
     // No battery gauge: this board has no battery sensing, and a gauge that
     // cannot be measured is a number made up on the device's behalf.
@@ -242,35 +225,29 @@ void drawFooter(Canvas& c, const State& s) {
         c.text(11, ty, "NO FIX", fc);
     }
 
-    char t[12];
-    clock2s(t, s.uptimeS);
-
-    // The record control, framed as a button so it reads as tappable, with the
-    // universal record dot: hollow = ready to log, filled = recording. The bare
-    // status rune it replaces never said "tap here to start a log".
+    // The record control, framed as a button so it reads as tappable, sitting
+    // on the right. The universal record dot: hollow = ready to log, filled =
+    // recording. The elapsed time shows only while recording -- there is no
+    // idle clock, which was just noise competing with the controls.
     const bool rec    = (s.logState == 1);
     const bool nocard = (s.logState == 2) || (s.logState == 0 && !s.sdOk);
     const int  rx = LOG_X, ry = FOOT_Y + 2, rw = LOG_W, rh = H - FOOT_Y - 3;
     c.rect(rx, ry, rw, rh, (rec || nocard) ? pal::RED : pal::EDGE_LIT);
-    const int dx = rx + 4, dy = ty + 3;
+    const int dx = rx + 5, dy = ty + 3;
     if (rec) c.disc(dx, dy, 2, pal::RED);
     else     c.circle(dx, dy, 2, nocard ? pal::RED : pal::WITCH_HI);
 
     if (nocard) {
-        c.text(rx + 10, ty, "NO CARD", pal::RED);
+        c.text(rx + 12, ty, "NO CARD", pal::RED);
     } else if (rec) {
-        // "REC mm:ss" runs to ~x125, so the uptime clock gives up its seconds.
         char r[12] = {'R', 'E', 'C', ' ', 0};
         uint32_t mm = s.logSecs / 60, ss = s.logSecs % 60;   // saturate past 99:59
         if (mm > 99) { mm = 99; ss = 59; }
         u2s(r + 4, mm, 2); r[6] = ':'; u2s(r + 7, ss, 2);
-        c.text(rx + 10, ty, r, pal::BRIGHT);
+        c.text(rx + 12, ty, r, pal::BRIGHT);
     } else {
-        c.text(rx + 10, ty, "REC", pal::WITCH_HI);
+        c.text(rx + 12, ty, "REC", pal::WITCH_HI);
     }
-
-    if (rec || nocard) t[5] = 0;
-    c.textRight(W - 3, ty, t, pal::DIM);
 }
 
 // The alert card takes over the circle, which is the largest area and the
@@ -699,8 +676,9 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
 
     // Title tracks the active theme. UMBRAVOX keeps its name (and its render
     // baselines); the cult theme announces itself in full.
-    drawHeader(c, s, s.set.labels ? "SCAN"
-                   : s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
+    // The scan screen is home: it wears the brand wordmark even in plain-label
+    // mode, which renames the sub-screens, not the masthead.
+    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
                                                       : "UMBRAVOX");
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);

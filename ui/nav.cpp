@@ -131,16 +131,8 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
             n.screen = SCR_GRIMOIRE;
             return true;
         }
-        // Two marks in the header's spare middle: the record, then the knobs.
-        if (hit(x, y, OMENS_X, 0, OMENS_W, HDR_H)) {
-            n.screen = SCR_OMENS;
-            n.scroll = 0;
-            return true;
-        }
-        if (hit(x, y, ATTUNE_X, 0, ATTUNE_W, HDR_H)) {
-            n.screen = SCR_ATTUNE;
-            return true;
-        }
+        // OMENS (alerts) and ATTUNE (settings) are reached from the menu now,
+        // not cryptic header marks -- the menu button opens a labelled grid.
         return false;
     }
 
