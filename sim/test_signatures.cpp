@@ -85,6 +85,20 @@ int main() {
     h = matchBle(0, 0x058E);
     check("dropped Meta-Tech id -> nothing", h.threat == TH_NONE);
 
+    printf("ble names (Flock on locally-administered MACs):\n");
+    h = matchBle(0, 0, "Penguin-1234567890");
+    check("Penguin-serial -> FLOCK HIGH", h.threat == TH_FLOCK && h.conf == CONF_HIGH);
+    h = matchBle(0, 0, "FS Ext Battery");
+    check("FS Ext Battery -> FLOCK HIGH", h.threat == TH_FLOCK && h.conf == CONF_HIGH);
+    h = matchBle(0, 0, "myFLOCKcam");       // case-insensitive, mid-string
+    check("flock substring -> FLOCK (MED)", h.threat == TH_FLOCK && h.conf == CONF_MED);
+    h = matchBle(0, 0, "Galaxy Buds Pro");
+    check("ordinary name -> nothing",       h.threat == TH_NONE);
+    h = matchBle(0, 0, "");
+    check("empty name -> nothing",          h.threat == TH_NONE);
+    h = matchBle(0xFEED, 0, "Tile");        // UUID HIGH beats any name
+    check("UUID still wins over name",      h.threat == TH_TRACKER && h.conf == CONF_HIGH);
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

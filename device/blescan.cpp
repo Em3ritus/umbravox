@@ -136,7 +136,20 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
             i += len + 1;
         }
 
-        const ui::Hit sig = ui::matchBle(svc, company);
+        // A null-terminated, printable copy of the advertised name for the
+        // matcher. Some surveillance accessories -- Flock's Penguin battery and
+        // camera modules -- are identifiable only by name: they ride locally
+        // administered MACs that match no OUI and carry no vendor UUID.
+        char nm[ui::SSID_MAX];
+        {
+            int k = 0;
+            for (; nameP && k < (int)ui::SSID_MAX - 1 && k < nameLen; k++) {
+                const char ch = (char)nameP[k];
+                nm[k] = (ch >= 32 && ch < 127) ? ch : '.';
+            }
+            nm[k] = 0;
+        }
+        const ui::Hit sig = ui::matchBle(svc, company, nm);
 
         portENTER_CRITICAL(&mux);
         nAdverts++;

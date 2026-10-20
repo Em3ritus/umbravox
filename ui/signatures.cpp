@@ -22,6 +22,7 @@ struct SsidSig { const char* prefix; uint8_t threat, conf; const char* why; };
 struct UuidSig { uint16_t uuid;      uint8_t threat, conf; const char* why; };
 struct CompSig { uint16_t company;   uint8_t threat, conf; const char* why; };
 struct OuiSig  { uint8_t oui[3];     uint8_t threat, conf; const char* why; };
+struct NameSig { const char* sub;    uint8_t threat, conf; const char* why; };
 
 // --- WiFi SSID prefixes (case-insensitive) ------------------------------
 // A device that names itself is making a claim about what it is, which is
@@ -209,6 +210,21 @@ const CompSig COMPANIES[] = {
     {0x0E29, TH_PENTEST, CONF_HIGH, "FLIPPER"},
 };
 
+// --- BLE advertised-name substrings (case-insensitive) ------------------
+// The last hook for a device that hides behind a locally administered MAC and
+// a bare advertisement: the name it broadcasts. Flock's accessories do exactly
+// this -- the Penguin battery/camera modules and the external battery carry no
+// OUI or vendor UUID we can match, only a name. Matched as a substring so the
+// serial suffix (Penguin-1234567890) still fires. "Flock" alone is only MED --
+// it could be a coincidental device name -- while the internal product names
+// are HIGH.
+const NameSig NAMES[] = {
+    {"Penguin",        TH_FLOCK, CONF_HIGH, "FLOCK-PNGN"},
+    {"Pigvision",      TH_FLOCK, CONF_HIGH, "FLOCK-PIG"},
+    {"FS Ext Battery", TH_FLOCK, CONF_HIGH, "FLOCK-BATT"},
+    {"Flock",          TH_FLOCK, CONF_MED,  "FLOCK-NAME"},
+};
+
 bool startsWith(const char* s, const char* prefix) {
     if (!s || !prefix) return false;
     for (int i = 0; prefix[i]; i++) {
@@ -218,6 +234,25 @@ bool startsWith(const char* s, const char* prefix) {
         if (a != b) return false;
     }
     return true;
+}
+
+// Case-insensitive substring test. hay[i + j] is read only while needle[j] is
+// non-null; a shorter hay hits its terminator, which never equals a non-null
+// needle byte, so the walk stops in bounds.
+bool containsCI(const char* hay, const char* needle) {
+    if (!hay || !needle || !needle[0]) return false;
+    for (int i = 0; hay[i]; i++) {
+        int j = 0;
+        while (needle[j]) {
+            char a = hay[i + j], b = needle[j];
+            if (a >= 'a' && a <= 'z') a -= 32;
+            if (b >= 'a' && b <= 'z') b -= 32;
+            if (a != b) break;
+            j++;
+        }
+        if (!needle[j]) return true;
+    }
+    return false;
 }
 
 } // namespace
@@ -279,7 +314,7 @@ Hit matchWifi(const uint8_t mac[6], const char* ssid) {
     return best;
 }
 
-Hit matchBle(uint16_t svcUuid, uint16_t companyId) {
+Hit matchBle(uint16_t svcUuid, uint16_t companyId, const char* name) {
     Hit best;
     if (svcUuid) {
         for (const UuidSig& u : UUIDS) {
@@ -294,6 +329,14 @@ Hit matchBle(uint16_t svcUuid, uint16_t companyId) {
             if (c.company != companyId) continue;
             if (c.conf > best.conf || best.threat == TH_NONE) {
                 best.threat = c.threat; best.conf = c.conf; best.why = c.why;
+            }
+        }
+    }
+    if (name && name[0]) {
+        for (const NameSig& n : NAMES) {
+            if (!containsCI(name, n.sub)) continue;
+            if (n.conf > best.conf || best.threat == TH_NONE) {
+                best.threat = n.threat; best.conf = n.conf; best.why = n.why;
             }
         }
     }
