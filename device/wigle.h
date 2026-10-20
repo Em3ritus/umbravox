@@ -13,8 +13,8 @@ struct Sink { virtual void put(const char* s) = 0; };
 
 // The preamble line and the column header. Pure; no exporters.
 inline void header(Sink& out) {
-    out.put("WigleWifi-1.6,appRelease=aetherscan,model=NM-CYD-C5,release=1,"
-            "device=esp32c5,display=,board=,brand=AETHERSCAN\n");
+    out.put("WigleWifi-1.6,appRelease=umbravox,model=NM-CYD-C5,release=1,"
+            "device=esp32c5,display=,board=,brand=UMBRAVOX\n");
     out.put("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
             "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n");
 }

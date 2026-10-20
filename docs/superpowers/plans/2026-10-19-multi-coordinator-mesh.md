@@ -18,7 +18,7 @@
 - **`mesh::VERSION` must bump** (currently `2` → `3`) because wire structs change; all three tiers build from the same repo so versions match. The existing version check hard-rejects mismatches.
 - **Every ESP-NOW struct stays ≤ 250 bytes** (`static_assert` in `mesh.h`).
 - **Host flags stay `-std=c++17 -O2 -Wall -Wextra`, no new warnings.** Existing device warnings (periph_ctrl.h, -Wvolatile) are not new.
-- **`make -C sim regress`**: the SCAN/idle screens must stay `AETHERSCAN unchanged`. The **MESH screen render WILL change** (it must show ≥12 nodes / per-cluster loss); that one baseline (`mesh.png`) is expected to be re-captured in Task 8 and only that one.
+- **`make -C sim regress`**: the SCAN/idle screens must stay `UMBRAVOX unchanged`. The **MESH screen render WILL change** (it must show ≥12 nodes / per-cluster loss); that one baseline (`mesh.png`) is expected to be re-captured in Task 8 and only that one.
 - **Reuse, do not fork, the node↔Core protocol.** The coordinator uses `meshcore` for its cluster; do not reimplement node handling.
 - Host tests use the existing idiom: file-scope `static int fails`, `check(const char*, bool)`, `printf`, `return fails?1:0`; add each new suite to `TESTS` in `sim/Makefile`.
 
@@ -200,7 +200,7 @@ Run: `cd sim && make -s test` → all suites `all passed`, including `test_mesh`
 
 - [ ] **Step 6: Verify regress + commit**
 
-Run: `make -s regress` → `regress: AETHERSCAN unchanged`.
+Run: `make -s regress` → `regress: UMBRAVOX unchanged`.
 
 ```bash
 git add -A

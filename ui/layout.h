@@ -10,7 +10,7 @@ namespace ui {
 constexpr int HDR_H     = 12;            // header; its last row is the border
 constexpr int FOOT_Y    = 103;           // footer border row
 
-// AETHERSCAN
+// UMBRAVOX
 constexpr int COL_L_X   = 2,  COL_L_W = 56;
 constexpr int COL_R_X   = 61, COL_R_W = 97;
 constexpr int TILE_H    = 28;

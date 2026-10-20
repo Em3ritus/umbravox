@@ -1,4 +1,4 @@
-# AETHERSCAN — design notes
+# UMBRAVOX — design notes
 
 > This is the engineering journal: the measurements, trade-offs and traps
 > behind the build, kept in the order they were learned. For a plain
@@ -13,7 +13,7 @@ A dark-technomancer UI for a dual-band wardriver on the **RockBase NM-CYD-C5**
 Two targets, one copy of the UI:
 
 ```
-cd sim && make && ./aethersim out.png     # PC: renders a frame to PNG
+cd sim && make && ./umbravox out.png     # PC: renders a frame to PNG
 pio run -e nm-cyd-c5 -t upload            # device: the same screen on glass
 ```
 
@@ -53,7 +53,7 @@ Turning it on paid twice over. Moving the tables out freed internal RAM
 from 12 ms to 7 ms** -- more internal DMA-capable memory left for
 Arduino_GFX's transfer buffer. That second one was not planned.
 
-![AETHERSCAN](docs/aetherscan.png)
+![UMBRAVOX](docs/umbravox.png)
 
 ## Why it is built this way
 
@@ -88,7 +88,7 @@ something.
 
 ## Screens
 
-**AETHERSCAN** is the live view; **CODEX** is the register of what has been
+**UMBRAVOX** is the live view; **CODEX** is the register of what has been
 found. Navigation is by **tapping a tile**, not swiping -- each tile opens the
 codex filtered to what that tile counts, which is the obvious meaning of
 tapping a number. The mark at the top-left of the header becomes a back arrow
@@ -202,7 +202,7 @@ Two pickers, each a label with a `-` and `+`:
 
 | | choices | effect |
 |---|---|---|
-| THEME | AETHERSCAN / BAPH0MAU5 | the palette, the dial geometry and the centrepiece |
+| THEME | UMBRAVOX / BAPH0MAU5 | the palette, the dial geometry and the centrepiece |
 | SWEEP | RADAR / GAZE / PULSE / STAR / CANDLE | how the dial searches the field |
 
 Above them is a **live preview**: it calls the real dial code with the radii
@@ -257,8 +257,8 @@ already reserves it.
 | | |
 |---|---|
 | **Tiles** | WiFi total, 5 GHz subset, BLE. The stripe colour on each tile is the same colour that band's contacts use on the dial, so the tiles double as the dial's key. |
-| **Circle** | Three bounds: the inner field where contacts live, the band the runes walk, and the outer bound. (The radii and the figure belong to the active theme; this table describes AETHERSCAN, and BAPH0MAU5 is covered under ASPECT.) Inscribed inside is a {7/3} heptagram -- seven points, each joined to the one three along. It is drawn deliberately faint: the figure should read as *inscribed*, not lit, because the contacts are the only thing on the dial that is data. |
-| **Runes** | On AETHERSCAN, sixteen marks walking the band, slowly and against the sweep. Those near the beam catch the light and those away from it fall back, so the ring reads as consecrated rather than as a flat border. |
+| **Circle** | Three bounds: the inner field where contacts live, the band the runes walk, and the outer bound. (The radii and the figure belong to the active theme; this table describes UMBRAVOX, and BAPH0MAU5 is covered under ASPECT.) Inscribed inside is a {7/3} heptagram -- seven points, each joined to the one three along. It is drawn deliberately faint: the figure should read as *inscribed*, not lit, because the contacts are the only thing on the dial that is data. |
+| **Runes** | On UMBRAVOX, sixteen marks walking the band, slowly and against the sweep. Those near the beam catch the light and those away from it fall back, so the ring reads as consecrated rather than as a flat border. |
 | **Field** | Radius is RSSI -- the `-90` labels the outer ring. **Angle is not a bearing.** There is no magnetometer, and RSSI alone cannot give direction. The intent is a stable hash of the BSSID, so a given AP always sits in the same spot and you can watch the field move as you drive. |
 | **Sweep** | Cosmetic, but it earns its place: with the radar, a contact's fade is driven by how long since the beam crossed it, which on the device is just `millis()` since last seen. (The candle draws no beam, so nothing is ever just crossed; contacts there are simply present.) Stale contacts decay so the dial does not silt up. |
 | **Spectrum** | 13 bars for 2.4 GHz, 8 for the 5 GHz subset we hop, split by a gap. The parked channel is drawn bright with a tick above it. |
@@ -273,12 +273,12 @@ screenshot.
 
 ## Layout
 
-The block below is AETHERSCAN's. The dial geometry is per-theme: the radii
+The block below is UMBRAVOX's. The dial geometry is per-theme: the radii
 live in the theme table in `ui/palette.cpp`, and BAPH0MAU5 has a larger
 circle and no spectrum strip.
 
 ```
-0        HEADER   sigil - AETHERSCAN - band badge - battery
+0        HEADER   sigil - UMBRAVOX - band badge - battery
 13 ..100 TILES    x2  w56     CIRCLE  x61 w97 h70
                                   field r22 - runes r26 - bound r31
                                 SPECTRUM  x61 w97 h16  (y85)
@@ -571,7 +571,7 @@ ui/      compiles for BOTH the PC and the device
   demo.h/cpp     bring-up scaffolding: an invented State. Delete when the
                  real collector lands -- nothing else in ui/ depends on it.
   screens.h      screen entry points
-  screen_scan.cpp AETHERSCAN
+  screen_scan.cpp UMBRAVOX
   screen_aspect.cpp ASPECT: theme and sweep pickers and the live dial preview
   palette.h/cpp  the theme table: colours, dial radii, offered sweeps
   seal.h/cpp     the BAPH0MAU5 centrepiece: face bitmap, drawn figure, mark band
@@ -591,19 +591,19 @@ platformio.ini
 ## Usage
 
 ```
-./aethersim out.png                 one frame, 4x (640x480)
-./aethersim out.png --scale 2       320x240 -- exactly what the panel shows
-./aethersim out.png --frame 40      pick a point in the sweep
-./aethersim out.png --sheet 6       out-000.png .. out-005.png
-./aethersim out.png --theme 1       0 AETHERSCAN, 1 BAPH0MAU5
-./aethersim out.png --sweep 3       0 radar, 1 gaze, 2 pulse, 3 star, 4 candle
-./aethersim out.png --screen aspect the appearance screen
+./umbravox out.png                 one frame, 4x (640x480)
+./umbravox out.png --scale 2       320x240 -- exactly what the panel shows
+./umbravox out.png --frame 40      pick a point in the sweep
+./umbravox out.png --sheet 6       out-000.png .. out-005.png
+./umbravox out.png --theme 1       0 UMBRAVOX, 1 BAPH0MAU5
+./umbravox out.png --sweep 3       0 radar, 1 gaze, 2 pulse, 3 star, 4 candle
+./umbravox out.png --screen aspect the appearance screen
 make sheet                          six frames, for checking motion
 ```
 
 `--theme` and `--sweep` are the only way to see the second theme in the
 simulator. Settings are clamped as the device clamps them, so `--theme 0
---sweep 1` renders the radar: the gaze is not offered on AETHERSCAN.
+--sweep 1` renders the radar: the gaze is not offered on UMBRAVOX.
 
 Always check `--scale 2` before believing a layout. Everything is legible at
 4x; the panel is not 4x.

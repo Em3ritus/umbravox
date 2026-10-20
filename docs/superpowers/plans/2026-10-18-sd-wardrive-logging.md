@@ -14,7 +14,7 @@
 
 - **Work on a branch off `master`.** Commit at the end of every task. Never merge to `master` — that is the user's call.
 - Build flags stay `-std=c++17 -O2 -Wall -Wextra` (host) and the existing device flags. No new warnings in either build.
-- **`make -C sim regress` must keep printing `regress: AETHERSCAN unchanged`, with no baseline rewrite.** The on-screen control's *idle* appearance must be byte-identical to today's footer, so none of the nine baseline renders change. A task that needs to rebaseline has changed something it should not have.
+- **`make -C sim regress` must keep printing `regress: UMBRAVOX unchanged`, with no baseline rewrite.** The on-screen control's *idle* appearance must be byte-identical to today's footer, so none of the nine baseline renders change. A task that needs to rebaseline has changed something it should not have.
 - Host tests use the existing idiom: file-scope `static int fails`, `check(const char* what, bool ok)`, `printf`, `return fails ? 1 : 0`. No framework. Add each new test to `TESTS` in `sim/Makefile`.
 - `logging.{h,cpp}` must be **pure** — no `<Arduino.h>`, no `SD.h`, no device headers — so it compiles and tests on the host. It reaches the card only through the `sdlog.h` interface, which the test fakes.
 - Never edit a `pal::` call site in the nine `ui/screen_*.cpp` files.
@@ -142,7 +142,7 @@ Expected: seven `== test_*` blocks, each ending `all passed`, exit 0. If `test_c
 - [ ] **Step 3: Verify regression gate unaffected**
 
 Run: `make -s regress`
-Expected: `regress: AETHERSCAN unchanged`.
+Expected: `regress: UMBRAVOX unchanged`.
 
 - [ ] **Step 4: Commit**
 
@@ -194,8 +194,8 @@ int main() {
     Buf b;
     ui_wigle::header(b);
     const char* want =
-        "WigleWifi-1.6,appRelease=aetherscan,model=NM-CYD-C5,release=1,"
-        "device=esp32c5,display=,board=,brand=AETHERSCAN\n"
+        "WigleWifi-1.6,appRelease=umbravox,model=NM-CYD-C5,release=1,"
+        "device=esp32c5,display=,board=,brand=UMBRAVOX\n"
         "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
         "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n";
     check("preamble and column header are exact WigleWifi-1.6", strcmp(b.s, want) == 0);
@@ -227,8 +227,8 @@ struct Sink { virtual void put(const char* s) = 0; };
 
 // The preamble line and the column header. Pure; no exporters.
 inline void header(Sink& out) {
-    out.put("WigleWifi-1.6,appRelease=aetherscan,model=NM-CYD-C5,release=1,"
-            "device=esp32c5,display=,board=,brand=AETHERSCAN\n");
+    out.put("WigleWifi-1.6,appRelease=umbravox,model=NM-CYD-C5,release=1,"
+            "device=esp32c5,display=,board=,brand=UMBRAVOX\n");
     out.put("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
             "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n");
 }
@@ -293,7 +293,7 @@ Expected: compiles, no new warnings.
 
 - [ ] **Step 7: Verify regress, commit**
 
-Run: `make -s regress` → `regress: AETHERSCAN unchanged`.
+Run: `make -s regress` → `regress: UMBRAVOX unchanged`.
 
 ```bash
 git add -A
@@ -584,7 +584,7 @@ Expected: nine tests, all `all passed`.
 - [ ] **Step 6: Device build, regress, commit**
 
 Run: `~/.platformio/penv/bin/pio run -e nm-cyd-c5` → compiles.
-Run: `make -s regress` → `AETHERSCAN unchanged`.
+Run: `make -s regress` → `UMBRAVOX unchanged`.
 
 ```bash
 git add -A
@@ -671,7 +671,7 @@ In `sim/test_nav.cpp`, add: a tap in the `LOG_*` region on `SCR_SCAN` sets `logT
 - [ ] **Step 5: Verify idle baselines did NOT move**
 
 Run: `cd sim && make -s regress`
-Expected: `regress: AETHERSCAN unchanged`, **no rebaseline**. If any screen differs, the idle footer drawing changed — fix it, do not rebaseline.
+Expected: `regress: UMBRAVOX unchanged`, **no rebaseline**. If any screen differs, the idle footer drawing changed — fix it, do not rebaseline.
 
 - [ ] **Step 6: See the active/no-card states**
 

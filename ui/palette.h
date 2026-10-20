@@ -56,16 +56,16 @@ extern uint16_t GREEN;      // BLE, and "good"
 extern uint16_t AMBER;
 extern uint16_t RED;
 
-enum ThemeId : uint8_t { TH_AETHERSCAN = 0, TH_BAPH0MAU5, TH_COUNT };
+enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COUNT };
 
-// Point the palette at a theme. An out-of-range id falls back to AETHERSCAN
+// Point the palette at a theme. An out-of-range id falls back to UMBRAVOX
 // rather than reading off the end of the table -- this is reached from NVS,
 // which can hold anything.
 void setTheme(uint8_t id);
 const char* themeName(uint8_t id);
 
 // Which sweeps this theme offers, as a bitmask over the Sweep enum. The gaze
-// needs eyes, and AETHERSCAN has a heptagram rather than a face.
+// needs eyes, and UMBRAVOX has a heptagram rather than a face.
 uint8_t sweepMask(uint8_t id);
 
 } // namespace pal

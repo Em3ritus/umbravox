@@ -4,7 +4,7 @@ Design, 2026-10-18.
 
 ## Intent
 
-AETHERSCAN has one look. This adds a second — built around a Baphomet sigil
+UMBRAVOX has one look. This adds a second — built around a Baphomet sigil
 the user supplied — and makes the choice a setting on the CYD rather than a
 build-time decision. Both themes ship. Both stay reachable.
 
@@ -13,12 +13,12 @@ kept, because the radar sweep is the most instrument-shaped thing left on the
 screen and which one reads best is a matter of taste rather than correctness.
 
 Success means: a user can change theme and sweep on the glass, the choice
-survives a power cycle, and AETHERSCAN renders exactly as it does today when
+survives a power cycle, and UMBRAVOX renders exactly as it does today when
 it is the one selected.
 
 ### What this is not
 
-Not a redesign of any screen other than AETHERSCAN's dial. CODEX, DETAIL,
+Not a redesign of any screen other than UMBRAVOX's dial. CODEX, DETAIL,
 DOMAIN, MESH, OMENS, ECHOES and ATTUNE are recoloured by the palette switch
 and otherwise untouched. Their layouts do not become theme-dependent.
 
@@ -52,22 +52,22 @@ cannot silently omit a colour the way a hand-written assignment can.
 #### Colours the second theme needs that the first does not
 
 BAPH0MAU5 draws a bitmap seal and a witchfire accent, so the `Theme` row
-carries six fields AETHERSCAN has no use for:
+carries six fields UMBRAVOX has no use for:
 
-| Field | Purpose | AETHERSCAN fills it with |
+| Field | Purpose | UMBRAVOX fills it with |
 |---|---|---|
 | `SWEEP`, `SWEEP_HI` | the search beam | `WITCH`, `WITCH_HI` |
 | `LIVE`, `LIVE_HI` | parts of the seal that are alight | `WITCH_HI`, `BRIGHT` |
 | `RAMP[4]` | the seal bitmap's four anchor levels | `VOID`, `EDGE`, `DIM`, `BRIGHT` |
 
-Giving AETHERSCAN sensible values rather than leaving them undefined means a
+Giving UMBRAVOX sensible values rather than leaving them undefined means a
 future theme that wants a bitmap centrepiece inherits a working default. A
 `RAMP` of four copies of `VOID` would satisfy the compiler and render
 nothing, which is exactly the kind of placeholder that survives to a release.
 
 #### The two palettes
 
-AETHERSCAN keeps today's values from `ui/palette.h` exactly. BAPH0MAU5:
+UMBRAVOX keeps today's values from `ui/palette.h` exactly. BAPH0MAU5:
 
 ```
 VOID     06030C    DIM      7E56BC    WITCH     9B62F0
@@ -111,7 +111,7 @@ in the table.
 
 This is what lets both themes keep what suits them:
 
-| | AETHERSCAN | BAPH0MAU5 |
+| | UMBRAVOX | BAPH0MAU5 |
 |---|---|---|
 | `DIAL_Y`, `DIAL_H` | 13, 70 | 13, 90 |
 | `DIAL_CX`, `DIAL_CY` | 109, 48 | 109, 57 |
@@ -123,7 +123,7 @@ This is what lets both themes keep what suits them:
 | spectrum strip | drawn | not drawn |
 
 `R_STAR` is the radius of the inscribed figure, whatever that figure is: the
-`{7/3}` heptagram on AETHERSCAN, the diamond and two triangles on BAPH0MAU5.
+`{7/3}` heptagram on UMBRAVOX, the diamond and two triangles on BAPH0MAU5.
 The name is kept rather than generalised so the two files that read it are
 not touched more than they need to be.
 
@@ -144,7 +144,7 @@ how every other screen is reached. This is accepted rather than worked around.
 
 A branch in `drawDial`, selected by the active theme:
 
-- **AETHERSCAN** — the existing heptagram, lattice, range rings and the
+- **UMBRAVOX** — the existing heptagram, lattice, range rings and the
   sixteen 5×5 runes walking the band. Unchanged code.
 - **BAPH0MAU5** — a procedural figure (diamond and two triangles) drawn
   behind a baked bitmap of the sigil's face, with eight 5×5 alchemical marks
@@ -236,7 +236,7 @@ instead of sitting behind an instrument that looks on its behalf. Its beams
 are walked and clipped to the field, because they start off-centre and cannot
 simply be drawn to a radius.
 
-**The gaze requires eyes, which AETHERSCAN does not have, and is not offered
+**The gaze requires eyes, which UMBRAVOX does not have, and is not offered
 there.** Decided 2026-10-18. The alternative considered and rejected was
 emitting its beams from the heptagram's two upper vertices: it works, but
 there is nothing at those points that reads as an eye, so the animation would
@@ -248,13 +248,13 @@ bitmask of the ones it offers:
 
 | Theme | Offers | Mask |
 |---|---|---|
-| AETHERSCAN | radar, pulse, star, candle | `0b11101` |
+| UMBRAVOX | radar, pulse, star, candle | `0b11101` |
 | BAPH0MAU5 | all five | `0b11111` |
 
 Two consequences for the implementation:
 
 - The ASPECT `-`/`+` control steps to the next **available** id, skipping any
-  the mask excludes. It must not step onto gaze on AETHERSCAN and bounce
+  the mask excludes. It must not step onto gaze on UMBRAVOX and bounce
   back, which reads as a broken control rather than an unavailable option.
 - `clampSettings` falls back to radar when the stored sweep is not available
   on the selected theme. This fires whenever the theme changes with gaze
@@ -304,7 +304,7 @@ Body runs 13..102, ninety rows:
 
 ```
 y 15..75    live dial preview, R_BOUND 30, via the real drawDial
-y 78..89    THEME   -  AETHERSCAN  +
+y 78..89    THEME   -  UMBRAVOX  +
 y 90..101   SWEEP   -  GAZE        +
 ```
 
@@ -357,12 +357,12 @@ field to migrate.
 
 | Claim | How it is checked |
 |---|---|
-| AETHERSCAN is unchanged | `aethersim` output byte-identical to a pre-change baseline, every screen |
+| UMBRAVOX is unchanged | `umbravox` output byte-identical to a pre-change baseline, every screen |
 | Both themes compile | `-Wall -Wextra` clean, both sim and `pio run` |
 | The switch works | sim renders each theme and sweep; no stale pixels |
 | Settings persist | power cycle on hardware, then read back |
 | `same()` is complete | host test: mutate each field, assert a save is scheduled |
-| Sweep clamping | host test: select gaze, switch to AETHERSCAN, assert sweep falls back |
+| Sweep clamping | host test: select gaze, switch to UMBRAVOX, assert sweep falls back |
 | Draw cost | **measured on the board, not estimated** |
 
 That last row is the open risk. The C5 is single core, so packet capture and
@@ -402,7 +402,7 @@ build artifacts say otherwise:
 - **The boot splash.** Designed and rendered, and the `BIG` asset is specified
   above, but it is a separate screen with its own sequence. Land it after the
   theme switch works.
-- **Moving the spectrum to its own screen.** Not needed — AETHERSCAN keeps its
+- **Moving the spectrum to its own screen.** Not needed — UMBRAVOX keeps its
   strip, and BAPH0MAU5 simply has none.
 - **A third theme.** The table makes one cheap; nobody has asked.
 - **Per-theme fonts.** `font5x7` is shared and stays shared.
@@ -413,7 +413,7 @@ This project is not a git repository and is staying that way until the work is
 ready. That is a decision about where the code lives, but it changes how the
 central claim of this spec gets checked.
 
-"AETHERSCAN renders exactly as it does today" is verified by diffing against a
+"UMBRAVOX renders exactly as it does today" is verified by diffing against a
 baseline. With no VCS there is nothing to diff against after the fact, so the
 baseline has to be captured **before the first edit** and kept outside the
 tree:
@@ -423,7 +423,7 @@ tree:
    `echoes`, `grimoire`, `attune` — at a fixed frame.
 3. Record their checksums alongside the PNGs.
 
-Those checksums are the contract. Any later claim that AETHERSCAN is untouched
+Those checksums are the contract. Any later claim that UMBRAVOX is untouched
 cites them.
 
 **This has been done.** `private/baseline/` holds all nine screens at

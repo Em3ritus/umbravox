@@ -55,7 +55,7 @@ void polar(int cx, int cy, int r, float deg, int& x, int& y) {
 }
 
 // The {7/3} heptagram: seven points, each joined to the one three along.
-// AETHERSCAN's figure. The alert is inscribed with the active theme's own
+// UMBRAVOX's figure. The alert is inscribed with the active theme's own
 // figure -- the ward is part of the same working, not separate chrome -- so
 // alertFigure() below picks this or the seal's diamond-and-triangles.
 void heptagram(Canvas& c, int cx, int cy, int r, uint16_t col) {
@@ -305,7 +305,7 @@ uint32_t noise(uint32_t a, uint32_t b) {
 }
 
 // The inverted pentagram -- point down -- that frames the Baphomet seal. The
-// summoning figure for the BAPH0MAU5 alert, where AETHERSCAN uses the ward.
+// summoning figure for the BAPH0MAU5 alert, where UMBRAVOX uses the ward.
 // Optionally hands back the five outer points so the hold can set them alight.
 void pentagram(Canvas& c, int cx, int cy, int r, uint16_t col,
                int* px = nullptr, int* py = nullptr) {
@@ -384,7 +384,7 @@ void alertNameAndDetail(Canvas& c, const State& s, uint16_t edge,
     if (age > tail + 160)  c.textCenter(cx, Y + 58, confName(s.alertConf), edge);
 }
 
-// BAPH0MAU5's rite: the seal takes the card where AETHERSCAN traces a ward.
+// BAPH0MAU5's rite: the seal takes the card where UMBRAVOX traces a ward.
 // Fire climbs out of the centre while an inverted pentagram inscribes itself;
 // the pentacle snaps shut and its five points gutter as it holds. Confidence
 // rides the fire -- violet embers at LOW, a green-white blaze with a red heart
@@ -439,7 +439,7 @@ void drawAlertSummoned(Canvas& c, const State& s, uint16_t edge,
         }
         c.disc(px[0], py[0], 2, pal::LIVE_HI);
 
-        // the inner edge wanders by candlelight, as the AETHERSCAN ward does.
+        // the inner edge wanders by candlelight, as the UMBRAVOX ward does.
         const uint32_t fl = noise((uint32_t)(age / 90), 7) % 24;
         c.rect(X + 1, Y + 1, Wd - 2, Hd - 2, Canvas::mix(pal::VOID, edge, 14 + (int)fl, 60));
     }
@@ -465,7 +465,7 @@ void drawAlert(Canvas& c, const State& s) {
     const int mx = X + Wd / 2, my = Y + Hd / 2;
 
     // BAPH0MAU5 runs its own rite -- the seal takes the card -- where
-    // AETHERSCAN traces a ward. Both share the name resolving out of marks.
+    // UMBRAVOX traces a ward. Both share the name resolving out of marks.
     if (s.set.theme == pal::TH_BAPH0MAU5) {
         drawAlertSummoned(c, s, edge, X, Y, Wd, Hd, age, mx, my);
         return;
@@ -682,10 +682,10 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
 void drawScan(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
 
-    // Title tracks the active theme. AETHERSCAN keeps its name (and its render
+    // Title tracks the active theme. UMBRAVOX keeps its name (and its render
     // baselines); the cult theme announces itself in full.
     drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
-                                                      : "AETHERSCAN");
+                                                      : "UMBRAVOX");
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);
     drawTile(c, TILE_Y[2], "BLE",   s.ble,              pal::GREEN);

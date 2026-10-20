@@ -49,7 +49,7 @@ int searchMarkLum(uint8_t mode, uint32_t frame, float markAngle, int floorLum);
 // own rhythm. The candle returns an absolute 0..255 (128 = seal as drawn): it IS the light in the
 // circle, so it overrides the heartbeat rather than adding to it.
 //
-// The candle is primarily a BAPH0MAU5 mode: AETHERSCAN has no bitmap
+// The candle is primarily a BAPH0MAU5 mode: UMBRAVOX has no bitmap
 // centrepiece to light, so there it remains just the faint rings.
 int searchLift(uint8_t mode, uint32_t frame);
 

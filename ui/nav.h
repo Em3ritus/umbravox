@@ -1,6 +1,6 @@
 // Screen selection and the gestures that drive it.
 //
-// Navigation is by tapping, not swiping: the tiles on AETHERSCAN are the
+// Navigation is by tapping, not swiping: the tiles on UMBRAVOX are the
 // buttons, and each opens the codex filtered to what that tile counts. A
 // swipe is invisible until you already know it is there, and on a 2.8" panel
 // a diagonal one fights the scroll.

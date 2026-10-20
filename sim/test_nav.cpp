@@ -31,7 +31,7 @@ static Nav tapAt(int x, int y) {
 int main() {
     const int specX = COL_R_X + COL_R_W / 2;
 
-    pal::setTheme(pal::TH_AETHERSCAN);
+    pal::setTheme(pal::TH_UMBRAVOX);
     check("theme 0 has a spectrum strip", SPEC_H > 0);
     {
         Nav n = tapAt(specX, SPEC_Y + SPEC_H / 2);
@@ -98,13 +98,13 @@ int main() {
             navTouch(n, st, true,  (int16_t)x, (int16_t)y);
             navTouch(n, st, false, (int16_t)x, (int16_t)y);
         };
-        pal::setTheme(pal::TH_AETHERSCAN);
+        pal::setTheme(pal::TH_UMBRAVOX);
         Settings st;
-        check("aspect: defaults are AETHERSCAN / RADAR",
-              st.theme == pal::TH_AETHERSCAN && st.sweep == SW_RADAR);
-        check("aspect: AETHERSCAN offers no gaze", !(pal::sweepMask(pal::TH_AETHERSCAN) & (1 << SW_GAZE)));
+        check("aspect: defaults are UMBRAVOX / RADAR",
+              st.theme == pal::TH_UMBRAVOX && st.sweep == SW_RADAR);
+        check("aspect: UMBRAVOX offers no gaze", !(pal::sweepMask(pal::TH_UMBRAVOX) & (1 << SW_GAZE)));
 
-        // Walk the sweep forward and back on AETHERSCAN; never land on gaze,
+        // Walk the sweep forward and back on UMBRAVOX; never land on gaze,
         // and every press must actually change the value.
         bool skips = true, moves = true;
         for (int dir = 0; dir < 2; dir++) {
@@ -116,8 +116,8 @@ int main() {
                 if (st.sweep == SW_GAZE) skips = false;
             }
         }
-        check("aspect: every sweep tap changes the value on AETHERSCAN", moves);
-        check("aspect: sweep never lands on the gaze on AETHERSCAN", skips);
+        check("aspect: every sweep tap changes the value on UMBRAVOX", moves);
+        check("aspect: sweep never lands on the gaze on UMBRAVOX", skips);
         st.sweep = SW_RADAR; tapBtn(st, SET_PLUS_X, 1);
         check("aspect: + from RADAR steps to PULSE, skipping GAZE", st.sweep == SW_PULSE);
         tapBtn(st, SET_MINUS_X, 1);
@@ -130,7 +130,7 @@ int main() {
         tapBtn(st, SET_PLUS_X, 0);
         check("aspect: theme + steps to BAPH0MAU5", st.theme == pal::TH_BAPH0MAU5);
         tapBtn(st, SET_PLUS_X, 0);
-        check("aspect: theme + wraps to AETHERSCAN", st.theme == pal::TH_AETHERSCAN);
+        check("aspect: theme + wraps to UMBRAVOX", st.theme == pal::TH_UMBRAVOX);
         tapBtn(st, SET_MINUS_X, 0);
         check("aspect: theme - wraps to BAPH0MAU5", st.theme == pal::TH_BAPH0MAU5);
 
@@ -143,7 +143,7 @@ int main() {
         st.theme = pal::TH_BAPH0MAU5; st.sweep = SW_GAZE;
         tapBtn(st, SET_PLUS_X, 0);
         check("aspect: theme change off BAPH0MAU5 resets an unavailable gaze",
-              st.theme == pal::TH_AETHERSCAN && st.sweep == SW_RADAR);
+              st.theme == pal::TH_UMBRAVOX && st.sweep == SW_RADAR);
 
         // The tile opens the screen.
         Nav g; g.screen = SCR_GRIMOIRE; Settings gs;
@@ -156,7 +156,7 @@ int main() {
     // The footer's SD status is the log control: a tap there raises the flag
     // and stays on the scan screen; taps elsewhere do not.
     {
-        pal::setTheme(pal::TH_AETHERSCAN);
+        pal::setTheme(pal::TH_UMBRAVOX);
         Nav n = tapAt(LOG_X + LOG_W / 2, LOG_Y + LOG_H / 2);
         check("log: tap on the control sets logToggleRequested", n.logToggleRequested);
         check("log: tap on the control stays on SCAN", n.screen == SCR_SCAN);

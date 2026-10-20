@@ -121,19 +121,19 @@ int main() {
         clampSettings(s);
         check("gaze survives on baph0mau5", s.sweep == SW_GAZE);
 
-        s.theme = pal::TH_AETHERSCAN;        // the gaze has no eyes here
+        s.theme = pal::TH_UMBRAVOX;        // the gaze has no eyes here
         clampSettings(s);
-        check("gaze falls back to radar on aetherscan", s.sweep == SW_RADAR);
+        check("gaze falls back to radar on umbravox", s.sweep == SW_RADAR);
 
         s.sweep = SW_STAR;
         clampSettings(s);
-        check("star is kept on aetherscan", s.sweep == SW_STAR);
+        check("star is kept on umbravox", s.sweep == SW_STAR);
     }
 
     printf("the mask matches the enum:\n");
     {
-        check("aetherscan offers radar",  pal::sweepMask(pal::TH_AETHERSCAN) & (1 << SW_RADAR));
-        check("aetherscan refuses gaze", !(pal::sweepMask(pal::TH_AETHERSCAN) & (1 << SW_GAZE)));
+        check("umbravox offers radar",  pal::sweepMask(pal::TH_UMBRAVOX) & (1 << SW_RADAR));
+        check("umbravox refuses gaze", !(pal::sweepMask(pal::TH_UMBRAVOX) & (1 << SW_GAZE)));
         check("baph0mau5 offers gaze",    pal::sweepMask(pal::TH_BAPH0MAU5) & (1 << SW_GAZE));
         for (int s = 0; s < SW_COUNT; s++)
             check("baph0mau5 offers every sweep",

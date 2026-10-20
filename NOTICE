@@ -1,5 +1,5 @@
-AETHERSCAN
-Copyright (C) 2026 the AETHERSCAN authors
+UMBRAVOX
+Copyright (C) 2026 the UMBRAVOX authors
 
 This program is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
@@ -23,7 +23,7 @@ Espressif is weak evidence for a Flock camera, while one registered to Flock
 Safety is strong, is research rather than transcription, and it is what makes
 the alerts usable instead of noise.
 
-Changes made: the tables were restructured to AETHERSCAN's own Threat and Conf
+Changes made: the tables were restructured to UMBRAVOX's own Threat and Conf
 enumerations, which are coarser -- several of the upstream detection types are
 folded into single buckets, and the Bluetooth Classic name table is omitted
 because the ESP32-C5 has no Bluetooth Classic radio.

@@ -6,7 +6,7 @@
 
 ## Intent
 
-Scale the AETHERSCAN ESP-NOW mesh from its current ~8-node ceiling to **~12 co-located scanning nodes** reporting to one CYD, by inserting an optional **coordinator tier** (a Waveshare C5) between the nodes and the CYD. The design must support **0, 1, or 2 coordinators** from the same mechanism, so an operator can run today's flat setup, offload to one coordinator, or split 12 nodes 6/6 across two coordinators.
+Scale the UMBRAVOX ESP-NOW mesh from its current ~8-node ceiling to **~12 co-located scanning nodes** reporting to one CYD, by inserting an optional **coordinator tier** (a Waveshare C5) between the nodes and the CYD. The design must support **0, 1, or 2 coordinators** from the same mechanism, so an operator can run today's flat setup, offload to one coordinator, or split 12 nodes 6/6 across two coordinators.
 
 **Agreed context (from brainstorming):**
 - **Co-located.** All nodes + coordinators + the CYD move together in one rig. They largely hear the *same* APs, and the CYD's single GPS fix is correct for every sighting. **The positioning model is unchanged** — this is purely a scaling + coordination change, not a per-node-location change.
@@ -83,7 +83,7 @@ Co-located nodes hear the same APs, so after dedup each report is small — cont
 
 ## Capacity & the `%lost` guide
 
-Capacity is bounded by (1) CYD CPU — only in the 0-coordinator case — and (2) report contention on one report channel. AETHERSCAN already reports **`%lost` per node/cluster** honestly (from report sequence gaps). This is the operator's instrument:
+Capacity is bounded by (1) CYD CPU — only in the 0-coordinator case — and (2) report contention on one report channel. UMBRAVOX already reports **`%lost` per node/cluster** honestly (from report sequence gaps). This is the operator's instrument:
 
 - **Rule:** if a report channel's `%lost` climbs past ~10–15%, add or split a coordinator.
 - Starting points: 0 coordinators ≈ 1–5 nodes; 1 coordinator ≈ 5–10; 2 coordinators ≈ 10–12+.
