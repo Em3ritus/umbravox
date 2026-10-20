@@ -2,7 +2,7 @@
 //
 // Without this the mesh is invisible from the device: a node could be flat,
 // out of range, or never assigned, and the only symptom would be a capture
-// rate that felt a bit low. The row that matters most is the age column.
+// rate that felt a bit low. The marks (age) and the loss figures matter most.
 #include "screens.h"
 #include "palette.h"
 #include "font5x7.h"
@@ -11,10 +11,14 @@
 namespace ui {
 namespace {
 
-// Headings occupy the first band, so the rows start below the rule.
-constexpr int HEAD_Y = 15, RULE_Y = 23;
-constexpr int ROW_Y = 26, ROW_HT = 12, ROWS_N = 5;
-constexpr int SUM_Y = 88;    // the totals line
+// A header line for the Core and the mesh-wide loss, then the nodes in two
+// columns of eight so sixteen fit at a pitch that still reads. The old
+// five-column table topped out at four nodes.
+constexpr int HEAD_Y = 15, RULE_Y = 24;
+constexpr int ROW_Y = 26, ROW_HT = 8, COL_ROWS = 8;
+constexpr int COL_X[2] = {5, 82};     // left edge of each node column
+constexpr int COL_W = 73;
+constexpr int SUM_Y = 92;             // the totals line
 
 void u2s(char* out, uint32_t v) {
     char tmp[12];
@@ -25,13 +29,6 @@ void u2s(char* out, uint32_t v) {
     out[i] = 0;
 }
 void cat(char* o, const char* s) { int i = 0; while (o[i]) i++; for (int k = 0; s[k]; k++) o[i++] = s[k]; o[i] = 0; }
-
-void ago(char* out, uint32_t s) {
-    out[0] = 0; char n[12];
-    if (s < 60)        { u2s(n, s);      cat(out, n); cat(out, "S"); }
-    else if (s < 3600) { u2s(n, s / 60); cat(out, n); cat(out, "M"); }
-    else               { cat(out, "OLD"); }
-}
 
 void idStr(char* out, const uint8_t* id) {
     static const char* H = "0123456789ABCDEF";
@@ -44,16 +41,17 @@ void idStr(char* out, const uint8_t* id) {
     out[k] = 0;
 }
 
-void row(Canvas& c, int y, uint16_t mark, const char* id, const char* cover,
-         const char* newN, const char* loss, uint16_t lossCol,
-         const char* age, uint16_t idCol) {
-    c.fill(3, y + 3, 3, 5, mark);
-    c.text(8, y + 2, id, idCol);
-    c.text(44, y + 2, cover, pal::DIM);
-    // NEW is the one worth reading, so it gets the bright ink.
-    c.textRight(96, y + 2, newN, pal::BRIGHT);
-    c.textRight(128, y + 2, loss, lossCol);
-    c.textRight(155, y + 2, age, pal::DIM);
+// One node: age mark, last two octets, loss. Dim ink when it is not live.
+void cell(Canvas& c, int x, int y, uint16_t mark, const char* id, uint16_t idCol,
+          const char* loss, uint16_t lossCol) {
+    c.fill(x, y + 1, 3, 5, mark);
+    c.text(x + 6, y, id, idCol);
+    c.textRight(x + COL_W - 1, y, loss, lossCol);
+}
+
+// Under 5% is the air being the air; a fifth missing is a problem.
+uint16_t lossInk(int pct) {
+    return pct >= 20 ? pal::RED : pct >= 5 ? pal::AMBER : pal::GREEN;
 }
 
 } // namespace
@@ -65,71 +63,79 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
 
-    // Column headings, because four numbers in a row mean nothing unlabelled.
-    c.text(8,  HEAD_Y, "NODE",  pal::EDGE_LIT);
-    c.text(44, HEAD_Y, "COVER", pal::EDGE_LIT);
-    c.textRight(96,  HEAD_Y, "NEW",  pal::EDGE_LIT);
-    c.textRight(128, HEAD_Y, "LOSS", pal::EDGE_LIT);
-    c.textRight(155, HEAD_Y, "AGE",  pal::EDGE_LIT);
-    c.hline(5, RULE_Y, 148, pal::EDGE);
+    char cover[24], id[12];
 
-    char cover[12], age[12], id[12];
-
-    // The Core's own row first. It is a listener too, and when it is camping
-    // it is the only thing covering the report channel.
+    // The Core's own entry first. It is a listener too, and when it is camping
+    // it is the only thing covering the report channel. It has no link to
+    // lose anything over, so it carries no loss figure.
     cover[0] = 0;
+    // With coordinators live the CYD is the collector, not the nodes' Core, so
+    // its own node list is empty even while whole clusters report. The count
+    // takes the place of the "CORE" label rather than let "no nodes" read as
+    // "nothing is happening".
+    if (s.meshCoords > 0) { char n[8]; u2s(n, s.meshCoords); cat(cover, n); cat(cover, " COORD "); }
+    else                  cat(cover, "CORE ");
     if (s.coreCamping) { cat(cover, "CH"); char n[8]; u2s(n, s.coreChan); cat(cover, n); }
     else               cat(cover, "SWEEP");
-    char cnew[12];
-    u2s(cnew, s.coreFound);
-    // The Core has no link to lose anything over.
-    row(c, ROW_Y, pal::WITCH_HI, "CORE", cover, cnew, "-", pal::DIM, "-", pal::BRIGHT);
-    c.hline(5, ROW_Y + ROW_HT - 1, 148, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
+    c.fill(5, HEAD_Y + 1, 3, 5, pal::WITCH_HI);
+    c.text(11, HEAD_Y, cover, pal::BRIGHT);
+
+    // The figure the operator acts on: the whole mesh's report loss. High and
+    // the channel is saturated; another coordinator splits it.
+    {
+        char b[16]; b[0] = 0; char n[12];
+        cat(b, "LOSS "); u2s(n, s.meshLossPct); cat(b, n); cat(b, "%");
+        c.textRight(155, HEAD_Y, b, lossInk(s.meshLossPct));
+    }
+    c.hline(5, RULE_Y, 148, pal::EDGE);
+    c.vline(COL_X[1] - 4, ROW_Y, COL_ROWS * ROW_HT, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
 
     if (s.nNodes == 0) {
-        c.textCenter(W / 2, ROW_Y + ROW_HT + 14, "NO NODES", pal::DIM);
-        c.textCenter(W / 2, ROW_Y + ROW_HT + 24, "CORE IS SWEEPING ALONE", pal::EDGE_LIT);
+        if (s.meshCoords > 0) {
+            c.textCenter(W / 2, ROW_Y + 22, "NO LOCAL NODES", pal::DIM);
+            c.textCenter(W / 2, ROW_Y + 32, "CLUSTERS REPORT VIA COORD", pal::EDGE_LIT);
+        } else {
+            c.textCenter(W / 2, ROW_Y + 22, "NO NODES", pal::DIM);
+            c.textCenter(W / 2, ROW_Y + 32, "CORE IS SWEEPING ALONE", pal::EDGE_LIT);
+        }
     }
 
-    for (int i = 0; i < s.nNodes && i < ROWS_N - 1; i++) {
+    for (int i = 0; i < s.nNodes && i < MAX_NODE_ROWS && i < 2 * COL_ROWS; i++) {
         const NodeRow& nd = s.nodes[i];
-        const int y = ROW_Y + (i + 1) * ROW_HT;
+        const int x = COL_X[i / COL_ROWS];
+        const int y = ROW_Y + (i % COL_ROWS) * ROW_HT;
 
         // Green while it is reporting, amber once it has gone quiet long
         // enough to be worth looking at, red when it is effectively gone.
         const uint16_t mark = nd.ageS < 10 ? pal::GREEN
                             : nd.ageS < 20 ? pal::AMBER : pal::RED;
 
-        // Last two octets: five columns do not fit with three, and the
-        // tail is still enough to tell nodes apart.
+        // Last two octets: the tail is still enough to tell nodes apart.
         idStr(id, nd.id);
-        cover[0] = 0;
-        if (nd.camp)       { cat(cover, "CAMP"); }
-        else if (nd.nChan) { char n[8]; u2s(n, nd.nChan); cat(cover, n); cat(cover, "CH"); }
-        else                 cat(cover, "---");
-        ago(age, nd.ageS);
-        char nw[12], ls[12];
-        u2s(nw, nd.found);
+        char ls[12];
         u2s(ls, nd.lossPct); cat(ls, "%");
-        // Under 5% is the air being the air; a fifth missing is a problem.
-        const uint16_t lc = nd.lossPct >= 20 ? pal::RED
-                          : nd.lossPct >= 5  ? pal::AMBER : pal::GREEN;
-        row(c, y, mark, id, cover, nw, ls, lc, age, nd.live ? pal::TEXT : pal::DIM);
-        c.hline(5, y + ROW_HT - 1, 148, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
+        cell(c, x, y, mark, id, nd.live ? pal::TEXT : pal::DIM, ls, lossInk(nd.lossPct));
     }
 
     // HITS counts sightings, and an AP beaconing ten times a second racks
     // them up fast -- the number people actually want is how many distinct
     // devices the mesh has found, so it goes here rather than being inferred
-    // from a column that cannot mean that.
+    // from a column that cannot mean that. When loss is high the right-hand
+    // slot carries the advice instead.
     c.hline(5, SUM_Y - 3, 148, pal::EDGE);
     {
         char b[32]; b[0] = 0; char n[12];
         u2s(n, s.nets24 + s.nets5); cat(b, n); cat(b, " DEVICES");
         c.text(11, SUM_Y, b, pal::BRIGHT);
-        b[0] = 0;
-        u2s(n, s.meshHits); cat(b, n); cat(b, " HITS");
-        c.textRight(155, SUM_Y, b, pal::DIM);
+        if (s.meshLossPct >= 20) {
+            c.textRight(155, SUM_Y, "ADD COORD", pal::RED);
+        } else if (s.meshLossPct >= 10) {
+            c.textRight(155, SUM_Y, "NEAR LIMIT", pal::AMBER);
+        } else {
+            b[0] = 0;
+            u2s(n, s.meshHits); cat(b, n); cat(b, " HITS");
+            c.textRight(155, SUM_Y, b, pal::DIM);
+        }
     }
 
     drawFooter(c, s);
@@ -144,10 +150,13 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
         if (first) { d->add(0, 0, W, H); first = false; }
         else {
             bool moved = s.nNodes != prev.nNodes || s.coreCamping != prev.coreCamping ||
-                         s.coreFrames != prev.coreFrames;
+                         s.coreFrames != prev.coreFrames ||
+                         s.meshLossPct != prev.meshLossPct ||
+                         s.meshCoords != prev.meshCoords;
             for (int i = 0; !moved && i < s.nNodes; i++)
                 moved = s.nodes[i].recs != prev.nodes[i].recs ||
                         s.nodes[i].ageS != prev.nodes[i].ageS ||
+                        s.nodes[i].lossPct != prev.nodes[i].lossPct ||
                         s.nodes[i].live != prev.nodes[i].live;
             if (moved) d->add(0, BODY_Y, W, BODY_H);
             dirtyChrome(*d, s, prev);

@@ -111,7 +111,7 @@ struct Detail {
 
 // One row of the mesh screen. The UI never sees a meshcore::NodeRec --
 // device types stop at the State boundary, same as everywhere else.
-constexpr int MAX_NODE_ROWS = 8;
+constexpr int MAX_NODE_ROWS = 16;
 struct NodeRow {
     bool     live = false;
     uint8_t  id[3] = {0};     // last three octets, which is how nodes are named
@@ -222,6 +222,8 @@ struct State {
     uint8_t  coreChan = 0;
     uint32_t coreFrames = 0;   // this radio only
     uint32_t meshHits = 0;     // every sighting, local and relayed
+    uint8_t  meshLossPct = 0;  // reports lost, across every live node
+    uint8_t  meshCoords = 0;   // live coordinators (0 = the Core runs the nodes itself)
     uint16_t coreFound = 0;    // devices this radio discovered first
 
     // The live alert, if any. `alertAtMs` is when it was last seen; the

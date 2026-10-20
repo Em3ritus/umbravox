@@ -28,13 +28,19 @@ constexpr uint8_t MAGIC       = 0xAE;
 // and a Core that disagree about the wire will otherwise just stop talking:
 // the length check rejects every frame and both sides look fine in
 // isolation, which cost a debugging session to notice.
-constexpr uint8_t VERSION     = 2;
+constexpr uint8_t VERSION     = 3;            // was 2: coordinator tier added
 constexpr uint8_t REPORT_CHAN = 1;
+// How often a node (and a coordinator) delivers its batch, and so the window
+// that report-phase offsets are spread across.
+constexpr uint32_t REPORT_MS  = 2500;
 
 enum MsgKind : uint8_t {
     MSG_HELLO  = 1,   // node -> core: I exist, I am unassigned
     MSG_ASSIGN = 2,   // core -> node: cover these channels
     MSG_REPORT = 3,   // node -> core: here is what I heard
+    MSG_CREG     = 4,   // coordinator -> CYD: I am a coordinator, unassigned
+    MSG_CASSIGN  = 5,   // CYD -> coordinator: your cluster id / report chan / slice
+    MSG_CBATCH   = 6,   // coordinator -> CYD: aggregated sightings + cluster stats
 };
 
 // Every frame opens with this, so a stray packet from anything else on the
@@ -63,10 +69,12 @@ struct __attribute__((packed)) Assign {
     uint8_t reportChan;
     uint8_t nChan;
     uint8_t chans[MAX_ASSIGN];   // 0 terminated if short
+    uint16_t phaseMs;     // report-time offset, so a cluster's nodes interleave
     uint8_t camp;         // 1 = sit still on chans[0], 0 = sweep them
 };
+static_assert(sizeof(Assign) <= 250, "ESP-NOW frames cap at 250 bytes");
 
-// One sighting as it crosses the air. 30 bytes, so seven fit in a frame
+// One sighting as it crosses the air. 34 bytes, so seven fit in a frame
 // alongside the header and still clear ESP-NOW's 250-byte limit.
 struct __attribute__((packed)) Rec {
     uint8_t  bssid[6];
@@ -91,6 +99,43 @@ struct __attribute__((packed)) Report {
 };
 
 static_assert(sizeof(Report) <= 250, "ESP-NOW frames cap at 250 bytes");
+
+// CYD <-> coordinator. A coordinator announces with CoordReg (wants5 lets the
+// CYD give a 5GHz-capable coordinator the 5GHz slice); the CYD answers with a
+// CoordAssign carrying the cluster id, the channels this coordinator's nodes
+// cover, its report channel, and the collection channel it delivers on.
+struct __attribute__((packed)) CoordReg {
+    Hdr     h;
+    uint8_t wants5;       // 1 if this coordinator's radio can do 5GHz
+};
+
+constexpr int MAX_SLICE = 21;
+struct __attribute__((packed)) CoordAssign {
+    Hdr     h;
+    uint8_t clusterId;
+    uint8_t reportChan;       // nodes in this cluster report here
+    uint8_t collectChan;      // this coordinator delivers to the CYD here
+    uint8_t nChan;
+    uint8_t chans[MAX_SLICE]; // the band slice this coordinator plans across
+};
+static_assert(sizeof(CoordAssign) <= 250, "ESP-NOW frames cap at 250 bytes");
+
+// Coordinator -> CYD: a batch of already-deduplicated sightings plus the
+// cluster's honest loss, so the CYD can surface which cluster needs splitting.
+// MAX_BATCH is 6 (not 7): ClusterBatch carries two stat bytes Report does not
+// (clusterId, lossPct), and 7 recs would be 251 bytes -- one over the cap.
+// 9(Hdr)+4(ids/seq/loss/count)+6*34(Rec) = 217 bytes.
+constexpr int MAX_BATCH = 6;
+struct __attribute__((packed)) ClusterBatch {
+    Hdr     h;
+    uint8_t clusterId;
+    uint8_t seq;
+    uint8_t lossPct;      // this cluster's current report loss
+    uint8_t count;
+    Rec     recs[MAX_BATCH];
+};
+
+static_assert(sizeof(ClusterBatch) <= 250, "ESP-NOW frames cap at 250 bytes");
 
 // True if a received buffer is plausibly ours and the right length.
 inline bool valid(const uint8_t* d, int len, uint8_t kind, int expect) {

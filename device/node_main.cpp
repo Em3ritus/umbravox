@@ -16,7 +16,6 @@ namespace {
 
 constexpr uint32_t HELLO_MS   = 1000;   // while unassigned
 constexpr uint32_t DWELL_MS   = 220;    // per channel, matching the Core
-constexpr uint32_t REPORT_MS  = 2500;   // how often to deliver
 // 64 overflowed on a busy sweep -- 8 records lost in a 100s run, which is
 // the only loss left in the chain now the link measures clean. At 32 bytes
 // a record this is 4KB on a node using 15% of its RAM.
@@ -26,13 +25,20 @@ uint8_t  selfMac[6];
 uint8_t  bcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
 uint8_t  coreMac[6];
-bool     haveCore = false;
+volatile bool haveCore = false;
 uint8_t  chans[mesh::MAX_ASSIGN];
 uint8_t  nChan = 0;
 bool     camp = false;
-bool     assigned = false;
+volatile bool assigned = false;
+// Where to deliver. mesh::REPORT_CHAN against a lone Core -- which is all a
+// Core ever assigns -- and a coordinator's own channel when one has taken us.
+uint8_t  reportChan = mesh::REPORT_CHAN;
 int      hop = 0;
 uint32_t hopAt = 0, lastHello = 0, lastReport = 0;
+// The phaseMs last applied to lastReport. A coordinator's Assign (with the real
+// per-node offset) arrives after the CYD's provisional one, so a CHANGED phase
+// re-seeds the report timer, not just the first assignment.
+uint16_t lastPhase = 0;
 
 mesh::Rec queue_[QUEUE];
 uint32_t  qAt[QUEUE];          // millis() when each was heard
@@ -94,8 +100,22 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     portEXIT_CRITICAL(&mux);
 }
 
-void onSent(const wifi_tx_info_t*, esp_now_send_status_t st) {
+// Consecutive failed UNICAST sends to our Core. A unicast frame is ACKed by
+// the radio, so a streak of failures means the Core is gone (a dead
+// coordinator, say) rather than that one frame was unlucky. A live Core ACKs
+// every report, so against a lone CYD this never builds. Broadcast sends
+// (Hello, and reports before a Core is known) always report success and are
+// not counted either way. The recovery itself runs in loop(), not here: this
+// callback is in the Wi-Fi task and must not retune the radio.
+constexpr uint8_t LOSS_STREAK = 8;
+volatile uint8_t failStreak = 0;
+
+void onSent(const wifi_tx_info_t* info, esp_now_send_status_t st) {
     if (st == ESP_NOW_SEND_SUCCESS) txOk++; else txFail++;
+    if (!haveCore || !info || !info->des_addr) return;
+    if (memcmp(info->des_addr, coreMac, 6) != 0) return;     // not to the Core
+    if (st == ESP_NOW_SEND_SUCCESS) failStreak = 0;
+    else if (failStreak < 255) failStreak = failStreak + 1;
 }
 
 void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
@@ -123,6 +143,7 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
     nChan = a->nChan > mesh::MAX_ASSIGN ? mesh::MAX_ASSIGN : a->nChan;
     for (int i = 0; i < nChan; i++) chans[i] = a->chans[i];
     camp = a->camp;
+    if (a->reportChan) reportChan = a->reportChan;
     assigned = nChan > 0;
     if (first && assigned) {
         Serial.printf("node: assigned %u channels (%u..%u), camp=%u\n",
@@ -131,6 +152,14 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
         park(chans[0]);
         hopAt = millis();
     }
+    // Report at +phaseMs into the window, so a cluster's nodes interleave
+    // rather than all reporting at once. phaseMs is < REPORT_MS and 0 for a
+    // lone Core, which keeps the old report-almost-now timing. Re-seed on the
+    // first assignment and whenever a later one carries a different offset.
+    if (assigned && (first || a->phaseMs != lastPhase)) {
+        lastPhase = a->phaseMs;
+        lastReport = millis() - (mesh::REPORT_MS - a->phaseMs);
+    }
 }
 
 // Deliver the queue: hop to the report channel, send batches, go back.
@@ -138,7 +167,7 @@ void report() {
     mesh::Rec batch[mesh::MAX_RECS];
     uint32_t  batchAt[mesh::MAX_RECS];
     int n;
-    park(mesh::REPORT_CHAN);
+    park(reportChan);
     delay(5);                                  // let the radio settle
 
     for (;;) {
@@ -247,9 +276,26 @@ void loop() {
         hopAt = now;
     }
 
-    if (now - lastReport >= REPORT_MS) {
+    if (now - lastReport >= mesh::REPORT_MS) {
         lastReport = now;
         report();
+        if (failStreak >= LOSS_STREAK) {
+            // The Core has stopped answering. Forget it entirely -- the
+            // learn-once peer guard included, or a re-Hello'd node would keep
+            // unicasting the dead address -- and go back to asking for one,
+            // on the channel every Core and CYD listens on.
+            Serial.printf("node: core %02X:%02X:%02X silent (%u failed sends) -- "
+                          "re-registering\n", coreMac[3], coreMac[4], coreMac[5],
+                          (unsigned)failStreak);
+            esp_now_del_peer(coreMac);
+            haveCore = false;
+            assigned = false;
+            failStreak = 0;
+            reportChan = mesh::REPORT_CHAN;
+            park(mesh::REPORT_CHAN);
+            lastHello = 0;
+            return;
+        }
         Serial.printf("node: ch%-3u q=%-3d recs seen=%-5u sent=%-5u drop=%-4u | "
                       "frames queued=%-4u ok=%-4u fail=%-4u %s\n",
                       chans[hop], qN, (unsigned)seen, (unsigned)sent,

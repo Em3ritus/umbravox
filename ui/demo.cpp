@@ -142,6 +142,7 @@ State demoState(uint32_t frame) {
         {{0x7E,0x31,0xAA},  0, false,  318,   3, 68, 47},
     };
     s.nNodes = 4;
+    s.meshLossPct = 14;
     for (int i = 0; i < 4; i++) {
         NodeRow& r = s.nodes[i];
         r.live = true;

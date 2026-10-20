@@ -16,7 +16,7 @@ int main() {
     const int total = (ui::CH24 - 1) + ui::CH5;
     printf("core camps ch%d; %d channels to share\n\n", mesh::REPORT_CHAN, total);
 
-    for (int live = 1; live <= 6; live++) {
+    for (int live = 1; live <= 8; live++) {
         chanplan::Plan p[8];
         chanplan::planChannels(live, p);
         printf("%d node%s:\n", live, live == 1 ? " " : "s");
@@ -49,6 +49,87 @@ int main() {
         if (live < 3) check("no campers below three radios", campers == 0);
         if (live >= 4) check("two campers at four or more", campers == 2);
         printf("\n");
+    }
+
+    // 9..12 nodes: every assigned channel array stays within MAX_ASSIGN, and every
+    // channel in the pool is covered by at least one node.
+    {
+        for (int live = 9; live <= 12; live++) {
+            chanplan::Plan plans[16];
+            chanplan::planChannels(live, plans);
+            int maxN = 0, totalCh = 0;
+            for (int i = 0; i < live; i++) { if (plans[i].n > maxN) maxN = plans[i].n; totalCh += plans[i].n; }
+            char label[64]; snprintf(label, sizeof label, "%d nodes: no node exceeds MAX_ASSIGN", live);
+            check(label, maxN <= mesh::MAX_ASSIGN);
+            snprintf(label, sizeof label, "%d nodes: something is assigned", live);
+            check(label, totalCh > 0);
+            snprintf(label, sizeof label, "%d nodes: every channel covered exactly once", live);
+            check(label, totalCh == total);
+            bool dupe = false, stoleReport = false, empty = false;
+            int seen[200] = {0};
+            for (int i = 0; i < live; i++) {
+                if (plans[i].n == 0) empty = true;
+                for (int k = 0; k < plans[i].n; k++) {
+                    if (plans[i].ch[k] == mesh::REPORT_CHAN) stoleReport = true;
+                    if (seen[plans[i].ch[k]]++) dupe = true;
+                }
+            }
+            snprintf(label, sizeof label, "%d nodes: no duplicates, report chan left alone", live);
+            check(label, !dupe && !stoleReport);
+            snprintf(label, sizeof label, "%d nodes: no idle node", live);
+            check(label, !empty);
+        }
+    }
+    // planCluster over an explicit 2.4GHz-only slice splits it across the nodes.
+    {
+        const uint8_t slice[] = {2,3,4,5,7,8,9,10,12,13};
+        chanplan::Plan plans[6];
+        chanplan::planCluster(slice, 10, 6, plans);
+        int total24 = 0; for (int i = 0; i < 6; i++) total24 += plans[i].n;
+        check("planCluster covers the whole slice at least once", total24 >= 10);
+        bool only24 = true;
+        for (int i = 0; i < 6; i++) for (int k = 0; k < plans[i].n; k++) if (plans[i].ch[k] > 14) only24 = false;
+        check("planCluster stays within its band slice", only24);
+    }
+
+    // Partitioning: 1 coordinator gets everything; 2 get disjoint slices with
+    // distinct report channels (Review Focus 1).
+    {
+        chanplan::Slice s1[2];
+        check("1 coordinator -> 1 slice", chanplan::partition(1, s1) == 1);
+        // 12 non-collection 2.4GHz channels plus 8 5GHz channels.
+        check("1 coordinator covers both bands",
+              s1[0].nChan == (ui::CH24 - 1) + ui::CH5);
+        bool s1HasReport = false;
+        for (int i = 0; i < s1[0].nChan; i++) if (s1[0].chans[i] == mesh::REPORT_CHAN) s1HasReport = true;
+        check("1 coordinator leaves the collection channel out", !s1HasReport);
+
+        chanplan::Slice s2[2];
+        check("2 coordinators -> 2 slices", chanplan::partition(2, s2) == 2);
+        check("distinct report channels", s2[0].reportChan != s2[1].reportChan);
+        check("report channels avoid the collection channel",
+              s2[0].reportChan != mesh::REPORT_CHAN && s2[1].reportChan != mesh::REPORT_CHAN);
+        check("slice 0 fits MAX_SLICE", s2[0].nChan <= mesh::MAX_SLICE);
+        check("slice 1 fits MAX_SLICE", s2[1].nChan <= mesh::MAX_SLICE);
+        // Exact sizes, so an empty slice cannot pass vacuously.
+        check("slice 0 is 2.4GHz less the collection channel", s2[0].nChan == ui::CH24 - 1);
+        check("slice 1 is all 5GHz", s2[1].nChan == ui::CH5);
+        // The collection channel is held out of every slice (not just slice 0).
+        bool reportInSlice = false;
+        for (int i = 0; i < s2[0].nChan; i++) if (s2[0].chans[i] == mesh::REPORT_CHAN) reportInSlice = true;
+        for (int j = 0; j < s2[1].nChan; j++) if (s2[1].chans[j] == mesh::REPORT_CHAN) reportInSlice = true;
+        check("2 coordinators: collection channel in no slice", !reportInSlice);
+        // disjoint slices
+        bool overlap = false;
+        for (int i = 0; i < s2[0].nChan; i++)
+            for (int j = 0; j < s2[1].nChan; j++)
+                if (s2[0].chans[i] == s2[1].chans[j]) overlap = true;
+        check("2 coordinators get disjoint channel slices", !overlap);
+        // one is 2.4-only, the other 5GHz-only (band split)
+        bool a24 = true, b5 = true;
+        for (int i = 0; i < s2[0].nChan; i++) if (s2[0].chans[i] > 14) a24 = false;
+        for (int j = 0; j < s2[1].nChan; j++) if (s2[1].chans[j] <= 14) b5 = false;
+        check("2 coordinators split by band", a24 && b5);
     }
 
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);

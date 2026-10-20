@@ -8,6 +8,7 @@
 #include "model.h"
 #include "capture.h"
 #include "chanplan.h"
+#include "phase.h"
 
 namespace meshcore {
 namespace {
@@ -26,6 +27,17 @@ uint8_t selfMac[6];
 uint8_t bcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
+// Slice planning (a coordinator's band share). sliceN_ == 0 => whole band on
+// mesh::REPORT_CHAN, the CYD-as-Core default.
+uint8_t sliceChans_[mesh::MAX_SLICE];
+int     sliceN_ = 0;
+uint8_t sliceReportChan_ = mesh::REPORT_CHAN;
+
+// Fold sink and collector hook. Both null by default, which is the CYD/node
+// behaviour; a coordinator installs both.
+Sink      sink_ = nullptr;
+FrameHook collector_ = nullptr;
+
 int findOrAdd(const uint8_t* mac) {
     for (int i = 0; i < MAX_NODES; i++)
         if (nodes_[i].live && !memcmp(nodes_[i].mac, mac, 6)) return i;
@@ -39,7 +51,7 @@ int findOrAdd(const uint8_t* mac) {
     return -1;
 }
 
-void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
+void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     rxTotal++;
     if (!data || len < (int)sizeof(mesh::Hdr)) { rxLen++; return; }
     const mesh::Report* pending = nullptr;
@@ -47,6 +59,11 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
     const uint8_t* newPeer = nullptr;
     const mesh::Hdr* h = (const mesh::Hdr*)data;
     if (h->magic != mesh::MAGIC) { rxMagic++; return; }
+
+    // Offer the frame to the coordinator tier first. On a node build or a CYD
+    // with no coordinators this is null / returns false, so everything below
+    // -- the node path -- runs exactly as it always has.
+    if (collector_ && info && collector_(info->src_addr, data, len)) return;
 
     // Ours, but not this build's. Say so rather than dropping it quietly --
     // a silent reject is indistinguishable from a node that is out of range.
@@ -127,9 +144,14 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
             const int n = rc.ssidLen > 20 ? 20 : rc.ssidLen;
             for (int j = 0; j < n; j++) ssid[j] = rc.ssid[j];
             ssid[n] = 0;
-            cap::ingest(rc.bssid, rc.rssi, rc.chan,
-                        rc.band ? ui::BAND_5 : ui::BAND_24, ssid, rc.ageMs,
-                        pendingSrc, rc.auth);
+            if (sink_)
+                sink_(rc.bssid, rc.rssi, rc.chan,
+                      rc.band ? ui::BAND_5 : ui::BAND_24, ssid, rc.ageMs,
+                      pendingSrc, rc.auth);
+            else
+                cap::ingest(rc.bssid, rc.rssi, rc.chan,
+                            rc.band ? ui::BAND_5 : ui::BAND_24, ssid, rc.ageMs,
+                            pendingSrc, rc.auth);
         }
     }
 }
@@ -157,13 +179,34 @@ void begin() {
                   mesh::REPORT_CHAN);
 }
 
+void setSlice(const uint8_t* chans, int n, uint8_t reportChan) {
+    if (n < 0) n = 0;
+    if (n > mesh::MAX_SLICE) n = mesh::MAX_SLICE;
+    for (int i = 0; i < n; i++) sliceChans_[i] = chans[i];
+    sliceN_ = n;
+    sliceReportChan_ = n > 0 ? reportChan : mesh::REPORT_CHAN;
+}
+
+void setSink(Sink sink) { sink_ = sink; }
+
+void setCollector(FrameHook hook) { collector_ = hook; }
+
 void assignAll(uint32_t nowMs) {
     int live = 0;
     for (int i = 0; i < MAX_NODES; i++) if (nodes_[i].live) live++;
     if (!live) return;
 
     chanplan::Plan plans[MAX_NODES];
-    chanplan::planChannels(live, plans);
+    uint8_t reportChan;
+    if (sliceN_ > 0) {
+        // A coordinator: plan over its slice and report on its own channel.
+        chanplan::planCluster(sliceChans_, sliceN_, live, plans);
+        reportChan = sliceReportChan_;
+    } else {
+        // The CYD-as-Core: the whole band on the fixed report channel.
+        chanplan::planChannels(live, plans);
+        reportChan = mesh::REPORT_CHAN;
+    }
 
     // Only announce when the shape actually changed, rather than every pass.
     static int lastLive = -1;
@@ -181,24 +224,30 @@ void assignAll(uint32_t nowMs) {
         a.h.kind  = mesh::MSG_ASSIGN;
         memcpy(a.h.mac, nodes_[i].mac, 6);
         memcpy(a.coreMac, selfMac, 6);
-        a.reportChan = mesh::REPORT_CHAN;
+        a.reportChan = reportChan;
         a.nChan = p.n;
         for (int k = 0; k < p.n; k++) a.chans[k] = p.ch[k];
-        a.camp = p.camp;
+        // planCluster hands out n==0 when the pool has fewer channels than
+        // there are nodes. That is an IDLE node, not one sweeping nothing: the
+        // node reads nChan==0 as unassigned and stops queueing until it is given
+        // work, so make sure it is never marked camping on a channel it lacks.
+        a.camp = p.n > 0 && p.camp;
+        a.phaseMs = (uint16_t)mesh_phase::offset(slot - 1, live, mesh::REPORT_MS);
 
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
         nodes_[i].nChan = p.n;
-        nodes_[i].camp  = p.camp;
+        nodes_[i].camp  = a.camp;
         for (int k = 0; k < p.n && k < 10; k++) nodes_[i].chans[k] = p.ch[k];
         nodes_[i].assigned = true;
 
         if (shapeChanged)
             Serial.printf("mesh: node %02X:%02X:%02X -> %s %u ch (first %u)\n",
                           nodes_[i].mac[3], nodes_[i].mac[4], nodes_[i].mac[5],
-                          p.camp ? "CAMP" : "sweep", p.n, p.n ? p.ch[0] : 0);
+                          p.n == 0 ? "IDLE" : p.camp ? "CAMP" : "sweep",
+                          p.n, p.n ? p.ch[0] : 0);
     }
     if (shapeChanged)
-        Serial.printf("mesh: %d node(s), core camping ch%u\n", live, mesh::REPORT_CHAN);
+        Serial.printf("mesh: %d node(s), reporting on ch%u\n", live, reportChan);
     (void)nowMs;
 }
 

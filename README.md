@@ -354,6 +354,12 @@ cost a debugging session before the Core learned to say:
 mesh: node A7:B4:54 speaks protocol v1, we speak v2 -- reflash it
 ```
 
+Boot order: **start coordinators before nodes** -- a node already bound to
+the CYD as its Core migrates to a coordinator only when it loses that Core.
+
+Known limitation: the ESP-NOW mesh is unauthenticated (magic + version only),
+so any radio in range can speak to it. Encryption is out of scope for now.
+
 Two things worth knowing if you extend this:
 
 - A node queues nothing before it is assigned. The first version buffered
