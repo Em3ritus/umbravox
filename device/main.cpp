@@ -20,6 +20,8 @@
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
+#include "chanplan.h"
+#include <esp_now.h>
 #include "signatures.h"
 #include "nav.h"
 #include "layout.h"
@@ -91,6 +93,275 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
 // Defined with the console helpers below; setup() hands it to logging.
 namespace { static uint32_t writeWigle(Print& out, uint32_t& skipped); }
 
+// --- collector tier -------------------------------------------------------
+//
+// The CYD's half of the three-tier mesh. When coordinators register, the CYD
+// stops being the nodes' Core and becomes the aggregator: it hands each
+// coordinator a disjoint band slice, balances nodes across them, and folds
+// the ClusterBatch frames they deliver through the same cap::ingest the Core
+// uses. With NO coordinator registered this whole path is inert -- every hook
+// returns false and meshcore runs the node mesh exactly as it does today, so
+// the CYD<->node path is byte-for-byte unchanged.
+//
+// COLLECT_CHAN is mesh::REPORT_CHAN: the channel the CYD camps to hear both
+// coordinator batches and, when running the mesh alone, node reports.
+namespace collector {
+namespace {
+
+constexpr uint8_t  COLLECT_CHAN = mesh::REPORT_CHAN;
+constexpr uint32_t COORD_TIMEOUT_MS = 20000;   // silent this long => gone
+
+struct Coord {
+    uint8_t  mac[6];
+    bool     live;
+    uint32_t lastMs;
+    uint8_t  clusterId;
+    uint16_t nodes;        // nodes balanced onto this coordinator
+};
+// At most two slices exist (chanplan::partition never makes a third), so at
+// most two coordinators ever get one -- ruling: a slice-less coordinator is
+// never assigned.
+Coord    coords_[2];
+int      nCoord_ = 0;
+
+// A node is pinned to the coordinator it was first balanced onto, so repeated
+// Hellos do not bounce it between clusters or double-count.
+struct NodeMap { uint8_t mac[6]; uint8_t coord; bool used; };
+NodeMap  nmap_[meshcore::MAX_NODES];
+
+// The receive callback runs in the Wi-Fi task; tick() runs in loop(). Frames
+// that must send a reply are queued here and drained in tick(), because
+// esp_now_send() does not belong in the receive path.
+enum EvKind : uint8_t { EV_REG, EV_HELLO };
+struct Ev { uint8_t kind; uint8_t mac[6]; uint8_t wants5; };
+Ev       evq_[16];
+int      evN_ = 0;
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+uint8_t  bcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+uint32_t batchesRx = 0, recsRx = 0;
+
+bool macEq(const uint8_t* a, const uint8_t* b) {
+    for (int i = 0; i < 6; i++) if (a[i] != b[i]) return false;
+    return true;
+}
+
+void pushEv(uint8_t kind, const uint8_t* mac, uint8_t wants5) {
+    portENTER_CRITICAL(&mux);
+    if (evN_ < (int)(sizeof(evq_) / sizeof(evq_[0]))) {
+        Ev& e = evq_[evN_++];
+        e.kind = kind;
+        for (int i = 0; i < 6; i++) e.mac[i] = mac[i];
+        e.wants5 = wants5;
+    }
+    portEXIT_CRITICAL(&mux);
+}
+
+// Hand every live coordinator its slice (re-partitioning for the current
+// count). partition returns the slice count; we honour it and never address a
+// coordinator beyond it.
+void reassignAll() {
+    chanplan::Slice sl[2];
+    const int n = chanplan::partition(nCoord_, sl);
+    for (int i = 0; i < nCoord_ && i < n; i++) {
+        mesh::CoordAssign a = {};
+        a.h.magic = mesh::MAGIC;
+        a.h.ver   = mesh::VERSION;
+        a.h.kind  = mesh::MSG_CASSIGN;
+        memcpy(a.h.mac, coords_[i].mac, 6);
+        a.clusterId   = coords_[i].clusterId;
+        a.reportChan  = sl[i].reportChan;
+        a.collectChan = COLLECT_CHAN;
+        a.nChan = sl[i].nChan > mesh::MAX_SLICE ? mesh::MAX_SLICE : sl[i].nChan;
+        for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[i].chans[k];
+        esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+    }
+}
+
+void handleReg(const uint8_t* mac, uint8_t wants5, uint32_t now) {
+    (void)wants5;
+    for (int i = 0; i < nCoord_; i++)
+        if (coords_[i].live && macEq(coords_[i].mac, mac)) {
+            coords_[i].lastMs = now;      // already ours; just re-assure it
+            reassignAll();
+            return;
+        }
+    // New coordinator. Only accept it if partition would actually give the
+    // extra slice -- for a third coordinator it would not (partition caps at
+    // two), so it is refused rather than left stranded with no channels.
+    chanplan::Slice sl[2];
+    const int want = chanplan::partition(nCoord_ + 1, sl);
+    if (nCoord_ >= want) {
+        static uint32_t lastWarn = 0;
+        if (now - lastWarn > 5000) {
+            lastWarn = now;
+            Serial.printf("collector: coordinator %02X:%02X:%02X refused -- only %d "
+                          "slices available\n", mac[3], mac[4], mac[5], want);
+        }
+        return;
+    }
+    const int idx = nCoord_++;
+    for (int k = 0; k < 6; k++) coords_[idx].mac[k] = mac[k];
+    coords_[idx].live = true;
+    coords_[idx].lastMs = now;
+    coords_[idx].clusterId = (uint8_t)idx;
+    coords_[idx].nodes = 0;
+    Serial.printf("collector: coordinator %02X:%02X:%02X -> cluster %d (%d live)\n",
+                  mac[3], mac[4], mac[5], idx, nCoord_);
+    reassignAll();
+}
+
+int findNode(const uint8_t* mac) {
+    for (int i = 0; i < meshcore::MAX_NODES; i++)
+        if (nmap_[i].used && macEq(nmap_[i].mac, mac)) return i;
+    return -1;
+}
+
+// Pick the coordinator for a node: the live one with the fewest nodes, among
+// those whose slice the node's radio can actually cover. A 2.4-only node
+// never goes to the 5GHz slice (reportChan > 14 marks it).
+int pickCoord(uint8_t wants5, const chanplan::Slice* sl, int nSlice) {
+    int best = -1;
+    for (int i = 0; i < nCoord_ && i < nSlice; i++) {
+        if (!coords_[i].live) continue;
+        if (!wants5 && sl[i].reportChan > 14) continue;  // 5GHz slice, 2.4-only node
+        if (best < 0 || coords_[i].nodes < coords_[best].nodes) best = i;
+    }
+    return best;
+}
+
+void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
+    if (nCoord_ == 0) return;
+    chanplan::Slice sl[2];
+    const int nSlice = chanplan::partition(nCoord_, sl);
+
+    int c = findNode(mac);
+    if (c >= 0) {
+        c = nmap_[c].coord;
+        if (c >= nCoord_ || !coords_[c].live) return;   // its coordinator went away
+    } else {
+        c = pickCoord(wants5, sl, nSlice);
+        if (c < 0) return;
+        int slot = -1;
+        for (int i = 0; i < meshcore::MAX_NODES; i++) if (!nmap_[i].used) { slot = i; break; }
+        if (slot >= 0) {
+            for (int k = 0; k < 6; k++) nmap_[slot].mac[k] = mac[k];
+            nmap_[slot].coord = (uint8_t)c;
+            nmap_[slot].used = true;
+        }
+        coords_[c].nodes++;
+    }
+    (void)now;
+
+    // Redirect the (unchanged) node: point it at the coordinator as its Core,
+    // on the coordinator's report channel, sweeping that coordinator's slice.
+    // The coordinator refines the per-node plan once the node reports in.
+    mesh::Assign a = {};
+    a.h.magic = mesh::MAGIC;
+    a.h.ver   = mesh::VERSION;
+    a.h.kind  = mesh::MSG_ASSIGN;
+    memcpy(a.h.mac, mac, 6);
+    memcpy(a.coreMac, coords_[c].mac, 6);
+    a.reportChan = sl[c].reportChan;
+    a.nChan = sl[c].nChan > mesh::MAX_ASSIGN ? mesh::MAX_ASSIGN : sl[c].nChan;
+    for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[c].chans[k];
+    a.camp = 0;
+    a.phaseMs = 0;
+    esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+}
+
+} // namespace
+
+// True once at least one coordinator is live: the CYD then camps the
+// collection channel and leaves node handling to the coordinators.
+bool active() { return nCoord_ > 0; }
+
+// The frame hook meshcore calls before its own node handling. Returns true to
+// claim a frame. With no coordinator yet, only a CoordReg is claimed; node
+// Hellos and Reports fall through to meshcore untouched (byte-for-byte today).
+bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
+    (void)src;
+    if (mesh::valid(data, len, mesh::MSG_CREG, (int)sizeof(mesh::CoordReg))) {
+        const mesh::CoordReg* c = (const mesh::CoordReg*)data;
+        pushEv(EV_REG, c->h.mac, c->wants5);
+        return true;
+    }
+    if (mesh::valid(data, len, mesh::MSG_CBATCH, (int)sizeof(mesh::ClusterBatch))) {
+        const mesh::ClusterBatch* b = (const mesh::ClusterBatch*)data;
+        batchesRx++;
+        // Refresh the coordinator's liveness and fold its sightings through
+        // the same dedup/counting path as everything else.
+        portENTER_CRITICAL(&mux);
+        for (int i = 0; i < nCoord_; i++)
+            if (coords_[i].live && coords_[i].clusterId == b->clusterId)
+                coords_[i].lastMs = millis();
+        portEXIT_CRITICAL(&mux);
+        char ssid[21];
+        for (int k = 0; k < b->count && k < mesh::MAX_BATCH; k++) {
+            const mesh::Rec& rc = b->recs[k];
+            const int n = rc.ssidLen > 20 ? 20 : rc.ssidLen;
+            for (int j = 0; j < n; j++) ssid[j] = rc.ssid[j];
+            ssid[n] = 0;
+            cap::ingest(rc.bssid, rc.rssi, rc.chan,
+                        rc.band ? ui::BAND_5 : ui::BAND_24, ssid, rc.ageMs,
+                        (uint8_t)(b->clusterId + 1), rc.auth);
+            recsRx++;
+        }
+        return true;
+    }
+    // A node announcing itself. Claim it only once coordinators exist, so the
+    // zero-coordinator path is left entirely to meshcore.
+    if (nCoord_ > 0 &&
+        mesh::valid(data, len, mesh::MSG_HELLO, (int)sizeof(mesh::Hello))) {
+        const mesh::Hello* hh = (const mesh::Hello*)data;
+        pushEv(EV_HELLO, hh->h.mac, hh->wants5);
+        return true;
+    }
+    // Stray node reports (nodes report to coordinators now) are ignored while
+    // coordinators run, so meshcore does not re-adopt them as its own cluster.
+    if (nCoord_ > 0 &&
+        mesh::valid(data, len, mesh::MSG_REPORT, (int)sizeof(mesh::Report)))
+        return true;
+    return false;
+}
+
+void tick(uint32_t now) {
+    // Drain the receive-path events into replies.
+    for (;;) {
+        Ev e;
+        portENTER_CRITICAL(&mux);
+        if (evN_ == 0) { portEXIT_CRITICAL(&mux); break; }
+        e = evq_[--evN_];
+        portEXIT_CRITICAL(&mux);
+        if (e.kind == EV_REG)   handleReg(e.mac, e.wants5, now);
+        if (e.kind == EV_HELLO) handleHello(e.mac, e.wants5, now);
+    }
+
+    // Expire a coordinator that has gone quiet, compacting the array so the
+    // surviving one keeps cluster 0 (the whole-band slice) when it is alone.
+    bool changed = false;
+    for (int i = 0; i < nCoord_; i++) {
+        if (coords_[i].live && (now - coords_[i].lastMs) > COORD_TIMEOUT_MS) {
+            Serial.printf("collector: coordinator cluster %u timed out\n",
+                          coords_[i].clusterId);
+            for (int j = i; j < nCoord_ - 1; j++) coords_[j] = coords_[j + 1];
+            nCoord_--;
+            i--;
+            changed = true;
+        }
+    }
+    if (changed) {
+        for (int i = 0; i < nCoord_; i++) coords_[i].clusterId = (uint8_t)i;
+        // Node pins are stale after a reshuffle; let nodes rebalance on their
+        // next Hello rather than stranding them on a departed coordinator.
+        for (int i = 0; i < meshcore::MAX_NODES; i++) nmap_[i].used = false;
+        for (int i = 0; i < nCoord_; i++) coords_[i].nodes = 0;
+        if (nCoord_ > 0) reassignAll();
+    }
+}
+
+} // namespace collector
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -120,6 +391,9 @@ void setup() {
     cap::begin();
     blescan::begin();
     meshcore::begin();
+    // The collector tier watches the same ESP-NOW receive path. Until a
+    // coordinator registers it claims nothing, so the node mesh is unchanged.
+    meshcore::setCollector(collector::onFrame);
     touch::begin();
     // Card first, then the session machine: it resumes into a fresh file when
     // the last run ended mid-session. Known limitation (accepted): with no GPS
@@ -286,6 +560,7 @@ void loop() {
 
     cap::tick(millis());
     meshcore::tick(millis());
+    collector::tick(millis());
     blescan::tick(millis());
     logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
 
@@ -295,12 +570,15 @@ void loop() {
     // costs the Core's own sweep and buys every node's entire catch.
     {
         static bool camped = false;
-        const bool want = meshcore::count() > 0;
+        // Camp the report/collection channel either when the CYD runs the mesh
+        // itself and has nodes, or when coordinators are live and deliver their
+        // batches there. With no coordinator this is exactly today's rule.
+        const bool want = meshcore::count() > 0 || collector::active();
         if (want != camped) {
             camped = want;
             cap::setCamp(want ? mesh::REPORT_CHAN : 0);
             Serial.printf("mesh: %s\n", want
-                ? "nodes present -- core holding the report channel"
+                ? "holding the report channel"
                 : "no nodes -- core sweeping again");
         }
     }
