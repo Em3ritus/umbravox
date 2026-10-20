@@ -20,6 +20,9 @@ sim/test_nav
 sim/test_csv
 sim/test_wigle
 sim/test_logging
+sim/test_mesh
+sim/test_phase
+sim/test_cluster
 ui/sigil.h.tmp
 
 # Isolated SDD worktrees
