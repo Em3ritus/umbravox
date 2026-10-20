@@ -148,6 +148,16 @@ Flashing notes for the C5 nodes (WCH-bridge boards, newer silicon revisions)
 live in [docs/design-notes.md](docs/design-notes.md) and the project memory —
 some boards need `upload_speed = 115200` and `--no-stub`.
 
+### Flash from your browser
+
+A one-click web flasher ([ESP Web Tools](https://esphome.github.io/esp-web-tools/))
+lives in `web/` and deploys to GitHub Pages via `.github/workflows/pages.yml`.
+Enable Pages in the repo settings (**Source: GitHub Actions**) and it publishes
+at `https://<owner>.github.io/<repo>/`, where a desktop Chromium browser flashes
+the CYD over USB with no toolchain installed. The workflow builds the firmware
+fresh and merges each board into a single image — nothing binary is committed.
+Reproduce the same bundle locally with `tools/make-web-flasher.sh`.
+
 ## Project status
 
 Working on real hardware: dual-band capture, BLE, GPS, SD/WiGLE logging, touch

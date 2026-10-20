@@ -1,0 +1,13 @@
+{
+  "name": "UMBRAVOX Node",
+  "version": "1.0",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32-C5",
+      "parts": [
+        { "path": "umbravox-node.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
