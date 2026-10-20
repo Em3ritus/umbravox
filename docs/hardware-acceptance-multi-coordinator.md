@@ -73,3 +73,31 @@ Boot order matters: **start coordinators BEFORE nodes** — a node that binds to
 ## Bonus (hardware is out anyway): SD logging leftovers
 - SD wardrive logging acceptance item **#7** (flush-duration measurement) is still open — with a card in, start a session, observe the per-flush stall, and record it in the README.
 - A real geolocated wardrive upload still wants a stable outdoor GPS fix (the mesh run above does not).
+
+## Results — 2026-10-20 overnight run (0/1-coordinator path validated)
+
+Run against merged master `cdf5a68`. Rig: CYD (ttyUSB0) + 1 Waveshare coordinator
+(ttyACM0, eco3/v1.2, `--no-stub`) + 1 Xiao C5 node (ttyACM1, native USB). Indoors.
+Full evidence log: `private/hardware-acceptance-results-2026-10-20.md`.
+
+- **Step 0 (backward-compat): PASS.** Flat CYD Core adopted a v3 node, accepted reports
+  climbed continuously (16→77→83); a stale-v2 board was hard-rejected throughout
+  (`speaks protocol v2, we speak v3`) and never entered the table. No flat-path regression;
+  version gate confirmed.
+- **Step 1 (1 coordinator + 1 node): PASS.** Coordinator registered and was assigned
+  (`cluster 0, report ch6, collect ch1`); CYD logged `collector: coordinator … -> cluster 0`;
+  node migrated to the coordinator; steady state `nodes=1 loss=0% folded=… relayed=… drop=0
+  fail=0`. After `GPSFIX`, `WIGLE` exported **7 geolocated rows** across both bands — the
+  full node→coordinator→CYD→export chain. (Pre-fix: rows skipped for no position — expected indoors.)
+- **CYD-reboot reconvergence (part of step 4): PASS.** Rebooting the CYD self-healed back to
+  node-on-coordinator within ~10s (coordinator `REREG_MS`), one transient unicast fail, recovered.
+
+Flashing notes confirmed on hardware: the Waveshare is **eco3 (v1.2)** → `--no-stub` required,
+bootloader at 0x2000 written in its own esptool call. The Xiao's app `Serial` is **not** on its
+USB-CDC (only the ROM boot log appears over ttyACM1) — it meshes fine over RF; rebuild
+`nm-c5-node` with `-DARDUINO_USB_CDC_ON_BOOT=1` to get node logs over USB.
+
+**Still open (need the owner + more boards):** step 2 (2 coordinators — only 1 Waveshare on hand),
+step 3 (~12-node scale + loss-threshold tuning), step 4 full (physical coordinator unplug →
+node fail-streak → migration/re-slice), step 5 (CYD responsiveness under 12 nodes),
+and SD flush-duration (#7, needs a recording session started by a footer tap).
