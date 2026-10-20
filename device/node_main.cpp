@@ -17,6 +17,11 @@ namespace {
 
 constexpr uint32_t HELLO_MS   = 1000;   // while unassigned
 constexpr uint32_t DWELL_MS   = 220;    // per channel, matching the Core
+constexpr uint32_t LISTEN_MS  = 60;     // linger on the report channel after a
+                                        // report, to catch a (re)assignment the
+                                        // Core sends back -- chiefly the
+                                        // collector's redirect that migrates a
+                                        // stranded node onto a coordinator
 // 64 overflowed on a busy sweep -- 8 records lost in a 100s run, which is
 // the only loss left in the chain now the link measures clean. At 32 bytes
 // a record this is 4KB on a node using 15% of its RAM.
@@ -224,6 +229,15 @@ void report() {
         const uint32_t until = millis() + 30;
         while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
     }
+
+    // Stay on the report channel a short while so the recv callback can catch a
+    // (re)assignment the Core broadcasts in response -- the collector's redirect
+    // fires a loop-tick after our report arrives, and without this listen the
+    // node would already have hopped back to sweeping and miss it (migration
+    // then waits for a lucky coincidence, ~30s observed). ~60ms over a 2500ms
+    // cycle is a negligible scan-time cost.
+    const uint32_t listenUntil = millis() + LISTEN_MS;
+    while ((int32_t)(listenUntil - millis()) > 0) delay(2);
 
     if (assigned) park(chans[hop]);
 }
