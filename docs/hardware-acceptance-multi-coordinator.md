@@ -97,7 +97,44 @@ bootloader at 0x2000 written in its own esptool call. The Xiao's app `Serial` is
 USB-CDC (only the ROM boot log appears over ttyACM1) — it meshes fine over RF; rebuild
 `nm-c5-node` with `-DARDUINO_USB_CDC_ON_BOOT=1` to get node logs over USB.
 
-**Still open (need the owner + more boards):** step 2 (2 coordinators — only 1 Waveshare on hand),
-step 3 (~12-node scale + loss-threshold tuning), step 4 full (physical coordinator unplug →
-node fail-streak → migration/re-slice), step 5 (CYD responsiveness under 12 nodes),
-and SD flush-duration (#7, needs a recording session started by a footer tap).
+**Still open at that point (need the owner + more boards):** step 2 (2 coordinators — only 1
+Waveshare on hand), step 3 (~12-node scale + loss-threshold tuning), step 4 full (physical
+coordinator unplug → node fail-streak → migration/re-slice), step 5 (CYD responsiveness under
+12 nodes), and SD flush-duration (#7, needs a recording session started by a footer tap).
+Step 2 was validated the same day — see below.
+
+## Results — 2026-10-20 (step 2: two coordinators + node-migration fix)
+
+Rig: CYD (ttyUSB0) + **two** Waveshare coordinators — one on `ttyACM1`, one on a USB
+charger (boards mesh over RF; USB is only power/flash/serial, so a coordinator needs no
+laptop port once flashed) — + 1 Xiao C5 node (ttyACM0). A coordinator runs on any C5, not
+just a Waveshare (the `nm-c5-coordinator` env is board-agnostic). The eco2 Waveshare
+(SN 5C37182998) flashes with the normal stub; only the eco3/v1.2 board needs `--no-stub`.
+
+- **Step 2 (2 coordinators + band split): PASS.** Both registered on the CYD
+  (`collector: coordinator … -> cluster 0 (1 live)` then `… -> cluster 1 (2 live)`) and got
+  **distinct report channels with a clean band split** — cluster 0 → ch6 (2.4 GHz, 12-ch
+  slice), cluster 1 → ch36 (5 GHz, 8-ch slice). This is `chanplan::partition(2)` on real
+  radios, matching `sim/test_cluster`. (A 3rd coordinator is correctly refused — partition
+  caps at two slices.) Node *splitting* across the two needs ≥2 nodes (only 1 on hand); that
+  allocation is covered by `test_cluster` (12 nodes → 6/6).
+
+- **Node-migration bug found and fixed (merged to master, 93dc79c + fcf4255).** Step 2
+  surfaced a real defect: in collector mode a node that bound to the CYD Core *before* a
+  coordinator registered (boot order, or across a CYD reboot) stayed stuck on the CYD forever
+  and never offloaded — defeating the coordinators. Root cause: the node latched its Core on
+  the first `Assign` and never re-homed, while the CYD's Core kept re-asserting itself. Fix:
+  the node re-homes when an `Assign` names a different Core; the CYD's `meshcore` stops
+  assigning while a coordinator is live; the collector redirects a straggler on its direct
+  `Report`; and the node holds the report channel ~60 ms after reporting so the redirect lands
+  promptly. A security guard only honours a re-home from the node's **current** Core (the mesh
+  is still unauthenticated by design). **Verified on hardware:** a boot-order straggler now
+  migrates off the CYD within ~1 report cycle (CYD direct `reportsRx` plateaued at 2, versus
+  climbing 22→28 over ~48 s before the fix), lands on a coordinator, and stays put (no
+  flapping). Host-tested in `sim/test_rehome.cpp`.
+
+**Still open:** step 3 (~12-node scale + loss-threshold tuning) and step 5 (CYD
+responsiveness under 12 nodes) — both need more nodes than on hand; the allocation/balancing
+logic is host-covered by `test_cluster`. Step 4 full (physical coordinator unplug → fail-streak
+→ reassignment) still wants a hands-on run; the CYD-reboot half of it is already PASS above.
+SD flush-duration (#7) unchanged.
