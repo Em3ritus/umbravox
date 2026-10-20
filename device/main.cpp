@@ -21,6 +21,7 @@
 #include "meshcore.h"
 #include "mesh.h"
 #include "chanplan.h"
+#include "phase.h"
 #include <esp_now.h>
 #include "signatures.h"
 #include "nav.h"
@@ -117,6 +118,7 @@ struct Coord {
     uint32_t lastMs;
     uint8_t  clusterId;
     uint16_t nodes;        // nodes balanced onto this coordinator
+    uint8_t  lossPct;      // its cluster's report loss, from its last batch
 };
 // At most two slices exist (chanplan::partition never makes a third), so at
 // most two coordinators ever get one -- ruling: a slice-less coordinator is
@@ -207,6 +209,7 @@ void handleReg(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     coords_[idx].lastMs = now;
     coords_[idx].clusterId = (uint8_t)idx;
     coords_[idx].nodes = 0;
+    coords_[idx].lossPct = 0;
     Serial.printf("collector: coordinator %02X:%02X:%02X -> cluster %d (%d live)\n",
                   mac[3], mac[4], mac[5], idx, nCoord_);
     reassignAll();
@@ -254,6 +257,19 @@ void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     }
     (void)now;
 
+    // Provisional report phase: this node's ordinal among the nodes pinned to
+    // its coordinator, spread across the report window. The coordinator sends
+    // its own Assign (the authoritative offset) once the node reports in;
+    // until then this staggers a cluster's first deliveries instead of letting
+    // them all land together. A full pin table falls back to "last in line".
+    int ord = -1, total = 0;
+    for (int i = 0; i < meshcore::MAX_NODES; i++) {
+        if (!nmap_[i].used || nmap_[i].coord != c) continue;
+        if (macEq(nmap_[i].mac, mac)) ord = total;
+        total++;
+    }
+    if (ord < 0) { total = coords_[c].nodes; ord = total > 0 ? total - 1 : 0; }
+
     // Redirect the (unchanged) node: point it at the coordinator as its Core,
     // on the coordinator's report channel, sweeping that coordinator's slice.
     // The coordinator refines the per-node plan once the node reports in.
@@ -267,7 +283,7 @@ void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     a.nChan = sl[c].nChan > mesh::MAX_ASSIGN ? mesh::MAX_ASSIGN : sl[c].nChan;
     for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[c].chans[k];
     a.camp = 0;
-    a.phaseMs = 0;
+    a.phaseMs = (uint16_t)mesh_phase::offset(ord, total, mesh::REPORT_MS);
     esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
 }
 
@@ -276,6 +292,24 @@ void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
 // True once at least one coordinator is live: the CYD then camps the
 // collection channel and leaves node handling to the coordinators.
 bool active() { return nCoord_ > 0; }
+
+// Live coordinators, and the worst report loss among them. Both read the
+// coordinator table the receive callback also writes, so take the same lock.
+int count() {
+    portENTER_CRITICAL(&mux);
+    const int n = nCoord_;
+    portEXIT_CRITICAL(&mux);
+    return n;
+}
+
+uint8_t maxLossPct() {
+    uint8_t m = 0;
+    portENTER_CRITICAL(&mux);
+    for (int i = 0; i < nCoord_; i++)
+        if (coords_[i].live && coords_[i].lossPct > m) m = coords_[i].lossPct;
+    portEXIT_CRITICAL(&mux);
+    return m;
+}
 
 // The frame hook meshcore calls before its own node handling. Returns true to
 // claim a frame. With no coordinator yet, only a CoordReg is claimed; node
@@ -289,18 +323,24 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
     }
     if (mesh::valid(data, len, mesh::MSG_CBATCH, (int)sizeof(mesh::ClusterBatch))) {
         const mesh::ClusterBatch* b = (const mesh::ClusterBatch*)data;
-        batchesRx++;
-        // Refresh the coordinator's liveness and fold its sightings through
-        // the same dedup/counting path as everything else.
+        // Only a coordinator we have registered may deliver. A batch never
+        // creates a coordinator entry (only a CoordReg does), so a stray or
+        // spoofed batch cannot fill the two slots and lock the real one out; a
+        // coordinator we timed out re-registers with its own CoordReg.
+        bool known = false;
         portENTER_CRITICAL(&mux);
         for (int i = 0; i < nCoord_; i++)
-            if (coords_[i].live && macEq(coords_[i].mac, b->h.mac))
+            if (coords_[i].live && macEq(coords_[i].mac, b->h.mac)) {
                 coords_[i].lastMs = millis();
+                coords_[i].lossPct = b->lossPct;
+                known = true;
+            }
         portEXIT_CRITICAL(&mux);
-        // Answer every batch with the sender's CoordAssign (or, for a
-        // coordinator we timed out and forgot, a fresh registration). A
-        // coordinator is only on this channel while it delivers, so this is
-        // how a missed or changed assignment reaches it.
+        if (!known) return true;          // claimed, but not folded
+        batchesRx++;
+        // Answer every batch with the sender's CoordAssign. A coordinator is
+        // only on this channel while it delivers, so this is how a missed or
+        // changed assignment reaches it.
         pushEv(EV_REG, b->h.mac, 1);
         char ssid[21];
         for (int k = 0; k < b->count && k < mesh::MAX_BATCH; k++) {
@@ -624,7 +664,13 @@ void loop() {
     s.coreChan    = s.chan;
     s.coreFrames  = cap::localFrames();
     s.meshHits    = cap::frames();
-    s.meshLossPct = meshcore::lossPct();
+    // The CYD's own node table is empty once coordinators are live, so loss
+    // is the worse of that and what the coordinators report for their clusters.
+    {
+        const uint8_t own = meshcore::lossPct(), cl = collector::maxLossPct();
+        s.meshLossPct = own > cl ? own : cl;
+        s.meshCoords  = (uint8_t)collector::count();
+    }
     s.coreFound   = cap::foundBy(0);
 
     // Declared before the dimmer, which needs the brightness and timeout

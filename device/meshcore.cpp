@@ -232,7 +232,7 @@ void assignAll(uint32_t nowMs) {
         // node reads nChan==0 as unassigned and stops queueing until it is given
         // work, so make sure it is never marked camping on a channel it lacks.
         a.camp = p.n > 0 && p.camp;
-        a.phaseMs = (uint16_t)mesh_phase::offset(slot - 1, live, 2500 /* REPORT_MS */);
+        a.phaseMs = (uint16_t)mesh_phase::offset(slot - 1, live, mesh::REPORT_MS);
 
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
         nodes_[i].nChan = p.n;

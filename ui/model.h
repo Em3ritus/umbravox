@@ -223,6 +223,7 @@ struct State {
     uint32_t coreFrames = 0;   // this radio only
     uint32_t meshHits = 0;     // every sighting, local and relayed
     uint8_t  meshLossPct = 0;  // reports lost, across every live node
+    uint8_t  meshCoords = 0;   // live coordinators (0 = the Core runs the nodes itself)
     uint16_t coreFound = 0;    // devices this radio discovered first
 
     // The live alert, if any. `alertAtMs` is when it was last seen; the

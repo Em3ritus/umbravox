@@ -30,6 +30,9 @@ constexpr uint8_t MAGIC       = 0xAE;
 // isolation, which cost a debugging session to notice.
 constexpr uint8_t VERSION     = 3;            // was 2: coordinator tier added
 constexpr uint8_t REPORT_CHAN = 1;
+// How often a node (and a coordinator) delivers its batch, and so the window
+// that report-phase offsets are spread across.
+constexpr uint32_t REPORT_MS  = 2500;
 
 enum MsgKind : uint8_t {
     MSG_HELLO  = 1,   // node -> core: I exist, I am unassigned
@@ -69,8 +72,9 @@ struct __attribute__((packed)) Assign {
     uint16_t phaseMs;     // report-time offset, so a cluster's nodes interleave
     uint8_t camp;         // 1 = sit still on chans[0], 0 = sweep them
 };
+static_assert(sizeof(Assign) <= 250, "ESP-NOW frames cap at 250 bytes");
 
-// One sighting as it crosses the air. 30 bytes, so seven fit in a frame
+// One sighting as it crosses the air. 34 bytes, so seven fit in a frame
 // alongside the header and still clear ESP-NOW's 250-byte limit.
 struct __attribute__((packed)) Rec {
     uint8_t  bssid[6];
@@ -114,6 +118,7 @@ struct __attribute__((packed)) CoordAssign {
     uint8_t nChan;
     uint8_t chans[MAX_SLICE]; // the band slice this coordinator plans across
 };
+static_assert(sizeof(CoordAssign) <= 250, "ESP-NOW frames cap at 250 bytes");
 
 // Coordinator -> CYD: a batch of already-deduplicated sightings plus the
 // cluster's honest loss, so the CYD can surface which cluster needs splitting.

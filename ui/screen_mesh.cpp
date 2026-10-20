@@ -63,13 +63,18 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
 
-    char cover[12], id[12];
+    char cover[24], id[12];
 
     // The Core's own entry first. It is a listener too, and when it is camping
     // it is the only thing covering the report channel. It has no link to
     // lose anything over, so it carries no loss figure.
     cover[0] = 0;
-    cat(cover, "CORE ");
+    // With coordinators live the CYD is the collector, not the nodes' Core, so
+    // its own node list is empty even while whole clusters report. The count
+    // takes the place of the "CORE" label rather than let "no nodes" read as
+    // "nothing is happening".
+    if (s.meshCoords > 0) { char n[8]; u2s(n, s.meshCoords); cat(cover, n); cat(cover, " COORD "); }
+    else                  cat(cover, "CORE ");
     if (s.coreCamping) { cat(cover, "CH"); char n[8]; u2s(n, s.coreChan); cat(cover, n); }
     else               cat(cover, "SWEEP");
     c.fill(5, HEAD_Y + 1, 3, 5, pal::WITCH_HI);
@@ -86,8 +91,13 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
     c.vline(COL_X[1] - 4, ROW_Y, COL_ROWS * ROW_HT, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
 
     if (s.nNodes == 0) {
-        c.textCenter(W / 2, ROW_Y + 22, "NO NODES", pal::DIM);
-        c.textCenter(W / 2, ROW_Y + 32, "CORE IS SWEEPING ALONE", pal::EDGE_LIT);
+        if (s.meshCoords > 0) {
+            c.textCenter(W / 2, ROW_Y + 22, "NO LOCAL NODES", pal::DIM);
+            c.textCenter(W / 2, ROW_Y + 32, "CLUSTERS REPORT VIA COORD", pal::EDGE_LIT);
+        } else {
+            c.textCenter(W / 2, ROW_Y + 22, "NO NODES", pal::DIM);
+            c.textCenter(W / 2, ROW_Y + 32, "CORE IS SWEEPING ALONE", pal::EDGE_LIT);
+        }
     }
 
     for (int i = 0; i < s.nNodes && i < MAX_NODE_ROWS && i < 2 * COL_ROWS; i++) {
@@ -141,7 +151,8 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
         else {
             bool moved = s.nNodes != prev.nNodes || s.coreCamping != prev.coreCamping ||
                          s.coreFrames != prev.coreFrames ||
-                         s.meshLossPct != prev.meshLossPct;
+                         s.meshLossPct != prev.meshLossPct ||
+                         s.meshCoords != prev.meshCoords;
             for (int i = 0; !moved && i < s.nNodes; i++)
                 moved = s.nodes[i].recs != prev.nodes[i].recs ||
                         s.nodes[i].ageS != prev.nodes[i].ageS ||

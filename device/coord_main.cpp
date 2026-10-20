@@ -29,7 +29,10 @@
 namespace {
 
 constexpr uint32_t CREG_MS   = 1000;   // CoordReg cadence while unassigned
-constexpr uint32_t REPORT_MS = 2500;   // how often to deliver to the CYD
+// Silence from the CYD this long (it answers every batch with our CoordAssign)
+// means it has forgotten us -- rebooted, or timed us out -- so register again.
+// Under the CYD's 20s coordinator timeout.
+constexpr uint32_t REREG_MS  = 10000;
 // The coordinator's deduped store. A cluster is a handful of nodes and the
 // CYD holds the big table; this only has to buffer what has changed since the
 // last delivery. 512 BSSIDs at ~36 bytes is ~18KB.
@@ -52,6 +55,7 @@ uint8_t  sliceN = 0;
 volatile bool sliceApplied = false;
 
 uint32_t lastCreg = 0, lastReport = 0;
+volatile uint32_t lastAssignRx = 0;   // millis() of the last CoordAssign addressed to us
 
 // --- the coordinator's own deduped sightings -----------------------------
 struct Sight {
@@ -133,7 +137,11 @@ void fold(const uint8_t* bssid, int8_t rssi, uint8_t chan, uint8_t band,
 bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
     const mesh::Hdr* h = (const mesh::Hdr*)data;
     if (h->ver != mesh::VERSION) return false;      // meshcore reports the skew
-    if (h->kind == mesh::MSG_HELLO || h->kind == mesh::MSG_REPORT) return false;
+    // A Hello is an unassigned node asking the CYD for a Core. Claim it (drop
+    // it) so this coordinator never adopts a node it has not been given; it
+    // learns its real nodes from their Reports.
+    if (h->kind == mesh::MSG_HELLO) return true;
+    if (h->kind == mesh::MSG_REPORT) return false;
     if (h->kind != mesh::MSG_CASSIGN) return true;  // CREG/CBATCH/ASSIGN: not ours to adopt
 
     if (!mesh::valid(data, len, mesh::MSG_CASSIGN, (int)sizeof(mesh::CoordAssign)))
@@ -159,6 +167,7 @@ bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
                    reportChan != a->reportChan || sliceN != n;
     for (int i = 0; !changed && i < n; i++) if (slice[i] != a->chans[i]) changed = true;
 
+    lastAssignRx = millis();
     const bool first = !assigned;
     clusterId   = a->clusterId;
     reportChan  = a->reportChan;
@@ -175,6 +184,16 @@ bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
 
 void onSent(const wifi_tx_info_t*, esp_now_send_status_t st) {
     if (st == ESP_NOW_SEND_SUCCESS) txOk++; else txFail++;
+}
+
+void sendCreg() {
+    mesh::CoordReg c = {};
+    c.h.magic = mesh::MAGIC;
+    c.h.ver   = mesh::VERSION;
+    c.h.kind  = mesh::MSG_CREG;
+    memcpy(c.h.mac, selfMac, 6);
+    c.wants5 = 1;
+    esp_now_send(bcast, (const uint8_t*)&c, sizeof c);
 }
 
 // Deliver the deduped store: hop to the collection channel, send ClusterBatch
@@ -243,6 +262,12 @@ void report() {
         while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
     }
 
+    // The CYD only folds batches from coordinators it has registered, so one
+    // that has forgotten us (rebooted, or timed us out) must hear a CoordReg
+    // from us. It answers every batch with our CoordAssign; none for REREG_MS
+    // means it is no longer listening to our batches.
+    if (millis() - lastAssignRx > REREG_MS) sendCreg();
+
     // Linger on the collection channel: the CYD answers a batch with our
     // CoordAssign, and this is the only moment we are on a channel it can reach.
     delay(30);
@@ -289,13 +314,7 @@ void loop() {
     if (!assigned) {
         if (now - lastCreg >= CREG_MS) {
             lastCreg = now;
-            mesh::CoordReg c = {};
-            c.h.magic = mesh::MAGIC;
-            c.h.ver   = mesh::VERSION;
-            c.h.kind  = mesh::MSG_CREG;
-            memcpy(c.h.mac, selfMac, 6);
-            c.wants5 = 1;
-            esp_now_send(bcast, (const uint8_t*)&c, sizeof c);
+            sendCreg();
         }
         delay(5);
         return;
@@ -312,7 +331,7 @@ void loop() {
 
     meshcore::tick(now);
 
-    if (now - lastReport >= REPORT_MS) {
+    if (now - lastReport >= mesh::REPORT_MS) {
         lastReport = now;
         report();
         Serial.printf("coord: cl%u ch%u nodes=%d loss=%u%% | folded=%-5u relayed=%-5u "

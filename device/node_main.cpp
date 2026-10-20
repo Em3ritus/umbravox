@@ -16,7 +16,6 @@ namespace {
 
 constexpr uint32_t HELLO_MS   = 1000;   // while unassigned
 constexpr uint32_t DWELL_MS   = 220;    // per channel, matching the Core
-constexpr uint32_t REPORT_MS  = 2500;   // how often to deliver
 // 64 overflowed on a busy sweep -- 8 records lost in a 100s run, which is
 // the only loss left in the chain now the link measures clean. At 32 bytes
 // a record this is 4KB on a node using 15% of its RAM.
@@ -36,6 +35,10 @@ volatile bool assigned = false;
 uint8_t  reportChan = mesh::REPORT_CHAN;
 int      hop = 0;
 uint32_t hopAt = 0, lastHello = 0, lastReport = 0;
+// The phaseMs last applied to lastReport. A coordinator's Assign (with the real
+// per-node offset) arrives after the CYD's provisional one, so a CHANGED phase
+// re-seeds the report timer, not just the first assignment.
+uint16_t lastPhase = 0;
 
 mesh::Rec queue_[QUEUE];
 uint32_t  qAt[QUEUE];          // millis() when each was heard
@@ -148,10 +151,14 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
         hop = 0;
         park(chans[0]);
         hopAt = millis();
-        // First report at +phaseMs into the window, so a cluster's nodes
-        // interleave rather than all reporting at once. phaseMs is < REPORT_MS
-        // and 0 for a lone Core, which keeps the old report-almost-now timing.
-        lastReport = millis() - (REPORT_MS - a->phaseMs);
+    }
+    // Report at +phaseMs into the window, so a cluster's nodes interleave
+    // rather than all reporting at once. phaseMs is < REPORT_MS and 0 for a
+    // lone Core, which keeps the old report-almost-now timing. Re-seed on the
+    // first assignment and whenever a later one carries a different offset.
+    if (assigned && (first || a->phaseMs != lastPhase)) {
+        lastPhase = a->phaseMs;
+        lastReport = millis() - (mesh::REPORT_MS - a->phaseMs);
     }
 }
 
@@ -269,7 +276,7 @@ void loop() {
         hopAt = now;
     }
 
-    if (now - lastReport >= REPORT_MS) {
+    if (now - lastReport >= mesh::REPORT_MS) {
         lastReport = now;
         report();
         if (failStreak >= LOSS_STREAK) {
