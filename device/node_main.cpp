@@ -148,6 +148,10 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
         hop = 0;
         park(chans[0]);
         hopAt = millis();
+        // First report at +phaseMs into the window, so a cluster's nodes
+        // interleave rather than all reporting at once. phaseMs is < REPORT_MS
+        // and 0 for a lone Core, which keeps the old report-almost-now timing.
+        lastReport = millis() - (REPORT_MS - a->phaseMs);
     }
 }
 
