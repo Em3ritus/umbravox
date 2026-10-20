@@ -1,0 +1,13 @@
+{
+  "name": "UMBRAVOX Coordinator",
+  "version": "1.0",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32-C5",
+      "parts": [
+        { "path": "umbravox-coordinator.bin", "offset": 0 }
+      ]
+    }
+  ]
+}

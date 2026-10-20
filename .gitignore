@@ -29,3 +29,6 @@ ui/sigil.h.tmp
 
 # Isolated SDD worktrees
 .worktrees/
+
+# Web flasher build output (built by CI / make-web-flasher.sh)
+web/dist/
