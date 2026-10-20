@@ -1,0 +1,39 @@
+name: CI
+
+# Host tests (including the AddressSanitizer BLE parser test) and a build of
+# all three device firmwares, on every push and pull request. The `regress`
+# target is not run here: its render baseline lives in private/, which is
+# gitignored, so it only runs on a developer's machine.
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-tests:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the host test suite
+        run: make -C sim test
+
+  device-build:
+    name: Build firmwares
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Build CYD, node and coordinator
+        run: pio run -e nm-cyd-c5 -e nm-c5-node -e nm-c5-coordinator
