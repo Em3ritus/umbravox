@@ -13,13 +13,28 @@ cd "$(dirname "$0")/.."
 
 PIO="${PIO:-pio}"
 ESPTOOL="${ESPTOOL:-esptool}"
+EWT_VERSION="${EWT_VERSION:-10.4.0}"
 OUT=web/dist
 
+command -v npm >/dev/null || { echo "error: npm is required to vendor esp-web-tools" >&2; exit 1; }
 BOOT_APP0=$(find "${HOME}/.platformio/packages" -name boot_app0.bin 2>/dev/null | head -1)
 [ -n "$BOOT_APP0" ] || { echo "error: boot_app0.bin not found under ~/.platformio" >&2; exit 1; }
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp web/index.html web/manifest-*.json "$OUT"/
+
+# Vendor the ESP Web Tools bundle same-origin. The tool writes firmware, so a
+# CDN compromise at flash time could ship a malicious flasher; a single SRI
+# hash also cannot cover the module chunks it imports dynamically. npm pack
+# fetches the pinned, self-contained dist/web (esptool-js is bundled into it).
+echo ">> vendoring esp-web-tools@${EWT_VERSION}"
+tmp=$(mktemp -d)
+( cd "$tmp" && npm pack "esp-web-tools@${EWT_VERSION}" >/dev/null )
+tar -xzf "$tmp"/esp-web-tools-*.tgz -C "$tmp"
+mkdir -p "$OUT/esp-web-tools"
+cp "$tmp"/package/dist/web/* "$OUT/esp-web-tools/"
+cp "$tmp"/package/LICENSE* "$OUT/esp-web-tools/" 2>/dev/null || true
+rm -rf "$tmp"
 
 merge() {  # <pio-env> <output-name>
   local env="$1" out="$2" d=".pio/build/$1"
