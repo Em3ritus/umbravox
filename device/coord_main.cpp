@@ -95,7 +95,18 @@ void fold(const uint8_t* bssid, int8_t rssi, uint8_t chan, uint8_t band,
         if (eq) { slot = i; break; }
     }
     if (slot < 0) slot = free;
-    if (slot < 0) { storeDrop++; portEXIT_CRITICAL(&mux); return; }
+    if (slot < 0) {
+        // Full. The CYD holds the real table and dedups, so an entry that has
+        // already been relayed is cheap to lose: evict the stalest clean one.
+        // Only when every slot is still waiting to be delivered is it dropped.
+        uint32_t oldest = 0;
+        for (int i = 0; i < STORE; i++) {
+            if (store_[i].dirty) continue;
+            const uint32_t age = millis() - store_[i].lastMs;
+            if (slot < 0 || age > oldest) { slot = i; oldest = age; }
+        }
+        if (slot < 0) { storeDrop++; portEXIT_CRITICAL(&mux); return; }
+    }
 
     Sight& s = store_[slot];
     s.used = true;
@@ -113,13 +124,22 @@ void fold(const uint8_t* bssid, int8_t rssi, uint8_t chan, uint8_t band,
     portEXIT_CRITICAL(&mux);
 }
 
-// The CYD's CoordAssign, intercepted before meshcore's node handling. Every
-// other frame falls through to meshcore (the node path), unchanged.
+// Frames the coordinator tier owns, intercepted before meshcore's node
+// handling. meshcore adopts the sender of ANY frame it does not recognise as a
+// node, so every coordinator-tier kind -- and an Assign meant for some other
+// cluster's node -- is claimed here even when it is not for us; otherwise a
+// neighbouring coordinator's CoordAssign would register that coordinator as
+// one of our nodes. Only Hello and Report (genuine node traffic) fall through.
 bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
+    const mesh::Hdr* h = (const mesh::Hdr*)data;
+    if (h->ver != mesh::VERSION) return false;      // meshcore reports the skew
+    if (h->kind == mesh::MSG_HELLO || h->kind == mesh::MSG_REPORT) return false;
+    if (h->kind != mesh::MSG_CASSIGN) return true;  // CREG/CBATCH/ASSIGN: not ours to adopt
+
     if (!mesh::valid(data, len, mesh::MSG_CASSIGN, (int)sizeof(mesh::CoordAssign)))
-        return false;
+        return true;
     const mesh::CoordAssign* a = (const mesh::CoordAssign*)data;
-    for (int i = 0; i < 6; i++) if (a->h.mac[i] != selfMac[i]) return false;  // not for us
+    for (int i = 0; i < 6; i++) if (a->h.mac[i] != selfMac[i]) return true;  // another coordinator's
 
     if (!haveCyd && src) {
         memcpy(cydMac, src, 6);
@@ -131,14 +151,22 @@ bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
         if (esp_now_add_peer(&p) == ESP_OK) haveCyd = true;
     }
 
+    // The CYD repeats our CoordAssign in answer to every batch (a broadcast
+    // sent while we were parked elsewhere would otherwise be lost for good),
+    // so only a real change re-feeds meshcore.
+    const uint8_t n = a->nChan > mesh::MAX_SLICE ? mesh::MAX_SLICE : a->nChan;
+    bool changed = !assigned || clusterId != a->clusterId ||
+                   reportChan != a->reportChan || sliceN != n;
+    for (int i = 0; !changed && i < n; i++) if (slice[i] != a->chans[i]) changed = true;
+
     const bool first = !assigned;
     clusterId   = a->clusterId;
     reportChan  = a->reportChan;
     collectChan = a->collectChan;
-    sliceN = a->nChan > mesh::MAX_SLICE ? mesh::MAX_SLICE : a->nChan;
+    sliceN = n;
     for (int i = 0; i < sliceN; i++) slice[i] = a->chans[i];
     assigned = true;
-    sliceApplied = false;        // re-feed meshcore on the next loop
+    if (changed) sliceApplied = false;       // re-feed meshcore on the next loop
     if (first)
         Serial.printf("coord: cluster %u, report ch%u, collect ch%u, %u slice ch\n",
                       clusterId, reportChan, collectChan, sliceN);
@@ -161,6 +189,7 @@ void report() {
     park(collectChan);
     delay(5);                                  // let the radio settle
 
+    bool first = true;
     for (;;) {
         int n = 0;
         const uint32_t sendAt = millis();
@@ -181,7 +210,11 @@ void report() {
             n++;
         }
         portEXIT_CRITICAL(&mux);
-        if (!n) break;
+        // Always send one batch per delivery, even an empty one: it is the
+        // coordinator's heartbeat. A quiet cluster would otherwise be timed
+        // out by the CYD and silently dropped from the mesh.
+        if (!n && !first) break;
+        first = false;
 
         mesh::ClusterBatch b = {};
         b.h.magic = mesh::MAGIC;
@@ -210,6 +243,9 @@ void report() {
         while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
     }
 
+    // Linger on the collection channel: the CYD answers a batch with our
+    // CoordAssign, and this is the only moment we are on a channel it can reach.
+    delay(30);
     park(reportChan);
 }
 

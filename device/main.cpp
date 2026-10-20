@@ -160,10 +160,11 @@ void pushEv(uint8_t kind, const uint8_t* mac, uint8_t wants5) {
 // Hand every live coordinator its slice (re-partitioning for the current
 // count). partition returns the slice count; we honour it and never address a
 // coordinator beyond it.
-void reassignAll() {
+void reassignAll(int only = -1) {
     chanplan::Slice sl[2];
     const int n = chanplan::partition(nCoord_, sl);
     for (int i = 0; i < nCoord_ && i < n; i++) {
+        if (only >= 0 && i != only) continue;
         mesh::CoordAssign a = {};
         a.h.magic = mesh::MAGIC;
         a.h.ver   = mesh::VERSION;
@@ -183,7 +184,7 @@ void handleReg(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     for (int i = 0; i < nCoord_; i++)
         if (coords_[i].live && macEq(coords_[i].mac, mac)) {
             coords_[i].lastMs = now;      // already ours; just re-assure it
-            reassignAll();
+            reassignAll(i);
             return;
         }
     // New coordinator. Only accept it if partition would actually give the
@@ -293,9 +294,14 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
         // the same dedup/counting path as everything else.
         portENTER_CRITICAL(&mux);
         for (int i = 0; i < nCoord_; i++)
-            if (coords_[i].live && coords_[i].clusterId == b->clusterId)
+            if (coords_[i].live && macEq(coords_[i].mac, b->h.mac))
                 coords_[i].lastMs = millis();
         portEXIT_CRITICAL(&mux);
+        // Answer every batch with the sender's CoordAssign (or, for a
+        // coordinator we timed out and forgot, a fresh registration). A
+        // coordinator is only on this channel while it delivers, so this is
+        // how a missed or changed assignment reaches it.
+        pushEv(EV_REG, b->h.mac, 1);
         char ssid[21];
         for (int k = 0; k < b->count && k < mesh::MAX_BATCH; k++) {
             const mesh::Rec& rc = b->recs[k];
@@ -317,11 +323,10 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
         pushEv(EV_HELLO, hh->h.mac, hh->wants5);
         return true;
     }
-    // Stray node reports (nodes report to coordinators now) are ignored while
-    // coordinators run, so meshcore does not re-adopt them as its own cluster.
-    if (nCoord_ > 0 &&
-        mesh::valid(data, len, mesh::MSG_REPORT, (int)sizeof(mesh::Report)))
-        return true;
+    // Node Reports are left to meshcore. A balanced node reports unicast to its
+    // coordinator, which this radio never hears; a Report that does reach us is
+    // from a node still bound to the CYD as its Core (assigned before any
+    // coordinator existed), and dropping it would lose that node's catch.
     return false;
 }
 
@@ -340,16 +345,21 @@ void tick(uint32_t now) {
     // Expire a coordinator that has gone quiet, compacting the array so the
     // surviving one keeps cluster 0 (the whole-band slice) when it is alone.
     bool changed = false;
+    uint8_t goneId[2];
+    int nGone = 0;
+    portENTER_CRITICAL(&mux);
     for (int i = 0; i < nCoord_; i++) {
         if (coords_[i].live && (now - coords_[i].lastMs) > COORD_TIMEOUT_MS) {
-            Serial.printf("collector: coordinator cluster %u timed out\n",
-                          coords_[i].clusterId);
+            if (nGone < 2) goneId[nGone++] = coords_[i].clusterId;
             for (int j = i; j < nCoord_ - 1; j++) coords_[j] = coords_[j + 1];
             nCoord_--;
             i--;
             changed = true;
         }
     }
+    portEXIT_CRITICAL(&mux);
+    for (int g = 0; g < nGone; g++)
+        Serial.printf("collector: coordinator cluster %u timed out\n", goneId[g]);
     if (changed) {
         for (int i = 0; i < nCoord_; i++) coords_[i].clusterId = (uint8_t)i;
         // Node pins are stale after a reshuffle; let nodes rebalance on their
@@ -578,7 +588,9 @@ void loop() {
             camped = want;
             cap::setCamp(want ? mesh::REPORT_CHAN : 0);
             Serial.printf("mesh: %s\n", want
-                ? "holding the report channel"
+                ? (meshcore::count() > 0
+                       ? "nodes present -- core holding the report channel"
+                       : "coordinator live -- holding the collection channel")
                 : "no nodes -- core sweeping again");
         }
     }

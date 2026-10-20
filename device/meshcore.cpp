@@ -227,19 +227,24 @@ void assignAll(uint32_t nowMs) {
         a.reportChan = reportChan;
         a.nChan = p.n;
         for (int k = 0; k < p.n; k++) a.chans[k] = p.ch[k];
-        a.camp = p.camp;
+        // planCluster hands out n==0 when the pool has fewer channels than
+        // there are nodes. That is an IDLE node, not one sweeping nothing: the
+        // node reads nChan==0 as unassigned and stops queueing until it is given
+        // work, so make sure it is never marked camping on a channel it lacks.
+        a.camp = p.n > 0 && p.camp;
         a.phaseMs = (uint16_t)mesh_phase::offset(slot - 1, live, 2500 /* REPORT_MS */);
 
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
         nodes_[i].nChan = p.n;
-        nodes_[i].camp  = p.camp;
+        nodes_[i].camp  = a.camp;
         for (int k = 0; k < p.n && k < 10; k++) nodes_[i].chans[k] = p.ch[k];
         nodes_[i].assigned = true;
 
         if (shapeChanged)
             Serial.printf("mesh: node %02X:%02X:%02X -> %s %u ch (first %u)\n",
                           nodes_[i].mac[3], nodes_[i].mac[4], nodes_[i].mac[5],
-                          p.camp ? "CAMP" : "sweep", p.n, p.n ? p.ch[0] : 0);
+                          p.n == 0 ? "IDLE" : p.camp ? "CAMP" : "sweep",
+                          p.n, p.n ? p.ch[0] : 0);
     }
     if (shapeChanged)
         Serial.printf("mesh: %d node(s), reporting on ch%u\n", live, reportChan);

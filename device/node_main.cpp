@@ -31,6 +31,9 @@ uint8_t  chans[mesh::MAX_ASSIGN];
 uint8_t  nChan = 0;
 bool     camp = false;
 bool     assigned = false;
+// Where to deliver. mesh::REPORT_CHAN against a lone Core -- which is all a
+// Core ever assigns -- and a coordinator's own channel when one has taken us.
+uint8_t  reportChan = mesh::REPORT_CHAN;
 int      hop = 0;
 uint32_t hopAt = 0, lastHello = 0, lastReport = 0;
 
@@ -123,6 +126,7 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
     nChan = a->nChan > mesh::MAX_ASSIGN ? mesh::MAX_ASSIGN : a->nChan;
     for (int i = 0; i < nChan; i++) chans[i] = a->chans[i];
     camp = a->camp;
+    if (a->reportChan) reportChan = a->reportChan;
     assigned = nChan > 0;
     if (first && assigned) {
         Serial.printf("node: assigned %u channels (%u..%u), camp=%u\n",
@@ -138,7 +142,7 @@ void report() {
     mesh::Rec batch[mesh::MAX_RECS];
     uint32_t  batchAt[mesh::MAX_RECS];
     int n;
-    park(mesh::REPORT_CHAN);
+    park(reportChan);
     delay(5);                                  // let the radio settle
 
     for (;;) {
