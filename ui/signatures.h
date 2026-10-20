@@ -64,8 +64,10 @@ const char* confName(uint8_t c);
 // WiFi evidence: the OUI of the BSSID, and the SSID if the beacon carried one.
 Hit matchWifi(const uint8_t mac[6], const char* ssid);
 
-// BLE evidence: a 16-bit service UUID and/or a SIG company identifier.
-// Pass 0 for either when it was not present.
-Hit matchBle(uint16_t svcUuid, uint16_t companyId);
+// BLE evidence: a 16-bit service UUID, a SIG company identifier, and/or the
+// advertised local name. Pass 0 / nullptr for whatever was not present. The
+// name is matched as a case-insensitive substring: some devices (Flock's
+// accessories on locally administered MACs) are identifiable only that way.
+Hit matchBle(uint16_t svcUuid, uint16_t companyId, const char* name = nullptr);
 
 } // namespace ui
