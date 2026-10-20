@@ -24,8 +24,9 @@ int main() {
     const char* want =
         "WigleWifi-1.6,appRelease=umbravox,model=NM-CYD-C5,release=1,"
         "device=esp32c5,display=,board=,brand=UMBRAVOX\n"
-        "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
-        "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n";
+        "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,"
+        "CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,"
+        "RCOIs,MfgrId,Type\n";
     check("preamble and column header are exact WigleWifi-1.6", strcmp(b.s, want) == 0);
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

@@ -69,4 +69,14 @@ inline void mac(char* out, const uint8_t* m) {
              m[0], m[1], m[2], m[3], m[4], m[5]);
 }
 
+// WiFi channel -> centre frequency in MHz, for the WigleWifi-1.6 Frequency
+// column. 2.4 GHz is 2412 + 5*(ch-1), with channel 14 the exception; 5 GHz is
+// 5000 + 5*ch. The band is read from the channel number, which is unambiguous
+// on this radio (2.4 GHz is channels 1-14, 5 GHz is 36 and up).
+inline int freqMhz(int chan) {
+    if (chan <= 0)  return 0;
+    if (chan <= 14) return chan == 14 ? 2484 : 2412 + 5 * (chan - 1);
+    return 5000 + 5 * chan;
+}
+
 } // namespace csv
