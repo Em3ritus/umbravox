@@ -21,6 +21,7 @@
 #include "meshcore.h"
 #include "mesh.h"
 #include "chanplan.h"
+#include "balance.h"
 #include "phase.h"
 #include <esp_now.h>
 #include "signatures.h"
@@ -225,13 +226,16 @@ int findNode(const uint8_t* mac) {
 // those whose slice the node's radio can actually cover. A 2.4-only node
 // never goes to the 5GHz slice (reportChan > 14 marks it).
 int pickCoord(uint8_t wants5, const chanplan::Slice* sl, int nSlice) {
-    int best = -1;
-    for (int i = 0; i < nCoord_ && i < nSlice; i++) {
-        if (!coords_[i].live) continue;
-        if (!wants5 && sl[i].reportChan > 14) continue;  // 5GHz slice, 2.4-only node
-        if (best < 0 || coords_[i].nodes < coords_[best].nodes) best = i;
-    }
-    return best;
+    // Marshal the live coordinator table into the flat arrays balance::pick
+    // takes; the policy itself lives in balance.h so it can be tested at scale.
+    bool     live[2]  = {false, false};
+    uint16_t nodes[2] = {0, 0};
+    uint8_t  rc[2]    = {0, 0};
+    const int nc = nCoord_ < 2 ? nCoord_ : 2;
+    for (int i = 0; i < nc; i++) { live[i] = coords_[i].live; nodes[i] = coords_[i].nodes; }
+    const int ns = nSlice < 2 ? nSlice : 2;
+    for (int i = 0; i < ns; i++) rc[i] = sl[i].reportChan;
+    return balance::pick(wants5, live, nodes, rc, nCoord_, nSlice);
 }
 
 void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
