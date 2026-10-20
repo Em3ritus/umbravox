@@ -624,6 +624,7 @@ void loop() {
     s.coreChan    = s.chan;
     s.coreFrames  = cap::localFrames();
     s.meshHits    = cap::frames();
+    s.meshLossPct = meshcore::lossPct();
     s.coreFound   = cap::foundBy(0);
 
     // Declared before the dimmer, which needs the brightness and timeout
