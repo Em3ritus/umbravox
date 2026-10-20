@@ -54,7 +54,7 @@ int main() {
         // least one mutation survive -- otherwise it was never exercised.
         static const unsigned char MASKS[] = {0xFF, 0x01, 0x02, 0x04, 0x10};
         bool exercised[sizeof(Settings)] = {};
-        // Settings has no padding (the `reserved` member fills the slack
+        // Settings has no padding (the `labels` member fills the slack
         // byte), so every byte the constructor leaves untouched is a field
         // someone forgot to initialise. Zero is what makes this heuristic
         // exact rather than approximate: with any slack, such a field could
@@ -98,6 +98,8 @@ int main() {
         check("a sweep change is detected", !settingsEqual(a, b));
         b = a; b.bright = (uint8_t)(a.bright + 1);
         check("an existing field is still detected", !settingsEqual(a, b));
+        b = a; b.labels = 1;
+        check("a label-mode change is detected", !settingsEqual(a, b));
     }
 
     printf("clamping survives a corrupt store:\n");

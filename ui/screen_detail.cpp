@@ -6,6 +6,7 @@
 // climbing for the last twenty sightings tells you that you are driving
 // toward whatever it is.
 #include "screens.h"
+#include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -102,7 +103,7 @@ void drawChart(Canvas& c, const Detail& d) {
 void drawDetail(Canvas& c, const State& s, Dirty* d) {
     const Detail& v = s.detail;
     c.clear(pal::VOID);
-    drawHeader(c, s, "SIGHTING");
+    drawHeader(c, s, screenName(SCR_DETAIL, s.set.labels));
 
     if (!v.valid) {
         c.textCenter(W / 2, BODY_Y + 30, "GONE", pal::DIM);

@@ -30,6 +30,7 @@ void write(const ui::Settings& s) {
     // takes the `reserved` byte for a new setting must add it to both.
     nvs.putUChar("theme",   s.theme);
     nvs.putUChar("sweep",   s.sweep);
+    nvs.putUChar("labels",  s.labels);
     stored = s;
     lastSeen = s;
 }
@@ -63,6 +64,7 @@ bool load(ui::Settings& s) {
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
     in.theme    = nvs.getUChar("theme",    s.theme);
     in.sweep    = nvs.getUChar("sweep",    s.sweep);
+    in.labels   = nvs.getUChar("labels",   s.labels);
 
     // Anything out of range is treated as corrupt and pulled back in, not
     // trusted because it came off flash.

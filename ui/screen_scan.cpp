@@ -120,6 +120,22 @@ void statRune(Canvas& c, int x, int y, uint16_t col, bool filled) {
 
 }  // namespace
 
+const char* screenName(uint8_t screen, bool plain) {
+    switch (screen) {
+        case SCR_SCAN:     return "SCAN";                        // header shows the wordmark
+        case SCR_CODEX:    return plain ? "FOUND"    : "CODEX";
+        case SCR_DETAIL:   return plain ? "DETAIL"   : "SIGHTING";
+        case SCR_DOMAIN:   return plain ? "MAP"      : "DOMAIN";
+        case SCR_MESH:     return "MESH";
+        case SCR_OMENS:    return plain ? "ALERTS"   : "OMENS";
+        case SCR_ECHOES:   return plain ? "PROBES"   : "ECHOES";
+        case SCR_GRIMOIRE: return plain ? "MENU"     : "GRIMOIRE";
+        case SCR_ATTUNE:   return plain ? "SETTINGS" : "ATTUNE";
+        case SCR_ASPECT:   return plain ? "DISPLAY"  : "ASPECT";
+        default:           return "";
+    }
+}
+
 void drawHeader(Canvas& c, const State& s, const char* title) {
     c.fill(0, 0, W, HDR_H - 1, pal::PANEL);
     c.hline(0, HDR_H - 1, W, pal::EDGE_LIT);
@@ -137,6 +153,10 @@ void drawHeader(Canvas& c, const State& s, const char* title) {
             for (int i = 0; i < 7; i++)
                 if ((ARROW[j] >> (6 - i)) & 1) c.pixel(2 + i, 2 + j, pal::WITCH_HI);
     }
+    // Frame the mark as a button: it is the way in to the menu from the scan
+    // screen and the way back everywhere else, and a bare mark did not read as
+    // a control. A live edge so it looks tappable.
+    c.rect(0, 0, 11, HDR_H - 1, pal::EDGE_LIT);
     c.text(12, 2, title, pal::WITCH_HI);
 
     // Way in to the knobs. Drawn in a live colour rather than bone, so it
@@ -225,36 +245,31 @@ void drawFooter(Canvas& c, const State& s) {
     char t[12];
     clock2s(t, s.uptimeS);
 
-    if (s.logState == 1) {
-        // Recording: a filled rune, REC and the elapsed mm:ss. That runs to
-        // x=125, so the uptime clock gives up its seconds (HH:MM) to fit.
-        statRune(c, 64, ty + 1, pal::GREEN, true);
-        char r[16] = {'R', 'E', 'C', ' ', 0};
-        // Saturate the whole field: anything past 99:59 reads 99:59.
-        uint32_t mm = s.logSecs / 60, ss = s.logSecs % 60;
+    // The record control, framed as a button so it reads as tappable, with the
+    // universal record dot: hollow = ready to log, filled = recording. The bare
+    // status rune it replaces never said "tap here to start a log".
+    const bool rec    = (s.logState == 1);
+    const bool nocard = (s.logState == 2) || (s.logState == 0 && !s.sdOk);
+    const int  rx = LOG_X, ry = FOOT_Y + 2, rw = LOG_W, rh = H - FOOT_Y - 3;
+    c.rect(rx, ry, rw, rh, (rec || nocard) ? pal::RED : pal::EDGE_LIT);
+    const int dx = rx + 4, dy = ty + 3;
+    if (rec) c.disc(dx, dy, 2, pal::RED);
+    else     c.circle(dx, dy, 2, nocard ? pal::RED : pal::WITCH_HI);
+
+    if (nocard) {
+        c.text(rx + 10, ty, "NO CARD", pal::RED);
+    } else if (rec) {
+        // "REC mm:ss" runs to ~x125, so the uptime clock gives up its seconds.
+        char r[12] = {'R', 'E', 'C', ' ', 0};
+        uint32_t mm = s.logSecs / 60, ss = s.logSecs % 60;   // saturate past 99:59
         if (mm > 99) { mm = 99; ss = 59; }
-        u2s(r + 4, mm, 2);
-        r[6] = ':';
-        u2s(r + 7, ss, 2);
-        c.text(72, ty, r, pal::GREEN);
-        t[5] = 0;
-        c.textRight(W - 3, ty, t, pal::DIM);
-        return;
-    }
-    if (s.logState == 2) {
-        // Start was asked for and there is no card: the name, struck.
-        statRune(c, 64, ty + 1, pal::RED, false);
-        c.text(72, ty, "NO CARD", pal::DIM);
-        c.hline(72, ty + 3, 7 * 6 - 1, pal::RED);
-        t[5] = 0;                    // "NO CARD" runs to x=113; HH:MM clears it
-        c.textRight(W - 3, ty, t, pal::DIM);
-        return;
+        u2s(r + 4, mm, 2); r[6] = ':'; u2s(r + 7, ss, 2);
+        c.text(rx + 10, ty, r, pal::BRIGHT);
+    } else {
+        c.text(rx + 10, ty, "REC", pal::WITCH_HI);
     }
 
-    const uint16_t sc = s.sdOk ? pal::GREEN : pal::RED;
-    statRune(c, 64, ty + 1, sc, s.sdOk);
-    c.text(72, ty, s.sdOk ? s.logName : "NO CARD", s.sdOk ? pal::TEXT : sc);
-
+    if (rec || nocard) t[5] = 0;
     c.textRight(W - 3, ty, t, pal::DIM);
 }
 
@@ -684,7 +699,8 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
 
     // Title tracks the active theme. UMBRAVOX keeps its name (and its render
     // baselines); the cult theme announces itself in full.
-    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
+    drawHeader(c, s, s.set.labels ? "SCAN"
+                   : s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
                                                       : "UMBRAVOX");
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);

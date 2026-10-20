@@ -65,6 +65,12 @@ void drawEchoes(Canvas& c, const State& s, Dirty* d = nullptr);
 
 // GRIMOIRE -- the tile grid of every screen.
 struct GrimoireEntry { uint8_t screen; uint8_t rune; const char* label; };
+
+// The display name for a screen, on-brand or plain. Plain mode (a Settings
+// toggle, flipped from the menu) swaps the occult names for functional ones so
+// a newcomer knows what each screen is. The scan screen's on-brand name is the
+// theme wordmark, which its own header handles.
+const char* screenName(uint8_t screen, bool plain);
 constexpr int GRIMOIRE_N = 8;
 extern const GrimoireEntry GRIMOIRE[GRIMOIRE_N];
 void grimoireCell(int i, int& x, int& y, int& w, int& h);

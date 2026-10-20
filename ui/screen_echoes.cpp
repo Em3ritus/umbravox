@@ -6,6 +6,7 @@
 // kind of finding, and the reason the randomised-address column matters --
 // an un-randomised probe is a far stronger identifier than a rotating one.
 #include "screens.h"
+#include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -36,13 +37,15 @@ void ago(char* out, uint32_t s) {
 void drawEchoes(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
 
-    char title[16] = {'E','C','H','O','E','S',0};
+    char title[16];
+    const char* base = screenName(SCR_ECHOES, s.set.labels);  // ECHOES / PROBES
+    int k = 0; for (; base[k] && k < 10; k++) title[k] = base[k];
     if (s.echoTotal > MAX_ECHO_ROWS) {
-        int k = 6; title[k++] = ' ';
+        title[k++] = ' ';
         char n[8]; u2s(n, s.echoTotal);
         for (int i = 0; n[i] && k < 15; i++) title[k++] = n[i];
-        title[k] = 0;
     }
+    title[k] = 0;
     drawHeader(c, s, title);
 
     if (s.echoClients) {

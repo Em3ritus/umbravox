@@ -37,7 +37,7 @@ const char* sweepName(uint8_t id) {
 
 void drawAspect(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
-    drawHeader(c, s, "ASPECT");
+    drawHeader(c, s, screenName(SCR_ASPECT, s.set.labels));
 
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);

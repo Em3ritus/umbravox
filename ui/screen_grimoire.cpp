@@ -34,7 +34,7 @@ void grimoireCell(int i, int& x, int& y, int& w, int& h) {
 
 void drawGrimoire(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
-    drawHeader(c, s, "GRIMOIRE");
+    drawHeader(c, s, screenName(SCR_GRIMOIRE, s.set.labels));
 
     for (int i = 0; i < GRIMOIRE_N; i++) {
         int x, y, w, h;
@@ -49,7 +49,20 @@ void drawGrimoire(Canvas& c, const State& s, Dirty* d) {
         c.pixel(x + 2, y + h - 3, m);     c.pixel(x + w - 3, y + h - 3, m);
 
         rune5c(c, GRIMOIRE[i].rune, x + w / 2, y + 9, pal::WITCH);
-        c.textCenter(x + w / 2, y + h - 10, GRIMOIRE[i].label, pal::TEXT);
+        c.textCenter(x + w / 2, y + h - 10,
+                     screenName(GRIMOIRE[i].screen, s.set.labels), pal::TEXT);
+    }
+
+    // The 9th cell is not a screen: it toggles the whole UI between on-brand
+    // and plain names, so a newcomer can make every label say what it does.
+    {
+        int x, y, w, h;
+        grimoireCell(GRIMOIRE_N, x, y, w, h);
+        c.fill(x, y, w, h, Canvas::mix(pal::VOID, pal::PANEL, 2, 3));
+        c.rect(x, y, w, h, pal::WITCH);            // a live edge: it is a control
+        c.textCenter(x + w / 2, y + 5, "LABELS", pal::WITCH_HI);
+        c.textCenter(x + w / 2, y + h - 10, s.set.labels ? "PLAIN" : "BRAND",
+                     s.set.labels ? pal::GREEN : pal::DIM);
     }
 
     drawFooter(c, s);
