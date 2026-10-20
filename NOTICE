@@ -27,3 +27,12 @@ Changes made: the tables were restructured to UMBRAVOX's own Threat and Conf
 enumerations, which are coarser -- several of the upstream detection types are
 folded into single buckets, and the Bluetooth Classic name table is omitted
 because the ESP32-C5 has no Bluetooth Classic radio.
+
+Signature refresh (2026-10-20): the tables were updated against the current
+SquachWatch-CYD upstream and the community Flock field-research datasets --
+the flock-you projects (colonelpanichacks, DeflockJoplin and forks) and
+simeononsecurity/flock-finder, which compile OUI prefixes credited to
+researcher @NitekryDPaul and the DeFlock community, all GPL-3.0 / open data.
+Added drone (DJI, Skydio), Find My-network tracker (Chipolo, DULT), Axon-over-
+BLE, additional camera and camera-glasses, and gunshot-sensor signatures; the
+bare Espressif "Flock" OUIs, which matched any ESP32 board, were pruned.
