@@ -745,9 +745,11 @@ uint32_t exportRows(Print& out, uint32_t& skipped) {
         csv::deg7(lo, nd.lon7);
         csv::stampUtc(when, nd.firstEpoch);
 
-        out.printf("%s,%s,%s,%s,%u,%d,%s,%s,0,%u,WIFI\n",
-                   mac, ssid, auth, when,
-                   (unsigned)nd.chan, (int)nd.rssi, la, lo, 30u);
+        // Full WigleWifi-1.6 row: Frequency after Channel, empty RCOIs and
+        // MfgrId before Type (we read neither off the air).
+        out.printf("%s,%s,%s,%s,%u,%d,%d,%s,%s,0,%u,,,WIFI\n",
+                   mac, ssid, auth, when, (unsigned)nd.chan,
+                   csv::freqMhz(nd.chan), (int)nd.rssi, la, lo, 30u);
         rows++;
     }
     return rows;

@@ -465,11 +465,12 @@ uint32_t exportRows(Print& out, uint32_t& skipped) {
         csv::deg7(lo, e.lon7);
         csv::stampUtc(when, e.firstEpoch);
 
-        // Type BLE, and "Misc [LE]" in the AuthMode column -- the
-        // convention Bluetooth rows use there, where WiFi puts its cipher
-        // suite. Channel is 0: BLE advertises on three, and we do not know
-        // which one carried this.
-        out.printf("%s,%s,Misc [LE],%s,0,%d,%s,%s,0,%u,BLE\n",
+        // Type BLE, and "Misc [LE]" in the AuthMode column -- the convention
+        // Bluetooth rows use there, where WiFi puts its cipher suite. Channel
+        // and Frequency are both 0: BLE advertises on three channels and we do
+        // not know which one carried this. Empty RCOIs/MfgrId before Type keep
+        // the row on the full WigleWifi-1.6 column set.
+        out.printf("%s,%s,Misc [LE],%s,0,0,%d,%s,%s,0,%u,,,BLE\n",
                    mac, name, when, (int)rssis[slot], la, lo, 30u);
         rows++;
     }
