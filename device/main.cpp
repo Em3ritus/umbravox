@@ -22,6 +22,7 @@
 #include "mesh.h"
 #include "chanplan.h"
 #include "balance.h"
+#include "rehome.h"
 #include "phase.h"
 #include <esp_now.h>
 #include "signatures.h"
@@ -367,10 +368,20 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
         pushEv(EV_HELLO, hh->h.mac, hh->wants5);
         return true;
     }
-    // Node Reports are left to meshcore. A balanced node reports unicast to its
-    // coordinator, which this radio never hears; a Report that does reach us is
-    // from a node still bound to the CYD as its Core (assigned before any
-    // coordinator existed), and dropping it would lose that node's catch.
+    // A Report still arriving straight at the CYD means its sender never moved
+    // onto a coordinator -- it bound to the CYD before any coordinator existed,
+    // or across a CYD reboot. Nudge it across with the same redirect a Hello
+    // gets (rate-limited so a chatty node cannot storm us), then let the Report
+    // fall through to meshcore so the node's catch is not lost during the cycle
+    // it takes to migrate. wants5 is unknown from a Report, so assume dual-band;
+    // a genuinely 2.4-only node mis-sent to a 5GHz cluster fails once and
+    // re-Hellos with the right flag, self-correcting.
+    static uint32_t lastStragglerMs = 0;
+    if (mesh::valid(data, len, mesh::MSG_REPORT, (int)sizeof(mesh::Report)) &&
+        straggler::shouldRedirect(nCoord_ > 0, millis(), lastStragglerMs, 400)) {
+        lastStragglerMs = millis();
+        pushEv(EV_HELLO, ((const mesh::Report*)data)->h.mac, 1);
+    }
     return false;
 }
 
@@ -617,6 +628,10 @@ void loop() {
     while (gpsPort.available()) ui::Gnss::feed((char)gpsPort.read(), millis());
 
     cap::tick(millis());
+    // While a coordinator is live the CYD is a pure collector: its Core stops
+    // handing out assignments so it never re-claims a node the collector has
+    // placed on a coordinator (which would otherwise fight the redirect).
+    meshcore::setAssigning(!collector::active());
     meshcore::tick(millis());
     collector::tick(millis());
     blescan::tick(millis());

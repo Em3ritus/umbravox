@@ -59,6 +59,9 @@ test_mesh: test_mesh.cpp ../device/mesh.h
 test_cluster: test_cluster.cpp ../device/balance.h ../device/chanplan.h ../device/phase.h ../device/mesh.h ../ui/model.h
 	$(CXX) $(CXXFLAGS) -I../ui -o $@ test_cluster.cpp -lm
 
+test_rehome: test_rehome.cpp ../device/rehome.h
+	$(CXX) $(CXXFLAGS) -o $@ test_rehome.cpp -lm
+
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -70,7 +73,7 @@ test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
