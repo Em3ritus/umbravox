@@ -4,11 +4,16 @@
 // (GPL-3.0). See NOTICE for attribution and the changes made.
 //
 // The confidence column is the valuable part and the reason this is a port
-// rather than a fresh list. Of 97 OUI rows, 60 are LOW -- and they are not
-// mistakes. Flock really does build on ESP32, so an Espressif prefix really
-// is evidence; it is just evidence shared with every dev board on earth.
-// Recording that honestly is the difference between a detector and a rumour,
-// and it is what the ALERT floor on ATTUNE exists to filter.
+// rather than a fresh list. Most OUI rows are LOW -- and they are not
+// mistakes. A vendor that builds on a common chip shares that chip's prefix
+// with every dev board on earth, so the prefix is evidence, just weak
+// evidence. Recording that honestly is the difference between a detector and
+// a rumour, and it is what the ALERT floor on ATTUNE exists to filter.
+//
+// Refreshed 2026-10-20 against the current upstream and the community Flock
+// field-research datasets (see NOTICE): drone, Find My-network tracker,
+// Axon-over-BLE, camera and gunshot-sensor signatures added, and the bare
+// Espressif "Flock" OUIs that flagged every ESP32 board on earth pruned.
 
 namespace ui {
 namespace {
@@ -36,23 +41,14 @@ const OuiSig OUIS[] = {
     {{0x00, 0x25, 0xDF}, TH_BODYCAM, CONF_HIGH, "AXON"},
     {{0xE4, 0x05, 0x40}, TH_BODYCAM, CONF_LOW, "AXON-BODY"},
     {{0x28, 0x24, 0xFF}, TH_BODYCAM, CONF_LOW, "AXON-SIGNAL"},
-    {{0x24, 0x0A, 0xC4}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0x30, 0xAE, 0xA4}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0x24, 0x6F, 0x28}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0xCC, 0x50, 0xE3}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0xDC, 0x54, 0x75}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0xE8, 0x9F, 0x6D}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0x8C, 0xAA, 0xB5}, TH_FLOCK, CONF_LOW, "FLOK-ESP-S3"},
-    {{0x34, 0x85, 0x18}, TH_FLOCK, CONF_LOW, "FLOK-ESP-S3"},
+    {{0x00, 0x1D, 0x96}, TH_BODYCAM, CONF_MED, "WATCHGRD"},   // Motorola/WatchGuard
+    {{0x00, 0x23, 0xBD}, TH_BODYCAM, CONF_MED, "DIGALLY"},    // Digital Ally
     {{0xB4, 0x1E, 0x52}, TH_FLOCK, CONF_HIGH, "FLOCK-MA-L"},
-    {{0xD4, 0xAD, 0xFC}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0xAC, 0x67, 0xB2}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0x84, 0xF3, 0xEB}, TH_FLOCK, CONF_LOW, "FLOK-ESP-S3"},
-    {{0xB4, 0xE6, 0x2D}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0xCC, 0xDB, 0xA7}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0x94, 0xB9, 0x7E}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
-    {{0xA4, 0xCF, 0x12}, TH_FLOCK, CONF_LOW, "FLOK-ESP-S2"},
-    {{0xC0, 0x49, 0xEF}, TH_FLOCK, CONF_LOW, "FLOK-ESP-C6"},
+    // Field-verified Flock prefixes that are themselves Espressif blocks. The
+    // many bare Espressif OUIs that field research did NOT corroborate were
+    // pruned -- they flagged every ESP32 dev board, not Flock. These two stay
+    // because the flock-you / DeFlock datasets caught real cameras on them.
+    {{0xA4, 0xCF, 0x12}, TH_FLOCK, CONF_LOW, "FLOCK"},
     {{0x24, 0xB2, 0xB9}, TH_FLOCK, CONF_LOW, "FLOCK-LITEO"},
     {{0xD0, 0x39, 0x57}, TH_FLOCK, CONF_LOW, "FLOCK"},
     {{0x00, 0xF4, 0x8D}, TH_FLOCK, CONF_LOW, "FLOCK"},
@@ -82,9 +78,18 @@ const OuiSig OUIS[] = {
     {{0x58, 0x8E, 0x81}, TH_FLOCK, CONF_LOW, "FLOCK-SILAB"},
     {{0xEC, 0x1B, 0xBD}, TH_FLOCK, CONF_LOW, "FLOCK-SILAB"},
     {{0x90, 0x35, 0xEA}, TH_FLOCK, CONF_LOW, "FLOCK-SILAB"},
-    {{0x3C, 0x71, 0xBF}, TH_FLOCK, CONF_LOW, "FLOCK-ESP32"},
+    {{0x3C, 0x71, 0xBF}, TH_FLOCK, CONF_LOW, "FLOCK"},
     {{0x00, 0x03, 0x7F}, TH_FLOCK, CONF_LOW, "FLOCK-QCA"},
     {{0x00, 0xA0, 0xD8}, TH_FLOCK, CONF_LOW, "FLOCK-OEM"},
+    // Current community field-research additions (flock-you / DeFlock).
+    {{0xF8, 0xA2, 0xD6}, TH_FLOCK, CONF_LOW, "FLOCK"},
+    {{0x48, 0x27, 0xEA}, TH_FLOCK, CONF_LOW, "FLOCK"},
+    {{0x04, 0x0D, 0x84}, TH_FLOCK, CONF_LOW, "FLOCK"},
+    {{0xF0, 0x82, 0xC0}, TH_FLOCK, CONF_LOW, "FLOCK"},
+    {{0x1C, 0x34, 0xF1}, TH_FLOCK, CONF_LOW, "FLOCK"},
+    {{0x38, 0x5B, 0x44}, TH_FLOCK, CONF_LOW, "FLOCK"},
+    {{0x94, 0x34, 0x69}, TH_FLOCK, CONF_LOW, "FLOCK"},
+    {{0xB4, 0xE3, 0xF9}, TH_FLOCK, CONF_LOW, "FLOCK"},
     {{0x00, 0x04, 0x7D}, TH_ALPR, CONF_HIGH, "ALPR-MTRLA"},
     {{0x00, 0x18, 0x85}, TH_ALPR, CONF_HIGH, "ALPR-MTRLA"},
     {{0x00, 0x1F, 0x92}, TH_ALPR, CONF_HIGH, "ALPR-MTRLA"},
@@ -107,6 +112,13 @@ const OuiSig OUIS[] = {
     {{0x00, 0xE0, 0x4C}, TH_CAMERA, CONF_LOW, "REALTEK"},
     {{0xBC, 0xDD, 0xC2}, TH_CAMERA, CONF_LOW, "ARLO"},
     {{0x4C, 0x69, 0x05}, TH_CAMERA, CONF_LOW, "BLINK"},
+    {{0x3C, 0xA0, 0x70}, TH_CAMERA, CONF_MED, "BLINK"},
+    {{0x70, 0xAD, 0x43}, TH_CAMERA, CONF_MED, "BLINK"},
+    {{0x74, 0x13, 0x48}, TH_CAMERA, CONF_MED, "BLINK"},
+    {{0x74, 0xAB, 0x93}, TH_CAMERA, CONF_MED, "BLINK"},
+    {{0xC8, 0x19, 0xD8}, TH_CAMERA, CONF_MED, "BLINK"},
+    {{0xF0, 0x74, 0xC1}, TH_CAMERA, CONF_MED, "BLINK"},
+    {{0xD4, 0x2D, 0xC5}, TH_CAMERA, CONF_HIGH, "IPRO"},      // i-PRO / Panasonic
     {{0xA4, 0xC1, 0x38}, TH_CAMERA, CONF_LOW, "TUYA"},
     {{0xFC, 0x65, 0xDE}, TH_CAMERA, CONF_MED, "RING"},
     {{0x68, 0x37, 0xE9}, TH_CAMERA, CONF_MED, "RING"},
@@ -127,6 +139,25 @@ const OuiSig OUIS[] = {
     {{0x70, 0x1A, 0xD5}, TH_CAMERA, CONF_HIGH, "AVIGILON"},
     {{0x00, 0x40, 0x8C}, TH_CAMERA, CONF_HIGH, "AXIS"},
     {{0xB8, 0xA4, 0x4F}, TH_CAMERA, CONF_HIGH, "AXIS"},
+    // --- Drones. DJI is MED (one block spans consumer and enterprise, so it
+    //     is evidence of a DJI craft, not of who is flying it); Skydio is HIGH,
+    //     the US law-enforcement airframe. Open Drone ID (BLE 0xFFFA) catches
+    //     the Remote-ID broadcast regardless of maker. ---
+    {{0x60, 0x60, 0x1F}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x34, 0xD2, 0x62}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x48, 0x1C, 0xB9}, TH_DRONE, CONF_MED, "DJI"},
+    {{0xE4, 0x7A, 0x2C}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x58, 0xB8, 0x58}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x04, 0xA8, 0x5A}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x8C, 0x58, 0x23}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x0C, 0x9A, 0xE6}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x88, 0x29, 0x85}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x4C, 0x43, 0xF6}, TH_DRONE, CONF_MED, "DJI"},
+    {{0x38, 0x1D, 0x14}, TH_DRONE, CONF_HIGH, "SKYDIO"},
+    // Gunshot sensors: ShotSpotter / SoundThinking registered block.
+    {{0xD4, 0x11, 0xD6}, TH_RAVEN, CONF_HIGH, "SHOTSPOT"},
+    // Camera glasses: Luxottica (Ray-Ban Meta) WiFi block.
+    {{0x98, 0x59, 0x49}, TH_GLASSES, CONF_MED, "LUXOTICA"},
     {{0x0C, 0xFA, 0x22}, TH_PENTEST, CONF_HIGH, "FLIPPER"},
     {{0x02, 0xC0, 0xCA}, TH_PENTEST, CONF_LOW, "HAK5-LA"},
     {{0x02, 0x13, 0x37}, TH_PENTEST, CONF_LOW, "HAK5-LA"},
@@ -148,6 +179,21 @@ const UuidSig UUIDS[] = {
     {0x3081, TH_PENTEST, CONF_HIGH, "FLIPPER"},
     {0x3082, TH_PENTEST, CONF_HIGH, "FLIPPER"},
     {0x3083, TH_PENTEST, CONF_HIGH, "FLIPPER"},
+    // Bluetooth trackers -- the Find My Device network ecosystem. 0xFCB2 is
+    // the DULT "unwanted tracker" standard: it says a tracker, not which, so
+    // MED. The Chipolo/Tile service UUIDs are vendor-specific, so HIGH.
+    {0xFCB2, TH_TRACKER, CONF_MED,  "TRACKER"},
+    {0xFE33, TH_TRACKER, CONF_HIGH, "CHIPOLO"},
+    {0xFE65, TH_TRACKER, CONF_HIGH, "CHIPOLO"},
+    {0xFD84, TH_TRACKER, CONF_HIGH, "TILE"},
+    // Axon body cameras advertising over BLE.
+    {0xFC81, TH_BODYCAM, CONF_HIGH, "AXON"},
+    {0xFE6B, TH_BODYCAM, CONF_HIGH, "AXON"},
+    {0xFE6C, TH_BODYCAM, CONF_HIGH, "AXON"},
+    // Camera glasses.
+    {0xFEB7, TH_GLASSES, CONF_MED,  "META"},
+    {0xFEB8, TH_GLASSES, CONF_MED,  "META"},
+    {0xFE45, TH_GLASSES, CONF_HIGH, "SNAP"},
 };
 
 // --- BLE SIG company identifiers ----------------------------------------
@@ -155,9 +201,11 @@ const CompSig COMPANIES[] = {
     {0x004C, TH_TRACKER, CONF_LOW, "APPLE"},
     {0x09C8, TH_FLOCK, CONF_MED, "XUNTONG"},
     {0x01AB, TH_GLASSES, CONF_MED, "META"},
-    {0x058E, TH_GLASSES, CONF_MED, "META-TECH"},
     {0x0D53, TH_GLASSES, CONF_MED, "LUXOTTICA"},
     {0x03C2, TH_GLASSES, CONF_MED, "SNAP"},
+    {0x060C, TH_GLASSES, CONF_MED, "VUZIX"},
+    {0x08C3, TH_TRACKER, CONF_HIGH, "CHIPOLO"},
+    {0x034D, TH_BODYCAM, CONF_HIGH, "AXON"},
     {0x0E29, TH_PENTEST, CONF_HIGH, "FLIPPER"},
 };
 

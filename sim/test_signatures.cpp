@@ -16,11 +16,11 @@ static void check(const char* what, bool ok) {
 
 int main() {
     using namespace ui;
-    // A prefix that is in none of the tables. The first version of this
-    // test used 24:0A:C4 as an "arbitrary" MAC -- which turns out to be an
-    // Espressif block, and therefore sits in the Flock list at LOW. The test
-    // accidentally reproduced the exact false positive the grading exists
-    // for, so the case below is now kept on purpose.
+    // A prefix that is in none of the tables. 24:0A:C4 is an Espressif block;
+    // it used to sit in the Flock list at LOW, so every ESP32 board on that
+    // prefix (dev boards, smart plugs, this project's own nodes) false-flagged
+    // as a possible Flock. The bare Espressif "Flock" OUIs were pruned in the
+    // 2026-10-20 refresh, so it now fires nothing -- the case below guards that.
     const uint8_t anyMac[6] = {0xDE, 0xAD, 0xBE, 0x11, 0x22, 0x33};
     const uint8_t espMac[6] = {0x24, 0x0A, 0xC4, 0x11, 0x22, 0x33};
 
@@ -46,13 +46,11 @@ int main() {
     h = matchWifi(anyMac, "ABBEY ROAD");
     check("'AB' alone is not 'AB2-'", h.threat == TH_NONE);
 
-    printf("shared silicon is weak evidence:\n");
+    printf("pruned shared silicon no longer false-flags:\n");
     h = matchWifi(espMac, "");
-    check("espressif prefix -> FLOCK", h.threat == TH_FLOCK);
-    check("...but only LOW",           h.conf   == CONF_LOW);
-    check("so a MED floor hides it",   h.conf   <  CONF_MED);
-    // The point of the floor: this is a dev board, a smart plug or a camera,
-    // and the prefix cannot tell them apart.
+    check("bare espressif prefix -> nothing", h.threat == TH_NONE);
+    // It could be a dev board, a smart plug, a camera or one of our own nodes;
+    // the prefix cannot tell them apart, so it is no longer evidence of Flock.
 
     printf("ble:\n");
     h = matchBle(0xFEED, 0);
@@ -70,6 +68,22 @@ int main() {
     printf("strongest evidence wins:\n");
     h = matchBle(0xFEAA, 0x004C);     // both LOW
     check("two weak signals stay LOW", h.conf == CONF_LOW);
+
+    printf("new signatures (2026-10 refresh):\n");
+    const uint8_t dji[6]    = {0x60, 0x60, 0x1F, 0x01, 0x02, 0x03};
+    const uint8_t skydio[6] = {0x38, 0x1D, 0x14, 0x01, 0x02, 0x03};
+    h = matchWifi(dji, "");
+    check("DJI OUI -> DRONE at MED",      h.threat == TH_DRONE && h.conf == CONF_MED);
+    h = matchWifi(skydio, "");
+    check("Skydio OUI -> DRONE at HIGH",  h.threat == TH_DRONE && h.conf == CONF_HIGH);
+    h = matchBle(0xFE33, 0);
+    check("Chipolo UUID -> TRACKER HIGH", h.threat == TH_TRACKER && h.conf == CONF_HIGH);
+    h = matchBle(0xFCB2, 0);
+    check("DULT UUID -> TRACKER, MED",    h.threat == TH_TRACKER && h.conf == CONF_MED);
+    h = matchBle(0, 0x034D);
+    check("Axon company id -> BODYCAM HIGH", h.threat == TH_BODYCAM && h.conf == CONF_HIGH);
+    h = matchBle(0, 0x058E);
+    check("dropped Meta-Tech id -> nothing", h.threat == TH_NONE);
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
