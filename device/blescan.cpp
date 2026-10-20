@@ -4,6 +4,7 @@
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 #include "signatures.h"
+#include "ble_ad.h"
 #include <esp_heap_caps.h>
 #include <Print.h>
 #include "csv.h"
@@ -100,41 +101,17 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
         const uint8_t* a = dev.getAddress().getNative();
         const int rssi = dev.getRSSI();
 
-        // Walk the raw advertisement rather than using the parsed
-        // accessors.
-        //
-        // getManufacturerData() returns a String and getServiceUUID() builds
-        // a BLEUUID; with shouldParse on, that allocated roughly 17 bytes per
-        // advert that never came back, and the device ran out of heap and
-        // rebooted about every 45 seconds. The payload is a flat list of
-        // length-prefixed AD structures -- reading it costs nothing.
-        uint16_t company = 0, svc = 0;
-        const uint8_t* nameP = nullptr;
-        uint8_t nameLen = 0;
-        const uint8_t* pl = dev.getPayload();
-        const size_t   pn = dev.getPayloadLength();
-        for (size_t i = 0; pl && i + 1 < pn; ) {
-            const uint8_t len = pl[i];
-            if (len == 0 || i + len >= pn + 1) break;   // malformed; stop
-            const uint8_t type = pl[i + 1];
-            const uint8_t* val = pl + i + 2;
-            const uint8_t vlen = (uint8_t)(len - 1);
-
-            // 0x02/0x03: incomplete/complete list of 16-bit service UUIDs.
-            if ((type == 0x02 || type == 0x03) && vlen >= 2 && !svc)
-                svc = (uint16_t)(val[0] | (val[1] << 8));
-            // 0xFF: manufacturer specific, opening with the SIG company id.
-            else if (type == 0xFF && vlen >= 2 && !company)
-                company = (uint16_t)(val[0] | (val[1] << 8));
-            // 0x09 complete local name, 0x08 shortened. Prefer the complete
-            // one, but take a short name over nothing.
-            else if ((type == 0x09 || (type == 0x08 && !nameP)) && vlen) {
-                nameP = val;
-                nameLen = vlen;
-            }
-
-            i += len + 1;
-        }
+        // Walk the raw advertisement rather than the parsed accessors:
+        // getManufacturerData() returns a String and getServiceUUID() builds a
+        // BLEUUID; with shouldParse on that allocated ~17 bytes per advert that
+        // never came back, and the device ran out of heap and rebooted about
+        // every 45 seconds. The walk is pure and bounds every attacker-
+        // controlled length (see ble_ad.h), fuzzed in sim/test_ble_ad.cpp.
+        const ble_ad::Fields ad = ble_ad::scan(dev.getPayload(),
+                                               dev.getPayloadLength());
+        const uint16_t company = ad.company, svc = ad.svc;
+        const uint8_t* nameP = ad.name;
+        const uint8_t  nameLen = ad.nameLen;
 
         // A null-terminated, printable copy of the advertised name for the
         // matcher. Some surveillance accessories -- Flock's Penguin battery and
