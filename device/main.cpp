@@ -180,7 +180,7 @@ void reassignAll(int only = -1) {
 }
 
 void handleReg(const uint8_t* mac, uint8_t wants5, uint32_t now) {
-    (void)wants5;
+    (void)wants5;   // ignored for now: every board is dual-band, slices go out in registration order
     for (int i = 0; i < nCoord_; i++)
         if (coords_[i].live && macEq(coords_[i].mac, mac)) {
             coords_[i].lastMs = now;      // already ours; just re-assure it
@@ -351,6 +351,14 @@ void tick(uint32_t now) {
     for (int i = 0; i < nCoord_; i++) {
         if (coords_[i].live && (now - coords_[i].lastMs) > COORD_TIMEOUT_MS) {
             if (nGone < 2) goneId[nGone++] = coords_[i].clusterId;
+            // Free the dead coordinator's pins and shift the survivors' down
+            // with the array, so each survivor keeps its real node count and a
+            // migrating node is balanced against true loads.
+            for (int k = 0; k < meshcore::MAX_NODES; k++) {
+                if (!nmap_[k].used) continue;
+                if (nmap_[k].coord == i) nmap_[k].used = false;
+                else if (nmap_[k].coord > i) nmap_[k].coord--;
+            }
             for (int j = i; j < nCoord_ - 1; j++) coords_[j] = coords_[j + 1];
             nCoord_--;
             i--;
@@ -362,10 +370,6 @@ void tick(uint32_t now) {
         Serial.printf("collector: coordinator cluster %u timed out\n", goneId[g]);
     if (changed) {
         for (int i = 0; i < nCoord_; i++) coords_[i].clusterId = (uint8_t)i;
-        // Node pins are stale after a reshuffle; let nodes rebalance on their
-        // next Hello rather than stranding them on a departed coordinator.
-        for (int i = 0; i < meshcore::MAX_NODES; i++) nmap_[i].used = false;
-        for (int i = 0; i < nCoord_; i++) coords_[i].nodes = 0;
         if (nCoord_ > 0) reassignAll();
     }
 }

@@ -26,11 +26,11 @@ uint8_t  selfMac[6];
 uint8_t  bcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
 uint8_t  coreMac[6];
-bool     haveCore = false;
+volatile bool haveCore = false;
 uint8_t  chans[mesh::MAX_ASSIGN];
 uint8_t  nChan = 0;
 bool     camp = false;
-bool     assigned = false;
+volatile bool assigned = false;
 // Where to deliver. mesh::REPORT_CHAN against a lone Core -- which is all a
 // Core ever assigns -- and a coordinator's own channel when one has taken us.
 uint8_t  reportChan = mesh::REPORT_CHAN;
@@ -97,8 +97,22 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     portEXIT_CRITICAL(&mux);
 }
 
-void onSent(const wifi_tx_info_t*, esp_now_send_status_t st) {
+// Consecutive failed UNICAST sends to our Core. A unicast frame is ACKed by
+// the radio, so a streak of failures means the Core is gone (a dead
+// coordinator, say) rather than that one frame was unlucky. A live Core ACKs
+// every report, so against a lone CYD this never builds. Broadcast sends
+// (Hello, and reports before a Core is known) always report success and are
+// not counted either way. The recovery itself runs in loop(), not here: this
+// callback is in the Wi-Fi task and must not retune the radio.
+constexpr uint8_t LOSS_STREAK = 8;
+volatile uint8_t failStreak = 0;
+
+void onSent(const wifi_tx_info_t* info, esp_now_send_status_t st) {
     if (st == ESP_NOW_SEND_SUCCESS) txOk++; else txFail++;
+    if (!haveCore || !info || !info->des_addr) return;
+    if (memcmp(info->des_addr, coreMac, 6) != 0) return;     // not to the Core
+    if (st == ESP_NOW_SEND_SUCCESS) failStreak = 0;
+    else if (failStreak < 255) failStreak = failStreak + 1;
 }
 
 void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
@@ -254,6 +268,23 @@ void loop() {
     if (now - lastReport >= REPORT_MS) {
         lastReport = now;
         report();
+        if (failStreak >= LOSS_STREAK) {
+            // The Core has stopped answering. Forget it entirely -- the
+            // learn-once peer guard included, or a re-Hello'd node would keep
+            // unicasting the dead address -- and go back to asking for one,
+            // on the channel every Core and CYD listens on.
+            Serial.printf("node: core %02X:%02X:%02X silent (%u failed sends) -- "
+                          "re-registering\n", coreMac[3], coreMac[4], coreMac[5],
+                          (unsigned)failStreak);
+            esp_now_del_peer(coreMac);
+            haveCore = false;
+            assigned = false;
+            failStreak = 0;
+            reportChan = mesh::REPORT_CHAN;
+            park(mesh::REPORT_CHAN);
+            lastHello = 0;
+            return;
+        }
         Serial.printf("node: ch%-3u q=%-3d recs seen=%-5u sent=%-5u drop=%-4u | "
                       "frames queued=%-4u ok=%-4u fail=%-4u %s\n",
                       chans[hop], qN, (unsigned)seen, (unsigned)sent,

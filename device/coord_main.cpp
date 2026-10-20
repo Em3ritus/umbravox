@@ -43,13 +43,13 @@ uint8_t  bcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 uint8_t  cydMac[6];
 bool     haveCyd = false;
 
-bool     assigned   = false;
+volatile bool assigned = false;
 uint8_t  clusterId  = 0;
 uint8_t  reportChan = mesh::REPORT_CHAN;   // where this cluster's nodes report
 uint8_t  collectChan = mesh::REPORT_CHAN;  // where we deliver to the CYD
 uint8_t  slice[mesh::MAX_SLICE];
 uint8_t  sliceN = 0;
-bool     sliceApplied = false;
+volatile bool sliceApplied = false;
 
 uint32_t lastCreg = 0, lastReport = 0;
 
@@ -270,9 +270,12 @@ void setup() {
     // frames it does not handle (the CoordAssign) through the collector hook,
     // and redirect its sighting fold into our own store through the sink -- so
     // the node handling is reused verbatim, not forked.
-    meshcore::begin();
+    // Installed BEFORE begin(): begin() registers the receive callback, and a
+    // frame landing first would fold into cap::ingest, which a coordinator
+    // never initialises (cap::begin() is not called here).
     meshcore::setSink(fold);
     meshcore::setCollector(onCoordFrame);
+    meshcore::begin();
     esp_now_register_send_cb(onSent);
 
     // Park on the collection channel to announce; the CYD collects there.
