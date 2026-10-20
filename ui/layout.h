@@ -38,7 +38,7 @@ constexpr int ROWS      = BODY_H / ROW_H;          // 7
 
 // The log start/stop control: the footer's SD status, rune and name. It stops
 // short of the clock at the right so the two never share a tap.
-constexpr int LOG_X = 62, LOG_W = 64;
+constexpr int LOG_X = 86, LOG_W = 70;   // record button, right of the GPS status
 constexpr int LOG_Y = FOOT_Y + 1, LOG_H = 120 - FOOT_Y - 1;
 
 // The back control on CODEX and ATTUNE: the header's left end.
