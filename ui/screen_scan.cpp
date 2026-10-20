@@ -304,12 +304,150 @@ uint32_t noise(uint32_t a, uint32_t b) {
     return h ^ (h >> 16);
 }
 
+// The inverted pentagram -- point down -- that frames the Baphomet seal. The
+// summoning figure for the BAPH0MAU5 alert, where AETHERSCAN uses the ward.
+// Optionally hands back the five outer points so the hold can set them alight.
+void pentagram(Canvas& c, int cx, int cy, int r, uint16_t col,
+               int* px = nullptr, int* py = nullptr) {
+    int sx[5], sy[5];
+    for (int k = 0; k < 5; k++) polar(cx, cy, r, 180.0f + (float)k * 72.0f, sx[k], sy[k]);
+    for (int k = 0; k < 5; k++) c.line(sx[k], sy[k], sx[(k + 2) % 5], sy[(k + 2) % 5], col);
+    if (px && py) for (int k = 0; k < 5; k++) { px[k] = sx[k]; py[k] = sy[k]; }
+}
+
+// The same pentagram drawn only part-way -- one continuous unicursal stroke
+// (0->2->4->1->3->0) advanced by num/den -- so it can inscribe itself. The pen
+// tip comes back in tip{x,y} for the spark that rides it.
+int pentagramTrace(Canvas& c, int cx, int cy, int r, uint16_t col,
+                   int num, int den, int& tipx, int& tipy) {
+    int sx[5], sy[5];
+    for (int k = 0; k < 5; k++) polar(cx, cy, r, 180.0f + (float)k * 72.0f, sx[k], sy[k]);
+    static const int ord[6] = {0, 2, 4, 1, 3, 0};
+    long prog = (long)num * 5000 / (den > 0 ? den : 1);
+    if (prog > 5000) prog = 5000;
+    if (prog < 0) prog = 0;
+    const int full = (int)(prog / 1000), part = (int)(prog % 1000);
+    for (int i = 0; i < full; i++)
+        c.line(sx[ord[i]], sy[ord[i]], sx[ord[i + 1]], sy[ord[i + 1]], col);
+    tipx = sx[ord[full]]; tipy = sy[ord[full]];
+    if (full < 5) {
+        const int ax = sx[ord[full]], ay = sy[ord[full]];
+        const int bx = sx[ord[full + 1]], by = sy[ord[full + 1]];
+        tipx = ax + (bx - ax) * part / 1000;
+        tipy = ay + (by - ay) * part / 1000;
+        c.line(ax, ay, tipx, tipy, col);
+    }
+    return full;
+}
+
 } // namespace
 
 void alertFigure(Canvas& c, const State& s, int cx, int cy, int r, uint16_t col) {
     if (s.set.theme == pal::TH_BAPH0MAU5) sealFigure(c, cx, cy, r, col);
     else                                  heptagram(c, cx, cy, r, col);
 }
+
+namespace {
+
+// The threat name resolving out of marks, and the supporting detail arriving
+// only once it has settled. Shared by both themes' rites and drawn on top of
+// whatever ceremony framed the card.
+void alertNameAndDetail(Canvas& c, const State& s, uint16_t edge,
+                        int X, int Y, int Wd, int age) {
+    const int cx = X + Wd / 2;
+    rune5c(c, 0, cx, Y + 10, edge);        // the eye
+
+    // Runes rather than keyboard symbols: a name surfacing from marks reads as
+    // a thing being named, where '#$%&' reads as a terminal with a bad line.
+    const char* name = threatName(s.alertThreat);
+    int n = 0; while (name[n]) n++;
+    const int settle = ALERT_TRACE_MS;
+    const int startX = cx - Font::width(name, 2) / 2;
+    for (int i = 0; i < n; i++) {
+        const int gx = startX + i * Font::ADV * 2;
+        const int lockAt = settle + i * ALERT_CHAR_MS;
+        if (age >= lockAt) {
+            const char ch[2] = {name[i], 0};
+            c.text(gx, Y + 17, ch, pal::BRIGHT, 2);
+        } else {
+            rune5sc(c, (int)noise((uint32_t)(age / 70), (uint32_t)i),
+                    gx + Font::W, Y + 17 + Font::H, edge, 2);
+        }
+    }
+
+    // The supporting detail arrives only once the name has settled, so the
+    // eye reads the threat first.
+    const int tail = settle + n * ALERT_CHAR_MS;
+    if (age > tail)        c.textCenter(cx, Y + 36, s.alertWhy, pal::DIM);
+    if (age > tail + 80 && s.alertName[0])
+        c.textCenter(cx, Y + 46, s.alertName, pal::TEXT);
+    if (age > tail + 160)  c.textCenter(cx, Y + 58, confName(s.alertConf), edge);
+}
+
+// BAPH0MAU5's rite: the seal takes the card where AETHERSCAN traces a ward.
+// Fire climbs out of the centre while an inverted pentagram inscribes itself;
+// the pentacle snaps shut and its five points gutter as it holds. Confidence
+// rides the fire -- violet embers at LOW, a green-white blaze with a red heart
+// at HIGH -- so a weak guess never burns like a certainty.
+void drawAlertSummoned(Canvas& c, const State& s, uint16_t edge,
+                       int X, int Y, int Wd, int Hd, int age, int mx, int my) {
+    const uint16_t core = s.alertConf == CONF_HIGH ? Canvas::mix(pal::RED,   pal::LIVE_HI, 1, 2)
+                        : s.alertConf == CONF_MED  ? Canvas::mix(pal::AMBER, pal::LIVE_HI, 1, 2)
+                        :                            Canvas::mix(pal::WITCH, pal::LIVE,    1, 3);
+    const int heatN = s.alertConf == CONF_HIGH ? 5 : s.alertConf == CONF_MED ? 3 : 2;  // /10
+    const int r = Hd / 2 - 6;
+
+    // 1. The strike: the pentagram slams down oversized and contracts onto the
+    //    ring it will inscribe, the confidence colour washing out of it.
+    if (age < ALERT_FLARE_MS) {
+        const int k = ALERT_FLARE_MS - age;
+        c.fill(X, Y, Wd, Hd, Canvas::mix(pal::VOID, edge, k, ALERT_FLARE_MS * 2));
+        pentagram(c, mx, my, r + k / 4, Canvas::mix(edge, pal::BRIGHT, k, ALERT_FLARE_MS));
+        return;
+    }
+
+    const bool held = age >= ALERT_TRACE_MS;
+
+    // 2. The fire climbs from the centre: a bloom that grows with the drawing,
+    //    then settles to a guttering ember once the ring is sealed.
+    const int fade = held ? 2 : 1;        // the held ember is dimmer than the rising fire
+    int br;
+    if (!held) br = (r + 6) * (age - ALERT_FLARE_MS) / (ALERT_TRACE_MS - ALERT_FLARE_MS);
+    else       br = r / 2 + (int)(noise((uint32_t)(age / 80), 11) % 7) - 3;
+    if (br > 0) {
+        c.disc(mx, my, br,         Canvas::mix(pal::VOID, edge, heatN, 10 * fade));
+        c.disc(mx, my, br * 2 / 3, Canvas::mix(pal::VOID, edge, heatN, 6 * fade));
+        c.disc(mx, my, br / 3,     Canvas::mix(pal::VOID, core, 1, fade));
+    }
+
+    if (!held) {
+        // 3. The pentagram inscribes itself, a green spark riding the pen.
+        pentagram(c, mx, my, r, Canvas::mix(pal::VOID, pal::WITCH, 1, 6));  // ghost of the rest
+        int tipx, tipy;
+        pentagramTrace(c, mx, my, r, pal::WITCH_HI, age - ALERT_FLARE_MS,
+                       ALERT_TRACE_MS - ALERT_FLARE_MS, tipx, tipy);
+        c.disc(tipx, tipy, 1, pal::LIVE_HI);
+    } else {
+        // 4. Sealed: a dim pentagram under a closed pentacle, five points
+        //    alight, the downward point -- aimed at the name -- brightest.
+        int px[5], py[5];
+        pentagram(c, mx, my, r, Canvas::mix(pal::VOID, pal::WITCH, 1, 3), px, py);
+        c.circle(mx, my, r, Canvas::mix(pal::VOID, pal::WITCH, 1, 2));
+        for (int k = 0; k < 5; k++) {
+            const int fl = (int)(noise((uint32_t)(age / 90), (uint32_t)k) % 20);
+            c.disc(px[k], py[k], 1, Canvas::mix(edge, pal::LIVE_HI, 20 + fl, 44));
+        }
+        c.disc(px[0], py[0], 2, pal::LIVE_HI);
+
+        // the inner edge wanders by candlelight, as the AETHERSCAN ward does.
+        const uint32_t fl = noise((uint32_t)(age / 90), 7) % 24;
+        c.rect(X + 1, Y + 1, Wd - 2, Hd - 2, Canvas::mix(pal::VOID, edge, 14 + (int)fl, 60));
+    }
+
+    alertNameAndDetail(c, s, edge, X, Y, Wd, age);
+}
+
+} // namespace
 
 void drawAlert(Canvas& c, const State& s) {
     if (!s.alertActive || s.alertThreat == TH_NONE) return;
@@ -325,6 +463,13 @@ void drawAlert(Canvas& c, const State& s) {
 
     c.fill(X, Y, Wd, Hd, pal::VOID);
     const int mx = X + Wd / 2, my = Y + Hd / 2;
+
+    // BAPH0MAU5 runs its own rite -- the seal takes the card -- where
+    // AETHERSCAN traces a ward. Both share the name resolving out of marks.
+    if (s.set.theme == pal::TH_BAPH0MAU5) {
+        drawAlertSummoned(c, s, edge, X, Y, Wd, Hd, age, mx, my);
+        return;
+    }
 
     // 1. The strike: a sigil slams down. The figure arrives oversized and
     //    contracts onto the card while the colour wash decays out of it.
@@ -373,37 +518,7 @@ void drawAlert(Canvas& c, const State& s) {
         }
     }
 
-    const int cx = X + Wd / 2;
-    if (age < ALERT_FLARE_MS) return;      // nothing but the flare yet
-
-    rune5c(c, 0, cx, Y + 10, edge);        // the eye
-
-    // 6. The name resolves out of runes, left to right. Runes rather than
-    //    keyboard symbols: a name surfacing from marks reads as a thing being
-    //    named, where '#$%&' reads as a terminal with a bad connection.
-    const char* name = threatName(s.alertThreat);
-    int n = 0; while (name[n]) n++;
-    const int settle = ALERT_TRACE_MS;
-    const int startX = cx - Font::width(name, 2) / 2;
-    for (int i = 0; i < n; i++) {
-        const int gx = startX + i * Font::ADV * 2;
-        const int lockAt = settle + i * ALERT_CHAR_MS;
-        if (age >= lockAt) {
-            const char ch[2] = {name[i], 0};
-            c.text(gx, Y + 17, ch, pal::BRIGHT, 2);
-        } else {
-            rune5sc(c, (int)noise((uint32_t)(age / 70), (uint32_t)i),
-                    gx + Font::W, Y + 17 + Font::H, edge, 2);
-        }
-    }
-
-    // The supporting detail arrives only once the name has settled, so the
-    // eye reads the threat first.
-    const int tail = settle + n * ALERT_CHAR_MS;
-    if (age > tail)        c.textCenter(cx, Y + 36, s.alertWhy, pal::DIM);
-    if (age > tail + 80 && s.alertName[0])
-        c.textCenter(cx, Y + 46, s.alertName, pal::TEXT);
-    if (age > tail + 160)  c.textCenter(cx, Y + 58, confName(s.alertConf), edge);
+    alertNameAndDetail(c, s, edge, X, Y, Wd, age);
 }
 
 void drawReticle(Canvas& c, const State& s) {
