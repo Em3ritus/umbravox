@@ -1,4 +1,4 @@
-// NM-CYD-C5 bring-up: draw AETHERSCAN on the real panel.
+// NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
 // This is the whole device side. Everything visual lives in ui/, compiled
 // unchanged from what the simulator builds -- the only job here is to own the
@@ -435,7 +435,7 @@ void setup() {
     Serial.begin(115200);
     delay(200);
     Serial.println();
-    Serial.println("AETHERSCAN bring-up");
+    Serial.println("UMBRAVOX bring-up");
     Serial.printf("chip  : %s rev %d, %d core(s)\n",
                   ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores());
     Serial.printf("flash : %u bytes\n", (unsigned)ESP.getFlashChipSize());

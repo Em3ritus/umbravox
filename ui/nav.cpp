@@ -74,7 +74,7 @@ void adjust(Settings& st, int row, int dir) {
 }
 
 // Step a theme or a sweep. The sweep steps to the next AVAILABLE id rather
-// than clamping: stepping onto the gaze on AETHERSCAN and being bounced back
+// than clamping: stepping onto the gaze on UMBRAVOX and being bounced back
 // reads as a broken control, not as an unavailable option.
 void adjustAspect(Settings& st, int row, int dir) {
     if (row == 0) {
@@ -228,7 +228,7 @@ void clampSettings(Settings& s) {
     if (s.bleDuty > 100) s.bleDuty = 100;
     if (s.bands > 2)     s.bands = 0;
     if (s.idleIdx >= IDLE_N) s.idleIdx = 2;
-    if (s.theme >= pal::TH_COUNT) s.theme = pal::TH_AETHERSCAN;
+    if (s.theme >= pal::TH_COUNT) s.theme = pal::TH_UMBRAVOX;
     if (s.sweep >= SW_COUNT)      s.sweep = SW_RADAR;
     // A sweep the active theme does not offer is not a preference to be
     // preserved; it is a sweep that would draw nothing meaningful.

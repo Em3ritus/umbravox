@@ -52,7 +52,7 @@ for d in /dev/ttyACM*; do sn=$(udevadm info -q property -n "$d" | grep ID_SERIAL
 ## 2. Observing the mesh (serial)
 
 - **CYD console (`/dev/ttyUSB0`)** carries the Core/collector logs + the per-frame status line's `mesh Nn Nr N%lost` field, and the `MESHSTAT` command (callbacks + per-reason rejects + accepted reports). `pio device monitor` needs a real TTY; from an agent/script use pyserial: open `/dev/ttyUSB0` @115200, reset with `dtr=False; rts=True; sleep 0.15; rts=False`, then read. Send `MESHSTAT\n` / `WIGLE\n` / `SDLS\n` / `SDCAT /file\n` as needed.
-- **Coordinator / node Serial** should be readable over their `ttyACM` via the WCH bridge (Serial is on UART0, which the bridge carries). **Verify this early**: open a coordinator's ttyACM and look for `AETHERSCAN node` / mesh lines. If it's blank at runtime, that board's Serial isn't on the bridge → rebuild that env with `-DARDUINO_USB_CDC_ON_BOOT=1` and reflash to get Serial over USB-CDC.
+- **Coordinator / node Serial** should be readable over their `ttyACM` via the WCH bridge (Serial is on UART0, which the bridge carries). **Verify this early**: open a coordinator's ttyACM and look for `UMBRAVOX node` / mesh lines. If it's blank at runtime, that board's Serial isn't on the bridge → rebuild that env with `-DARDUINO_USB_CDC_ON_BOOT=1` and reflash to get Serial over USB-CDC.
 
 ## 3. Acceptance steps (in order)
 

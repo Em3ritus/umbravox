@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Save AETHERSCAN's wardrive log as a WiGLE file.
+"""Save UMBRAVOX's wardrive log as a WiGLE file.
 
     python3 tools/wigle_dump.py /dev/ttyUSB0
     python3 tools/wigle_dump.py /dev/ttyUSB0 -o trip.csv
@@ -72,7 +72,7 @@ def main():
         print("check 'loc N/M' in the status line", file=sys.stderr)
         return 1
 
-    out = args.out or time.strftime("aetherscan-%Y%m%d-%H%M%S.csv")
+    out = args.out or time.strftime("umbravox-%Y%m%d-%H%M%S.csv")
     with open(out, "w", newline="") as f:
         f.write(header + "\n")
         f.write("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"

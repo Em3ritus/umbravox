@@ -247,7 +247,7 @@ void report() {
 void setup() {
     Serial.begin(115200);
     delay(300);
-    Serial.println("\nAETHERSCAN node");
+    Serial.println("\nUMBRAVOX node");
 
     WiFi.mode(WIFI_MODE_STA);
     WiFi.disconnect();

@@ -1,4 +1,4 @@
-# AETHERSCAN
+# UMBRAVOX
 
 A **passive, dual-band wardriver** with a dark-technomancer interface, built for
 the ESP32-C5. It listens to the radio spectrum around you — WiFi, BLE and GPS —
@@ -9,9 +9,9 @@ scanning nodes over a wireless mesh and it covers more of the spectrum at once.
 It runs on a `$15` touchscreen dev board and renders a summoning-circle console
 instead of a dashboard.
 
-![AETHERSCAN](docs/aetherscan.png)
+![UMBRAVOX](docs/umbravox.png)
 
-> **Scope: this is receive-only by design.** AETHERSCAN scans, aggregates,
+> **Scope: this is receive-only by design.** UMBRAVOX scans, aggregates,
 > maps and exports — the passive half of wardriving. It deliberately ships
 > none of the transmit-side offensive tooling (deauth, beacon/BLE spam, Evil
 > Portal, Karma, PMKID capture). It listens; it does not announce itself or
@@ -35,7 +35,7 @@ instead of a dashboard.
 - **Multi-node ESP-NOW mesh** — optional headless scanning nodes, and an
   optional coordinator tier, that report back wirelessly so more radios cover
   more of the spectrum at once (see [Architecture](#architecture)).
-- **Two selectable themes** — AETHERSCAN and CVLT OF BAPH0MAU5 — with five
+- **Two selectable themes** — UMBRAVOX and CVLT OF BAPH0MAU5 — with five
   dial sweep animations, all switchable on the device.
 
 ## Hardware
@@ -124,10 +124,10 @@ platformio.ini
 ```sh
 cd sim
 make                               # build the simulator + host tests
-./aethersim out.png                # render one frame (4×, 640×480)
-./aethersim out.png --scale 2      # 320×240 — exactly what the panel shows
-./aethersim out.png --theme 1      # 0 AETHERSCAN, 1 CVLT OF BAPH0MAU5
-./aethersim out.png --screen codex # pick a screen
+./umbravox out.png                # render one frame (4×, 640×480)
+./umbravox out.png --scale 2      # 320×240 — exactly what the panel shows
+./umbravox out.png --theme 1      # 0 UMBRAVOX, 1 CVLT OF BAPH0MAU5
+./umbravox out.png --screen codex # pick a screen
 make test                          # run the host test suite
 make regress                       # compare rendered screens to baselines
 ```

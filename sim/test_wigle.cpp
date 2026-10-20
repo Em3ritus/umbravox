@@ -22,8 +22,8 @@ int main() {
     Buf b;
     ui_wigle::header(b);
     const char* want =
-        "WigleWifi-1.6,appRelease=aetherscan,model=NM-CYD-C5,release=1,"
-        "device=esp32c5,display=,board=,brand=AETHERSCAN\n"
+        "WigleWifi-1.6,appRelease=umbravox,model=NM-CYD-C5,release=1,"
+        "device=esp32c5,display=,board=,brand=UMBRAVOX\n"
         "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
         "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n";
     check("preamble and column header are exact WigleWifi-1.6", strcmp(b.s, want) == 0);

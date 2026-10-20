@@ -1,14 +1,14 @@
-// aethersim -- renders a screen from ui/ to a PNG, natively.
+// umbravox -- renders a screen from ui/ to a PNG, natively.
 //
 // The screen code here is the same translation unit the firmware will compile;
 // only the State comes from somewhere else. That is the whole trick: layout and
 // palette work happens in a sub-second loop instead of a flash cycle, and the
 // art cannot drift from what the device draws because there is only one copy.
 //
-//   ./aethersim out.png                  one frame
-//   ./aethersim out.png --frame 40       pick a point in the sweep
-//   ./aethersim out.png --sheet 6        out-000.png .. out-005.png
-//   ./aethersim out.png --scale 2        320x240, exactly what the panel shows
+//   ./umbravox out.png                  one frame
+//   ./umbravox out.png --frame 40       pick a point in the sweep
+//   ./umbravox out.png --sheet 6        out-000.png .. out-005.png
+//   ./umbravox out.png --scale 2        320x240, exactly what the panel shows
 #include "../ui/screens.h"
 #include "../ui/demo.h"
 #include "../ui/nav.h"
@@ -29,9 +29,9 @@ void outName(char* out, size_t n, const char* base, int i) {
 } // namespace
 
 int main(int argc, char** argv) {
-    const char* out = (argc > 1 && argv[1][0] != '-') ? argv[1] : "aetherscan.png";
+    const char* out = (argc > 1 && argv[1][0] != '-') ? argv[1] : "umbravox.png";
     int frame = 0, scale = 4, sheet = 0;
-    uint8_t themeId = pal::TH_AETHERSCAN;
+    uint8_t themeId = pal::TH_UMBRAVOX;
     uint8_t sweepId = ui::SW_RADAR;
     const char* which = "scan";
 
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
         else snprintf(path, sizeof(path), "%s", out);
 
         if (!png::write(path, c.px, ui::W, ui::H, scale)) {
-            fprintf(stderr, "aethersim: cannot write %s\n", path);
+            fprintf(stderr, "umbravox: cannot write %s\n", path);
             return 1;
         }
         printf("%s  %dx%d  frame %u\n", path, ui::W * scale, ui::H * scale, f);

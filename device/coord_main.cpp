@@ -279,7 +279,7 @@ void report() {
 void setup() {
     Serial.begin(115200);
     delay(300);
-    Serial.println("\nAETHERSCAN coordinator");
+    Serial.println("\nUMBRAVOX coordinator");
 
     WiFi.mode(WIFI_MODE_STA);
     WiFi.disconnect();

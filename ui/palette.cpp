@@ -40,7 +40,7 @@ struct Row {
 };
 
 constexpr Row THEMES[TH_COUNT] = {
-    {   "AETHERSCAN",
+    {   "UMBRAVOX",
         0b11101,                     // every sweep but the gaze
         13, 70, 109, 48,   22, 26, 31, 20,   85, 16,
         rgb(0x07,0x04,0x0E), rgb(0x13,0x0B,0x22), rgb(0x18,0x0F,0x2C),
@@ -74,7 +74,7 @@ constexpr Row THEMES[TH_COUNT] = {
 };
 
 inline const Row& row(uint8_t id) {
-    return THEMES[id < TH_COUNT ? id : (uint8_t)TH_AETHERSCAN];
+    return THEMES[id < TH_COUNT ? id : (uint8_t)TH_UMBRAVOX];
 }
 
 } // namespace
@@ -101,7 +101,7 @@ void setTheme(uint8_t id) {
 // The globals are zero-initialised, which is black on black. Nothing should
 // ever read a colour before setTheme() runs -- but "should" is doing a lot of
 // work there, and the failure mode is a dead screen with no other symptom.
-// Pointing the palette at AETHERSCAN during static init makes the question
+// Pointing the palette at UMBRAVOX during static init makes the question
 // moot rather than leaving it to call order.
 //
 // Safe against static-initialisation order: THEMES is constexpr and so is
@@ -110,7 +110,7 @@ void setTheme(uint8_t id) {
 // inside a function.
 namespace {
 struct DefaultTheme {
-    DefaultTheme() { setTheme(TH_AETHERSCAN); }
+    DefaultTheme() { setTheme(TH_UMBRAVOX); }
 };
 const DefaultTheme _defaultTheme;
 } // namespace

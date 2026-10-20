@@ -1,7 +1,7 @@
-sim/aethersim
+sim/umbravox
 sim/*.png
 # The simulator's default output name, if run from the repo root.
-/aetherscan.png
+/umbravox.png
 .pio/
 
 # Working material, not source: the two-way drop box, the pre-change render

@@ -25,7 +25,7 @@ struct Dirty {
     }
 };
 
-// AETHERSCAN -- the running-capture screen.
+// UMBRAVOX -- the running-capture screen.
 //
 // Always draws the whole canvas; `d` (when given) reports which parts of it
 // actually changed so the caller can blit just those. Pass nullptr to force a

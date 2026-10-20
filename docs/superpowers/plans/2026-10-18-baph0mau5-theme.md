@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship a second UI theme built around a Baphomet sigil, with the theme and the dial's search animation both selectable on the device, and AETHERSCAN rendering exactly as it does today.
+**Goal:** Ship a second UI theme built around a Baphomet sigil, with the theme and the dial's search animation both selectable on the device, and UMBRAVOX rendering exactly as it does today.
 
 **Architecture:** Four independent seams. The palette and the dial geometry stop being `constexpr` and become globals written by `pal::setTheme(id)` from a table with one row per theme — this is why 239 `pal::` call sites across nine files are never edited. The dial's centrepiece and its search animation are branches inside `drawDial`. A new ASPECT screen, reached as the eighth GRIMOIRE tile, previews and sets both.
 
@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- **Work happens on the `baph0mau5-theme` branch.** The repository was initialised at the start of execution; commit `866d4df` is AETHERSCAN exactly as it stood before any of this work. Commit at the end of every task. Never merge to `master` — that is the human's call.
-- **AETHERSCAN must render byte-for-byte as it does today.** The contract is `private/baseline/MANIFEST.md5`, nine screens at `--frame 0 --scale 4`. `scan.png` is `2886dd6c61e38ada6f4f3c00afd35fcb`.
+- **Work happens on the `baph0mau5-theme` branch.** The repository was initialised at the start of execution; commit `866d4df` is UMBRAVOX exactly as it stood before any of this work. Commit at the end of every task. Never merge to `master` — that is the human's call.
+- **UMBRAVOX must render byte-for-byte as it does today.** The contract is `private/baseline/MANIFEST.md5`, nine screens at `--frame 0 --scale 4`. `scan.png` is `2886dd6c61e38ada6f4f3c00afd35fcb`.
 - **Never edit a `pal::` call site.** If a change seems to require editing one of the 239 references in the nine screen files, the seam is wrong — fix the seam.
 - Build flags stay `-std=c++17 -O2 -Wall -Wextra`. New code compiles with no new warnings.
 - The framebuffer is 160 wide, 120 high. The body runs y=13..102; `HDR_H` is 12 and `FOOT_Y` is 103.
@@ -26,7 +26,7 @@
 Five failure modes the spec implies that no task's happy path exercises. Each has its test assigned to the task that owns the code.
 
 1. **A settings field added later but missed in the equality comparator** silently stops the debounce timer from ever firing, so the setting never persists. `prefs.cpp` already carries a comment about a bug of this exact shape. → Task 3, a test that mutates *every* field of `Settings` in a loop and asserts inequality is detected for each.
-2. **A stored sweep that is not available on the stored theme** — gaze saved on BAPH0MAU5, then the theme is changed to AETHERSCAN — must fall back to radar rather than draw a gaze with no eyes. → Task 3.
+2. **A stored sweep that is not available on the stored theme** — gaze saved on BAPH0MAU5, then the theme is changed to UMBRAVOX — must fall back to radar rather than draw a gaze with no eyes. → Task 3.
 3. **An out-of-range theme or sweep id out of corrupt NVS** must not index past the end of the theme table. → Task 3.
 4. **Changing the theme leaves stale pixels**, because the dirty-rect machinery assumes the palette and geometry are constant between frames. → Task 9, which forces a full-frame blit on change.
 5. **Tapping where the spectrum used to be** must not open MESH on a theme that has no spectrum strip. → Task 4.
@@ -103,7 +103,7 @@ test: $(TESTS)
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
 
-# AETHERSCAN must render exactly as it did before this work started. With no
+# UMBRAVOX must render exactly as it did before this work started. With no
 # version control there is nothing to diff against after the fact, so the
 # baseline was captured up front and this target is the contract.
 SCREENS = scan codex detail domain mesh omens echoes grimoire attune
@@ -116,7 +116,7 @@ regress: $(BIN)
 	 done
 	@cd $(REGRESS_DIR) && md5sum -c --quiet \
 	   $(CURDIR)/../private/baseline/MANIFEST.md5 \
-	 && echo "regress: AETHERSCAN unchanged"
+	 && echo "regress: UMBRAVOX unchanged"
 
 .PHONY: run sheet clean test regress
 ```
@@ -126,7 +126,7 @@ Note `test_settings` has a rule but is deliberately **not** in `TESTS` yet — i
 - [ ] **Step 2: Verify both targets work against the unchanged tree**
 
 Run: `cd sim && make clean && make -s && make -s regress`
-Expected: `regress: AETHERSCAN unchanged`
+Expected: `regress: UMBRAVOX unchanged`
 
 Run: `make -s test`
 Expected: four `== test_*` blocks, each ending `all passed`, exit 0.
@@ -152,7 +152,7 @@ git commit -m "build: wire the host tests into make, add a regress target"
 
 **Interfaces:**
 - Consumes: Task 1's `regress` target.
-- Produces: `pal::setTheme(uint8_t)`, `pal::themeName(uint8_t)`, `enum pal::ThemeId { TH_AETHERSCAN = 0, TH_BAPH0MAU5, TH_COUNT }`, and the palette globals `pal::VOID … pal::RED` plus `pal::SWEEP`, `pal::SWEEP_HI`, `pal::LIVE`, `pal::LIVE_HI`, `pal::RAMP[4]`.
+- Produces: `pal::setTheme(uint8_t)`, `pal::themeName(uint8_t)`, `enum pal::ThemeId { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COUNT }`, and the palette globals `pal::VOID … pal::RED` plus `pal::SWEEP`, `pal::SWEEP_HI`, `pal::LIVE`, `pal::LIVE_HI`, `pal::RAMP[4]`.
 
 - [ ] **Step 1: Rewrite the palette header**
 
@@ -198,16 +198,16 @@ extern uint16_t GREEN;      // BLE, and "good"
 extern uint16_t AMBER;
 extern uint16_t RED;
 
-enum ThemeId : uint8_t { TH_AETHERSCAN = 0, TH_BAPH0MAU5, TH_COUNT };
+enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COUNT };
 
-// Point the palette at a theme. An out-of-range id falls back to AETHERSCAN
+// Point the palette at a theme. An out-of-range id falls back to UMBRAVOX
 // rather than reading off the end of the table -- this is reached from NVS,
 // which can hold anything.
 void setTheme(uint8_t id);
 const char* themeName(uint8_t id);
 
 // Which sweeps this theme offers, as a bitmask over the Sweep enum. The gaze
-// needs eyes, and AETHERSCAN has a heptagram rather than a face.
+// needs eyes, and UMBRAVOX has a heptagram rather than a face.
 uint8_t sweepMask(uint8_t id);
 ```
 
@@ -250,7 +250,7 @@ struct Row {
 };
 
 constexpr Row THEMES[TH_COUNT] = {
-    {   "AETHERSCAN",
+    {   "UMBRAVOX",
         0b11101,                     // every sweep but the gaze
         rgb(0x07,0x04,0x0E), rgb(0x13,0x0B,0x22), rgb(0x18,0x0F,0x2C),
         rgb(0x2E,0x1F,0x52), rgb(0x56,0x36,0x97),
@@ -282,7 +282,7 @@ constexpr Row THEMES[TH_COUNT] = {
 };
 
 inline const Row& row(uint8_t id) {
-    return THEMES[id < TH_COUNT ? id : (uint8_t)TH_AETHERSCAN];
+    return THEMES[id < TH_COUNT ? id : (uint8_t)TH_UMBRAVOX];
 }
 
 } // namespace
@@ -317,7 +317,7 @@ In `sim/main_sim.cpp`, add a `--theme` flag and call `setTheme` before the rende
 After the line `int frame = 0, scale = 4, sheet = 0;` add:
 
 ```cpp
-    uint8_t themeId = pal::TH_AETHERSCAN;
+    uint8_t themeId = pal::TH_UMBRAVOX;
 ```
 
 In the argument loop, after the `--screen` branch, add:
@@ -333,16 +333,16 @@ Immediately before `static ui::Canvas c;` add:
     pal::setTheme(themeId);
 ```
 
-- [ ] **Step 4: Verify AETHERSCAN is byte-identical**
+- [ ] **Step 4: Verify UMBRAVOX is byte-identical**
 
 Run: `cd sim && make clean && make -s && make -s regress`
-Expected: `regress: AETHERSCAN unchanged`
+Expected: `regress: UMBRAVOX unchanged`
 
-This is the whole point of the seam. If any screen differs, a colour in the AETHERSCAN row does not match the original `palette.h`. Diff the row against `private/baseline/ui-pristine/palette.h`.
+This is the whole point of the seam. If any screen differs, a colour in the UMBRAVOX row does not match the original `palette.h`. Diff the row against `private/baseline/ui-pristine/palette.h`.
 
 - [ ] **Step 5: Verify the switch actually does something**
 
-Run: `./aethersim /tmp/t1.png --theme 1 --frame 0 --scale 4 && ./aethersim /tmp/t0.png --theme 0 --frame 0 --scale 4 && cmp /tmp/t0.png /tmp/t1.png`
+Run: `./umbravox /tmp/t1.png --theme 1 --frame 0 --scale 4 && ./umbravox /tmp/t0.png --theme 0 --frame 0 --scale 4 && cmp /tmp/t0.png /tmp/t1.png`
 Expected: `cmp` reports the files differ. If they are identical, `setTheme` is not being called or the table rows are the same.
 
 - [ ] **Step 6: Verify no new warnings**
@@ -453,19 +453,19 @@ int main() {
         clampSettings(s);
         check("gaze survives on baph0mau5", s.sweep == SW_GAZE);
 
-        s.theme = pal::TH_AETHERSCAN;        // the gaze has no eyes here
+        s.theme = pal::TH_UMBRAVOX;        // the gaze has no eyes here
         clampSettings(s);
-        check("gaze falls back to radar on aetherscan", s.sweep == SW_RADAR);
+        check("gaze falls back to radar on umbravox", s.sweep == SW_RADAR);
 
         s.sweep = SW_STAR;
         clampSettings(s);
-        check("star is kept on aetherscan", s.sweep == SW_STAR);
+        check("star is kept on umbravox", s.sweep == SW_STAR);
     }
 
     printf("the mask matches the enum:\n");
     {
-        check("aetherscan offers radar",  pal::sweepMask(pal::TH_AETHERSCAN) & (1 << SW_RADAR));
-        check("aetherscan refuses gaze", !(pal::sweepMask(pal::TH_AETHERSCAN) & (1 << SW_GAZE)));
+        check("umbravox offers radar",  pal::sweepMask(pal::TH_UMBRAVOX) & (1 << SW_RADAR));
+        check("umbravox refuses gaze", !(pal::sweepMask(pal::TH_UMBRAVOX) & (1 << SW_GAZE)));
         check("baph0mau5 offers gaze",    pal::sweepMask(pal::TH_BAPH0MAU5) & (1 << SW_GAZE));
         for (int s = 0; s < SW_COUNT; s++)
             check("baph0mau5 offers every sweep",
@@ -534,7 +534,7 @@ bool settingsEqual(const Settings& a, const Settings& b) {
 Add `#include "palette.h"` to the top of `ui/nav.cpp`, and extend `clampSettings` with:
 
 ```cpp
-    if (s.theme >= pal::TH_COUNT) s.theme = pal::TH_AETHERSCAN;
+    if (s.theme >= pal::TH_COUNT) s.theme = pal::TH_UMBRAVOX;
     if (s.sweep >= SW_COUNT)      s.sweep = SW_RADAR;
     // A sweep the active theme does not offer is not a preference to be
     // preserved; it is a sweep that would draw nothing meaningful.
@@ -546,10 +546,10 @@ Add `#include "palette.h"` to the top of `ui/nav.cpp`, and extend `clampSettings
 Run: `cd sim && make -s test`
 Expected: five `== test_*` blocks, each ending `all passed`, exit 0.
 
-- [ ] **Step 7: Verify AETHERSCAN is still byte-identical**
+- [ ] **Step 7: Verify UMBRAVOX is still byte-identical**
 
 Run: `cd sim && make -s && make -s regress`
-Expected: `regress: AETHERSCAN unchanged`
+Expected: `regress: UMBRAVOX unchanged`
 
 - [ ] **Step 8: Commit**
 
@@ -618,7 +618,7 @@ In `ui/palette.cpp`, add `#include "layout.h"` at the top. Add these fields to `
 
 Add the values as the second line of each row, immediately after the mask.
 
-AETHERSCAN — exactly today's numbers:
+UMBRAVOX — exactly today's numbers:
 
 ```cpp
         13, 70, 109, 48,   22, 26, 31, 20,   85, 16,
@@ -673,14 +673,14 @@ In `ui/nav.cpp`, in `onTap`, change the spectrum branch:
         }
 ```
 
-- [ ] **Step 5: Verify AETHERSCAN is byte-identical**
+- [ ] **Step 5: Verify UMBRAVOX is byte-identical**
 
 Run: `cd sim && make clean && make -s && make -s regress && make -s test`
-Expected: `regress: AETHERSCAN unchanged`, and all five tests pass.
+Expected: `regress: UMBRAVOX unchanged`, and all five tests pass.
 
 - [ ] **Step 6: Verify the second theme's dial actually moved**
 
-Run: `./aethersim /tmp/g1.png --theme 1 --frame 0 --scale 4`
+Run: `./umbravox /tmp/g1.png --theme 1 --frame 0 --scale 4`
 
 Open `/tmp/g1.png`. Expected: the circle is larger and lower than on theme 0, and there is no spectrum bar under it. The rune ring is still the centrepiece — the seal arrives in Task 6.
 
@@ -1111,7 +1111,7 @@ In `sim/Makefile` line 7, append ` ../ui/seal.cpp` to `SRC`.
 
 In `ui/screen_scan.cpp`, add `#include "seal.h"` and `#include "nav.h"` at the top.
 
-Inside `drawDial`, wrap the AETHERSCAN centrepiece. Everything from `latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);` down to and including the rune-ring loop becomes the `else` branch of:
+Inside `drawDial`, wrap the UMBRAVOX centrepiece. Everything from `latticeDisc(c, DIAL_CX, DIAL_CY, R_FIELD - 1);` down to and including the rune-ring loop becomes the `else` branch of:
 
 ```cpp
     if (s.set.theme == pal::TH_BAPH0MAU5) {
@@ -1125,12 +1125,12 @@ Inside `drawDial`, wrap the AETHERSCAN centrepiece. Everything from `latticeDisc
 
 Leave the sweep, the contacts and the centre pixel outside the branch — both themes draw those, and Task 7 replaces the sweep.
 
-- [ ] **Step 5: Verify AETHERSCAN is byte-identical and the seal appears**
+- [ ] **Step 5: Verify UMBRAVOX is byte-identical and the seal appears**
 
 Run: `cd sim && make clean && make -s && make -s regress && make -s test`
-Expected: `regress: AETHERSCAN unchanged`, all five tests pass.
+Expected: `regress: UMBRAVOX unchanged`, all five tests pass.
 
-Run: `./aethersim /tmp/seal.png --theme 1 --frame 26 --scale 4`
+Run: `./umbravox /tmp/seal.png --theme 1 --frame 26 --scale 4`
 
 Open `/tmp/seal.png`. Expected: a chalk-white horned face inside the circle, with horns, X-eyes, teeth and the beard pentacle all legible, and eight alchemical marks around the band. If the face reads as a blur, `ui/sigil.h` was generated with the wrong parameters — re-run Task 5.
 
@@ -1355,7 +1355,7 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
 } // namespace ui
 ```
 
-**The radar branch must reproduce today's output exactly.** Today's code uses `pal::WITCH` and `pal::WITCH_HI`; here it uses `pal::SWEEP` and `pal::SWEEP_HI`, which the AETHERSCAN table row sets to those same two colours. The `regress` target in Step 5 is what proves it.
+**The radar branch must reproduce today's output exactly.** Today's code uses `pal::WITCH` and `pal::WITCH_HI`; here it uses `pal::SWEEP` and `pal::SWEEP_HI`, which the UMBRAVOX table row sets to those same two colours. The `regress` target in Step 5 is what proves it.
 
 - [ ] **Step 3: Add sweep.cpp to the build**
 
@@ -1411,16 +1411,16 @@ and change the `drawSeal` call from Task 6 to:
                  s.alertActive ? (uint8_t)(s.alertConf * 85) : 0);
 ```
 
-- [ ] **Step 5: Verify AETHERSCAN is byte-identical**
+- [ ] **Step 5: Verify UMBRAVOX is byte-identical**
 
 Run: `cd sim && make clean && make -s && make -s regress && make -s test`
-Expected: `regress: AETHERSCAN unchanged`, all five tests pass.
+Expected: `regress: UMBRAVOX unchanged`, all five tests pass.
 
 If `scan.png` differs, the radar branch is not reproducing the original. Compare against `private/baseline/ui-pristine/screen_scan.cpp` — the most likely cause is the leading-edge colour, which was `pal::WITCH_HI` unmixed.
 
 - [ ] **Step 6: Render every sweep and look at them**
 
-Run: `for m in 0 1 2 3 4; do ./aethersim /tmp/sw-$m.png --theme 1 --sweep $m --frame 26 --scale 4; done`
+Run: `for m in 0 1 2 3 4; do ./umbravox /tmp/sw-$m.png --theme 1 --sweep $m --frame 26 --scale 4; done`
 
 This needs a `--sweep` flag. In `sim/main_sim.cpp` add, beside the `--theme` branch:
 
@@ -1487,10 +1487,10 @@ Then in `drawScan`, replace the old `drawDial(c, s);` call with:
     drawDialAt(c, s, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND);
 ```
 
-- [ ] **Step 3: Verify AETHERSCAN is byte-identical**
+- [ ] **Step 3: Verify UMBRAVOX is byte-identical**
 
 Run: `cd sim && make clean && make -s && make -s regress && make -s test`
-Expected: `regress: AETHERSCAN unchanged`, all five tests pass.
+Expected: `regress: UMBRAVOX unchanged`, all five tests pass.
 
 This is a pure refactor. Any difference means a label or the panel moved.
 
@@ -1666,7 +1666,7 @@ In `ui/nav.cpp`, add to `adjust()` a sibling function above `onTap`:
 
 ```cpp
 // Step a theme or a sweep. The sweep steps to the next AVAILABLE id rather
-// than clamping: stepping onto the gaze on AETHERSCAN and being bounced back
+// than clamping: stepping onto the gaze on UMBRAVOX and being bounced back
 // reads as a broken control, not as an unavailable option.
 void adjustAspect(Settings& st, int row, int dir) {
     if (row == 0) {
@@ -1727,18 +1727,18 @@ In `sim/Makefile` line 7, append ` ../ui/screen_aspect.cpp` to `SRC`.
 - [ ] **Step 7: Verify**
 
 Run: `cd sim && make clean && make -s && make -s regress && make -s test`
-Expected: `regress: AETHERSCAN unchanged`, all five tests pass.
+Expected: `regress: UMBRAVOX unchanged`, all five tests pass.
 
 The grimoire now has eight tiles, so `grimoire.png` **will** differ from the baseline. That is the one expected regression failure in this plan. Confirm it is the only one, confirm the new tile is the cause, then re-render the grimoire baseline:
 
 ```bash
-./aethersim ../private/baseline/grimoire.png --screen grimoire --frame 0 --scale 4
+./umbravox ../private/baseline/grimoire.png --screen grimoire --frame 0 --scale 4
 cd ../private/baseline && md5sum *.png > MANIFEST.md5
 ```
 
-Re-run `make -s regress` and expect `AETHERSCAN unchanged`.
+Re-run `make -s regress` and expect `UMBRAVOX unchanged`.
 
-Run: `./aethersim /tmp/aspect.png --screen aspect --theme 1 --frame 26 --scale 4`
+Run: `./umbravox /tmp/aspect.png --screen aspect --theme 1 --frame 26 --scale 4`
 
 Open it. Expected: a header reading ASPECT, a live seal in the upper half, and two rows reading `THEME  -  BAPH0MAU5  +` and `SWEEP  -  RADAR  +`.
 
@@ -1822,11 +1822,11 @@ This is the open risk in the spec and the only number nobody has. The C5 is sing
 
 Using the existing timing instrumentation that produced the README's `draw 6 ms / blit 7 ms` figures, record draw time for:
 
-- AETHERSCAN, radar — the baseline, expected ~6 ms
+- UMBRAVOX, radar — the baseline, expected ~6 ms
 - BAPH0MAU5, radar — the seal blit, ~2,500 pixel tests against the rune ring's 400
 - BAPH0MAU5, star — five tails rather than one
 
-Record all three in the README's measurement block. If BAPH0MAU5 is materially worse than AETHERSCAN, the fallbacks in spec order are: cache the seal's static pixels, drop the star, reduce the face to 2bpp.
+Record all three in the README's measurement block. If BAPH0MAU5 is materially worse than UMBRAVOX, the fallbacks in spec order are: cache the seal's static pixels, drop the star, reduce the face to 2bpp.
 
 - [ ] **Step 8: Commit**
 
@@ -1839,7 +1839,7 @@ git commit -m "feat: persist theme and sweep across a power cycle"
 
 ## Self-review
 
-**Spec coverage.** Palette seam → Task 2. Extra theme colours → Task 2. Dial geometry → Task 4. Spectrum absence, draw and hit test → Task 4. Centrepiece branch → Task 6. Asset pipeline → Task 5. Tint regions → Task 6. Five sweeps and the per-mode contact test → Task 7. Gaze excluded on AETHERSCAN → Tasks 2 (mask) and 9 (stepping). ASPECT screen and live preview → Tasks 8 and 9. Settings and clamping → Task 3. Persistence and `VER` → Task 10. Verification table → Tasks 1, 2, 10. Working without version control → Task 1.
+**Spec coverage.** Palette seam → Task 2. Extra theme colours → Task 2. Dial geometry → Task 4. Spectrum absence, draw and hit test → Task 4. Centrepiece branch → Task 6. Asset pipeline → Task 5. Tint regions → Task 6. Five sweeps and the per-mode contact test → Task 7. Gaze excluded on UMBRAVOX → Tasks 2 (mask) and 9 (stepping). ASPECT screen and live preview → Tasks 8 and 9. Settings and clamping → Task 3. Persistence and `VER` → Task 10. Verification table → Tasks 1, 2, 10. Working without version control → Task 1.
 
 Deliberately not covered, per the spec's "Out of scope": the boot splash. The `BIG` asset is generated in Task 5 and goes unused until that work is picked up — a known, named loose end rather than an oversight.
 

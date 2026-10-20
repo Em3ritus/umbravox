@@ -3,11 +3,11 @@
 CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
-BIN = aethersim
+BIN = umbravox
 SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp
 # Every ui header, found rather than listed. The hand-written list silently
 # omitted nav.h, layout.h, signatures.h and wifi_auth.h, so editing any of
-# them left aethersim stale -- and a stale binary makes `regress` pass while
+# them left umbravox stale -- and a stale binary makes `regress` pass while
 # testing code that no longer exists. Later tasks add headers here; a wildcard
 # cannot forget them.
 HDR = $(wildcard ../ui/*.h) png_writer.h
@@ -16,7 +16,7 @@ $(BIN): $(SRC) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRC) -lm
 
 run: $(BIN)
-	./$(BIN) aetherscan.png
+	./$(BIN) umbravox.png
 
 sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
@@ -80,7 +80,7 @@ test: $(TESTS)
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
 
-# AETHERSCAN must render exactly as it did before this work started. With no
+# UMBRAVOX must render exactly as it did before this work started. With no
 # version control there is nothing to diff against after the fact, so the
 # baseline was captured up front and this target is the contract.
 SCREENS = scan codex detail domain mesh omens echoes grimoire attune
@@ -98,6 +98,6 @@ regress: $(BIN)
 	   ./$(BIN) "$$d/$$s.png" --screen $$s --frame 0 --scale 4 >/dev/null; \
 	 done; \
 	 cd "$$d" && md5sum -c --quiet $(MANIFEST); \
-	 echo "regress: AETHERSCAN unchanged"
+	 echo "regress: UMBRAVOX unchanged"
 
 .PHONY: run sheet clean test regress
