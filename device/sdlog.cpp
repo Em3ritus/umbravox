@@ -48,8 +48,17 @@ bool writeAtomic(const char* name,
     File f = SD.open(tmp, FILE_WRITE);
     if (!f) return false;
 
+    const uint32_t bodyT0 = millis();
     rows = body(f, skipped);
+    const uint32_t bodyMs = millis() - bodyT0;
+    const uint32_t flushT0 = millis();
     f.flush();
+    const uint32_t flushMs = millis() - flushT0;
+    // Acceptance item #7: the per-save stall. The whole CSV is rewritten each
+    // save, so write time grows with the file; the flush is the fsync-class
+    // stall that competes with capture on the single core.
+    Serial.printf("sdlog: save %lu rows -- write %lu ms, flush %lu ms\n",
+                  (unsigned long)rows, (unsigned long)bodyMs, (unsigned long)flushMs);
     // Best-effort write-failure check (full card / I/O error). getWriteError may
     // be inert on some cores, so also require size()>0 (body always writes the
     // header). This runs BEFORE the live file is touched, so a caught failure

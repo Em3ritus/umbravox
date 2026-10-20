@@ -71,7 +71,7 @@ Boot order matters: **start coordinators BEFORE nodes** — a node that binds to
 - UI loss is **mesh-wide / max-cluster**, not yet per-coordinator rows — enough to decide *whether* to add a coordinator, not yet *which* cluster is hottest.
 
 ## Bonus (hardware is out anyway): SD logging leftovers
-- SD wardrive logging acceptance item **#7** (flush-duration measurement) is still open — with a card in, start a session, observe the per-flush stall, and record it in the README.
+- SD wardrive logging acceptance item **#7** (flush-duration measurement): **measured 2026-10-20.** Each save rewrites the whole CSV atomically; on a ~10–11 row / ~1.4 KB file the build took 1–2 ms and the flush (the fsync-class stall that competes with capture on the single core) 16–19 ms — a ~20 ms stall every `FLUSH_MS` (30 s). Write scales ~linearly with rows (~0.1 ms/row); the flush is roughly the card's commit floor, so even a long drive stays a sub-second periodic stall. Instrumented in `sdlog.cpp` (serial line `sdlog: save N rows -- write X ms, flush Y ms`).
 - A real geolocated wardrive upload still wants a stable outdoor GPS fix (the mesh run above does not).
 
 ## Results — 2026-10-20 overnight run (0/1-coordinator path validated)
@@ -133,8 +133,22 @@ just a Waveshare (the `nm-c5-coordinator` env is board-agnostic). The eco2 Waves
   climbing 22→28 over ~48 s before the fix), lands on a coordinator, and stays put (no
   flapping). Host-tested in `sim/test_rehome.cpp`.
 
+- **Step 4 full (physical coordinator unplug → node migration): PASS (2026-10-20).** CYD
+  (collector) + one Waveshare coordinator (`A7:B4:54`, cluster 0, report ch6) + one Xiao node
+  (`CB:F5:04`). Baseline: the node bound to the coordinator and the coordinator folded + relayed
+  its reports to the CYD at 0% loss/drop/fail. **Unplug the coordinator:** the node's unicast
+  reports fail-streaked, it dropped the dead Core, re-broadcast, and the CYD (sole Core again)
+  re-adopted it — the mesh went `0n 0r` → `1n 1r` at ~16 s and climbed to `7r` at 0% loss
+  (`accepted reports` 0 → 20). **Re-power the coordinator:** it re-registered and the node
+  migrated back onto it within a report cycle (`node CB:F5:04 -> sweep 20 ch`; coordinator
+  `folded=38 relayed=15 drop=0 fail=0`). Loss-of-Core migration *and* return are both exercised
+  on real radios. (Single-coordinator case — loss falls back to the CYD. The two-coordinator
+  "migrate to the survivor" hop uses the same fail-streak + re-Hello + `balance::pick` path,
+  host-covered by `test_cluster`; it was not re-run live this round.)
+
 **Still open:** step 3 (~12-node scale + loss-threshold tuning) and step 5 (CYD
 responsiveness under 12 nodes) — both need more nodes than on hand; the allocation/balancing
 logic is host-covered by `test_cluster`. Step 4 full (physical coordinator unplug → fail-streak
-→ reassignment) still wants a hands-on run; the CYD-reboot half of it is already PASS above.
-SD flush-duration (#7) unchanged.
+→ migration) is now **PASS** (above), and SD flush-duration (#7) is **measured** (~16–19 ms
+flush per 30 s save; see above). The only items left are the 12-node-fleet ones (steps 3 and 5),
+whose logic is host-covered by `test_cluster`.
