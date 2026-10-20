@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flash UMBRAVOX</title>
-<!-- ESP Web Tools: Web Serial flashing, pinned. ESP32-C5 is supported by the
-     bundled esptool-js. If chip detection ever fails on a C5, bump this or
-     switch to tasmota-esp-web-tools. -->
-<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<!-- ESP Web Tools, vendored same-origin by make-web-flasher.sh rather than
+     pulled from a CDN at flash time: this page writes firmware, so the
+     flasher's own integrity matters, and the module imports chunks that a
+     single SRI hash can't cover. ESP32-C5 support (incl. its stub) is bundled. -->
+<script type="module" src="./esp-web-tools/install-button.js"></script>
 <style>
   :root{
     --void:#06030c; --ground:#0a0614; --panel:#140a24; --edge:#3c2062;
