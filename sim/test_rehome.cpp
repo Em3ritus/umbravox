@@ -15,18 +15,28 @@ int main() {
     const uint8_t cyd[6]   = {0xA0, 0xB1, 0xC2, 0xD3, 0xE4, 0xF5};
     const uint8_t coord[6] = {0x10, 0xBD, 0xA3, 0xF3, 0xA4, 0x38};
     const uint8_t cydAgain[6] = {0xA0, 0xB1, 0xC2, 0xD3, 0xE4, 0xF5};
+    const uint8_t stranger[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01};
 
     printf("re-home decision:\n");
-    check("no core yet -> BIND",
-          rehome::decide(false, cyd, coord) == rehome::BIND);
+    check("no core yet -> BIND (sender irrelevant)",
+          rehome::decide(false, cyd, coord, stranger) == rehome::BIND);
     check("same core -> UPDATE (refreshed assignment)",
-          rehome::decide(true, cyd, cydAgain) == rehome::UPDATE);
-    check("different core -> REHOME (handed off CYD->coordinator)",
-          rehome::decide(true, cyd, coord) == rehome::REHOME);
-    // The exact bug: a node already bound to the CYD, told to go to a
-    // coordinator, must re-home -- not silently keep the CYD.
-    check("stuck-on-CYD node migrates when redirected",
-          rehome::decide(true, cyd, coord) != rehome::UPDATE);
+          rehome::decide(true, cyd, cydAgain, cyd) == rehome::UPDATE);
+    // The exact bug: a node on the CYD, redirected by the CYD (its current
+    // Core) to a coordinator, must re-home -- not silently keep the CYD.
+    check("hand-off FROM current core -> REHOME",
+          rehome::decide(true, cyd, coord, cyd) == rehome::REHOME);
+    check("stuck-on-CYD node migrates when its core redirects it",
+          rehome::decide(true, cyd, coord, cyd) != rehome::UPDATE);
+    // Security guard: a different core named by anyone other than the current
+    // core is ignored -- a stray/hostile device cannot hijack an assigned node.
+    check("different core from a STRANGER -> IGNORE (no hijack)",
+          rehome::decide(true, cyd, coord, stranger) == rehome::IGNORE);
+    check("IGNORE never re-homes or updates",
+          rehome::decide(true, cyd, coord, stranger) != rehome::REHOME &&
+          rehome::decide(true, cyd, coord, stranger) != rehome::UPDATE);
+    check("null sender -> IGNORE (cannot verify the hand-off)",
+          rehome::decide(true, cyd, coord, nullptr) == rehome::IGNORE);
 
     printf("straggler redirect gate:\n");
     check("inactive collector never redirects",

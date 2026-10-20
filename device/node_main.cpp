@@ -119,17 +119,19 @@ void onSent(const wifi_tx_info_t* info, esp_now_send_status_t st) {
     else if (failStreak < 255) failStreak = failStreak + 1;
 }
 
-void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
+void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     if (!mesh::valid(data, len, mesh::MSG_ASSIGN, (int)sizeof(mesh::Assign))) return;
     const mesh::Assign* a = (const mesh::Assign*)data;
     for (int i = 0; i < 6; i++) if (a->h.mac[i] != selfMac[i]) return;
+    const uint8_t* sender = (info && info->src_addr) ? info->src_addr : nullptr;
 
     // Learn the Core's address and peer with it, so reports can go unicast.
     // A later Assign naming a DIFFERENT Core is a hand-off -- the CYD's
     // collector moving this node onto a coordinator -- so drop the old peer and
     // bind the new one, instead of latching the first Core forever (the bug
     // that stranded nodes on the CYD and defeated the coordinators).
-    const rehome::Action act = rehome::decide(haveCore, coreMac, a->coreMac);
+    const rehome::Action act = rehome::decide(haveCore, coreMac, a->coreMac, sender);
+    if (act == rehome::IGNORE) return;   // a stranger naming a new Core -- do not trust it
     if (act == rehome::REHOME) {
         esp_now_del_peer(coreMac);
         haveCore   = false;
