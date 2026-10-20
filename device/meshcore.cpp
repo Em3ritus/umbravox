@@ -38,6 +38,12 @@ uint8_t sliceReportChan_ = mesh::REPORT_CHAN;
 Sink      sink_ = nullptr;
 FrameHook collector_ = nullptr;
 
+// Whether this instance hands out node assignments. True by default (a lone
+// CYD Core, and every coordinator). The CYD clears it while a coordinator is
+// live: it then stops telling nodes to make it their Core, so its own
+// assignments cannot fight the collector's redirects to the coordinators.
+bool assigning_ = true;
+
 int findOrAdd(const uint8_t* mac) {
     for (int i = 0; i < MAX_NODES; i++)
         if (nodes_[i].live && !memcmp(nodes_[i].mac, mac, 6)) return i;
@@ -260,10 +266,14 @@ void tick(uint32_t nowMs) {
 
     // Re-send assignments periodically rather than once: a node that was
     // out of range, or rebooted, needs telling again, and the topology
-    // changes whenever one joins or drops.
+    // changes whenever one joins or drops. Suppressed on the CYD while a
+    // coordinator is live (assigning_ == false), so the collector alone
+    // decides where nodes go and this Core never re-claims them.
     static uint32_t lastAssign = 0;
-    if (nowMs - lastAssign >= 3000) { lastAssign = nowMs; assignAll(nowMs); }
+    if (assigning_ && nowMs - lastAssign >= 3000) { lastAssign = nowMs; assignAll(nowMs); }
 }
+
+void setAssigning(bool on) { assigning_ = on; }
 
 int count() {
     int n = 0;

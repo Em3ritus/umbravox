@@ -10,6 +10,7 @@
 #include <esp_now.h>
 #include <esp_mac.h>
 #include "mesh.h"
+#include "rehome.h"
 #include "wifi_auth.h"
 
 namespace {
@@ -118,20 +119,32 @@ void onSent(const wifi_tx_info_t* info, esp_now_send_status_t st) {
     else if (failStreak < 255) failStreak = failStreak + 1;
 }
 
-void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
+void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     if (!mesh::valid(data, len, mesh::MSG_ASSIGN, (int)sizeof(mesh::Assign))) return;
     const mesh::Assign* a = (const mesh::Assign*)data;
     for (int i = 0; i < 6; i++) if (a->h.mac[i] != selfMac[i]) return;
+    const uint8_t* sender = (info && info->src_addr) ? info->src_addr : nullptr;
 
     // Learn the Core's address and peer with it, so reports can go unicast.
-    if (!haveCore) {
-        memcpy(coreMac, a->coreMac, 6);
+    // A later Assign naming a DIFFERENT Core is a hand-off -- the CYD's
+    // collector moving this node onto a coordinator -- so drop the old peer and
+    // bind the new one, instead of latching the first Core forever (the bug
+    // that stranded nodes on the CYD and defeated the coordinators).
+    const rehome::Action act = rehome::decide(haveCore, coreMac, a->coreMac, sender);
+    if (act == rehome::IGNORE) return;   // a stranger naming a new Core -- do not trust it
+    if (act == rehome::REHOME) {
+        esp_now_del_peer(coreMac);
+        haveCore   = false;
+        failStreak = 0;
+    }
+    if (act != rehome::UPDATE) {           // BIND or REHOME: (re-)peer with the named Core
         esp_now_peer_info_t p = {};
-        memcpy(p.peer_addr, coreMac, 6);
+        memcpy(p.peer_addr, a->coreMac, 6);
         p.channel = 0;
         p.ifidx   = WIFI_IF_STA;
         p.encrypt = false;
         if (esp_now_add_peer(&p) == ESP_OK) {
+            memcpy(coreMac, a->coreMac, 6);
             haveCore = true;
             Serial.printf("node: core is %02X:%02X:%02X:%02X:%02X:%02X, reports now unicast\n",
                           coreMac[0], coreMac[1], coreMac[2],
@@ -139,7 +152,9 @@ void onRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
         }
     }
 
-    const bool first = !assigned;
+    // A re-home gets the same fresh-start treatment as a first assignment:
+    // re-park on the new slice and re-seed the report phase below.
+    const bool first = !assigned || act == rehome::REHOME;
     nChan = a->nChan > mesh::MAX_ASSIGN ? mesh::MAX_ASSIGN : a->nChan;
     for (int i = 0; i < nChan; i++) chans[i] = a->chans[i];
     camp = a->camp;

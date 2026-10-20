@@ -28,6 +28,11 @@ struct NodeRec {
 void begin();
 void tick(uint32_t nowMs);
 
+// The CYD clears this while any coordinator is live, so its Core stops handing
+// out assignments and leaves node placement entirely to the collector. Default
+// true (a lone CYD Core and every coordinator assign normally).
+void setAssigning(bool on);
+
 // Restrict channel planning to a band slice and report on `reportChan`, which
 // is what a coordinator does with the slice the CYD hands it: assignAll then
 // plans over the slice (planCluster) instead of the whole band. UNSET (the
