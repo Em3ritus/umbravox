@@ -33,6 +33,7 @@ int main(int argc, char** argv) {
     int frame = 0, scale = 4, sheet = 0;
     uint8_t themeId = pal::TH_UMBRAVOX;
     uint8_t sweepId = ui::SW_RADAR;
+    uint8_t labelsId = 0;
     const char* which = "scan";
 
     for (int i = 1; i < argc; i++) {
@@ -42,6 +43,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) which = argv[++i];
         else if (!strcmp(argv[i], "--theme") && i + 1 < argc) themeId = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--sweep") && i + 1 < argc) sweepId = (uint8_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--labels") && i + 1 < argc) labelsId = (uint8_t)atoi(argv[++i]);
     }
 
     // Nothing may draw before the palette points somewhere.
@@ -55,6 +57,7 @@ int main(int argc, char** argv) {
         ui::State s = ui::demoState(f);
         s.set.sweep = sweepId;
         s.set.theme = themeId;   // the screens branch on the setting, not the palette
+        s.set.labels = labelsId; // 0 on-brand names, 1 plain
         ui::clampSettings(s.set); // the device cannot reach an impossible pairing; neither may the sim
         const bool codex  = !strcmp(which, "codex");
         const bool attune = !strcmp(which, "attune");

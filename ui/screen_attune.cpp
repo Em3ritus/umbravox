@@ -5,6 +5,7 @@
 // you actually hear; BLE duty is the direct cost to WiFi capture, because
 // there is one radio; bands narrows the hop when you only care about one.
 #include "screens.h"
+#include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -89,7 +90,7 @@ void button(Canvas& c, int x, int y, const char* glyph, bool live) {
 
 void drawAttune(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
-    drawHeader(c, s, "ATTUNE");
+    drawHeader(c, s, screenName(SCR_ATTUNE, s.set.labels));
 
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);

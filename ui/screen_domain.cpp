@@ -9,6 +9,7 @@
 // a stationary device spin, and a map that moves while you stand still is
 // worse than one that is merely not aligned with the windscreen.
 #include "screens.h"
+#include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -37,7 +38,7 @@ void cat(char* o, const char* s) { int i = 0; while (o[i]) i++; for (int k = 0; 
 
 void drawDomain(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
-    drawHeader(c, s, "DOMAIN");
+    drawHeader(c, s, screenName(SCR_DOMAIN, s.set.labels));
 
     c.fill(1, BODY_Y, 158, BODY_H, Canvas::mix(pal::VOID, pal::PANEL, 1, 2));
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);

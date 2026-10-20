@@ -168,8 +168,14 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
         }
     }
 
-    // A grimoire tile opens its screen.
+    // A grimoire tile opens its screen; the 9th cell toggles the label mode.
     if (n.screen == SCR_GRIMOIRE) {
+        int lx, ly, lw, lh;
+        grimoireCell(GRIMOIRE_N, lx, ly, lw, lh);
+        if (hit(x, y, lx, ly, lw, lh)) {
+            st.labels = st.labels ? 0 : 1;
+            return true;        // not a screen change, but the grid relabels
+        }
         for (int i = 0; i < GRIMOIRE_N; i++) {
             int gx, gy, gw, gh;
             grimoireCell(i, gx, gy, gw, gh);
@@ -229,6 +235,7 @@ void clampSettings(Settings& s) {
     if (s.bands > 2)     s.bands = 0;
     if (s.idleIdx >= IDLE_N) s.idleIdx = 2;
     if (s.theme >= pal::TH_COUNT) s.theme = pal::TH_UMBRAVOX;
+    if (s.labels > 1)             s.labels = 0;
     if (s.sweep >= SW_COUNT)      s.sweep = SW_RADAR;
     // A sweep the active theme does not offer is not a preference to be
     // preserved; it is a sweep that would draw nothing meaningful.
@@ -240,7 +247,7 @@ bool settingsEqual(const Settings& a, const Settings& b) {
            a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
-           a.reserved == b.reserved;
+           a.labels   == b.labels;
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {

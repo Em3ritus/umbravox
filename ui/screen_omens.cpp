@@ -4,6 +4,7 @@
 // confidence it was graded at and whether it carries a position -- a hit
 // without one cannot be gone back to, which is worth knowing at a glance.
 #include "screens.h"
+#include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -38,13 +39,15 @@ uint16_t confColor(uint8_t c) {
 
 void drawOmens(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
-    char title[16] = {'O','M','E','N','S',0};
+    char title[16];
+    const char* base = screenName(SCR_OMENS, s.set.labels);   // OMENS / ALERTS
+    int k = 0; for (; base[k] && k < 10; k++) title[k] = base[k];
     if (s.omenTotal > MAX_OMEN_ROWS) {
-        int k = 5; title[k++] = ' ';
+        title[k++] = ' ';
         char n[8]; u2s(n, s.omenTotal);
         for (int i = 0; n[i] && k < 15; i++) title[k++] = n[i];
-        title[k] = 0;
     }
+    title[k] = 0;
     drawHeader(c, s, title);
 
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
