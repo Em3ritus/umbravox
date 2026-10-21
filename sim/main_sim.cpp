@@ -9,10 +9,12 @@
 //   ./umbravox out.png --frame 40       pick a point in the sweep
 //   ./umbravox out.png --sheet 6        out-000.png .. out-005.png
 //   ./umbravox out.png --scale 2        320x240, exactly what the panel shows
+//   ./umbravox out.png --theme 2 --alert 1 --frame 20   an alert style mid-rite
 #include "../ui/screens.h"
 #include "../ui/demo.h"
 #include "../ui/nav.h"
 #include "../ui/palette.h"
+#include "../ui/signatures.h"
 #include "png_writer.h"
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +37,7 @@ int main(int argc, char** argv) {
     uint8_t sweepId = ui::SW_RADAR;
     uint8_t labelsId = 0;
     uint8_t netIdSim = 0;
+    int alertSim = -1;                 // --alert: force an alert of this style
     const char* which = "scan";
 
     for (int i = 1; i < argc; i++) {
@@ -46,6 +49,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--sweep") && i + 1 < argc) sweepId = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--labels") && i + 1 < argc) labelsId = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--netid") && i + 1 < argc) netIdSim = (uint8_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--alert") && i + 1 < argc) alertSim = atoi(argv[++i]);
     }
 
     // Nothing may draw before the palette points somewhere.
@@ -61,6 +65,17 @@ int main(int argc, char** argv) {
         s.set.theme = themeId;   // the screens branch on the setting, not the palette
         s.set.labels = labelsId; // 0 on-brand names, 1 plain
         s.netId = netIdSim;      // preview the MESH screen's enrolled state
+        if (alertSim >= 0) {
+            // Hold an alert up so each style can be rendered at any point in its
+            // rite: --frame is the alert's age in 20 ms steps.
+            s.set.alertStyle = (uint8_t)alertSim;
+            s.alertActive = true;
+            s.alertThreat = ui::TH_DRONE;
+            s.alertConf   = ui::CONF_HIGH;
+            strcpy(s.alertWhy,  "DRONEID");
+            strcpy(s.alertName, "60:60:1F:A2:4C:19");
+            s.alertAge = (uint16_t)(f * 20);
+        }
         ui::clampSettings(s.set); // the device cannot reach an impossible pairing; neither may the sim
         const bool codex  = !strcmp(which, "codex");
         const bool attune = !strcmp(which, "attune");
