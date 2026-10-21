@@ -830,7 +830,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Run it**
 
-Run: `cd /home/mummydust/Documents/squach/technomancer && python3 -I tools/gen_sigil.py`
+Run (from the repo root): `python3 -I tools/gen_sigil.py`
 Expected: `wrote ui/sigil.h: FACE 50x50, BIG 112x112`
 
 - [ ] **Step 3: Verify the generated sizes and that it is valid C++**

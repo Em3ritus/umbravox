@@ -109,7 +109,7 @@ Rig: CYD (ttyUSB0) + **two** Waveshare coordinators — one on `ttyACM1`, one on
 charger (boards mesh over RF; USB is only power/flash/serial, so a coordinator needs no
 laptop port once flashed) — + 1 Xiao C5 node (ttyACM0). A coordinator runs on any C5, not
 just a Waveshare (the `nm-c5-coordinator` env is board-agnostic). The eco2 Waveshare
-(SN 5C37182998) flashes with the normal stub; only the eco3/v1.2 board needs `--no-stub`.
+flashes with the normal stub; only the eco3/v1.2 board needs `--no-stub`.
 
 - **Step 2 (2 coordinators + band split): PASS.** Both registered on the CYD
   (`collector: coordinator … -> cluster 0 (1 live)` then `… -> cluster 1 (2 live)`) and got
