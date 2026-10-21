@@ -376,6 +376,35 @@ Two things worth knowing if you extend this:
   different module's spinlock, and nesting two across modules is how a
   deadlock gets written.
 
+### Mesh: network enrolment
+
+Every frame carries a network id, and a board only talks to boards on the same
+one, so neighbouring setups never cross-talk. The id is set over the air from
+the CYD's MESH screen (or the console):
+
+- **ENROLL** mints a random private id if the CYD is still open, then invites
+  for 60 s. Only an *open* board adopts an invite -- a board already on a net
+  ignores it, so a neighbour cannot take your nodes.
+- **RESET** (`NETRESET`) tells boards on the CYD's net to go open.
+
+Two things about delivery matter, and both were learned the hard way:
+
+- **Boards listen for tens of milliseconds per cycle**, and unassigned boards
+  wait on the report channel (1). So during any window the CYD parks on channel
+  1 and transmits every 25 ms; a once-a-second broadcast from a sweeping Core
+  only landed by luck, and never reached a board behind a coordinator.
+- **A reset must not abandon a net while boards are still on it.** The CYD
+  stays on the old net until no board has answered for 8 s (minimum 15 s, hard
+  cap 120 s), because a board that missed the command -- one behind a
+  coordinator falls back to the CYD after ~16 s -- needs to hear it then. Once
+  the CYD leaves, an invite cannot reach that board: it only moves *open*
+  boards. If the cap is hit with boards still answering, the diag log says so
+  (`WARN reset gave up ... NETSET <old>`).
+
+**Recovery:** `NETSET <id>` puts the CYD on a known net (0 = open). The net a
+reset left is in `/diag.log` (`enroll reset begins, network N`), so
+`NETSET N` followed by `NETRESET` goes back for a stranded board.
+
 ### Capture
 
 Promiscuous sniffing of management frames (beacons and probe responses) across
