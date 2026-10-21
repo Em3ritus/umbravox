@@ -420,7 +420,7 @@ bool folderNameOk(const char* folder) {
 
 Admit admit(const char* folder, const Pack& p, const char* const* takenNames, int nTaken) {
     if (!folderNameOk(folder)) return ADMIT_BAD_FOLDER;
-    static const char* const reserved[] = {"UMBRAVOX", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"};
+    static const char* const reserved[] = {"UMBRAVOX", "BAPH0MAU5", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"};
     for (const char* r : reserved)
         if (strncmp(p.name, r, sizeof p.name) == 0) return ADMIT_RESERVED;
     if (takenNames)

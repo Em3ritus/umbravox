@@ -39,6 +39,18 @@ static themepack::Pack mkPack(const char* name, themepack::Dial dial, uint16_t s
 
 int main() {
     check("three themes", pal::TH_COUNT == 3);
+    {   // every name a built-in displays must be refused to a pack
+        bool all = true;
+        for (int i = 0; i < pal::TH_COUNT; i++) {
+            themepack::Pack q; memset(&q, 0, sizeof q);
+            strncpy(q.name, pal::themeName((uint8_t)i), themepack::MAX_NAME);
+            if (themepack::admit("a", q, nullptr, 0) != themepack::ADMIT_RESERVED) {
+                printf("  built-in name not reserved: %s\n", q.name);
+                all = false;
+            }
+        }
+        check("admit() reserves every pal::themeName(i) for i < TH_COUNT", all);
+    }
     check("cosmic name", !strcmp(pal::themeName(pal::TH_COSMICMUFFIN), "COSMIC MUFFIN"));
 
     pal::setTheme(pal::TH_COSMICMUFFIN);
