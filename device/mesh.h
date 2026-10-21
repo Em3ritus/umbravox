@@ -28,7 +28,20 @@ constexpr uint8_t MAGIC       = 0xAE;
 // and a Core that disagree about the wire will otherwise just stop talking:
 // the length check rejects every frame and both sides look fine in
 // isolation, which cost a debugging session to notice.
-constexpr uint8_t VERSION     = 3;            // was 2: coordinator tier added
+constexpr uint8_t VERSION     = 4;            // was 3: added the network id
+
+// Which mesh a device belongs to. 0 (the default) is the open/stock network
+// every stock build shares. To run your own fleet with no crosstalk when other
+// setups are in the same room, build the CYD, the nodes AND the coordinators
+// with the same -DMESH_NETID=<1..255> in platformio.ini build_flags: a device
+// stamps it on every frame and ignores -- and is ignored by -- any frame
+// carrying a different id. It is not a secret (it is readable in the binary);
+// it isolates co-located setups, it does not authenticate them. An encrypted-
+// cluster mode is the roadmap fix.
+#ifndef MESH_NETID
+#define MESH_NETID 0
+#endif
+constexpr uint8_t NETID = (uint8_t)(MESH_NETID);
 constexpr uint8_t REPORT_CHAN = 1;
 // How often a node (and a coordinator) delivers its batch, and so the window
 // that report-phase offsets are spread across.
@@ -48,6 +61,7 @@ enum MsgKind : uint8_t {
 struct __attribute__((packed)) Hdr {
     uint8_t magic;
     uint8_t ver;
+    uint8_t netId;        // which mesh this belongs to (see MESH_NETID above)
     uint8_t kind;
     uint8_t mac[6];       // the node the message concerns
 };
@@ -141,7 +155,8 @@ static_assert(sizeof(ClusterBatch) <= 250, "ESP-NOW frames cap at 250 bytes");
 inline bool valid(const uint8_t* d, int len, uint8_t kind, int expect) {
     if (!d || len < (int)sizeof(Hdr) || len < expect) return false;
     const Hdr* h = (const Hdr*)d;
-    return h->magic == MAGIC && h->ver == VERSION && h->kind == kind;
+    return h->magic == MAGIC && h->ver == VERSION &&
+           h->netId == NETID && h->kind == kind;
 }
 
 } // namespace mesh

@@ -190,6 +190,7 @@ void sendCreg() {
     mesh::CoordReg c = {};
     c.h.magic = mesh::MAGIC;
     c.h.ver   = mesh::VERSION;
+    c.h.netId = mesh::NETID;
     c.h.kind  = mesh::MSG_CREG;
     memcpy(c.h.mac, selfMac, 6);
     c.wants5 = 1;
@@ -238,6 +239,7 @@ void report() {
         mesh::ClusterBatch b = {};
         b.h.magic = mesh::MAGIC;
         b.h.ver   = mesh::VERSION;
+        b.h.netId = mesh::NETID;
         b.h.kind  = mesh::MSG_CBATCH;
         memcpy(b.h.mac, selfMac, 6);
         b.clusterId = clusterId;
