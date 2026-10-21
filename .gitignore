@@ -25,6 +25,7 @@ sim/test_phase
 sim/test_cluster
 sim/test_rehome
 sim/test_ble_ad
+sim/test_elog
 ui/sigil.h.tmp
 
 # Isolated SDD worktrees
