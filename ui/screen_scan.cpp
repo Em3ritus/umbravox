@@ -5,6 +5,7 @@
 #include "layout.h"
 #include "signatures.h"
 #include "seal.h"
+#include "muffinseal.h"
 #include "sweep.h"
 #include "nav.h"
 #include <math.h>
@@ -602,6 +603,10 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
                  s.frame, found, foundAngle,
                  s.alertActive ? (uint8_t)(s.alertConf * 85) : 0,
                  searchLift(s.set.sweep, s.frame), s.set.sweep);
+    } else if (s.set.theme == pal::TH_COSMICMUFFIN) {
+        // The muffin fills the dial; the search lights it the way the candle
+        // lights the seal (liftOverride), and sweeps draw over it below.
+        drawMuffin(c, cx, cy, rField, s.frame, searchLift(s.set.sweep, s.frame));
     } else {
         latticeDisc(c, cx, cy, rField - 1);
 
@@ -670,8 +675,9 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     // baselines); the cult theme announces itself in full.
     // The scan screen is home: it wears the brand wordmark even in plain-label
     // mode, which renames the sub-screens, not the masthead.
-    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
-                                                      : "UMBRAVOX");
+    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5   ? "CVLT OF BAPH0MAU5"
+                   : s.set.theme == pal::TH_COSMICMUFFIN ? "COSMIC MUFFIN"
+                                                         : "UMBRAVOX");
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);
     drawTile(c, TILE_Y[2], "BLE",   s.ble,              pal::GREEN);

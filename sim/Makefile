@@ -4,7 +4,7 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
-SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp
+SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp
 # Every ui header, found rather than listed. The hand-written list silently
 # omitted nav.h, layout.h, signatures.h and wifi_auth.h, so editing any of
 # them left umbravox stale -- and a stale binary makes `regress` pass while
@@ -73,6 +73,9 @@ test_elog: test_elog.cpp ../device/elog.h
 test_palette: test_palette.cpp ../ui/palette.cpp ../ui/palette.h ../ui/layout.h
 	$(CXX) $(CXXFLAGS) -o $@ test_palette.cpp ../ui/palette.cpp -lm
 
+test_muffin: test_muffin.cpp ../ui/muffinseal.cpp ../ui/muffinseal.h ../ui/muffin.h ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_muffin.cpp ../ui/muffinseal.cpp ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp -lm
+
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -84,7 +87,7 @@ test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
