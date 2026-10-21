@@ -11,6 +11,8 @@
 #pragma once
 #include <stdint.h>
 
+namespace themepack { struct Pack; struct Emblem; }
+
 namespace pal {
 
 constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -56,11 +58,14 @@ extern uint16_t GREEN;      // BLE, and "good"
 extern uint16_t AMBER;
 extern uint16_t RED;
 
+// The BUILT-IN themes. TH_COUNT is the number of built-ins, not of themes:
+// theme packs off the SD card follow them at ids TH_COUNT + slot, and
+// themeCount() is the total.
 enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_COUNT };
 
-// Point the palette at a theme. An out-of-range id falls back to UMBRAVOX
-// rather than reading off the end of the table -- this is reached from NVS,
-// which can hold anything.
+// Point the palette at a theme. An out-of-range id (>= themeCount()) falls
+// back to UMBRAVOX rather than reading off the end of the table -- this is
+// reached from NVS, which can hold anything.
 void setTheme(uint8_t id);
 const char* themeName(uint8_t id);
 
@@ -68,5 +73,44 @@ const char* themeName(uint8_t id);
 // needs eyes, and UMBRAVOX has a heptagram rather than a face. 16-bit because
 // there are more than eight sweeps once the cosmic ones land.
 uint16_t sweepMask(uint8_t id);
+
+// --- theme packs ----------------------------------------------------------
+// Built-ins plus loaded packs.
+int themeCount();
+
+// Append a pack; returns its theme id (TH_COUNT + slot), or -1 when
+// themepack::MAX_PACKS are already held. The pack is COPIED (the caller's may
+// go away) and its status colours sanitised on the copy. The emblem is stored
+// by POINTER, not copied: the caller keeps its buffer alive (null = none).
+// Not thread-safe: call before anything draws (boot, or the sim's setup).
+int addPack(const themepack::Pack& p, const themepack::Emblem* e);
+
+// The theme id of the pack with exactly this name, or -1. Packs only: a
+// built-in's name never matches.
+int findPack(const char* name);
+
+// The theme to select at boot from what NVS held: a saved pack NAME wins
+// (its id now, or UMBRAVOX if that pack is gone); with no name, the saved id
+// if it is a built-in, else UMBRAVOX -- a bare pack id from NVS is never
+// trusted, because the slots may have shifted.
+uint8_t resolveSaved(const char* name, uint8_t savedId);
+
+enum Centrepiece : uint8_t { CP_HEPTAGRAM, CP_SEAL, CP_EMBLEM };
+Centrepiece centrepiece(uint8_t id);
+
+// The emblem art for this theme: the baked muffin for COSMIC MUFFIN, the
+// pack's for a pack (may be null), null for the heptagram / seal built-ins.
+const themepack::Emblem* emblem(uint8_t id);
+
+// The masthead text on the scan screen.
+const char* header(uint8_t id);
+
+// The sweep a theme falls back to when the chosen one is not offered:
+// RADAR for the built-ins, the pack's own `sweep` for a pack.
+uint8_t startSweep(uint8_t id);
+
+// The pack's alert rite (a themepack::Rite). Only meaningful for packs; the
+// built-ins keep their own alert logic and get RITE_WARD here.
+uint8_t packRite(uint8_t id);
 
 } // namespace pal

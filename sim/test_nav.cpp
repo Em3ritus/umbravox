@@ -9,6 +9,7 @@
 #include "../ui/sweep.h"
 #include "../ui/screens.h"
 #include "../ui/signatures.h"
+#include "../ui/themepack.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -137,6 +138,43 @@ int main() {
         check("aspect: theme + wraps to UMBRAVOX", st.theme == pal::TH_UMBRAVOX);
         tapBtn(st, SET_MINUS_X, 0);
         check("aspect: theme - wraps to COSMIC MUFFIN", st.theme == pal::TH_COSMICMUFFIN);
+
+        // With packs loaded the theme row steps the built-ins, then the packs
+        // in load order, then wraps -- in both directions.
+        {
+            themepack::Pack p;
+            memset(&p, 0, sizeof p);
+            p.dial = themepack::DIAL_LARGE;
+            p.sweeps = (uint16_t)(1u << SW_STAR);   // no radar: stepping must re-clamp
+            p.sweep = SW_STAR;
+            for (int i = 0; i < themepack::N_COLORS; i++) p.color[i] = (uint16_t)(0x1111 * i);
+            p.color[themepack::R_VOID] = 0;
+            p.color[themepack::R_AMBER] = 0xFFE0;
+            p.color[themepack::R_RED] = 0xF800;
+            snprintf(p.name, sizeof p.name, "PACKA");
+            snprintf(p.header, sizeof p.header, "PACKA");
+            const int a = pal::addPack(p, nullptr);
+            p.sweeps = 0x07FF; p.sweep = SW_RADAR;
+            snprintf(p.name, sizeof p.name, "PACKB");
+            const int b = pal::addPack(p, nullptr);
+            check("aspect: two packs loaded", a == 3 && b == 4 && pal::themeCount() == 5);
+
+            st = Settings();
+            const uint8_t fwd[] = { 1, 2, 3, 4, 0 };
+            bool order = true;
+            for (uint8_t want : fwd) { tapBtn(st, SET_PLUS_X, 0); if (st.theme != want) order = false; }
+            check("aspect: theme + visits built-ins, then packs, then wraps", order);
+            const uint8_t back[] = { 4, 3, 2, 1, 0 };
+            order = true;
+            for (uint8_t want : back) { tapBtn(st, SET_MINUS_X, 0); if (st.theme != want) order = false; }
+            check("aspect: theme - visits packs, then built-ins, and wraps", order);
+
+            st = Settings();
+            st.theme = pal::TH_COSMICMUFFIN; st.sweep = SW_RADAR;
+            tapBtn(st, SET_PLUS_X, 0);
+            check("aspect: stepping onto a radar-less pack takes its start sweep",
+                  st.theme == 3 && st.sweep == SW_STAR);
+        }
 
         // On BAPH0MAU5 the gaze is reachable.
         st.theme = pal::TH_BAPH0MAU5; st.sweep = SW_RADAR; pal::setTheme(pal::TH_BAPH0MAU5);
