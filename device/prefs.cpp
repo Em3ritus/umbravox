@@ -111,4 +111,13 @@ bool loggingWas() {
     return ready && nvs.getUChar("logging", 0) != 0;
 }
 
+void setNetId(uint8_t id) {
+    if (!ready) return;
+    nvs.putUChar("netid", id);          // immediate: an enrolment must survive a reboot
+}
+
+uint8_t netId(uint8_t deflt) {
+    return ready ? nvs.getUChar("netid", deflt) : deflt;
+}
+
 } // namespace prefs

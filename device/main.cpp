@@ -172,7 +172,7 @@ void reassignAll(int only = -1) {
         mesh::CoordAssign a = {};
         a.h.magic = mesh::MAGIC;
         a.h.ver   = mesh::VERSION;
-        a.h.netId = mesh::NETID;
+        a.h.netId = mesh::netId;
         a.h.kind  = mesh::MSG_CASSIGN;
         memcpy(a.h.mac, coords_[i].mac, 6);
         a.clusterId   = coords_[i].clusterId;
@@ -282,7 +282,7 @@ void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     mesh::Assign a = {};
     a.h.magic = mesh::MAGIC;
     a.h.ver   = mesh::VERSION;
-    a.h.netId = mesh::NETID;
+    a.h.netId = mesh::netId;
     a.h.kind  = mesh::MSG_ASSIGN;
     memcpy(a.h.mac, mac, 6);
     memcpy(a.coreMac, coords_[c].mac, 6);
@@ -323,6 +323,9 @@ uint8_t maxLossPct() {
 // Hellos and Reports fall through to meshcore untouched (byte-for-byte today).
 bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
     (void)src;
+    // The CYD enrols others; it never adopts an invite itself. Claim and drop.
+    if (len >= (int)sizeof(mesh::Hdr) &&
+        ((const mesh::Hdr*)data)->kind == mesh::MSG_ENROLL) return true;
     if (mesh::valid(data, len, mesh::MSG_CREG, (int)sizeof(mesh::CoordReg))) {
         const mesh::CoordReg* c = (const mesh::CoordReg*)data;
         pushEv(EV_REG, c->h.mac, c->wants5);
@@ -464,9 +467,7 @@ void setup() {
     meshcore::begin();
     // The collector tier watches the same ESP-NOW receive path. Until a
     // coordinator registers it claims nothing, so the node mesh is unchanged.
-    meshcore::setCollector(collector::onFrame);
-    Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::NETID,
-                  mesh::NETID == 0 ? " (open/stock -- build with -DMESH_NETID to isolate)" : "");
+    meshcore::setCollector(collector::onFrame);   // netId is loaded + logged in loop()
     touch::begin();
     // Card first, then the session machine: it resumes into a fresh file when
     // the last run ended mid-session. Known limitation (accepted): with no GPS
@@ -546,6 +547,66 @@ static void injectNmea(const char* body) {
     ui::Gnss::sentence(s, millis());
 }
 
+// --- enrolment: pairing a node/coordinator onto this CYD's private network ---
+// ENROLL (from the UI or the console) mints a random private network id if this
+// CYD is still open (id 0), saves it, and broadcasts an invite for 60s. An OPEN
+// node/coordinator in range adopts the id and locks to it; already-enrolled gear
+// ignores the invite, so a neighbour cannot steal a node that is already yours.
+namespace enroll {
+const uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+enum Mode : uint8_t { IDLE, ADOPT, UNENROL };
+Mode     mode = IDLE;
+uint32_t windowUntil = 0, lastTx = 0;
+uint8_t  oldNet = 0;                 // the net we are telling our nodes to leave
+
+// ADOPT: mint a private net if still open, then invite open devices onto it.
+void open(uint32_t nowMs) {
+    if (mesh::netId == 0) {
+        uint8_t id = 0;
+        while (id == 0) id = (uint8_t)(esp_random() & 0xFF);   // 1..255
+        mesh::netId = id;
+        prefs::setNetId(id);
+    }
+    mode = ADOPT; windowUntil = nowMs + 60000; lastTx = 0;
+    Serial.printf("enroll: network %u open for 60s -- power up an OPEN node now\n",
+                  (unsigned)mesh::netId);
+}
+
+// UNENROL: tell our own nodes (on our net) to go open, then go open ourselves.
+void reset(uint32_t nowMs) {
+    if (mesh::netId == 0) { mode = IDLE; return; }   // already open
+    oldNet = mesh::netId;
+    mode = UNENROL; windowUntil = nowMs + 12000; lastTx = 0;
+    Serial.printf("enroll: resetting network %u -- nodes going open, 12s\n",
+                  (unsigned)oldNet);
+}
+
+bool active(uint32_t nowMs) { (void)nowMs; return mode != IDLE; }
+int  secsLeft(uint32_t nowMs) {
+    return mode != IDLE ? (int)((windowUntil - nowMs + 999) / 1000) : 0;
+}
+
+void tick(uint32_t nowMs) {
+    if (mode == IDLE) return;
+    if ((int32_t)(windowUntil - nowMs) <= 0) {
+        if (mode == UNENROL) {                       // the CYD goes open last
+            mesh::netId = 0; prefs::setNetId(0);
+            Serial.println("enroll: back on the open network (id 0)");
+        }
+        mode = IDLE;
+        return;
+    }
+    if (nowMs - lastTx < 1000) return;
+    lastTx = nowMs;
+    mesh::Enroll e = {};
+    e.h.magic = mesh::MAGIC;  e.h.ver  = mesh::VERSION;  e.h.kind = mesh::MSG_ENROLL;
+    e.token   = mesh::ENROLL_TOKEN;
+    e.h.netId = (mode == ADOPT) ? mesh::netId : oldNet;
+    e.reset   = (mode == ADOPT) ? 0 : 1;
+    esp_now_send(bcast, (const uint8_t*)&e, sizeof e);
+}
+} // namespace enroll
+
 void pollConsole() {
     static char line[32];
     static int  n = 0;
@@ -592,6 +653,10 @@ void pollConsole() {
                 injectNmea("GPRMC,120000.00,A,3746.4940,N,12225.1640,W,0.0,0.0,190126,,,A");
                 injectNmea("GPGGA,120000.00,3746.4940,N,12225.1640,W,1,08,0.9,10.0,M,0.0,M,,");
                 Serial.println("gpsfix: injected 37.7749,-122.4194 (2026-01-19)");
+            } else if (!strncmp(line, "ENROLL", 6)) {
+                enroll::open(millis());
+            } else if (!strncmp(line, "NETRESET", 8)) {
+                enroll::reset(millis());
             } else {
                 Serial.printf("unknown command '%s' "
                               "(try TEST, WIGLE, SDLS, SDCAT <file>, GPSFIX)\n", line);
@@ -638,6 +703,7 @@ void loop() {
     meshcore::setAssigning(!collector::active());
     meshcore::tick(millis());
     collector::tick(millis());
+    enroll::tick(millis());
     blescan::tick(millis());
     logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
 
@@ -708,6 +774,9 @@ void loop() {
         // the first navTouch runs before the draw-time apply below. Same
         // task, before any draw, so this is safe.
         pal::setTheme(set.theme);
+        mesh::netId = prefs::netId(mesh::netId);   // NVS overrides the build default
+        Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::netId,
+                      mesh::netId == 0 ? " (open -- ENROLL to make a private net)" : "");
     }
 
     const touch::Point tp = touch::read();

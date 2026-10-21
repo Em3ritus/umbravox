@@ -30,18 +30,22 @@ constexpr uint8_t MAGIC       = 0xAE;
 // isolation, which cost a debugging session to notice.
 constexpr uint8_t VERSION     = 4;            // was 3: added the network id
 
-// Which mesh a device belongs to. 0 (the default) is the open/stock network
-// every stock build shares. To run your own fleet with no crosstalk when other
-// setups are in the same room, build the CYD, the nodes AND the coordinators
-// with the same -DMESH_NETID=<1..255> in platformio.ini build_flags: a device
-// stamps it on every frame and ignores -- and is ignored by -- any frame
-// carrying a different id. It is not a secret (it is readable in the binary);
-// it isolates co-located setups, it does not authenticate them. An encrypted-
-// cluster mode is the roadmap fix.
+// Which mesh a device belongs to. 0 is the open/stock network every stock build
+// shares (a lone setup works zero-config). To isolate your fleet when other
+// setups share the room, give it a non-zero id -- two ways, both landing here:
+//   * baked in at build time with -DMESH_NETID=<1..255> (inherited by the node
+//     and coordinator envs), or
+//   * paired over the air: press ENROLL on the CYD and an OPEN (id 0) node or
+//     coordinator in range adopts the CYD's id and saves it to NVS.
+// A device stamps `netId` on every frame and ignores -- and is ignored by --
+// any frame carrying a different id (MSG_ENROLL is the one exception: it is how
+// an open device crosses onto a private net). It is runtime so NVS can override
+// the build default at boot. Not a secret (readable in the binary): it isolates
+// co-located setups, it does not authenticate them. Encryption is the roadmap.
 #ifndef MESH_NETID
 #define MESH_NETID 0
 #endif
-constexpr uint8_t NETID = (uint8_t)(MESH_NETID);
+inline uint8_t netId = (uint8_t)(MESH_NETID);
 constexpr uint8_t REPORT_CHAN = 1;
 // How often a node (and a coordinator) delivers its batch, and so the window
 // that report-phase offsets are spread across.
@@ -54,6 +58,7 @@ enum MsgKind : uint8_t {
     MSG_CREG     = 4,   // coordinator -> CYD: I am a coordinator, unassigned
     MSG_CASSIGN  = 5,   // CYD -> coordinator: your cluster id / report chan / slice
     MSG_CBATCH   = 6,   // coordinator -> CYD: aggregated sightings + cluster stats
+    MSG_ENROLL   = 7,   // CYD -> anyone: adopt my netId (open devices only)
 };
 
 // Every frame opens with this, so a stray packet from anything else on the
@@ -70,6 +75,20 @@ struct __attribute__((packed)) Hello {
     Hdr     h;
     uint8_t fw;           // firmware generation, so a Core can refuse a stranger
     uint8_t wants5;       // 1 if this node's radio can do 5GHz
+};
+
+// An invitation to join a private network, broadcast by the CYD while its
+// enroll window is open. h.netId carries the id to adopt. An OPEN device (its
+// own netId is 0) that hears one adopts it and locks; an enrolled device
+// ignores it, so a neighbour cannot steal a node that is already yours.
+constexpr uint16_t ENROLL_TOKEN = 0x5541;   // a sanity marker, not security
+struct __attribute__((packed)) Enroll {
+    Hdr      h;
+    uint16_t token;       // == ENROLL_TOKEN
+    // 0 = an invite: an OPEN device adopts h.netId. 1 = an un-enrol command:
+    // a device already on h.netId goes back to open. The CYD sends the un-enrol
+    // on its OWN (old) net, so only its own gear -- not a neighbour's -- resets.
+    uint8_t  reset;
 };
 
 constexpr int MAX_ASSIGN = 21;
@@ -156,7 +175,7 @@ inline bool valid(const uint8_t* d, int len, uint8_t kind, int expect) {
     if (!d || len < (int)sizeof(Hdr) || len < expect) return false;
     const Hdr* h = (const Hdr*)d;
     return h->magic == MAGIC && h->ver == VERSION &&
-           h->netId == NETID && h->kind == kind;
+           h->netId == netId && h->kind == kind;
 }
 
 } // namespace mesh
