@@ -71,4 +71,32 @@ bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t w
 // Returns true if anything changed.
 bool sanitizeStatus(Pack& p);
 
+// ---- Admission: which pack folders are loaded, and whether to skip one ------
+// Pure logic (no SD access) so the loader's decisions are host-testable.
+
+// Folder name is [A-Za-z0-9_-]{1,31}. Anything else (".", "..", separators,
+// spaces, non-ASCII, NULL) is not a pack folder.
+bool folderNameOk(const char* folder);
+
+enum Admit { ADMIT_OK, ADMIT_BAD_FOLDER, ADMIT_RESERVED, ADMIT_DUPLICATE, ADMIT_FULL };
+
+// Decide whether a parsed pack in `folder` joins the n already admitted packs
+// (takenNames[0..nTaken), NULL entries ignored). The name must not be a
+// built-in's and must be unique (exact, case-sensitive); at most MAX_PACKS.
+Admit admit(const char* folder, const Pack& p, const char* const* takenNames, int nTaken);
+
+// Short human-readable reason for the diagnostic log; never empty, no newline.
+const char* admitWhy(Admit a);
+
+// Sort folder names byte-wise ascending (stable), so the same MAX_PACKS always
+// win. Each entry is read as at most 32 bytes; a missing NUL ends it there.
+void sortNames(char (*names)[32], int n);
+
+// Boot-loop guard, decision half. The loader persists formatLoading()'s record
+// before loading a pack and clears it after; if the record survives a reboot,
+// skipAfterCrash() is true only for that exact folder at that exact total size
+// (so an edited pack gets another go). Anything else skips nothing.
+void formatLoading(char* out, size_t cap, const char* folder, uint32_t totalSize);
+bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize);
+
 }  // namespace themepack

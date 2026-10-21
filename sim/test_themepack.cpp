@@ -224,6 +224,201 @@ static void emblemTests() {
     }
 }
 
+static Pack named(const char* n) {
+    Pack p; memset(&p, 0, sizeof p);
+    strncpy(p.name, n, MAX_NAME);
+    return p;
+}
+
+static void admissionTests() {
+    // folder names
+    check("folder ok_1-A ok", folderNameOk("ok_1-A"));
+    check("folder 1 char ok", folderNameOk("a"));
+    check("folder 31 chars ok", folderNameOk(std::string(31, 'a').c_str()));
+    check("folder 32 chars rejected", !folderNameOk(std::string(32, 'a').c_str()));
+    check("folder empty rejected", !folderNameOk(""));
+    check("folder . rejected", !folderNameOk("."));
+    check("folder .. rejected", !folderNameOk(".."));
+    check("folder a/b rejected", !folderNameOk("a/b"));
+    check("folder a\\b rejected", !folderNameOk("a\\b"));
+    check("folder with space rejected", !folderNameOk("a b"));
+    check("folder non-ASCII rejected", !folderNameOk("\xC3\xA9"));
+    check("folder high byte rejected", !folderNameOk("a\xFF"));
+    check("folder dot inside rejected", !folderNameOk("a.b"));
+    check("folder newline rejected", !folderNameOk("a\n"));
+    check("folder NULL rejected", !folderNameOk(nullptr));
+
+    // admit
+    const char* none[1] = {nullptr};
+    check("admit plain ok", admit("neon", named("NEON"), none, 0) == ADMIT_OK);
+    check("admit bad folder", admit("a/b", named("NEON"), none, 0) == ADMIT_BAD_FOLDER);
+    check("admit empty folder", admit("", named("NEON"), none, 0) == ADMIT_BAD_FOLDER);
+    check("admit NULL folder", admit(nullptr, named("NEON"), none, 0) == ADMIT_BAD_FOLDER);
+    check("admit reserved UMBRAVOX", admit("a", named("UMBRAVOX"), none, 0) == ADMIT_RESERVED);
+    check("admit reserved CVLT", admit("a", named("CVLT OF BAPH0MAU5"), none, 0) == ADMIT_RESERVED);
+    check("admit reserved COSMIC MUFFIN", admit("a", named("COSMIC MUFFIN"), none, 0) == ADMIT_RESERVED);
+    check("COSMIC MUFFIN<space> not reserved", admit("a", named("COSMIC MUFFIN "), none, 0) == ADMIT_OK);
+    check("UMBRAVOX2 not reserved", admit("a", named("UMBRAVOX2"), none, 0) == ADMIT_OK);
+    check("UMBRAVO not reserved", admit("a", named("UMBRAVO"), none, 0) == ADMIT_OK);
+    check("lowercase umbravox not reserved (case-sensitive)", admit("a", named("umbravox"), none, 0) == ADMIT_OK);
+    {
+        const char* taken[2] = {"ONE", "TWO"};
+        check("duplicate of first rejected", admit("a", named("ONE"), taken, 2) == ADMIT_DUPLICATE);
+        check("duplicate of last rejected", admit("a", named("TWO"), taken, 2) == ADMIT_DUPLICATE);
+        check("near-duplicate ONE2 ok", admit("a", named("ONE2"), taken, 2) == ADMIT_OK);
+        check("duplicate case-sensitive", admit("a", named("one"), taken, 2) == ADMIT_OK);
+        check("nTaken bounds the scan", admit("a", named("TWO"), taken, 1) == ADMIT_OK);
+        const char* holes[2] = {nullptr, "TWO"};
+        check("NULL taken entry skipped", admit("a", named("TWO"), holes, 2) == ADMIT_DUPLICATE);
+        check("NULL taken array with n 0 ok", admit("a", named("ONE"), nullptr, 0) == ADMIT_OK);
+        check("NULL taken array with n>0 does not crash", admit("a", named("ONE"), nullptr, 3) == ADMIT_OK);
+    }
+    {
+        const char* t[MAX_PACKS + 1] = {"P0","P1","P2","P3","P4","P5","P6","P7","P8"};
+        check("8th pack admitted (7 taken)", admit("a", named("NEW"), t, MAX_PACKS - 1) == ADMIT_OK);
+        check("9th pack full (8 taken)", admit("a", named("NEW"), t, MAX_PACKS) == ADMIT_FULL);
+        check("full beyond 8 too", admit("a", named("NEW"), t, MAX_PACKS + 1) == ADMIT_FULL);
+        check("bad folder wins over full", admit("a/b", named("NEW"), t, MAX_PACKS) == ADMIT_BAD_FOLDER);
+    }
+
+    // reasons
+    const Admit all[] = {ADMIT_OK, ADMIT_BAD_FOLDER, ADMIT_RESERVED, ADMIT_DUPLICATE, ADMIT_FULL};
+    bool why_ok = true;
+    for (Admit a : all) {
+        const char* w = admitWhy(a);
+        if (!w || !*w || w[strlen(w) - 1] == '\n') why_ok = false;
+    }
+    check("admitWhy non-empty, no trailing newline", why_ok);
+    bool distinct = true;
+    for (int i = 0; i < 5; i++) for (int j = i + 1; j < 5; j++)
+        if (!strcmp(admitWhy(all[i]), admitWhy(all[j]))) distinct = false;
+    check("admitWhy distinct per value", distinct);
+    check("admitWhy out-of-range value still a string",
+          admitWhy((Admit)99) && *admitWhy((Admit)99));
+
+    // sortNames
+    {
+        char n[4][32] = {"b", "a", "B", "_x"};
+        sortNames(n, 4);
+        check("sort: uppercase < _ < lowercase", !strcmp(n[0], "B") && !strcmp(n[1], "_x") &&
+              !strcmp(n[2], "a") && !strcmp(n[3], "b"));
+        char m[4][32] = {"a", "-", "9", "A"};
+        sortNames(m, 4);
+        check("sort: - < 9 < A < a", !strcmp(m[0], "-") && !strcmp(m[1], "9") &&
+              !strcmp(m[2], "A") && !strcmp(m[3], "a"));
+        char p[3][32] = {"ab", "a", "abc"};
+        sortNames(p, 3);
+        check("sort: prefix before longer", !strcmp(p[0], "a") && !strcmp(p[1], "ab") && !strcmp(p[2], "abc"));
+        char z[2][32]; memset(z, 0, sizeof z);
+        sortNames(z, 0); sortNames(z, 1);
+        check("sort: n=0 and n=1 untouched", z[0][0] == 0 && z[1][0] == 0);
+        char one[1][32] = {"solo"};
+        sortNames(one, 1);
+        check("sort: n=1 keeps entry", !strcmp(one[0], "solo"));
+        sortNames(nullptr, 3);
+        sortNames(one, -1);
+        check("sort: NULL / negative n harmless", !strcmp(one[0], "solo"));
+        // equal strings: stable (tag the bytes after the NUL to tell them apart)
+        char s[3][32]; memset(s, 0, sizeof s);
+        strcpy(s[0], "x"); s[0][5] = 'A';
+        strcpy(s[1], "a");
+        strcpy(s[2], "x"); s[2][5] = 'B';
+        sortNames(s, 3);
+        check("sort: equal strings keep order", !strcmp(s[0], "a") && s[1][5] == 'A' && s[2][5] == 'B');
+        // unterminated 32-byte entries must not be read past
+        struct { char a[32]; char b[32]; char guard[32]; } u;
+        memset(&u, 'z', sizeof u);
+        memset(u.a, 'y', 32);           // no NUL
+        memcpy(u.b, "a", 2);
+        memset(u.guard, 0, sizeof u.guard);
+        char (*arr)[32] = (char (*)[32])&u;
+        sortNames(arr, 2);
+        check("sort: unterminated entry sorted by its 32 bytes", !strcmp(u.a, "a") && u.b[0] == 'y' && u.b[31] == 'y');
+        // 31 vs 32 same prefix
+        char q2[2][32];
+        memset(q2[0], 'k', 32);
+        memset(q2[1], 'k', 31); q2[1][31] = 0;
+        sortNames(q2, 2);
+        check("sort: 31-char prefix before 32-char", q2[0][31] == 0 && q2[1][31] == 'k');
+        // determinism: same set in any order gives same first 8
+        char r1[10][32], r2[10][32];
+        const char* set[10] = {"j","c","a","i","e","b","h","d","g","f"};
+        for (int i = 0; i < 10; i++) { memset(r1[i], 0, 32); memset(r2[i], 0, 32);
+            strcpy(r1[i], set[i]); strcpy(r2[i], set[9 - i]); }
+        sortNames(r1, 10); sortNames(r2, 10);
+        bool same = true;
+        for (int i = 0; i < 10; i++) if (strcmp(r1[i], r2[i])) same = false;
+        check("sort: order independent of input order", same && !strcmp(r1[0], "a") && !strcmp(r1[7], "h"));
+    }
+
+    // boot-loop guard
+    {
+        char b[64];
+        formatLoading(b, sizeof b, "foo", 1234);
+        check("formatLoading foo:1234", !strcmp(b, "foo:1234"));
+        formatLoading(b, sizeof b, "foo", 0);
+        check("formatLoading size 0", !strcmp(b, "foo:0"));
+        formatLoading(b, sizeof b, "foo", 4294967295u);
+        check("formatLoading max u32", !strcmp(b, "foo:4294967295"));
+        char c[6]; memset(c, 'Q', sizeof c);
+        formatLoading(c, sizeof c, "foo", 1234);
+        check("formatLoading truncates, NUL-terminated", !strcmp(c, "foo:1"));
+        char d[9]; memset(d, 'Q', sizeof d);
+        formatLoading(d, 4, "foo", 1234);
+        check("formatLoading cap 4 -> 'foo' and nothing past cap",
+              !strcmp(d, "foo") && d[4] == 'Q' && d[8] == 'Q');
+        char e[3]; memset(e, 'Q', sizeof e);
+        formatLoading(e, 1, "foo", 1);
+        check("formatLoading cap 1 -> empty", e[0] == 0 && e[1] == 'Q');
+        formatLoading(e, 0, "foo", 1);
+        check("formatLoading cap 0 writes nothing", e[0] == 0 && e[1] == 'Q');
+        formatLoading(nullptr, 8, "foo", 1);
+        char g[8]; memset(g, 'Q', sizeof g);
+        formatLoading(g, sizeof g, nullptr, 1);
+        check("formatLoading NULL folder terminates", memchr(g, 0, sizeof g) != nullptr);
+        std::string lng(100, 'a');
+        char h[16];
+        formatLoading(h, sizeof h, lng.c_str(), 99);
+        check("formatLoading long folder bounded", strlen(h) == 15);
+
+        check("skip: exact folder and size", skipAfterCrash("foo:1234", "foo", 1234));
+        check("skip: size changed 1235", !skipAfterCrash("foo:1234", "foo", 1235));
+        check("skip: size changed 1233", !skipAfterCrash("foo:1234", "foo", 1233));
+        check("skip: other folder", !skipAfterCrash("foo:1234", "bar", 1234));
+        check("skip: folder prefix", !skipAfterCrash("foo:1234", "fo", 1234));
+        check("skip: folder extension", !skipAfterCrash("foo:1234", "foox", 1234));
+        check("skip: empty record", !skipAfterCrash("", "foo", 1234));
+        check("skip: no colon", !skipAfterCrash("foo", "foo", 1234));
+        check("skip: just colon", !skipAfterCrash(":", "foo", 1234));
+        check("skip: non-numeric size", !skipAfterCrash("foo:abc", "foo", 1234));
+        check("skip: empty size", !skipAfterCrash("foo:", "foo", 1234));
+        check("skip: trailing junk", !skipAfterCrash("foo:1234x", "foo", 1234));
+        check("skip: trailing newline", !skipAfterCrash("foo:1234\n", "foo", 1234));
+        check("skip: trailing space", !skipAfterCrash("foo:1234 ", "foo", 1234));
+        check("skip: leading space", !skipAfterCrash(" foo:1234", "foo", 1234));
+        check("skip: leading zero", !skipAfterCrash("foo:01234", "foo", 1234));
+        check("skip: negative", !skipAfterCrash("foo:-1234", "foo", 1234));
+        check("skip: size overflows u32 (wraps to 1234)", !skipAfterCrash("foo:4294968530", "foo", 1234));
+        check("skip: huge digits", !skipAfterCrash("foo:99999999999999999999999", "foo", 1234));
+        check("skip: u32 max matches", skipAfterCrash("foo:4294967295", "foo", 4294967295u));
+        check("skip: size 0 matches", skipAfterCrash("foo:0", "foo", 0));
+        check("skip: empty folder never", !skipAfterCrash(":5", "", 5));
+        check("skip: invalid folder never", !skipAfterCrash("a/b:5", "a/b", 5));
+        check("skip: NULL record", !skipAfterCrash(nullptr, "foo", 1));
+        check("skip: NULL folder", !skipAfterCrash("foo:1", nullptr, 1));
+        std::string big = "foo:1234" + std::string(500, '0');
+        check("skip: record longer than any buffer", !skipAfterCrash(big.c_str(), "foo", 1234));
+        std::string bigf = std::string(31, 'f') + ":1";
+        check("skip: 31-char folder matches", skipAfterCrash(bigf.c_str(), std::string(31, 'f').c_str(), 1));
+        // round trip
+        char rt[64];
+        formatLoading(rt, sizeof rt, std::string(31, 'z').c_str(), 65536);
+        check("skip: round-trips what formatLoading wrote",
+              skipAfterCrash(rt, std::string(31, 'z').c_str(), 65536) &&
+              !skipAfterCrash(rt, std::string(31, 'z').c_str(), 65537));
+    }
+}
+
 int main() {
     Pack p; char why[64];
 
@@ -345,6 +540,7 @@ int main() {
     }
 
     emblemTests();
+    admissionTests();
 
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;

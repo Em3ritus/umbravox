@@ -406,4 +406,74 @@ bool sanitizeStatus(Pack& p) {
     return changed;
 }
 
+bool folderNameOk(const char* folder) {
+    if (!folder) return false;
+    size_t n = 0;
+    for (; folder[n]; n++) {
+        const char c = folder[n];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '_' || c == '-';
+        if (!ok || n >= 31) return false;
+    }
+    return n >= 1;
+}
+
+Admit admit(const char* folder, const Pack& p, const char* const* takenNames, int nTaken) {
+    if (!folderNameOk(folder)) return ADMIT_BAD_FOLDER;
+    static const char* const reserved[] = {"UMBRAVOX", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"};
+    for (const char* r : reserved)
+        if (strncmp(p.name, r, sizeof p.name) == 0) return ADMIT_RESERVED;
+    if (takenNames)
+        for (int i = 0; i < nTaken; i++)
+            if (takenNames[i] && strncmp(p.name, takenNames[i], sizeof p.name) == 0)
+                return ADMIT_DUPLICATE;
+    if (nTaken >= MAX_PACKS) return ADMIT_FULL;
+    return ADMIT_OK;
+}
+
+const char* admitWhy(Admit a) {
+    switch (a) {
+    case ADMIT_OK:         return "admitted";
+    case ADMIT_BAD_FOLDER: return "bad folder name (use A-Z a-z 0-9 _ -, 1-31 chars)";
+    case ADMIT_RESERVED:   return "name is reserved for a built-in theme";
+    case ADMIT_DUPLICATE:  return "name already used by another pack";
+    case ADMIT_FULL:       return "too many packs (max 8), ignored";
+    }
+    return "unknown admission result";
+}
+
+void sortNames(char (*names)[32], int n) {
+    if (!names || n < 2) return;
+    // Insertion sort: stable, and n is at most a directory's worth of names.
+    for (int i = 1; i < n; i++) {
+        char tmp[32];
+        memcpy(tmp, names[i], 32);
+        int j = i - 1;
+        while (j >= 0 && strncmp(names[j], tmp, 32) > 0) {
+            memcpy(names[j + 1], names[j], 32);
+            j--;
+        }
+        memcpy(names[j + 1], tmp, 32);
+    }
+}
+
+void formatLoading(char* out, size_t cap, const char* folder, uint32_t totalSize) {
+    if (!out || cap == 0) return;
+    size_t o = 0;
+    for (; folder && folder[o] && o + 1 < cap; o++) out[o] = folder[o];
+    if (o + 1 < cap) out[o++] = ':';
+    char digits[10];
+    int nd = 0;
+    do { digits[nd++] = (char)('0' + totalSize % 10); totalSize /= 10; } while (totalSize);
+    while (nd && o + 1 < cap) out[o++] = digits[--nd];
+    out[o] = 0;
+}
+
+bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize) {
+    if (!record || !folderNameOk(folder)) return false;
+    char want[48];  // 31 + ':' + 10 digits + NUL = 43
+    formatLoading(want, sizeof want, folder, totalSize);
+    return strncmp(record, want, sizeof want) == 0 && strlen(record) < sizeof want;
+}
+
 }  // namespace themepack
