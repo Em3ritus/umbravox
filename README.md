@@ -1,51 +1,70 @@
 # UMBRAVOX
 
-A **passive, dual-band wardriver** with a dark-technomancer interface, built for
-the ESP32-C5. It listens to the radio spectrum around you — WiFi, BLE and GPS —
-deduplicates what it hears, maps it, flags devices worth knowing about, and
-logs it all to an SD card in [WiGLE](https://wigle.net/)-compatible CSV. Add
-scanning nodes over a wireless mesh and it covers more of the spectrum at once.
-
-It runs on a `$15` touchscreen dev board and renders a summoning-circle console
-instead of a dashboard.
+**A passive, dual-band wardriver for the ESP32-C5 — with a summoning-circle console instead of a dashboard.**
 
 ![UMBRAVOX](docs/umbravox.png)
 
-> **Scope: this is receive-only by design.** UMBRAVOX scans, aggregates,
-> maps and exports — the passive half of wardriving. It deliberately ships
-> none of the transmit-side offensive tooling (deauth, beacon/BLE spam, Evil
-> Portal, Karma, PMKID capture). It listens; it does not announce itself or
-> attack anything. Please keep it that way, and check your local laws before
-> wardriving.
+## What it is
 
-## What it does
+UMBRAVOX turns a ~$15 touchscreen dev board into a handheld scanner for the radio
+spectrum around you. It listens — WiFi, Bluetooth LE and GPS — deduplicates
+everything it hears, maps it, flags the devices worth knowing about (cameras,
+trackers, plate readers, drones…), and logs it all to an SD card in
+[WiGLE](https://wigle.net/)-compatible CSV you can upload straight to the usual
+wardriving maps.
 
-- **Dual-band WiFi capture** — promiscuous sniffing of management frames
-  (beacons, probe responses) across all 13 channels of 2.4 GHz and the 8
-  non-DFS channels of 5 GHz, deduplicated by BSSID.
-- **Passive BLE scanning** — advertisers deduplicated by address, parsed by
-  hand from the raw advertisement so it never transmits a scan request.
-- **GPS** — NMEA fix and satellite tracking, used to geolocate every finding.
-- **SD wardrive logging** — crash-safe WiGLE-format CSV written to the card,
-  with auto-resume after a reboot and no half-written file if power is pulled.
-- **Threat / point-of-interest alerts** — 162 device signatures (ALPR,
-  cameras, AirTag / Tile / Find My trackers, Remote ID drones, pentest
-  hardware and more), each with its own confidence grade so the alert floor
-  can suppress weak guesses instead of crying wolf. See the full list in
-  [docs/detections.md](docs/detections.md).
-- **Multi-node ESP-NOW mesh** — optional headless scanning nodes, and an
-  optional coordinator tier, that report back wirelessly so more radios cover
-  more of the spectrum at once (see [Architecture](#architecture)).
-- **Two selectable themes** — UMBRAVOX and CVLT OF BAPH0MAU5 — with five
-  dial sweep animations, all switchable on the device.
+It is **wardriving's passive half**: it only receives. It never transmits,
+probes, associates or attacks — it reads what the air is already broadcasting.
+Add extra scanning boards over a wireless mesh and it covers more of the spectrum
+at once, folding every radio's catch into one deduplicated picture.
+
+And instead of a dashboard, it renders a dark, occult, technomancer interface —
+switchable themes, animated dials, a summoning-circle aesthetic.
+
+> ### 🜏 Passive by design
+> UMBRAVOX scans, aggregates, maps and exports — nothing more. It deliberately
+> ships **none** of the transmit-side offensive tooling: no deauth, beacon/BLE
+> spam, Evil Portal, Karma or PMKID capture. It listens; it does not announce
+> itself or interfere with anything. Please keep it that way, and check your
+> local laws before you go wardriving.
+
+## Features
+
+- **Dual-band WiFi capture** — promiscuous sniffing of management frames (beacons,
+  probe responses) across all 13 channels of 2.4 GHz and the 8 non-DFS channels
+  of 5 GHz, deduplicated by BSSID.
+- **Passive BLE scanning** — advertisers deduplicated by address and parsed by
+  hand from the raw advertisement, so it never sends a scan request.
+- **GPS mapping** — NMEA fix and satellite tracking geolocate every finding.
+- **Crash-safe SD logging** — WiGLE-format CSV written atomically, auto-resumed
+  after a reboot, with no half-written file if power is pulled.
+- **Threat & point-of-interest alerts** — 162 device signatures (surveillance
+  cameras, ALPRs, AirTag / Tile / Find My trackers, Remote ID drones,
+  Flipper / pentest gear, card-skimmer modules…), each with its own confidence
+  grade so a weak guess stays quiet instead of crying wolf.
+  → [the full detection list](docs/detections.md)
+- **Optional multi-node mesh** — headless scanning nodes and an optional
+  coordinator tier report back wirelessly, isolated per-fleet so neighbouring
+  setups never cross-talk.
+- **Field diagnostics** — a plain-text `/diag.log` on the card records the reset
+  reason and errors, so a problem in the field can be sent back as a file.
+- **Three themes, on-device** — UMBRAVOX (violet heptagram), CVLT OF BAPH0MAU5
+  (a summoning seal) and COSMIC MUFFIN (a neon galaxy-frosted muffin on a
+  deep-space dial). Each has its own centrepiece and its own alert: a warding
+  circle, a summoning rite, or — on COSMIC MUFFIN — your pick of Supernova,
+  Vortex, Comet Strike or Lock-On.
+- **Eleven dial sweeps** — radar, gaze, pulse, star and candle, plus six cosmic
+  ones (galaxy, orbit, starfall, pulsar, comet, aurora). Sweeps are drawn in
+  whichever theme's colours are active, so every theme can use every sweep
+  (the gaze needs the seal's eyes, so it stays with BAPH0MAU5).
 
 ## Hardware
 
-Primary target is the **RockBase NM-CYD-C5**:
+Primary target is the **RockBase NM-CYD-C5** — a "Cheap Yellow Display" for the C5:
 
 | | |
 |---|---|
-| MCU | ESP32-C5 (single core, dual-band WiFi 6 + BLE 5), 16 MB flash, 8 MB PSRAM |
+| MCU | ESP32-C5 — single core, dual-band WiFi 6 + BLE 5, 16 MB flash, 8 MB PSRAM |
 | Display | 2.8" 320×240 ST7789 |
 | Touch | XPT2046 (resistive, polled — no IRQ line) |
 | GPS | external NMEA receiver on header P5 (GPIO 4 RX, 9600 baud) |
@@ -53,24 +72,24 @@ Primary target is the **RockBase NM-CYD-C5**:
 
 Scanning **nodes** and **coordinators** are headless — any ESP32-C5 board works
 (Waveshare ESP32-C5 and Seeed XIAO ESP32-C5 are both confirmed). They need only
-power and a radio; no display, touch or GPS.
+power and a radio: no display, touch or GPS.
 
-## Architecture
+## How it works
 
 **Simulator-first UI.** The look is the risky part, and iterating on it over USB
-reflashes is how this kind of project dies. The entire interface compiles and
-runs on a PC, rendering frames straight to PNG. The device and the simulator
-share one copy of the UI code and fill the same plain `State` struct (`ui/model.h`) —
-on the board a collector fills it from real radios, in the sim it's filled with
-invented numbers — so the art can never drift from what the glass actually draws.
+reflashes is how a project like this dies. The entire interface compiles and runs
+on a PC, rendering frames straight to PNG. Device and simulator share one copy of
+the UI code and fill the same plain `State` struct (`ui/model.h`) — on the board
+a collector fills it from real radios, on the PC it's filled with invented
+numbers — so the art can never drift from what the glass actually draws.
 
-**160×120, blitted 1:2 to the panel.** The framebuffer fits in internal SRAM,
-and because the C5 is single-core every redraw steals CPU from packet capture.
-A small buffer, dirty-rectangle blitting, and a no-dependency renderer
-(`g++` + `make`, PNGs written without a zlib) keep a frame cheap. The chunky
-pixel look is a side effect of that budget, not a filter on top of it.
+**160×120, blitted 1:2 to the panel.** The framebuffer fits in internal SRAM, and
+because the C5 is single-core every redraw steals CPU from packet capture. A small
+buffer, dirty-rectangle blitting and a dependency-free renderer (`g++` + `make`,
+PNGs written without zlib) keep a frame cheap. The chunky-pixel look is a side
+effect of that budget, not a filter on top of it.
 
-**The mesh (optional).** One radio sweeping 21 channels only visits each about
+**The mesh (optional).** One radio sweeping 21 channels visits each only about
 once every 5 seconds, so a beacon on a channel you aren't parked on is simply
 gone. More radios is the real fix:
 
@@ -80,27 +99,77 @@ gone. More radios is the real fix:
             nodes ──────────────────┘
 ```
 
-- **0 coordinators** — the classic flat mesh: nodes report straight to the CYD,
-  which parks on the report channel while any node is present. Fully
-  backward-compatible.
-- **1–2 coordinators** — a middle tier that splits the spectrum by band across
-  coordinators (e.g. one owns 2.4 GHz, one owns 5 GHz), each running its own
-  cluster of nodes and folding results up to the CYD. This scales toward ~12
-  co-located nodes.
+- **0 coordinators** — the flat mesh: nodes report straight to the CYD, which
+  parks on the report channel whenever a node is present. Fully backward-compatible.
+- **1–2 coordinators** — a middle tier that splits the spectrum by band (e.g. one
+  owns 2.4 GHz, one owns 5 GHz), each running its own cluster of nodes and folding
+  results up to the CYD. Scales toward ~12 co-located nodes; you add one when a
+  report channel's loss climbs past ~10–15%.
 
-Transport is **ESP-NOW** (no AP, no association). Findings from every radio are
-folded into one deduplicated picture, so the counts, codex, spectrum and alerts
-are all mesh-wide. The protocol is versioned and the Core complains about
-mismatches. It is **unauthenticated by design** (magic + version only) — an
-encrypted cluster mode is on the roadmap but ESP-NOW's encrypted-peer cap fights
-the node-count goal, so for now treat the mesh as trusted-RF-range only.
+Transport is **ESP-NOW** (no AP, no association), isolated per-fleet by a network
+id you set over the air with an on-screen **ENROLL** button, so two setups in the
+same room keep to their own gear. **ENROLL** moves open boards onto your net;
+**RESET** stays on the net until every board has left, so none is left behind. If
+a board is ever stranded, `NETSET <id>` on the USB console puts the CYD back on a
+known net to go and fetch it (details in [docs/design-notes.md](docs/design-notes.md)).
+It is otherwise **unauthenticated by design**
+(magic + version only) — an encrypted cluster mode is on the roadmap, but
+ESP-NOW's encrypted-peer cap fights the node-count goal, so for now treat the mesh
+as trusted-RF-range only.
 
-## Repository layout
+## Getting started
+
+### Simulator (PC) — no hardware needed
+
+Build the UI and render it straight to PNG:
+
+```sh
+cd sim
+make                               # build the simulator + host tests
+./umbravox out.png                 # render one frame (4×, 640×480)
+./umbravox out.png --scale 2       # 320×240 — exactly what the panel shows
+./umbravox out.png --theme 2       # 0 UMBRAVOX, 1 CVLT OF BAPH0MAU5, 2 COSMIC MUFFIN
+./umbravox out.png --sweep 5       # pick a sweep (0-10)
+./umbravox out.png --theme 2 --alert 1 --frame 20   # an alert style mid-rite
+./umbravox out.png --screen codex  # pick a screen
+make test                          # run the host test suite
+make regress                       # compare rendered screens to baselines
+```
+
+### Flash a board
+
+The easy way is **[flashing from your browser](https://em3ritus.github.io/umbravox/)**
+— a desktop Chromium browser (Chrome, Edge, Opera), no toolchain. Or build it
+yourself with [PlatformIO](https://platformio.org/) on the
+[pioarduino](https://github.com/pioarduino/platform-espressif32) platform (stock
+`espressif32` has no ESP32-C5 support):
+
+```sh
+pio run -e nm-cyd-c5         -t upload   # the CYD (display + collector)
+pio run -e nm-c5-node        -t upload   # a headless scanning node
+pio run -e nm-c5-coordinator -t upload   # a coordinator
+```
+
+Some C5 boards (WCH-bridge, newer silicon revisions) need `upload_speed = 115200`
+and `--no-stub`; details in [docs/design-notes.md](docs/design-notes.md).
+
+### Troubleshooting
+
+The CYD keeps a plain-text diagnostic log at **`/diag.log`** on the card: every
+boot records the firmware build and the **reset reason** (so a crash, watchdog or
+brownout leaves a fingerprint), plus a line on any SD-write failure or low-heap
+event. It caps at ~128 KB and rotates once. If something misbehaves, pull the card
+and send `diag.log`, or print it over USB serial with the `DIAG` command (115200
+baud).
+
+## Project layout
 
 ```
 ui/            UI + pure logic — compiles for BOTH the PC and the device
   screen_*.cpp   the nine screens (scan, codex, detail, mesh, settings…)
   palette.*      the theme table: colours, dial radii, offered sweeps
+  sweep.*        the eleven dial searches   muffinseal.* the muffin centrepiece
+  art/           source art the asset generators read
   signatures.*   device-signature matching (host-tested, no hardware)
   gnss.*         NMEA parser (host-tested)
   model.h        State: everything a screen may know
@@ -108,82 +177,28 @@ device/        board only — radios, mesh, capture, storage
   main.cpp       CYD firmware: owns the panel, the blit, the collector
   node_main.cpp  headless scanning node          [env:nm-c5-node]
   coord_main.cpp coordinator tier                [env:nm-c5-coordinator]
-  capture.*      WiFi promiscuous sniffing      blescan.* BLE scanning
-  meshcore.*  mesh.h  chanplan.h  balance.h  phase.h  rehome.h   the mesh
-  sdlog.*  wigle.h  csv.h          SD + WiGLE CSV export
-  gpstrack.*                        GPS
-sim/           PC only — simulator + the host test suite (make test / regress)
-docs/          screenshots, the hardware-acceptance runbook, design-notes.md
-tools/         gen_sigil.py and friends
+  capture.*      WiFi sniffing   blescan.* BLE    gpstrack.* GPS
+  meshcore.* mesh.h chanplan.h balance.h phase.h rehome.h   the mesh
+  sdlog.* elog.* wigle.h csv.h   SD, diagnostics + WiGLE CSV export
+sim/           PC only — simulator + host test suite (make test / regress)
+docs/          screenshots, detection list, design notes, acceptance runbook
+tools/         web-flasher builder, sigil + muffin generators
 platformio.ini
 ```
 
-## Build and run
-
-### Simulator (PC)
-
-```sh
-cd sim
-make                               # build the simulator + host tests
-./umbravox out.png                # render one frame (4×, 640×480)
-./umbravox out.png --scale 2      # 320×240 — exactly what the panel shows
-./umbravox out.png --theme 1      # 0 UMBRAVOX, 1 CVLT OF BAPH0MAU5
-./umbravox out.png --screen codex # pick a screen
-make test                          # run the host test suite
-make regress                       # compare rendered screens to baselines
-```
-
-### Device
-
-Uses [PlatformIO](https://platformio.org/) with the
-[pioarduino](https://github.com/pioarduino/platform-espressif32) platform
-(stock `espressif32` has no ESP32-C5 support):
-
-```sh
-pio run -e nm-cyd-c5        -t upload   # the CYD (display + collector)
-pio run -e nm-c5-node       -t upload   # a headless scanning node
-pio run -e nm-c5-coordinator -t upload  # a coordinator
-```
-
-Flashing notes for the C5 nodes (WCH-bridge boards, newer silicon revisions)
-live in [docs/design-notes.md](docs/design-notes.md) and the project memory —
-some boards need `upload_speed = 115200` and `--no-stub`.
-
-### Flash from your browser
-
-A one-click web flasher ([ESP Web Tools](https://esphome.github.io/esp-web-tools/))
-lives in `web/` and deploys to GitHub Pages via `.github/workflows/pages.yml`.
-Enable Pages in the repo settings (**Source: GitHub Actions**) and it publishes
-at `https://<owner>.github.io/<repo>/`, where a desktop Chromium browser flashes
-the CYD over USB with no toolchain installed. The workflow builds the firmware
-fresh and merges each board into a single image — nothing binary is committed.
-Reproduce the same bundle locally with `tools/make-web-flasher.sh`.
-
-### Diagnostics
-
-The CYD keeps a plain-text diagnostic log at **`/diag.log`** on the SD card. On
-every boot it records the firmware build and the **reset reason** (so a crash,
-watchdog or brownout on the previous run leaves a fingerprint), and it adds a
-line whenever an SD write fails or free heap runs low. It caps at ~128 KB and
-rotates once (`diag.log` → `diag.0.log`), so it never fills the card.
-
-If something misbehaves, pull the card and send `diag.log`, or print it over the
-USB serial console with the `DIAG` command (115200 baud).
-
-## Project status
+## Status
 
 Working on real hardware: dual-band capture, BLE, GPS, SD/WiGLE logging, touch
-navigation, both themes, the signature alerts, and the mesh in its 0-, 1- and
-2-coordinator configurations (validated end-to-end: node → coordinator → CYD →
-geolocated WiGLE export). The 12-node scale path is validated in host tests
-pending a physical fleet; see
-[docs/hardware-acceptance-multi-coordinator.md](docs/hardware-acceptance-multi-coordinator.md)
-for the acceptance runbook and results.
+navigation, all three themes, the signature alerts, over-the-air mesh enrollment, and
+the mesh in its 0-, 1- and 2-coordinator forms — validated end-to-end
+(node → coordinator → CYD → geolocated WiGLE export). The 12-node scale path is
+validated in host tests pending a physical fleet; see the
+[acceptance runbook](docs/hardware-acceptance-multi-coordinator.md).
 
-## License
+## License & credit
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+GPL-3.0-or-later — see [LICENSE](LICENSE).
 
 The device-signature tables and their confidence grading are derived from
-[SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD) (GPL-3.0);
-see [NOTICE](NOTICE) for details and credit.
+[SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD) (GPL-3.0); see
+[NOTICE](NOTICE) for details and credit.
