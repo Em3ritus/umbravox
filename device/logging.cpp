@@ -22,6 +22,10 @@ uint32_t rows = 0, skipped = 0;
 uint32_t counter = 0;
 char     name[32] = "";
 char     prevName[32] = "";  // the last session's file, never reused
+// Latched when a flush fails with the card STILL present (full / I/O error, as
+// opposed to a card that was simply removed). main reads+clears it and writes
+// one diagnostic line, so this file keeps no dependency on elog.
+bool     writeErr = false;
 
 // Anything earlier than this is the RTC's power-on default, not a real date.
 constexpr uint32_t EPOCH_KNOWN = 1577836800u;   // 2020-01-01 00:00:00 UTC
@@ -47,6 +51,7 @@ bool flush() {
     uint32_t r = 0, s = 0;
     if (sdlog::writeAtomic(name, body, r, s)) { rows = r; skipped = s; return true; }
     if (!sdlog::present()) st = NO_CARD;
+    else writeErr = true;                 // card there but the write failed
     return false;
 }
 
@@ -111,5 +116,6 @@ uint32_t    lastSkipped()           { return skipped; }
 uint32_t    sessionSecs(uint32_t nowMs) {
     return st == IDLE ? 0 : (nowMs - startedMs) / 1000;
 }
+bool        takeWriteError()        { bool e = writeErr; writeErr = false; return e; }
 
 } // namespace logging

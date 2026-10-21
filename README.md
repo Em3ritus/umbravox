@@ -159,6 +159,17 @@ the CYD over USB with no toolchain installed. The workflow builds the firmware
 fresh and merges each board into a single image — nothing binary is committed.
 Reproduce the same bundle locally with `tools/make-web-flasher.sh`.
 
+### Diagnostics
+
+The CYD keeps a plain-text diagnostic log at **`/diag.log`** on the SD card. On
+every boot it records the firmware build and the **reset reason** (so a crash,
+watchdog or brownout on the previous run leaves a fingerprint), and it adds a
+line whenever an SD write fails or free heap runs low. It caps at ~128 KB and
+rotates once (`diag.log` → `diag.0.log`), so it never fills the card.
+
+If something misbehaves, pull the card and send `diag.log`, or print it over the
+USB serial console with the `DIAG` command (115200 baud).
+
 ## Project status
 
 Working on real hardware: dual-band capture, BLE, GPS, SD/WiGLE logging, touch

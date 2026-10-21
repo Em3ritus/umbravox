@@ -17,6 +17,7 @@
 #include "prefs.h"
 #include "logging.h"
 #include "sdlog.h"
+#include "elog.h"
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
@@ -476,6 +477,7 @@ void setup() {
     // reused dateless name OVERWRITES (destroys) the earlier dateless session's
     // file. Fix deferred to hardware: scan the card, count past any WD-*.CSV.
     sdlog::begin();
+    elog::begin();     // boot banner + reset reason to /diag.log (after the card)
     logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
     Serial.printf("panel up @ %d MHz SPI, GPS on GPIO %d @ %d\n",
                   (int)(SPI_HZ / 1000000), (int)PIN_GPS_RX, GPS_BAUD);
@@ -570,6 +572,7 @@ void open(uint32_t nowMs) {
     mode = ADOPT; windowUntil = nowMs + 60000; lastTx = 0;
     Serial.printf("enroll: network %u open for 60s -- power up an OPEN node now\n",
                   (unsigned)mesh::netId);
+    elog::event(elog::INFO, "mesh", "enroll open, network=%u", (unsigned)mesh::netId);
 }
 
 // UNENROL: tell our own nodes (on our net) to go open, then go open ourselves.
@@ -579,6 +582,7 @@ void reset(uint32_t nowMs) {
     mode = UNENROL; windowUntil = nowMs + 12000; lastTx = 0;
     Serial.printf("enroll: resetting network %u -- nodes going open, 12s\n",
                   (unsigned)oldNet);
+    elog::event(elog::INFO, "mesh", "enroll reset, network %u -> open", (unsigned)oldNet);
 }
 
 bool active(uint32_t nowMs) { (void)nowMs; return mode != IDLE; }
@@ -592,6 +596,7 @@ void tick(uint32_t nowMs) {
         if (mode == UNENROL) {                       // the CYD goes open last
             mesh::netId = 0; prefs::setNetId(0);
             Serial.println("enroll: back on the open network (id 0)");
+            elog::event(elog::INFO, "mesh", "back on the open network");
         }
         mode = IDLE;
         return;
@@ -653,13 +658,17 @@ void pollConsole() {
                 injectNmea("GPRMC,120000.00,A,3746.4940,N,12225.1640,W,0.0,0.0,190126,,,A");
                 injectNmea("GPGGA,120000.00,3746.4940,N,12225.1640,W,1,08,0.9,10.0,M,0.0,M,,");
                 Serial.println("gpsfix: injected 37.7749,-122.4194 (2026-01-19)");
+            } else if (!strncmp(line, "DIAG", 4)) {
+                Serial.println("=== DIAG BEGIN ===");
+                elog::dump(Serial);
+                Serial.println("=== DIAG END ===");
             } else if (!strncmp(line, "ENROLL", 6)) {
                 enroll::open(millis());
             } else if (!strncmp(line, "NETRESET", 8)) {
                 enroll::reset(millis());
             } else {
                 Serial.printf("unknown command '%s' "
-                              "(try TEST, WIGLE, SDLS, SDCAT <file>, GPSFIX)\n", line);
+                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, GPSFIX)\n", line);
             }
         } else if (n < 31) {
             line[n++] = c;
@@ -706,6 +715,27 @@ void loop() {
     enroll::tick(millis());
     blescan::tick(millis());
     logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
+
+    // Diagnostics to /diag.log: an SD write failure, once per occurrence, and a
+    // low-heap warning once (re-armed after the heap recovers) so a slow leak
+    // leaves a fingerprint instead of just a silent reboot.
+    if (logging::takeWriteError())
+        elog::event(elog::ERR, "sd", "log write failed (card full or I/O error)");
+    {
+        static uint32_t lastHeapChk = 0;
+        static bool heapWarned = false;
+        const uint32_t now = millis();
+        if (now - lastHeapChk >= 5000) {
+            lastHeapChk = now;
+            const uint32_t freeK = ESP.getFreeHeap() >> 10;
+            if (freeK < 40 && !heapWarned) {
+                elog::event(elog::WARN, "heap", "low, %uKB free", (unsigned)freeK);
+                heapWarned = true;
+            } else if (freeK > 60) {
+                heapWarned = false;     // recovered: re-arm the one-shot
+            }
+        }
+    }
 
     // With nodes in the mesh the Core stops sweeping and holds the report
     // channel. Measured: a sweeping Core hears only 4% of what a node sends,

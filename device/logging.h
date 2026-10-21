@@ -37,5 +37,8 @@ uint32_t    sessionSecs(uint32_t nowMs);
 const char* fileName();      // current session file, "" when idle
 uint32_t    lastRows();
 uint32_t    lastSkipped();
+// Latched true when a flush failed with the card still present (a card-full or
+// I/O error, not a missing card). main reads+clears it to log one diagnostic.
+bool        takeWriteError();
 
 } // namespace logging

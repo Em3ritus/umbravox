@@ -30,4 +30,11 @@ bool dump(Print& out, const char* name);
 // already on the card, so a reboot before a GPS fix can't overwrite one.
 uint32_t maxIndex(const char* prefix, const char* suffix);
 
+// Append-mode helpers for the diagnostic log (elog). Unlike writeAtomic these
+// grow a file in place; the caller (elog) owns rotation so it never fills the
+// card. All are best-effort and no-ops when no card is mounted.
+uint32_t sizeOf(const char* name);                                  // bytes, or 0
+bool     append(const char* name, const uint8_t* data, uint32_t len);
+bool     rotate(const char* name, const char* to);                  // to <- name
+
 } // namespace sdlog

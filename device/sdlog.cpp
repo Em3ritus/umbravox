@@ -135,4 +135,29 @@ uint32_t maxIndex(const char* prefix, const char* suffix) {
     return hi;
 }
 
+uint32_t sizeOf(const char* name) {
+    if (!mounted || !name || !name[0]) return 0;
+    File f = SD.open(name, FILE_READ);
+    if (!f) return 0;
+    const uint32_t n = (uint32_t)f.size();
+    f.close();
+    return n;
+}
+
+bool append(const char* name, const uint8_t* data, uint32_t len) {
+    if (!mounted || !name || !name[0] || !data) return false;
+    File f = SD.open(name, FILE_APPEND);
+    if (!f) return false;
+    const size_t w = f.write(data, len);
+    f.close();
+    return w == len;
+}
+
+bool rotate(const char* name, const char* to) {
+    if (!mounted || !name || !to) return false;
+    if (!SD.exists(name)) return false;     // nothing to move yet
+    SD.remove(to);                          // clear a stale previous generation
+    return SD.rename(name, to);
+}
+
 } // namespace sdlog
