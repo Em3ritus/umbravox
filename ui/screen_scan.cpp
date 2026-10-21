@@ -1,3 +1,4 @@
+#include "contrast.h"
 #include "screens.h"
 #include "palette.h"
 #include "font5x7.h"
@@ -581,8 +582,13 @@ void drawAlert(Canvas& c, const State& s) {
     // Colour is the confidence, not the threat. A LOW-confidence hit on
     // something frightening is still a guess, and should not look like a
     // certainty.
-    const uint16_t edge = s.alertConf == CONF_HIGH ? pal::RED
-                        : s.alertConf == CONF_MED  ? pal::AMBER : pal::WITCH;
+    // A theme may not hide the alert: an edge that fails 3:1 against the page
+    // or the card is replaced by a fixed colour here, at the edge only.
+    // WITCH is every screen's chrome colour, so it is never rewritten itself.
+    const uint16_t edge =
+        s.alertConf == CONF_HIGH ? safeEdge(pal::RED,   SAFE_HIGH, pal::VOID, pal::PANEL)
+      : s.alertConf == CONF_MED  ? safeEdge(pal::AMBER, SAFE_MED,  pal::VOID, pal::PANEL)
+                                 : safeEdge(pal::WITCH, SAFE_LOW,  pal::VOID, pal::PANEL);
 
     const int X = COL_R_X, Y = DIAL_Y, Wd = COL_R_W, Hd = DIAL_H;
     const int age = (int)s.alertAge;

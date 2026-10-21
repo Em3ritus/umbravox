@@ -66,4 +66,9 @@ struct Emblem {
 // short reason in why (if whyCap > 0) and `out.px` is null.
 bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t whyCap);
 
+// Status roles (amber, red) are replaced outright with #F59E0B / #EF4444 when
+// their contrast against void or panel is under ui::MIN_EDGE_CONTRAST_X10.
+// Returns true if anything changed.
+bool sanitizeStatus(Pack& p);
+
 }  // namespace themepack

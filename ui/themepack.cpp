@@ -1,6 +1,7 @@
 // Bounded recursive-descent parser for theme.json. See themepack.h.
 #include "themepack.h"
 #include "model.h"
+#include "contrast.h"
 #include <string.h>
 
 namespace themepack {
@@ -391,6 +392,18 @@ bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t w
         }
     }
     return err == nullptr;
+}
+
+bool sanitizeStatus(Pack& p) {
+    bool changed = false;
+    const uint16_t bg1 = p.color[R_VOID], bg2 = p.color[R_PANEL];
+    const struct { Role role; uint16_t safe; } status[] = {
+        {R_AMBER, ui::SAFE_MED}, {R_RED, ui::SAFE_HIGH}};
+    for (const auto& st : status) {
+        const uint16_t c = p.color[st.role];
+        if (ui::safeEdge(c, st.safe, bg1, bg2) != c) { p.color[st.role] = st.safe; changed = true; }
+    }
+    return changed;
 }
 
 }  // namespace themepack
