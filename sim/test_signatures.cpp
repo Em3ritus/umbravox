@@ -99,6 +99,20 @@ int main() {
     h = matchBle(0xFEED, 0, "Tile");        // UUID HIGH beats any name
     check("UUID still wins over name",      h.threat == TH_TRACKER && h.conf == CONF_HIGH);
 
+    printf("flipper + skimmer names:\n");
+    // Flipper: UUID/company id are the real catch (HIGH); the name is a MED hook.
+    h = matchBle(0, 0, "Flipper Zoinks");
+    check("Flipper name -> PENTEST MED",    h.threat == TH_PENTEST && h.conf == CONF_MED);
+    h = matchBle(0x3081, 0, "Flipper Zoinks"); // UUID present -> HIGH wins
+    check("Flipper UUID beats the name",    h.threat == TH_PENTEST && h.conf == CONF_HIGH);
+    h = matchBle(0, 0, "HC-06");
+    check("HC-06 default name -> SKIMMER MED", h.threat == TH_SKIMMER && h.conf == CONF_MED);
+    h = matchBle(0, 0, "HC-08-BLE");        // substring, LOW family member
+    check("HC-08 module -> SKIMMER LOW",    h.threat == TH_SKIMMER && h.conf == CONF_LOW);
+    // Must not over-match: a name with 'hc' but not the 'HC-0x' pattern is safe.
+    h = matchBle(0, 0, "Beachcomber");
+    check("'hc' inside a word is not HC-0x", h.threat == TH_NONE);
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }
