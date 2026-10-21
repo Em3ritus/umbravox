@@ -17,8 +17,10 @@ EWT_VERSION="${EWT_VERSION:-10.4.0}"
 OUT=web/dist
 
 command -v npm >/dev/null || { echo "error: npm is required to vendor esp-web-tools" >&2; exit 1; }
-BOOT_APP0=$(find "${HOME}/.platformio/packages" -name boot_app0.bin 2>/dev/null | head -1)
-[ -n "$BOOT_APP0" ] || { echo "error: boot_app0.bin not found under ~/.platformio" >&2; exit 1; }
+# boot_app0.bin ships inside the ESP32 framework package, which PlatformIO only
+# installs on the first `pio run`. Resolve it lazily in merge(), after a build,
+# so a clean checkout (e.g. CI with a cold ~/.platformio cache) works too.
+BOOT_APP0=""
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp web/index.html web/manifest-*.json "$OUT"/
@@ -40,6 +42,10 @@ merge() {  # <pio-env> <output-name>
   local env="$1" out="$2" d=".pio/build/$1"
   echo ">> building $env"
   "$PIO" run -e "$env"
+  if [ -z "$BOOT_APP0" ]; then
+    BOOT_APP0=$(find "${HOME}/.platformio/packages" -name boot_app0.bin 2>/dev/null | head -1 || true)
+    [ -n "$BOOT_APP0" ] || { echo "error: boot_app0.bin not found under ~/.platformio after building $env" >&2; exit 1; }
+  fi
   echo ">> merging $out"
   "$ESPTOOL" --chip esp32c5 merge-bin -o "$OUT/$out" \
     --flash-mode dio --flash-freq 80m --flash-size 16MB \
