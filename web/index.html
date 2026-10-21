@@ -87,6 +87,7 @@
   <div class="req">
     <p><b>How:</b> plug the board in by USB, click Flash, and pick its serial port. A desktop Chromium browser (Chrome, Edge, Opera) over HTTPS is required &mdash; Web Serial does not exist in Firefox or Safari, or on phones.</p>
     <p><b>Node boards:</b> some newer C5 silicon (eco3) needs <code>--no-stub</code> flashing the browser tool can't do. If a node stalls at the first write, flash it over USB with PlatformIO instead (<code>pio run -e nm-c5-node -t upload</code>). The CYD flashes from the browser without trouble.</p>
+    <p><b>Private network:</b> a browser-flashed node joins the open network out of the box. To add it to an isolated fleet with no crosstalk from other setups, open the CYD's <b>MESH</b> screen, tap <b>ENROLL</b>, and power the node up in range &mdash; it adopts your network and locks to it. No custom build needed.</p>
     <p><b>Passive by design:</b> UMBRAVOX only listens &mdash; no transmit-side tooling. See the project README for what it does and how to build it yourself.</p>
   </div>
 </div>
