@@ -65,6 +65,9 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     const uint8_t* newPeer = nullptr;
     const mesh::Hdr* h = (const mesh::Hdr*)data;
     if (h->magic != mesh::MAGIC) { rxMagic++; return; }
+    // A different network id is someone else's mesh in the same room; drop it
+    // before the collector or the node tables ever see it.
+    if (h->netId != mesh::NETID) { rxMagic++; return; }
 
     // Offer the frame to the coordinator tier first. On a node build or a CYD
     // with no coordinators this is null / returns false, so everything below
@@ -227,6 +230,7 @@ void assignAll(uint32_t nowMs) {
         mesh::Assign a = {};
         a.h.magic = mesh::MAGIC;
         a.h.ver   = mesh::VERSION;
+        a.h.netId = mesh::NETID;
         a.h.kind  = mesh::MSG_ASSIGN;
         memcpy(a.h.mac, nodes_[i].mac, 6);
         memcpy(a.coreMac, selfMac, 6);

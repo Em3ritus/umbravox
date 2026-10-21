@@ -203,6 +203,7 @@ void report() {
         mesh::Report r = {};
         r.h.magic = mesh::MAGIC;
         r.h.ver   = mesh::VERSION;
+        r.h.netId = mesh::NETID;
         r.h.kind  = mesh::MSG_REPORT;
         memcpy(r.h.mac, selfMac, 6);
         r.seq = seq++;
@@ -290,6 +291,7 @@ void loop() {
             mesh::Hello h = {};
             h.h.magic = mesh::MAGIC;
             h.h.ver   = mesh::VERSION;
+            h.h.netId = mesh::NETID;
             h.h.kind  = mesh::MSG_HELLO;
             memcpy(h.h.mac, selfMac, 6);
             h.fw = 1; h.wants5 = 1;

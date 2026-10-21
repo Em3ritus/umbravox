@@ -172,6 +172,7 @@ void reassignAll(int only = -1) {
         mesh::CoordAssign a = {};
         a.h.magic = mesh::MAGIC;
         a.h.ver   = mesh::VERSION;
+        a.h.netId = mesh::NETID;
         a.h.kind  = mesh::MSG_CASSIGN;
         memcpy(a.h.mac, coords_[i].mac, 6);
         a.clusterId   = coords_[i].clusterId;
@@ -281,6 +282,7 @@ void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     mesh::Assign a = {};
     a.h.magic = mesh::MAGIC;
     a.h.ver   = mesh::VERSION;
+    a.h.netId = mesh::NETID;
     a.h.kind  = mesh::MSG_ASSIGN;
     memcpy(a.h.mac, mac, 6);
     memcpy(a.coreMac, coords_[c].mac, 6);
@@ -463,6 +465,8 @@ void setup() {
     // The collector tier watches the same ESP-NOW receive path. Until a
     // coordinator registers it claims nothing, so the node mesh is unchanged.
     meshcore::setCollector(collector::onFrame);
+    Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::NETID,
+                  mesh::NETID == 0 ? " (open/stock -- build with -DMESH_NETID to isolate)" : "");
     touch::begin();
     // Card first, then the session machine: it resumes into a fresh file when
     // the last run ended mid-session. Known limitation (accepted): with no GPS
