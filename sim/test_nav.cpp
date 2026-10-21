@@ -8,7 +8,9 @@
 #include "../ui/palette.h"
 #include "../ui/sweep.h"
 #include "../ui/screens.h"
+#include "../ui/signatures.h"
 #include <stdio.h>
+#include <string.h>
 
 static int fails = 0;
 
@@ -148,6 +150,16 @@ int main() {
         check("aspect: theme change off BAPH0MAU5 resets an unavailable gaze",
               st.theme == pal::TH_COSMICMUFFIN && st.sweep == SW_RADAR);
 
+        // The ALERT row is per-theme: a choice on COSMIC MUFFIN, inert elsewhere.
+        st = Settings(); st.theme = pal::TH_COSMICMUFFIN;
+        tapBtn(st, SET_PLUS_X, 2);
+        check("aspect: alert + on COSMIC MUFFIN steps to VORTEX", st.alertStyle == AL_VORTEX);
+        tapBtn(st, SET_MINUS_X, 2); tapBtn(st, SET_MINUS_X, 2);
+        check("aspect: alert - wraps to LOCK-ON", st.alertStyle == AL_LOCKON);
+        st = Settings(); st.theme = pal::TH_UMBRAVOX;
+        tapBtn(st, SET_PLUS_X, 2);
+        check("aspect: alert row is inert on UMBRAVOX", st.alertStyle == AL_SUPERNOVA);
+
         // The tile opens the screen.
         Nav g; g.screen = SCR_GRIMOIRE; Settings gs;
         int ax, ay, aw, ah; grimoireCell(GRIMOIRE_N - 1, ax, ay, aw, ah);
@@ -183,6 +195,46 @@ int main() {
         navTouch(o, os, true,  (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
         navTouch(o, os, false, (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
         check("log: the same spot on another screen does not toggle", !o.logToggleRequested);
+    }
+
+    printf("cosmic alerts:\n");
+    {
+        // Each of COSMIC MUFFIN's four alerts stays inside the card, and the
+        // style setting actually changes what is drawn.
+        pal::setTheme(pal::TH_COSMICMUFFIN);
+        State st;
+        st.set.theme = pal::TH_COSMICMUFFIN;
+        st.alertActive = true;
+        st.alertThreat = TH_DRONE;
+        st.alertConf   = CONF_HIGH;
+        const int X = COL_R_X, Y = DIAL_Y, Wd = COL_R_W, Hd = DIAL_H;
+        static Canvas shot[ALERT_STYLE_COUNT];
+        const int ages[] = {0, 60, 150, 260, 420, 900, 2500};
+        for (int sty = 0; sty < ALERT_STYLE_COUNT; sty++) {
+            st.set.alertStyle = (uint8_t)sty;
+            bool inside = true;
+            for (int age : ages) {
+                Canvas c; c.clear(0x1234);            // sentinel off the card
+                st.alertAge = (uint16_t)age;
+                drawAlert(c, st);
+                for (int y = 0; y < H; y++)
+                    for (int x = 0; x < W; x++) {
+                        const bool onCard = x >= X && x < X + Wd && y >= Y && y < Y + Hd;
+                        if (!onCard && c.px[y * W + x] != 0x1234) inside = false;
+                    }
+            }
+            char buf[64];
+            snprintf(buf, sizeof buf, "alert style %d stays inside the card", sty);
+            check(buf, inside);
+            shot[sty].clear(0);
+            st.alertAge = 420;
+            drawAlert(shot[sty], st);
+        }
+        bool distinct = true;
+        for (int a2 = 0; a2 < ALERT_STYLE_COUNT; a2++)
+            for (int b2 = a2 + 1; b2 < ALERT_STYLE_COUNT; b2++)
+                if (memcmp(shot[a2].px, shot[b2].px, sizeof shot[a2].px) == 0) distinct = false;
+        check("the four alert styles draw four different rites", distinct);
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

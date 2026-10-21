@@ -52,6 +52,11 @@ void drawAspect(Canvas& c, const State& s, Dirty* d = nullptr);
 
 // Display name for a Sweep id.
 const char* sweepName(uint8_t id);
+// The alert a theme plays: COSMIC MUFFIN's chosen style, or the other themes'
+// one fixed rite.
+const char* alertName(uint8_t theme, uint8_t style);
+// The alert card over the dial panel; draws nothing when no alert is active.
+void drawAlert(Canvas& c, const State& s);
 
 // CODEX -- the register of what has been found: one row per network, with
 // band, name, signal and channel. Scrolls.

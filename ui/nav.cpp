@@ -77,6 +77,13 @@ void adjust(Settings& st, int row, int dir) {
 // than clamping: stepping onto the gaze on UMBRAVOX and being bounced back
 // reads as a broken control, not as an unavailable option.
 void adjustAspect(Settings& st, int row, int dir) {
+    if (row == 2) {
+        // Alerts are per-theme: only COSMIC MUFFIN has a choice of them.
+        if (st.theme != pal::TH_COSMICMUFFIN) return;
+        const int v = (int)st.alertStyle + dir;
+        st.alertStyle = (uint8_t)((v + ALERT_STYLE_COUNT) % ALERT_STYLE_COUNT);
+        return;
+    }
     if (row == 0) {
         const int v = (int)st.theme + dir;
         st.theme = (uint8_t)((v + pal::TH_COUNT) % pal::TH_COUNT);
@@ -238,6 +245,8 @@ void clampSettings(Settings& s) {
     // A sweep the active theme does not offer is not a preference to be
     // preserved; it is a sweep that would draw nothing meaningful.
     if (!(pal::sweepMask(s.theme) & (1 << s.sweep))) s.sweep = SW_RADAR;
+    if (s.alertStyle >= ALERT_STYLE_COUNT) s.alertStyle = AL_SUPERNOVA;
+    // `reserved` is deliberately not clamped: it is compared, never read.
 }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
@@ -245,7 +254,8 @@ bool settingsEqual(const Settings& a, const Settings& b) {
            a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
-           a.labels   == b.labels;
+           a.labels   == b.labels   && a.alertStyle == b.alertStyle &&
+           a.reserved == b.reserved;
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {

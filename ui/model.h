@@ -84,10 +84,21 @@ struct Settings {
     // padding -- which is what lets the host test treat "a byte the constructor
     // never writes" as unambiguously a field someone forgot to initialise.
     //
-    // The NEXT new setting takes a fresh byte, and the static_assert in
-    // sim/test_settings.cpp will tell you to re-check the arithmetic.
     uint8_t  labels = 0;      // 0 on-brand, 1 plain
+    // Which alert animation plays. Read only by COSMIC MUFFIN, whose four
+    // alerts are its own; the other themes keep their single rite.
+    uint8_t  alertStyle = 0;  // AlertStyle
+    // Slack byte. dwellMs makes Settings 2-aligned, so alertStyle alone would
+    // leave a padding byte at the end -- and padding is what the host test
+    // must be able to treat as "a field someone forgot to initialise". This
+    // fills it. The NEXT new setting takes this byte (rename it); the
+    // static_assert in sim/test_settings.cpp will tell you to re-check.
+    uint8_t  reserved = 0;
 };
+
+// COSMIC MUFFIN's alert animations, chosen by Settings.alertStyle.
+enum AlertStyle : uint8_t { AL_SUPERNOVA = 0, AL_VORTEX, AL_COMET, AL_LOCKON,
+                            ALERT_STYLE_COUNT };
 
 // Seconds of no touch before the backlight drops. 0 means never.
 inline constexpr uint16_t IDLE_S[] = {0, 15, 30, 60, 120, 300};

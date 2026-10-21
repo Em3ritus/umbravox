@@ -74,10 +74,10 @@ constexpr int MESH_BTN_H = 11;
 // ASPECT: a live dial over two pickers. The preview is big enough to judge a
 // sweep by; the rows reuse ATTUNE's button geometry so the controls are the
 // same object in both places.
-constexpr int ASP_CY     = 45;      // preview centre
-constexpr int ASP_R      = 30;      // preview outer bound
-constexpr int ASP_ROW_Y  = 78;      // first picker row
+constexpr int ASP_CY     = 38;      // preview centre
+constexpr int ASP_R      = 24;      // preview outer bound
+constexpr int ASP_ROW_Y  = 65;      // first picker row
 constexpr int ASP_ROW_H  = 12;
-constexpr int ASP_ROWS   = 2;       // THEME, SWEEP
+constexpr int ASP_ROWS   = 3;       // THEME, SWEEP, ALERT
 
 } // namespace ui

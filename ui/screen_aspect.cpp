@@ -31,7 +31,24 @@ const char* sweepName(uint8_t id) {
         case SW_PULSE:  return "PULSE";
         case SW_STAR:   return "STAR";
         case SW_CANDLE: return "CANDLE";
+        case SW_GALAXY:   return "GALAXY";
+        case SW_ORBIT:    return "ORBIT";
+        case SW_STARFALL: return "STARFALL";
+        case SW_PULSAR:   return "PULSAR";
+        case SW_COMET:    return "COMET";
+        case SW_AURORA:   return "AURORA";
         default:        return "RADAR";
+    }
+}
+
+const char* alertName(uint8_t theme, uint8_t style) {
+    if (theme == pal::TH_BAPH0MAU5) return "SUMMONED";
+    if (theme != pal::TH_COSMICMUFFIN) return "WARD";
+    switch (style) {
+        case AL_VORTEX: return "VORTEX";
+        case AL_COMET:  return "COMET";
+        case AL_LOCKON: return "LOCK-ON";
+        default:        return "SUPERNOVA";
     }
 }
 
@@ -59,12 +76,20 @@ void drawAspect(Canvas& c, const State& s, Dirty* d) {
         const int y = ASP_ROW_Y + r * ASP_ROW_H;
         if (r) c.hline(5, y - 2, 148, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
 
-        c.text(6, y + 2, r == 0 ? "THEME" : "SWEEP", pal::DIM);
+        // The ALERT row only has a choice on COSMIC MUFFIN; elsewhere it names
+        // the theme's one rite, with its buttons dimmed.
+        const bool live = r < 2 || s.set.theme == pal::TH_COSMICMUFFIN;
+        c.text(6, y + 2, r == 0 ? "THEME" : r == 1 ? "SWEEP" : "ALERT", pal::DIM);
         c.textRight(SET_MINUS_X - 4, y + 2,
-                    r == 0 ? pal::themeName(s.set.theme) : sweepName(s.set.sweep),
-                    pal::BRIGHT);
-        button(c, SET_MINUS_X, y + 1, "-", true);
-        button(c, SET_PLUS_X,  y + 1, "+", true);
+                    // "COSMIC MUFFIN" is two characters wider than this row
+                    // allows; the scan masthead carries the full name.
+                    r == 0 ? (s.set.theme == pal::TH_COSMICMUFFIN ? "COSMIC"
+                                                                  : pal::themeName(s.set.theme))
+                  : r == 1 ? sweepName(s.set.sweep)
+                           : alertName(s.set.theme, s.set.alertStyle),
+                    live ? pal::BRIGHT : pal::DIM);
+        button(c, SET_MINUS_X, y + 1, "-", live);
+        button(c, SET_PLUS_X,  y + 1, "+", live);
     }
 
     drawFooter(c, s);
