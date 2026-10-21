@@ -23,6 +23,7 @@
 #include <esp_wifi.h>
 #include <esp_now.h>
 #include <esp_mac.h>
+#include <Preferences.h>
 #include "mesh.h"
 #include "meshcore.h"
 
@@ -134,9 +135,33 @@ void fold(const uint8_t* bssid, int8_t rssi, uint8_t chan, uint8_t band,
 // cluster's node -- is claimed here even when it is not for us; otherwise a
 // neighbouring coordinator's CoordAssign would register that coordinator as
 // one of our nodes. Only Hello and Report (genuine node traffic) fall through.
+Preferences nv;
+
+// An enrol invite (reset=0) or un-enrol command (reset=1). A coordinator carries
+// its own cluster state, so rather than untangle it live it saves the new net
+// and reboots onto it -- the CYD's window is open long enough to re-adopt it.
+void handleEnroll(const uint8_t* data, int len) {
+    if (len < (int)sizeof(mesh::Enroll)) return;
+    const mesh::Enroll* e = (const mesh::Enroll*)data;
+    if (e->token != mesh::ENROLL_TOKEN) return;
+    uint8_t newNet;
+    if (e->reset) {
+        if (e->h.netId != mesh::netId || mesh::netId == 0) return;  // not ours / already open
+        newNet = 0;
+    } else {
+        if (mesh::netId != 0 || e->h.netId == 0) return;            // only an open coord adopts
+        newNet = e->h.netId;
+    }
+    nv.putUChar("netid", newNet);
+    Serial.printf("coord: moving to network %u -- rebooting\n", (unsigned)newNet);
+    delay(150);
+    ESP.restart();
+}
+
 bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
     const mesh::Hdr* h = (const mesh::Hdr*)data;
     if (h->ver != mesh::VERSION) return false;      // meshcore reports the skew
+    if (h->kind == mesh::MSG_ENROLL) { handleEnroll(data, len); return true; }
     // A Hello is an unassigned node asking the CYD for a Core. Claim it (drop
     // it) so this coordinator never adopts a node it has not been given; it
     // learns its real nodes from their Reports.
@@ -190,7 +215,7 @@ void sendCreg() {
     mesh::CoordReg c = {};
     c.h.magic = mesh::MAGIC;
     c.h.ver   = mesh::VERSION;
-    c.h.netId = mesh::NETID;
+    c.h.netId = mesh::netId;
     c.h.kind  = mesh::MSG_CREG;
     memcpy(c.h.mac, selfMac, 6);
     c.wants5 = 1;
@@ -239,7 +264,7 @@ void report() {
         mesh::ClusterBatch b = {};
         b.h.magic = mesh::MAGIC;
         b.h.ver   = mesh::VERSION;
-        b.h.netId = mesh::NETID;
+        b.h.netId = mesh::netId;
         b.h.kind  = mesh::MSG_CBATCH;
         memcpy(b.h.mac, selfMac, 6);
         b.clusterId = clusterId;
@@ -290,6 +315,11 @@ void setup() {
     esp_read_mac(selfMac, ESP_MAC_WIFI_STA);
     Serial.printf("mac   : %02X:%02X:%02X:%02X:%02X:%02X\n",
                   selfMac[0], selfMac[1], selfMac[2], selfMac[3], selfMac[4], selfMac[5]);
+
+    nv.begin("umbravox", false);
+    mesh::netId = nv.getUChar("netid", mesh::netId);     // NVS overrides the build default
+    Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::netId,
+                  mesh::netId == 0 ? " (open -- enrol me from a CYD)" : "");
 
     for (int i = 0; i < STORE; i++) store_[i].used = false;
 

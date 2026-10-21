@@ -28,4 +28,11 @@ void flush(const ui::Settings& s);
 void setLogging(bool on);
 bool loggingWas();
 
+// The mesh network id (see device/mesh.h). Kept outside Settings and written
+// immediately, like the logging flag: an enrolment must survive the very next
+// reboot. netId() returns the stored id, or `deflt` (the build default) if none
+// is stored yet.
+void    setNetId(uint8_t id);
+uint8_t netId(uint8_t deflt);
+
 } // namespace prefs

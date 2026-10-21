@@ -9,6 +9,7 @@
 #include <esp_wifi.h>
 #include <esp_now.h>
 #include <esp_mac.h>
+#include <Preferences.h>
 #include "mesh.h"
 #include "rehome.h"
 #include "wifi_auth.h"
@@ -124,7 +125,41 @@ void onSent(const wifi_tx_info_t* info, esp_now_send_status_t st) {
     else if (failStreak < 255) failStreak = failStreak + 1;
 }
 
+Preferences nv;
+
+void setNetId(uint8_t id) {
+    mesh::netId = id;
+    nv.putUChar("netid", id);           // immediate: an enrolment must survive a reboot
+}
+
+// An enrol invite (reset=0) or un-enrol command (reset=1). An OPEN node adopts
+// an invite's net; any node un-enrols on a command for its OWN net. An already-
+// enrolled node ignores invites, so a neighbour's CYD cannot steal it. The net
+// change is applied by rebooting onto it -- a clean re-discovery from setup(),
+// which parks on the report channel; the CYD's window stays open to re-adopt.
+void handleEnroll(const uint8_t* data, int len) {
+    if (len < (int)sizeof(mesh::Enroll)) return;
+    const mesh::Enroll* e = (const mesh::Enroll*)data;
+    if (e->token != mesh::ENROLL_TOKEN) return;
+    uint8_t newNet;
+    if (e->reset) {
+        if (e->h.netId != mesh::netId || mesh::netId == 0) return;  // not ours / already open
+        newNet = 0;
+    } else {
+        if (mesh::netId != 0 || e->h.netId == 0) return;            // only an open node adopts
+        newNet = e->h.netId;
+    }
+    setNetId(newNet);
+    Serial.printf("node: moving to network %u -- rebooting\n", (unsigned)newNet);
+    delay(150);
+    ESP.restart();
+}
+
 void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+    if (len < (int)sizeof(mesh::Hdr)) return;
+    const mesh::Hdr* hh = (const mesh::Hdr*)data;
+    if (hh->magic != mesh::MAGIC || hh->ver != mesh::VERSION) return;
+    if (hh->kind == mesh::MSG_ENROLL) { handleEnroll(data, len); return; }
     if (!mesh::valid(data, len, mesh::MSG_ASSIGN, (int)sizeof(mesh::Assign))) return;
     const mesh::Assign* a = (const mesh::Assign*)data;
     for (int i = 0; i < 6; i++) if (a->h.mac[i] != selfMac[i]) return;
@@ -203,7 +238,7 @@ void report() {
         mesh::Report r = {};
         r.h.magic = mesh::MAGIC;
         r.h.ver   = mesh::VERSION;
-        r.h.netId = mesh::NETID;
+        r.h.netId = mesh::netId;
         r.h.kind  = mesh::MSG_REPORT;
         memcpy(r.h.mac, selfMac, 6);
         r.seq = seq++;
@@ -258,6 +293,11 @@ void setup() {
     Serial.printf("mac   : %02X:%02X:%02X:%02X:%02X:%02X\n",
                   selfMac[0], selfMac[1], selfMac[2], selfMac[3], selfMac[4], selfMac[5]);
 
+    nv.begin("umbravox", false);
+    mesh::netId = nv.getUChar("netid", mesh::netId);     // NVS overrides the build default
+    Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::netId,
+                  mesh::netId == 0 ? " (open -- enrol me from a CYD)" : "");
+
     park(mesh::REPORT_CHAN);
 
     if (esp_now_init() != ESP_OK) {
@@ -291,7 +331,7 @@ void loop() {
             mesh::Hello h = {};
             h.h.magic = mesh::MAGIC;
             h.h.ver   = mesh::VERSION;
-            h.h.netId = mesh::NETID;
+            h.h.netId = mesh::netId;
             h.h.kind  = mesh::MSG_HELLO;
             memcpy(h.h.mac, selfMac, 6);
             h.fw = 1; h.wants5 = 1;

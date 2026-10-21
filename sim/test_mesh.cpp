@@ -25,7 +25,7 @@ int main() {
     printf("valid() accepts a well-formed CBatch and rejects a short one:\n");
     mesh::ClusterBatch b = {};
     b.h.magic = mesh::MAGIC; b.h.ver = mesh::VERSION;
-    b.h.netId = mesh::NETID; b.h.kind = mesh::MSG_CBATCH;
+    b.h.netId = mesh::netId; b.h.kind = mesh::MSG_CBATCH;
     check("full CBatch valid",
           mesh::valid((const uint8_t*)&b, sizeof b, mesh::MSG_CBATCH, (int)sizeof b));
     check("truncated CBatch rejected",
@@ -33,7 +33,7 @@ int main() {
 
     printf("a frame from another network id is rejected:\n");
     mesh::ClusterBatch other = b;
-    other.h.netId = (uint8_t)(mesh::NETID + 1);   // someone else's mesh in the room
+    other.h.netId = (uint8_t)(mesh::netId + 1);   // someone else's mesh in the room
     check("foreign network id rejected",
           !mesh::valid((const uint8_t*)&other, sizeof other, mesh::MSG_CBATCH, (int)sizeof other));
 
