@@ -14,7 +14,7 @@
 
 - Pack format `1`; unknown keys ignored; `format > 1` skipped with a reason.
 - Limits: 8 packs (first 8 by folder name); `theme.json` ≤ 4 KB; `emblem.bin` ≤ 96×96, ≤ 16 colours, ≤ 9.5 KB (9728 B); whole pack ≤ 64 KB; `name`/`header`/`author` ≤ 20/18/24 chars; folder name `[A-Za-z0-9_-]{1,31}`.
-- `name`: chars `A-Z 0-9 space - .`, unique, not `UMBRAVOX` / `CVLT OF BAPH0MAU5` / `COSMIC MUFFIN`. `header`: font chars only (ASCII 32..95, lowercase folded).
+- `name`: chars `A-Z 0-9 space - .`, unique, not `UMBRAVOX` / `BAPH0MAU5` / `CVLT OF BAPH0MAU5` / `COSMIC MUFFIN` (every name a built-in displays; ruled during Task 6). `header`: font chars only (ASCII 32..95, lowercase folded).
 - 20 colour roles, `#RRGGBB` → RGB565: `void panel grid edge edgeLit dim text bright witch witchHi bone sweep sweepHi live liveHi magenta ice green amber red`. Pack ramp = `void, edge, dim, bright`.
 - Sweeps offered: `radar pulse star candle galaxy orbit starfall pulsar comet aurora` (no `gaze`). Alerts: `ward supernova vortex comet lockon` (no `summon`). Centrepiece: `emblem` | `heptagram`. Dial: `compact` | `large`.
 - Alert edge contrast minimum about 3 : 1 against `void` and `panel`, enforced where the edge is drawn with fixed safe colours; `amber`/`red` replaced with UMBRAVOX's values when they fail. Chrome is never rewritten.

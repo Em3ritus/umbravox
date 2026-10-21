@@ -148,7 +148,7 @@ just an emblem and one drawing routine serves both.
 |---|---|
 | packs the device loads | 8: the first 8 by folder name; the rest are ignored and logged |
 | folder name | letters, digits, `-` `_`, 1-31 characters; anything else is skipped |
-| `name` | unique among packs and not a built-in's name (`UMBRAVOX`, `CVLT OF BAPH0MAU5`, `COSMIC MUFFIN`) |
+| `name` | unique among packs and not a built-in's name (`UMBRAVOX`, `BAPH0MAU5`, `CVLT OF BAPH0MAU5`, `COSMIC MUFFIN`: every name a built-in displays) |
 | `theme.json` | ≤ 4 KB |
 | `emblem.bin` | ≤ 96×96, ≤ 16 colours, ≤ 9.5 KB |
 | whole pack | ≤ 64 KB |
