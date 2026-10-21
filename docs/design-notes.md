@@ -415,6 +415,16 @@ rotates at 1 MiB (~19 h of rows). `tools/perf_report.py` summarises one or more
 files and lists what looks worth tuning; `PERF` over the console prints the
 current file.
 
+**What it found first.** Draw time doubled (7 -> 15 ms, 46 -> 34 fps) about 53 s
+after every boot. The cause was not load: the C5 has no FPU, so `sinf`/`cosf` are
+software, and newlib's fast path only covers arguments up to ~201 rad. Animation
+phases taken from the frame counter grow without bound, so the sweeps (dozens of
+trig calls a frame) fell onto the slow reduction path after a minute -- and the
+older themes' rune ring and star sweep would have after a few minutes more.
+`ui/trigwrap.h` reduces a phase to one turn first, and `sim/test_trig.cpp` runs
+every sweep, theme and alert at up to a week of frame counts through an auditing
+shim and fails if any trig call is handed more than 200 rad.
+
 ### Mesh: network enrolment
 
 Every frame carries a network id, and a board only talks to boards on the same

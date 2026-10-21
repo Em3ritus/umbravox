@@ -1,4 +1,5 @@
 #include "seal.h"
+#include "trigwrap.h"
 #include "sweep.h"
 #include "palette.h"
 #include "sigil.h"
@@ -8,7 +9,7 @@ namespace ui {
 namespace {
 
 void polar(int cx, int cy, float r, float deg, int& x, int& y) {
-    const float a = deg * 3.14159265f / 180.0f;
+    const float a = wrapDeg(deg) * 3.14159265f / 180.0f;   // see trigwrap.h
     x = cx + (int)lrintf(sinf(a) * r);
     y = cy - (int)lrintf(cosf(a) * r);
 }
@@ -159,7 +160,7 @@ void drawSeal(Canvas& c, int cx, int cy, int rField, int rRunes, int rStar,
 
     // The flame above the horns licks: the patch that catches grows and
     // shrinks. At this size a flame is a handful of strokes disagreeing.
-    const int lick = 3 + (int)(2.4f * sinf((float)frame * 0.37f));
+    const int lick = 3 + (int)(2.4f * sinf(wrapRad((float)frame * 0.37f)));
     push(Tint{FLAME_X, FLAME_Y, lick, false});
 
     // The blink is deliberately the lowest-priority tint: it happens only when
