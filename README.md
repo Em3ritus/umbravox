@@ -28,10 +28,11 @@ instead of a dashboard.
 - **GPS** — NMEA fix and satellite tracking, used to geolocate every finding.
 - **SD wardrive logging** — crash-safe WiGLE-format CSV written to the card,
   with auto-resume after a reboot and no half-written file if power is pulled.
-- **Threat / point-of-interest alerts** — 125 device signatures (ALPR,
+- **Threat / point-of-interest alerts** — 162 device signatures (ALPR,
   cameras, AirTag / Tile / Find My trackers, Remote ID drones, pentest
   hardware and more), each with its own confidence grade so the alert floor
-  can suppress weak guesses instead of crying wolf.
+  can suppress weak guesses instead of crying wolf. See the full list in
+  [docs/detections.md](docs/detections.md).
 - **Multi-node ESP-NOW mesh** — optional headless scanning nodes, and an
   optional coordinator tier, that report back wirelessly so more radios cover
   more of the spectrum at once (see [Architecture](#architecture)).
