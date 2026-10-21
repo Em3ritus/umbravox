@@ -92,6 +92,13 @@ const char* admitWhy(Admit a);
 // win. Each entry is read as at most 32 bytes; a missing NUL ends it there.
 void sortNames(char (*names)[32], int n);
 
+// Collect one directory entry into a bounded listing of `cap` names: appended
+// while there is room; once full it replaces the byte-wise largest name held
+// if `name` is smaller, so the cap smallest names survive whatever order the
+// directory yields them in (sort the result with sortNames). Returns the new
+// count. NULL, or a name of 32 bytes or more (it would not fit), is not kept.
+int keepName(char (*names)[32], int n, int cap, const char* name);
+
 // Boot-loop guard, decision half. The loader persists formatLoading()'s record
 // before loading a pack and clears it after; if the record survives a reboot,
 // skipAfterCrash() is true only for that exact folder at that exact total size

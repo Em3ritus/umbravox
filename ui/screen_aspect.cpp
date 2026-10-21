@@ -12,6 +12,8 @@
 #include "font5x7.h"
 #include "layout.h"
 #include "nav.h"
+#include "themepack.h"
+#include <stdio.h>
 
 namespace ui {
 namespace {
@@ -42,6 +44,17 @@ const char* sweepName(uint8_t id) {
 }
 
 const char* alertName(uint8_t theme, uint8_t style) {
+    if (theme >= pal::TH_COUNT) {
+        // A pack plays the one rite its theme.json names; the cosmic style
+        // setting does not apply to it.
+        switch (pal::packRite(theme)) {
+            case themepack::RITE_SUPERNOVA: return "SUPERNOVA";
+            case themepack::RITE_VORTEX:    return "VORTEX";
+            case themepack::RITE_COMET:     return "COMET";
+            case themepack::RITE_LOCKON:    return "LOCK-ON";
+            default:                        return "WARD";
+        }
+    }
     if (theme == pal::TH_BAPH0MAU5) return "SUMMONED";
     if (theme != pal::TH_COSMICMUFFIN) return "WARD";
     switch (style) {
@@ -50,6 +63,18 @@ const char* alertName(uint8_t theme, uint8_t style) {
         case AL_LOCKON: return "LOCK-ON";
         default:        return "SUPERNOVA";
     }
+}
+
+void themeRowName(uint8_t theme, char* out, size_t cap) {
+    if (!out || !cap) return;
+    // "COSMIC MUFFIN" is two characters wider than this row allows; the scan
+    // masthead carries the full name.
+    const char* n = theme == pal::TH_COSMICMUFFIN ? "COSMIC" : pal::themeName(theme);
+    size_t lim = cap - 1;
+    if (lim > (size_t)ASP_NAME_MAX) lim = ASP_NAME_MAX;
+    size_t i = 0;
+    for (; i < lim && n[i]; i++) out[i] = n[i];
+    out[i] = 0;
 }
 
 void drawAspect(Canvas& c, const State& s, Dirty* d) {
@@ -72,24 +97,34 @@ void drawAspect(Canvas& c, const State& s, Dirty* d) {
     const int ps = R_STAR  * ASP_R / R_BOUND;
     drawDialAt(c, s, W / 2, ASP_CY, pf, pr, ps, ASP_R);
 
+    char themeTxt[ASP_NAME_MAX + 1];
+    themeRowName(s.set.theme, themeTxt, sizeof themeTxt);
     for (int r = 0; r < ASP_ROWS; r++) {
         const int y = ASP_ROW_Y + r * ASP_ROW_H;
         if (r) c.hline(5, y - 2, 148, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
 
-        // The ALERT row only has a choice on COSMIC MUFFIN; elsewhere it names
-        // the theme's one rite, with its buttons dimmed.
+        // The ALERT row only has a choice on COSMIC MUFFIN; elsewhere (packs
+        // included) it names the theme's one rite, with its buttons dimmed.
         const bool live = r < 2 || s.set.theme == pal::TH_COSMICMUFFIN;
         c.text(6, y + 2, r == 0 ? "THEME" : r == 1 ? "SWEEP" : "ALERT", pal::DIM);
         c.textRight(SET_MINUS_X - 4, y + 2,
-                    // "COSMIC MUFFIN" is two characters wider than this row
-                    // allows; the scan masthead carries the full name.
-                    r == 0 ? (s.set.theme == pal::TH_COSMICMUFFIN ? "COSMIC"
-                                                                  : pal::themeName(s.set.theme))
+                    r == 0 ? themeTxt
                   : r == 1 ? sweepName(s.set.sweep)
                            : alertName(s.set.theme, s.set.alertStyle),
                     live ? pal::BRIGHT : pal::DIM);
         button(c, SET_MINUS_X, y + 1, "-", live);
         button(c, SET_PLUS_X,  y + 1, "+", live);
+    }
+
+    // Theme packs skipped at boot: a count, and where the reasons are. Two
+    // cells either side of the preview (see ASP_SKIP_* in layout.h); status,
+    // so AMBER. Over 99 the count reads "99+" to stay inside its cell.
+    if (s.packsSkipped > 0) {
+        char line[12];
+        if (s.packsSkipped > 99) snprintf(line, sizeof line, "99+SKIPPED");
+        else snprintf(line, sizeof line, "%u SKIPPED", (unsigned)s.packsSkipped);
+        c.text(ASP_SKIP_LX, ASP_SKIP_Y, line, pal::AMBER);
+        c.textRight(ASP_SKIP_RX + ASP_SKIP_W, ASP_SKIP_Y, "DIAG LOG", pal::AMBER);
     }
 
     drawFooter(c, s);
@@ -110,6 +145,12 @@ void drawAspect(Canvas& c, const State& s, Dirty* d) {
             d->add(0, 0, W, H);
         } else {
             d->add(0, BODY_Y, W, BODY_H);   // the preview animates every frame
+            // ...which already covers the skipped line; named anyway so it
+            // still repaints if the body rect above ever narrows.
+            if (prev.packsSkipped != s.packsSkipped) {
+                d->add(ASP_SKIP_LX, ASP_SKIP_Y, ASP_SKIP_W, ASP_SKIP_H);
+                d->add(ASP_SKIP_RX, ASP_SKIP_Y, ASP_SKIP_W, ASP_SKIP_H);
+            }
             dirtyChrome(*d, s, prev);
         }
         prev = s;

@@ -79,5 +79,15 @@ constexpr int ASP_R      = 24;      // preview outer bound
 constexpr int ASP_ROW_Y  = 65;      // first picker row
 constexpr int ASP_ROW_H  = 12;
 constexpr int ASP_ROWS   = 3;       // THEME, SWEEP, ALERT
+// The THEME row's value fits this many characters between the label and the
+// buttons; a longer pack name is cut to it.
+constexpr int ASP_NAME_MAX = 12;
+// "N SKIPPED" / "DIAG LOG", shown when theme packs were skipped at boot. The
+// full sentence (24 characters, 143 px) does not fit beside a 48 px preview,
+// and across the top it would cover the preview, so it is split into the two
+// top corners of the body, one line high, either side of the disc. Each cell
+// takes up to 10 characters at 6 px; the test holds both clear of the disc.
+constexpr int ASP_SKIP_Y  = 15, ASP_SKIP_H = 7;
+constexpr int ASP_SKIP_LX = 3,  ASP_SKIP_RX = 98, ASP_SKIP_W = 59;
 
 } // namespace ui

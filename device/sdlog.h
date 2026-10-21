@@ -37,6 +37,20 @@ uint32_t sizeOf(const char* name);                                  // bytes, or
 bool     append(const char* name, const uint8_t* data, uint32_t len);
 bool     rotate(const char* name, const char* to);                  // to <- name
 
+// Read-side helpers for theme packs. Both take absolute paths ('/' first),
+// allocate nothing, and are no-ops (false / 0) with no card.
+//
+// listDir() calls cb once per entry of the directory `path` with its bare
+// name and whether it is a directory; false if `path` is missing or is not a
+// directory. It visits at most LIST_MAX entries, so a directory with
+// thousands of entries cannot stall boot.
+// readFile() reads at most `cap` bytes of a regular file into buf and returns
+// how many it read: 0 on any failure (absent, a directory, unreadable), never
+// more than cap. A short count is the caller's to treat as an error.
+constexpr uint32_t LIST_MAX = 256;
+bool     listDir(const char* path, void (*cb)(const char* name, bool isDir, void* ctx), void* ctx);
+uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap);
+
 // The longest a write held up the loop (ms) since this was last called, across
 // writeAtomic and append. Reading it clears it; perflog logs it so the cost of
 // the SD card itself is visible next to the frame times it competes with.

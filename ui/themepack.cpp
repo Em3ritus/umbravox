@@ -457,6 +457,24 @@ void sortNames(char (*names)[32], int n) {
     }
 }
 
+int keepName(char (*names)[32], int n, int cap, const char* name) {
+    if (!names || !name || cap <= 0 || n < 0) return n < 0 ? 0 : n;
+    size_t len = 0;
+    while (len < 32 && name[len]) len++;
+    if (len >= 32) return n;                       // would not fit with its NUL
+    int slot = n;
+    if (n >= cap) {
+        n = cap;
+        slot = 0;                                  // the largest held
+        for (int i = 1; i < cap; i++)
+            if (strncmp(names[i], names[slot], 32) > 0) slot = i;
+        if (strncmp(name, names[slot], 32) >= 0) return n;
+    }
+    memset(names[slot], 0, 32);
+    memcpy(names[slot], name, len);
+    return slot == n ? n + 1 : n;
+}
+
 void formatLoading(char* out, size_t cap, const char* folder, uint32_t totalSize) {
     if (!out || cap == 0) return;
     size_t o = 0;

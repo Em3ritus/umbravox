@@ -275,6 +275,7 @@ int main() {
         check("the four alert styles draw four different rites", distinct);
     }
 
+    int heptId[5] = {-1, -1, -1, -1, -1};   // kept for the ASPECT checks below
     printf("pack rites on a heptagram centrepiece:\n");
     {
         // The emblem-centrepiece half of this lives in test_motif; the pack
@@ -296,6 +297,7 @@ int main() {
             p.color[themepack::R_AMBER] = 0xFFE0;
             p.color[themepack::R_RED] = 0xF800;
             const int id = pal::addPack(p, nullptr);
+            heptId[r] = id;
             pal::setTheme((uint8_t)id);
             State st;
             st.set.theme = (uint8_t)id;
@@ -335,6 +337,146 @@ int main() {
             for (int b2 = a2 + 1; b2 < 5; b2++)
                 if (memcmp(shot[a2].px, shot[b2].px, sizeof shot[a2].px) == 0) distinct = false;
         check("the five pack rites draw five different pictures", distinct);
+    }
+
+    printf("aspect with theme packs:\n");
+    {
+        // The skipped-packs line: drawn only when a pack was skipped, only in
+        // its own cells, and those cells clear the preview and the rows.
+        pal::setTheme(pal::TH_UMBRAVOX);
+        State a;
+        a.screen = SCR_ASPECT;
+        static Canvas c0, cn;
+        a.packsSkipped = 0;
+        drawAspect(c0, a);
+        auto inCell = [](int x, int y) {
+            if (y < ASP_SKIP_Y || y >= ASP_SKIP_Y + ASP_SKIP_H) return false;
+            return (x >= ASP_SKIP_LX && x < ASP_SKIP_LX + ASP_SKIP_W) ||
+                   (x >= ASP_SKIP_RX && x < ASP_SKIP_RX + ASP_SKIP_W);
+        };
+        const uint8_t counts[] = {2, 9, 10, 99, 100, 255};
+        for (uint8_t n : counts) {
+            a.packsSkipped = n;
+            drawAspect(cn, a);
+            int inL = 0, inR = 0, out = 0;
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++) {
+                    if (c0.px[y * W + x] == cn.px[y * W + x]) continue;
+                    if (!inCell(x, y)) out++;
+                    else if (x < W / 2) inL++;
+                    else inR++;
+                }
+            char buf[80];
+            snprintf(buf, sizeof buf, "aspect: %u skipped draws in both cells of the skipped line", n);
+            check(buf, inL > 0 && inR > 0);
+            snprintf(buf, sizeof buf, "aspect: %u skipped draws nothing outside them", n);
+            check(buf, out == 0);
+        }
+        // Geometry: each cell is inside the body, above the first row's
+        // divider, and wholly outside the preview's disc.
+        auto clearOfDisc = [](int x, int w) {
+            const int cx = W / 2, cy = ASP_CY;
+            const int nx = cx < x ? x : cx > x + w - 1 ? x + w - 1 : cx;
+            const int ny = cy < ASP_SKIP_Y ? ASP_SKIP_Y
+                         : cy > ASP_SKIP_Y + ASP_SKIP_H - 1 ? ASP_SKIP_Y + ASP_SKIP_H - 1 : cy;
+            return (nx - cx) * (nx - cx) + (ny - cy) * (ny - cy) > ASP_R * ASP_R;
+        };
+        check("aspect: skipped cells are clear of the preview disc",
+              clearOfDisc(ASP_SKIP_LX, ASP_SKIP_W) && clearOfDisc(ASP_SKIP_RX, ASP_SKIP_W));
+        check("aspect: skipped line sits inside the body, above the rows",
+              ASP_SKIP_Y > BODY_Y && ASP_SKIP_Y + ASP_SKIP_H <= ASP_ROW_Y - 2 &&
+              ASP_SKIP_LX >= 2 && ASP_SKIP_RX + ASP_SKIP_W <= 158 &&
+              ASP_SKIP_LX + ASP_SKIP_W <= ASP_SKIP_RX);
+
+        // The THEME row names a pack by its own name; a built-in as before.
+        char nm[32];
+        themeRowName(pal::TH_UMBRAVOX, nm, sizeof nm);
+        check("aspect: THEME row names UMBRAVOX", !strcmp(nm, "UMBRAVOX"));
+        themeRowName(pal::TH_COSMICMUFFIN, nm, sizeof nm);
+        check("aspect: THEME row shortens COSMIC MUFFIN to COSMIC", !strcmp(nm, "COSMIC"));
+        const int packA = pal::findPack("PACKA");
+        themeRowName((uint8_t)packA, nm, sizeof nm);
+        check("aspect: THEME row for a pack id is the pack's name", packA >= 0 && !strcmp(nm, "PACKA"));
+        themeRowName((uint8_t)heptId[3], nm, sizeof nm);
+        check("aspect: THEME row for another pack is its name", !strcmp(nm, "HEPT3"));
+
+        // A 20-character name is cut to what fits beside the label, and the
+        // label is drawn exactly as for a short-named twin.
+        themepack::Pack p;
+        memset(&p, 0, sizeof p);
+        snprintf(p.name, sizeof p.name, "ABCDEFGHIJKLMNOPQRST");
+        snprintf(p.header, sizeof p.header, "LONG");
+        p.dial = themepack::DIAL_COMPACT;
+        p.centre = themepack::CENTRE_HEPTAGRAM;
+        p.rite = themepack::RITE_WARD;
+        p.sweeps = 0x07FF; p.sweep = SW_RADAR;
+        for (int i = 0; i < themepack::N_COLORS; i++) p.color[i] = (uint16_t)(0x2104 * (i + 1));
+        p.color[themepack::R_VOID] = 0;
+        p.color[themepack::R_AMBER] = 0xFFE0;
+        p.color[themepack::R_RED] = 0xF800;
+        const int longId = pal::addPack(p, nullptr);   // HEPT0's twin but for the name
+        check("aspect: long-named pack registered", longId >= 0);
+        themeRowName((uint8_t)longId, nm, sizeof nm);
+        check("aspect: a long pack name is cut to ASP_NAME_MAX",
+              (int)strlen(nm) == ASP_NAME_MAX && !strncmp(nm, "ABCDEFGHIJKLMNOPQRST", ASP_NAME_MAX));
+        themeRowName((uint8_t)longId, nm, 4);
+        check("aspect: themeRowName respects a small buffer", !strcmp(nm, "ABC"));
+        {
+            static Canvas ca, cb;
+            State s1; s1.screen = SCR_ASPECT;
+            s1.set.theme = (uint8_t)heptId[0]; pal::setTheme(s1.set.theme); drawAspect(ca, s1);
+            s1.set.theme = (uint8_t)longId;    pal::setTheme(s1.set.theme); drawAspect(cb, s1);
+            bool same = true, differs = false;
+            for (int y = ASP_ROW_Y; y < ASP_ROW_Y + ASP_ROW_H; y++)
+                for (int x = 0; x < W; x++) {
+                    const bool eq = ca.px[y * W + x] == cb.px[y * W + x];
+                    if (x < 6 + 6 * 5 + 1 && !eq) same = false;   // "THEME" and a gap
+                    if (!eq) differs = true;
+                }
+            check("aspect: a long pack name leaves the THEME label untouched", same);
+            check("aspect: ...and is drawn", differs);
+        }
+
+        // The ALERT row names a pack's rite, five rites five names, and
+        // its buttons stay inert.
+        const char* want[5] = {"WARD", "SUPERNOVA", "VORTEX", "COMET", "LOCK-ON"};
+        bool named = true, styleBlind = true;
+        for (int r = 0; r < 5; r++) {
+            if (strcmp(alertName((uint8_t)heptId[r], AL_SUPERNOVA), want[r])) named = false;
+            if (strcmp(alertName((uint8_t)heptId[r], AL_LOCKON), want[r])) styleBlind = false;
+        }
+        check("aspect: ALERT row shows each pack's rite name", named);
+        check("aspect: a pack's ALERT row ignores the cosmic style setting", styleBlind);
+        bool distinct = true;
+        for (int i = 0; i < 5; i++)
+            for (int j = i + 1; j < 5; j++)
+                if (!strcmp(alertName((uint8_t)heptId[i], 0), alertName((uint8_t)heptId[j], 0)))
+                    distinct = false;
+        check("aspect: the five rites show five different names", distinct);
+        {
+            Settings st; st.theme = (uint8_t)heptId[2];
+            Nav n; n.screen = SCR_ASPECT;
+            const int x = SET_PLUS_X + SET_BTN_W / 2;
+            const int y = ASP_ROW_Y + 2 * ASP_ROW_H + 1 + SET_BTN_H / 2;
+            navTouch(n, st, true,  (int16_t)x, (int16_t)y);
+            navTouch(n, st, false, (int16_t)x, (int16_t)y);
+            check("aspect: ALERT + is inert on a pack", st.alertStyle == AL_SUPERNOVA);
+        }
+
+        // Every theme, with the skipped line up, draws only inside the canvas.
+        struct Guarded { uint16_t pre[512]; Canvas c; uint16_t post[512]; };
+        static Guarded g;
+        bool guarded = true;
+        for (int t = 0; t < pal::themeCount(); t++) {
+            for (int i = 0; i < 512; i++) g.pre[i] = g.post[i] = 0xA5A5;
+            State s1; s1.screen = SCR_ASPECT; s1.packsSkipped = 255;
+            s1.set.theme = (uint8_t)t; pal::setTheme((uint8_t)t);
+            drawAspect(g.c, s1);
+            for (int i = 0; i < 512; i++)
+                if (g.pre[i] != 0xA5A5 || g.post[i] != 0xA5A5) guarded = false;
+        }
+        check("aspect: every theme stays inside the canvas", guarded);
+        pal::setTheme(pal::TH_UMBRAVOX);
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

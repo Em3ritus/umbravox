@@ -424,6 +424,52 @@ static void admissionTests() {
     }
 }
 
+// keepName: a bounded listing keeps the `cap` smallest names whatever order
+// the directory yields them in.
+static void keepNameTests() {
+    printf("keepName:\n");
+    // 100 names, fed forwards and backwards into 8 slots.
+    char all[100][32];
+    for (int i = 0; i < 100; i++) snprintf(all[i], 32, "pack%03d", (i * 37) % 100);
+    char fwd[8][32], rev[8][32];
+    memset(fwd, 0, sizeof fwd); memset(rev, 0, sizeof rev);
+    int nf = 0, nr = 0;
+    for (int i = 0; i < 100; i++) nf = keepName(fwd, nf, 8, all[i]);
+    for (int i = 99; i >= 0; i--) nr = keepName(rev, nr, 8, all[i]);
+    check("keep: count stops at cap", nf == 8 && nr == 8);
+    sortNames(fwd, nf); sortNames(rev, nr);
+    bool same = true, smallest = true;
+    for (int i = 0; i < 8; i++) {
+        if (strcmp(fwd[i], rev[i])) same = false;
+        char want[32]; snprintf(want, 32, "pack%03d", i);
+        if (strcmp(fwd[i], want)) smallest = false;
+    }
+    check("keep: the same names whatever the order", same);
+    check("keep: they are the cap smallest", smallest);
+
+    char few[4][32]; memset(few, 0, sizeof few);
+    int n = 0;
+    n = keepName(few, n, 4, "b");
+    n = keepName(few, n, 4, "a");
+    check("keep: appends while there is room", n == 2 && !strcmp(few[0], "b") && !strcmp(few[1], "a"));
+    char longName[40]; memset(longName, 'x', 39); longName[39] = 0;
+    n = keepName(few, n, 4, longName);
+    check("keep: a name of 32+ bytes is not kept", n == 2);
+    char edge[33]; memset(edge, 'y', 31); edge[31] = 0;
+    n = keepName(few, n, 4, edge);
+    check("keep: a 31-byte name is kept whole", n == 3 && strlen(few[2]) == 31);
+    n = keepName(few, n, 4, nullptr);
+    check("keep: NULL is not kept", n == 3);
+    check("keep: cap 0 keeps nothing", keepName(few, 0, 0, "a") == 0);
+    check("keep: NULL array keeps nothing", keepName(nullptr, 0, 4, "a") == 0);
+    // Full, and the new name is larger than everything held: dropped.
+    char full[2][32] = {"a", "b"};
+    n = keepName(full, 2, 2, "c");
+    check("keep: full + larger name drops it", n == 2 && !strcmp(full[0], "a") && !strcmp(full[1], "b"));
+    n = keepName(full, 2, 2, "B");
+    check("keep: full + smaller name evicts the largest", n == 2 && !strcmp(full[0], "a") && !strcmp(full[1], "B"));
+}
+
 int main() {
     Pack p; char why[64];
 
@@ -546,6 +592,7 @@ int main() {
 
     emblemTests();
     admissionTests();
+    keepNameTests();
 
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;

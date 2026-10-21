@@ -153,6 +153,40 @@ uint32_t maxIndex(const char* prefix, const char* suffix) {
     return hi;
 }
 
+bool listDir(const char* path, void (*cb)(const char* name, bool isDir, void* ctx), void* ctx) {
+    if (!mounted || !path || path[0] != '/' || !cb) return false;
+    File dir = SD.open(path, FILE_READ);
+    if (!dir) return false;
+    if (!dir.isDirectory()) { dir.close(); return false; }
+    for (uint32_t seen = 0; seen < LIST_MAX; seen++) {
+        File f = dir.openNextFile();
+        if (!f) break;
+        // name() is the bare basename on this core; strip any path anyway.
+        const char* nm = f.name();
+        if (!nm) nm = "";
+        for (const char* p = nm; *p; p++) if (*p == '/') nm = p + 1;
+        cb(nm, f.isDirectory(), ctx);
+        f.close();
+    }
+    dir.close();
+    return true;
+}
+
+uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap) {
+    if (!mounted || !path || path[0] != '/' || !buf || cap == 0) return 0;
+    File f = SD.open(path, FILE_READ);
+    if (!f) return 0;
+    if (f.isDirectory()) { f.close(); return 0; }
+    uint32_t got = 0;
+    while (got < cap) {                 // each pass makes progress or stops
+        const size_t k = f.read(buf + got, cap - got);
+        if (k == 0 || k > cap - got) break;
+        got += (uint32_t)k;
+    }
+    f.close();
+    return got;
+}
+
 uint32_t sizeOf(const char* name) {
     if (!mounted || !name || !name[0]) return 0;
     File f = SD.open(name, FILE_READ);
