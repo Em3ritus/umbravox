@@ -28,6 +28,7 @@ sim/test_ble_ad
 sim/test_themepack
 sim/test_elog
 sim/test_muffin
+sim/test_motif
 sim/test_palette
 sim/test_sweep
 sim/test_enrollwin

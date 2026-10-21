@@ -275,6 +275,68 @@ int main() {
         check("the four alert styles draw four different rites", distinct);
     }
 
+    printf("pack rites on a heptagram centrepiece:\n");
+    {
+        // The emblem-centrepiece half of this lives in test_motif; the pack
+        // registry holds only MAX_PACKS, so the heptagram half is here.
+        const char* rn[5] = {"ward", "supernova", "vortex", "comet", "lockon"};
+        static Canvas shot[5];
+        const int ages[] = {0, 60, 150, 260, 420, 900, 2500};
+        for (int r = 0; r < 5; r++) {
+            themepack::Pack p;
+            memset(&p, 0, sizeof p);
+            snprintf(p.name, sizeof p.name, "HEPT%d", r);
+            snprintf(p.header, sizeof p.header, "HEPT%d", r);
+            p.dial = themepack::DIAL_COMPACT;
+            p.centre = themepack::CENTRE_HEPTAGRAM;
+            p.rite = (themepack::Rite)r;
+            p.sweeps = 0x07FF; p.sweep = SW_RADAR;
+            for (int i = 0; i < themepack::N_COLORS; i++) p.color[i] = (uint16_t)(0x2104 * (i + 1));
+            p.color[themepack::R_VOID] = 0;
+            p.color[themepack::R_AMBER] = 0xFFE0;
+            p.color[themepack::R_RED] = 0xF800;
+            const int id = pal::addPack(p, nullptr);
+            pal::setTheme((uint8_t)id);
+            State st;
+            st.set.theme = (uint8_t)id;
+            st.alertActive = true; st.alertThreat = TH_DRONE; st.alertConf = CONF_HIGH;
+            const int X = COL_R_X, Y = DIAL_Y, Wd = COL_R_W, Hd = DIAL_H;
+            bool inside = true, drew = false;
+            for (int age : ages) {
+                // The pre-existing UMBRAVOX ward is not clipped to its card
+                // (oversized strike for 90 ms, runes straddling the border by
+                // up to 3 px): held to card + 4 px after the strike. The
+                // cosmic rites are strict.
+                const int slack = r == 0 ? 4 : 0;
+                if (r == 0 && age < 90) continue;
+                Canvas c; c.clear(0x1234);
+                st.alertAge = (uint16_t)age;
+                drawAlert(c, st);
+                for (int y = 0; y < H; y++)
+                    for (int x = 0; x < W; x++) {
+                        const bool onCard = x >= X && x < X + Wd && y >= Y && y < Y + Hd;
+                        const bool near = x >= X - slack && x < X + Wd + slack &&
+                                          y >= Y - slack && y < Y + Hd + slack;
+                        if (!near && c.px[y * W + x] != 0x1234) inside = false;
+                        if (onCard && c.px[y * W + x] != 0x1234) drew = true;
+                    }
+            }
+            char buf[64];
+            snprintf(buf, sizeof buf, "heptagram pack, %s: draws in the card", rn[r]);
+            check(buf, drew);
+            snprintf(buf, sizeof buf, "heptagram pack, %s: nothing outside it", rn[r]);
+            check(buf, inside);
+            shot[r].clear(0);
+            st.alertAge = 420;
+            drawAlert(shot[r], st);
+        }
+        bool distinct = true;
+        for (int a2 = 0; a2 < 5; a2++)
+            for (int b2 = a2 + 1; b2 < 5; b2++)
+                if (memcmp(shot[a2].px, shot[b2].px, sizeof shot[a2].px) == 0) distinct = false;
+        check("the five pack rites draw five different pictures", distinct);
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

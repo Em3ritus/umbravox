@@ -7,6 +7,7 @@
 #include "signatures.h"
 #include "seal.h"
 #include "muffinseal.h"
+#include "motif.h"
 #include "trigwrap.h"
 #include "sweep.h"
 #include "nav.h"
@@ -41,18 +42,6 @@ void polar(int cx, int cy, int r, float deg, int& x, int& y) {
     const float a = wrapDeg(deg) * 3.14159265f / 180.0f;   // see trigwrap.h
     x = cx + (int)lrintf(sinf(a) * (float)r);
     y = cy - (int)lrintf(cosf(a) * (float)r);
-}
-
-// The {7/3} heptagram: seven points, each joined to the one three along.
-// UMBRAVOX's figure. The alert is inscribed with the active theme's own
-// figure -- the ward is part of the same working, not separate chrome -- so
-// alertFigure() below picks this or the seal's diamond-and-triangles.
-void heptagram(Canvas& c, int cx, int cy, int r, uint16_t col) {
-    int sx[7], sy[7];
-    for (int k = 0; k < 7; k++)
-        polar(cx, cy, r, (float)k * 360.0f / 7.0f, sx[k], sy[k]);
-    for (int k = 0; k < 7; k++)
-        c.line(sx[k], sy[k], sx[(k + 3) % 7], sy[(k + 3) % 7], col);
 }
 
 // Lattice, clipped to the scrying field. Outside the inner circle it would
@@ -329,8 +318,8 @@ int pentagramTrace(Canvas& c, int cx, int cy, int r, uint16_t col,
 } // namespace
 
 void alertFigure(Canvas& c, const State& s, int cx, int cy, int r, uint16_t col) {
-    if (s.set.theme == pal::TH_BAPH0MAU5) sealFigure(c, cx, cy, r, col);
-    else                                  heptagram(c, cx, cy, r, col);
+    if (pal::centrepiece(s.set.theme) == pal::CP_SEAL) sealFigure(c, cx, cy, r, col);
+    else drawMotif(c, s.set.theme, cx, cy, r, 0, 128, col);
 }
 
 namespace {
@@ -451,12 +440,21 @@ inline void cardFlash(Canvas& c, int X, int Y, int Wd, int Hd, int since, int le
         c.fill(X, Y, Wd, Hd, Canvas::mix(pal::VOID, pal::BRIGHT, len - since, len * 3 / 2));
 }
 
+// The theme's picture for a cosmic rite: its emblem lit by `lift` (128 = as
+// drawn), or -- a theme with no emblem -- a heptagram in the rite's edge colour
+// at the same brightness, so every centrepiece/rite pair is defined.
+inline void riteMotif(Canvas& c, const State& s, uint16_t edge,
+                      int mx, int my, int rm, uint32_t frame, int lift) {
+    drawMotif(c, s.set.theme, mx, my, rm, frame, lift,
+              Canvas::mix(pal::VOID, edge, lift > 255 ? 255 : lift, 255));
+}
+
 // Supernova: the muffin charges, cracks white, and shockwaves roll outward.
 void drawAlertSupernova(Canvas& c, const State& s, uint16_t edge,
                         int X, int Y, int Wd, int Hd, int age, int mx, int my) {
     const int R = cardR(Wd, Hd), rm = R * 45 / 100;
     if (age < ALERT_FLARE_MS) {
-        drawMuffin(c, mx, my, rm, 0, 128 + 120 * age / ALERT_FLARE_MS);
+        riteMotif(c, s, edge, mx, my, rm, 0, 128 + 120 * age / ALERT_FLARE_MS);
         return;
     }
     const int since = age - ALERT_FLARE_MS;
@@ -468,7 +466,7 @@ void drawAlertSupernova(Canvas& c, const State& s, uint16_t edge,
         c.circle(mx, my, rr, Canvas::mix(pal::VOID, k ? pal::SWEEP : edge, lum, 255));
         if (rr > 3) c.circle(mx, my, rr - 1, Canvas::mix(pal::VOID, pal::SWEEP_HI, lum / 2, 255));
     }
-    drawMuffin(c, mx, my, rm, (uint32_t)(age / 16), since < 200 ? 210 : 80);
+    riteMotif(c, s, edge, mx, my, rm, (uint32_t)(age / 16), since < 200 ? 210 : 80);
     c.rect(X + 1, Y + 1, Wd - 2, Hd - 2, edge);
     alertNameAndDetail(c, s, edge, X, Y, Wd, age);
 }
@@ -507,7 +505,7 @@ void drawAlertCometStrike(Canvas& c, const State& s, uint16_t edge,
                           int X, int Y, int Wd, int Hd, int age, int mx, int my) {
     const int R = cardR(Wd, Hd), rm = R * 45 / 100;
     const int T = ALERT_TRACE_MS;
-    drawMuffin(c, mx, my, rm, (uint32_t)(age / 16), age < T ? 128 : 80);
+    riteMotif(c, s, edge, mx, my, rm, (uint32_t)(age / 16), age < T ? 128 : 80);
     if (age < T) {
         const int sx = X + Wd - 3, sy = Y + 3;
         const int hx = sx + (mx - sx) * age / T, hy = sy + (my - sy) * age / T;
@@ -544,7 +542,7 @@ void drawAlertLockOn(Canvas& c, const State& s, uint16_t edge,
                      int X, int Y, int Wd, int Hd, int age, int mx, int my) {
     const int R = cardR(Wd, Hd), rm = R * 45 / 100;
     const int T = ALERT_TRACE_MS;
-    drawMuffin(c, mx, my, rm, (uint32_t)(age / 16), age < T ? 110 : 85);
+    riteMotif(c, s, edge, mx, my, rm, (uint32_t)(age / 16), age < T ? 110 : 85);
     if (age < T) {
         const int span = R - rm - 3;
         for (int k = 0; k < 3; k++) {
@@ -603,15 +601,35 @@ void drawAlert(Canvas& c, const State& s) {
         return;
     }
 
-    // COSMIC MUFFIN chooses among its own four rites.
-    if (s.set.theme == pal::TH_COSMICMUFFIN) {
-        switch (s.set.alertStyle) {
-            case AL_VORTEX: drawAlertVortex     (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
-            case AL_COMET:  drawAlertCometStrike(c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
-            case AL_LOCKON: drawAlertLockOn     (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
-            default:        drawAlertSupernova  (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+    // COSMIC MUFFIN chooses among its own four rites by setting; a pack names
+    // its rite in theme.json (RITE_WARD falls through to the ward below).
+    {
+        int rite = -1;
+        if (s.set.theme == pal::TH_COSMICMUFFIN) {
+            switch (s.set.alertStyle) {
+                case AL_VORTEX: rite = AL_VORTEX; break;
+                case AL_COMET:  rite = AL_COMET;  break;
+                case AL_LOCKON: rite = AL_LOCKON; break;
+                default:        rite = AL_SUPERNOVA; break;
+            }
+        } else if (s.set.theme >= pal::TH_COUNT) {
+            switch (pal::packRite(s.set.theme)) {
+                case themepack::RITE_SUPERNOVA: rite = AL_SUPERNOVA; break;
+                case themepack::RITE_VORTEX:     rite = AL_VORTEX;    break;
+                case themepack::RITE_COMET:      rite = AL_COMET;     break;
+                case themepack::RITE_LOCKON:     rite = AL_LOCKON;    break;
+                default: break;
+            }
         }
-        return;
+        if (rite >= 0) {
+            switch (rite) {
+                case AL_VORTEX: drawAlertVortex     (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+                case AL_COMET:  drawAlertCometStrike(c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+                case AL_LOCKON: drawAlertLockOn     (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+                default:        drawAlertSupernova  (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+            }
+            return;
+        }
     }
 
     // 1. The strike: a sigil slams down. The figure arrives oversized and
@@ -753,7 +771,9 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
             found = true; foundAngle = s.contacts[i].angle; break;
         }
 
-    if (s.set.theme == pal::TH_BAPH0MAU5) {
+    const pal::Centrepiece cp = pal::centrepiece(s.set.theme);
+    const themepack::Emblem* emb = cp == pal::CP_EMBLEM ? pal::emblem(s.set.theme) : nullptr;
+    if (cp == pal::CP_SEAL) {
         // heat is alertConf * 85, and alertConf is one of CONF_LOW..CONF_OFF
         // (0..3), so heat only ever takes the values 0, 85, 170 or 255.
         // seal.cpp's blink gate depends on that discreteness: a continuous
@@ -762,10 +782,12 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
                  s.frame, found, foundAngle,
                  s.alertActive ? (uint8_t)(s.alertConf * 85) : 0,
                  searchLift(s.set.sweep, s.frame), s.set.sweep);
-    } else if (s.set.theme == pal::TH_COSMICMUFFIN) {
-        // The muffin fills the dial; the search lights it the way the candle
-        // lights the seal (liftOverride), and sweeps draw over it below.
-        drawMuffin(c, cx, cy, rField, s.frame, searchLift(s.set.sweep, s.frame));
+    } else if (emb) {
+        // The emblem fills the dial; the search lights it the way the candle
+        // lights the seal (liftOverride), and sweeps draw over it below. An
+        // emblem theme with no art (a pack whose emblem failed) takes the
+        // heptagram path rather than a null deref.
+        drawEmblem(c, *emb, cx, cy, rField, s.frame, searchLift(s.set.sweep, s.frame));
     } else {
         latticeDisc(c, cx, cy, rField - 1);
 
@@ -834,9 +856,7 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     // baselines); the cult theme announces itself in full.
     // The scan screen is home: it wears the brand wordmark even in plain-label
     // mode, which renames the sub-screens, not the masthead.
-    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5   ? "CVLT OF BAPH0MAU5"
-                   : s.set.theme == pal::TH_COSMICMUFFIN ? "COSMIC MVFFIN"
-                                                         : "UMBRAVOX");
+    drawHeader(c, s, pal::header(s.set.theme));
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);
     drawTile(c, TILE_Y[2], "BLE",   s.ble,              pal::GREEN);
