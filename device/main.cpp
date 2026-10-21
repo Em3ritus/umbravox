@@ -18,6 +18,7 @@
 #include "logging.h"
 #include "sdlog.h"
 #include "elog.h"
+#include "enrollwin.h"
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
@@ -556,58 +557,85 @@ static void injectNmea(const char* body) {
 // ignores the invite, so a neighbour cannot steal a node that is already yours.
 namespace enroll {
 const uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-enum Mode : uint8_t { IDLE, ADOPT, UNENROL };
-Mode     mode = IDLE;
-uint32_t windowUntil = 0, lastTx = 0;
+enrollwin::State win;                // when to transmit, and for how long (enrollwin.h)
 uint8_t  oldNet = 0;                 // the net we are telling our nodes to leave
+
+// Any board still answering on this net: nodes in the Core's table, or live
+// coordinators. A reset stays up for as long as this is true.
+bool boardsHeard() { return meshcore::count() > 0 || collector::active(); }
 
 // ADOPT: mint a private net if still open, then invite open devices onto it.
 void open(uint32_t nowMs) {
+    if (win.mode == enrollwin::UNENROL) {
+        Serial.println("enroll: a reset is still running -- wait for it to finish");
+        return;                              // never abandon an un-enrol half way
+    }
     if (mesh::netId == 0) {
         uint8_t id = 0;
         while (id == 0) id = (uint8_t)(esp_random() & 0xFF);   // 1..255
         mesh::netId = id;
         prefs::setNetId(id);
     }
-    mode = ADOPT; windowUntil = nowMs + 60000; lastTx = 0;
-    Serial.printf("enroll: network %u open for 60s -- power up an OPEN node now\n",
-                  (unsigned)mesh::netId);
+    enrollwin::adopt(win, nowMs);
+    Serial.printf("enroll: network %u open for %us -- power up an OPEN node now\n",
+                  (unsigned)mesh::netId, (unsigned)(enrollwin::ADOPT_MS / 1000));
     elog::event(elog::INFO, "mesh", "enroll open, network=%u", (unsigned)mesh::netId);
 }
 
-// UNENROL: tell our own nodes (on our net) to go open, then go open ourselves.
+// UNENROL: tell our own boards (on our net) to go open, and stay on this net
+// until they have all gone, then go open ourselves.
 void reset(uint32_t nowMs) {
-    if (mesh::netId == 0) { mode = IDLE; return; }   // already open
+    if (mesh::netId == 0) { win.mode = enrollwin::IDLE; return; }   // already open
+    if (win.mode == enrollwin::UNENROL) return;                     // a double tap
     oldNet = mesh::netId;
-    mode = UNENROL; windowUntil = nowMs + 12000; lastTx = 0;
-    Serial.printf("enroll: resetting network %u -- nodes going open, 12s\n",
+    enrollwin::unenrol(win, nowMs);
+    Serial.printf("enroll: resetting network %u -- staying on it until every board has left\n",
                   (unsigned)oldNet);
-    elog::event(elog::INFO, "mesh", "enroll reset, network %u -> open", (unsigned)oldNet);
+    elog::event(elog::INFO, "mesh", "enroll reset begins, network %u", (unsigned)oldNet);
 }
 
-bool active(uint32_t nowMs) { (void)nowMs; return mode != IDLE; }
-int  secsLeft(uint32_t nowMs) {
-    return mode != IDLE ? (int)((windowUntil - nowMs + 999) / 1000) : 0;
+// Recovery: put this CYD back on a known net, e.g. to reach boards a reset
+// missed (their old net is in the diag log). 0 means open.
+void setNet(uint8_t id) {
+    mesh::netId = id;
+    prefs::setNetId(id);
+    win.mode = enrollwin::IDLE;
+    Serial.printf("enroll: network set to %u%s\n", (unsigned)id, id ? "" : " (open)");
+    elog::event(elog::INFO, "mesh", "network set to %u", (unsigned)id);
 }
+
+bool active(uint32_t nowMs) { (void)nowMs; return win.mode != enrollwin::IDLE; }
+int  secsLeft(uint32_t nowMs) { return enrollwin::secsLeft(win, nowMs); }
 
 void tick(uint32_t nowMs) {
-    if (mode == IDLE) return;
-    if ((int32_t)(windowUntil - nowMs) <= 0) {
-        if (mode == UNENROL) {                       // the CYD goes open last
+    const bool unenrolling = win.mode == enrollwin::UNENROL;
+    const enrollwin::Tick k = enrollwin::tick(win, nowMs, boardsHeard());
+    if (k.done) {
+        if (unenrolling) {                           // the CYD goes open last
             mesh::netId = 0; prefs::setNetId(0);
             Serial.println("enroll: back on the open network (id 0)");
-            elog::event(elog::INFO, "mesh", "back on the open network");
+            if (k.gaveUp) {
+                // Boards were still answering at the cap: say so, and keep the
+                // old net on record so NETSET can go back for them.
+                Serial.printf("enroll: WARNING boards still answered on net %u -- "
+                              "NETSET %u to go back for them\n", (unsigned)oldNet, (unsigned)oldNet);
+                elog::event(elog::WARN, "mesh",
+                            "reset gave up with boards still on network %u (NETSET %u to retry)",
+                            (unsigned)oldNet, (unsigned)oldNet);
+            } else {
+                elog::event(elog::INFO, "mesh", "network %u cleared, back on the open network",
+                            (unsigned)oldNet);
+            }
         }
-        mode = IDLE;
         return;
     }
-    if (nowMs - lastTx < 1000) return;
-    lastTx = nowMs;
+    if (!k.send) return;
     mesh::Enroll e = {};
     e.h.magic = mesh::MAGIC;  e.h.ver  = mesh::VERSION;  e.h.kind = mesh::MSG_ENROLL;
     e.token   = mesh::ENROLL_TOKEN;
-    e.h.netId = (mode == ADOPT) ? mesh::netId : oldNet;
-    e.reset   = (mode == ADOPT) ? 0 : 1;
+    const bool adopting = win.mode == enrollwin::ADOPT;
+    e.h.netId = adopting ? mesh::netId : oldNet;
+    e.reset   = adopting ? 0 : 1;
     esp_now_send(bcast, (const uint8_t*)&e, sizeof e);
 }
 } // namespace enroll
@@ -666,9 +694,15 @@ void pollConsole() {
                 enroll::open(millis());
             } else if (!strncmp(line, "NETRESET", 8)) {
                 enroll::reset(millis());
+            } else if (!strncmp(line, "NETSET", 6)) {
+                const char* a = line + 6;
+                while (*a == ' ') a++;
+                int v = atoi(a);
+                if (v < 0 || v > 255 || !*a) Serial.println("usage: NETSET <0..255>  (0 = open)");
+                else enroll::setNet((uint8_t)v);
             } else {
                 Serial.printf("unknown command '%s' "
-                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, GPSFIX)\n", line);
+                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, GPSFIX, ENROLL, NETRESET, NETSET <id>)\n", line);
             }
         } else if (n < 31) {
             line[n++] = c;
@@ -746,14 +780,20 @@ void loop() {
         // Camp the report/collection channel either when the CYD runs the mesh
         // itself and has nodes, or when coordinators are live and deliver their
         // batches there. With no coordinator this is exactly today's rule.
-        const bool want = meshcore::count() > 0 || collector::active();
+        // An open enrol window also parks the Core on the report channel: that is
+        // where unassigned boards wait and where coordinators visit, so a
+        // broadcast sent while sweeping would only land by luck.
+        const bool want = meshcore::count() > 0 || collector::active()
+                       || enroll::active(millis());
         if (want != camped) {
             camped = want;
             cap::setCamp(want ? mesh::REPORT_CHAN : 0);
             Serial.printf("mesh: %s\n", want
                 ? (meshcore::count() > 0
                        ? "nodes present -- core holding the report channel"
-                       : "coordinator live -- holding the collection channel")
+                   : collector::active()
+                       ? "coordinator live -- holding the collection channel"
+                       : "enrol window open -- core holding the report channel")
                 : "no nodes -- core sweeping again");
         }
     }

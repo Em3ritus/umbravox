@@ -29,6 +29,7 @@ sim/test_elog
 sim/test_muffin
 sim/test_palette
 sim/test_sweep
+sim/test_enrollwin
 ui/sigil.h.tmp
 
 # Isolated SDD worktrees
