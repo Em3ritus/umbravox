@@ -29,7 +29,7 @@ int main() {
     //
     // So: grow the struct and this assert fires. Give every new field a
     // default initializer, then update the size here deliberately.
-    static_assert(sizeof(Settings) == 10,
+    static_assert(sizeof(Settings) == 12,
                   "Settings changed size -- see the padding note above, and "
                   "confirm every field has a default member initializer");
 
@@ -100,6 +100,8 @@ int main() {
         check("an existing field is still detected", !settingsEqual(a, b));
         b = a; b.labels = 1;
         check("a label-mode change is detected", !settingsEqual(a, b));
+        b = a; b.alertStyle = AL_VORTEX;
+        check("an alert-style change is detected", !settingsEqual(a, b));
     }
 
     printf("clamping survives a corrupt store:\n");
@@ -113,6 +115,11 @@ int main() {
         s.sweep = 200;
         clampSettings(s);
         check("out-of-range sweep falls back", s.sweep < SW_COUNT);
+
+        s = Settings();
+        s.alertStyle = 200;
+        clampSettings(s);
+        check("out-of-range alert style falls back", s.alertStyle < ALERT_STYLE_COUNT);
     }
 
     printf("a sweep must be available on its theme:\n");

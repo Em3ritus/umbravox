@@ -31,6 +31,9 @@ void write(const ui::Settings& s) {
     nvs.putUChar("theme",   s.theme);
     nvs.putUChar("sweep",   s.sweep);
     nvs.putUChar("labels",  s.labels);
+    nvs.putUChar("alertsty", s.alertStyle);
+    // `reserved` is never written by anything, so it is always its default
+    // and needs no slot; take it for a new setting and it needs one here.
     stored = s;
     lastSeen = s;
 }
@@ -65,6 +68,7 @@ bool load(ui::Settings& s) {
     in.theme    = nvs.getUChar("theme",    s.theme);
     in.sweep    = nvs.getUChar("sweep",    s.sweep);
     in.labels   = nvs.getUChar("labels",   s.labels);
+    in.alertStyle = nvs.getUChar("alertsty", s.alertStyle);
 
     // Anything out of range is treated as corrupt and pulled back in, not
     // trusted because it came off flash.

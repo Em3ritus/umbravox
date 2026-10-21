@@ -5,6 +5,7 @@
 #include "layout.h"
 #include "signatures.h"
 #include "seal.h"
+#include "muffinseal.h"
 #include "sweep.h"
 #include "nav.h"
 #include <math.h>
@@ -430,6 +431,147 @@ void drawAlertSummoned(Canvas& c, const State& s, uint16_t edge,
     alertNameAndDetail(c, s, edge, X, Y, Wd, age);
 }
 
+// --- COSMIC MUFFIN's four alerts --------------------------------------------
+// Same contract as the rites above: ceremony on the card, then the shared name
+// resolving over it. Confidence still owns the border colour (`edge`), so a
+// LOW guess never looks like a HIGH one. Everything stays inside the card: the
+// rings and paths are bounded by the card's half-extent around its centre.
+
+inline int cardR(int Wd, int Hd) { return (Wd < Hd ? Wd : Hd) / 2 - 2; }
+
+inline void cardPixel(Canvas& c, int X, int Y, int Wd, int Hd, int x, int y, uint16_t col) {
+    if (x >= X && x < X + Wd && y >= Y && y < Y + Hd) c.pixel(x, y, col);
+}
+
+// A white flash that decays over `len` ms from `since` = 0.
+inline void cardFlash(Canvas& c, int X, int Y, int Wd, int Hd, int since, int len) {
+    if (since >= 0 && since < len)
+        c.fill(X, Y, Wd, Hd, Canvas::mix(pal::VOID, pal::BRIGHT, len - since, len * 3 / 2));
+}
+
+// Supernova: the muffin charges, cracks white, and shockwaves roll outward.
+void drawAlertSupernova(Canvas& c, const State& s, uint16_t edge,
+                        int X, int Y, int Wd, int Hd, int age, int mx, int my) {
+    const int R = cardR(Wd, Hd), rm = R * 45 / 100;
+    if (age < ALERT_FLARE_MS) {
+        drawMuffin(c, mx, my, rm, 0, 128 + 120 * age / ALERT_FLARE_MS);
+        return;
+    }
+    const int since = age - ALERT_FLARE_MS;
+    cardFlash(c, X, Y, Wd, Hd, since, 160);
+    for (int k = 0; k < 2; k++) {
+        const int ph = (since + k * 450) % 900;
+        const int rr = 3 + ph * (R - 3) / 900;
+        const int lum = 255 - ph * 220 / 900;
+        c.circle(mx, my, rr, Canvas::mix(pal::VOID, k ? pal::SWEEP : edge, lum, 255));
+        if (rr > 3) c.circle(mx, my, rr - 1, Canvas::mix(pal::VOID, pal::SWEEP_HI, lum / 2, 255));
+    }
+    drawMuffin(c, mx, my, rm, (uint32_t)(age / 16), since < 200 ? 210 : 80);
+    c.rect(X + 1, Y + 1, Wd - 2, Hd - 2, edge);
+    alertNameAndDetail(c, s, edge, X, Y, Wd, age);
+}
+
+// Vortex: three arms spin up and pull inward to a bright core.
+void drawAlertVortex(Canvas& c, const State& s, uint16_t edge,
+                     int X, int Y, int Wd, int Hd, int age, int mx, int my) {
+    const int R = cardR(Wd, Hd) - 1;
+    const bool held = age >= ALERT_TRACE_MS;
+    const float pull = held ? 0.45f : 1.0f - 0.55f * (float)age / (float)ALERT_TRACE_MS;
+    const float spin = (float)age * (held ? 0.004f : 0.014f);
+    const uint16_t arms[3] = { pal::SWEEP_HI, pal::SWEEP, pal::WITCH };
+    for (int arm = 0; arm < 3; arm++) {
+        int px = -1, py = -1;
+        for (float t = 0.15f; t < 3.2f; t += 0.14f) {
+            const float f = t / 3.2f;
+            const float r = (float)R * pull * (0.12f + 0.88f * f);
+            const float a = t * 2.4f + (float)arm * 2.0943951f + spin;
+            const int x = mx + (int)lrintf(cosf(a) * r), y = my + (int)lrintf(sinf(a) * r);
+            const uint16_t col = Canvas::mix(pal::VOID, arms[arm], 250 - (int)(f * 150.0f), 255);
+            if (px >= 0) c.line(px, py, x, y, col);
+            px = x; py = y;
+        }
+    }
+    const int core = held ? 4 : 2 + 3 * age / ALERT_TRACE_MS;
+    c.disc(mx, my, core, Canvas::mix(pal::BONE, pal::BRIGHT, held ? 1 : 0, 2));
+    if (held) {
+        cardFlash(c, X, Y, Wd, Hd, age - ALERT_TRACE_MS, 120);
+        c.rect(X + 1, Y + 1, Wd - 2, Hd - 2, edge);
+    }
+    alertNameAndDetail(c, s, edge, X, Y, Wd, age);
+}
+
+// Comet Strike: a comet streaks in from the corner and hits the muffin.
+void drawAlertCometStrike(Canvas& c, const State& s, uint16_t edge,
+                          int X, int Y, int Wd, int Hd, int age, int mx, int my) {
+    const int R = cardR(Wd, Hd), rm = R * 45 / 100;
+    const int T = ALERT_TRACE_MS;
+    drawMuffin(c, mx, my, rm, (uint32_t)(age / 16), age < T ? 128 : 80);
+    if (age < T) {
+        const int sx = X + Wd - 3, sy = Y + 3;
+        const int hx = sx + (mx - sx) * age / T, hy = sy + (my - sy) * age / T;
+        const float dx = (float)(sx - mx), dy = (float)(sy - my);
+        const float L = sqrtf(dx * dx + dy * dy) > 1.0f ? sqrtf(dx * dx + dy * dy) : 1.0f;
+        for (int k = 16; k >= 1; k--) {
+            const int tx = hx + (int)lrintf(dx * (float)k * 1.3f / L);
+            const int ty = hy + (int)lrintf(dy * (float)k * 1.3f / L);
+            cardPixel(c, X, Y, Wd, Hd, tx, ty,
+                      Canvas::mix(pal::VOID, k < 6 ? pal::BONE : pal::SWEEP, 255 - k * 13, 255));
+        }
+        c.disc(hx, hy, 1, pal::BRIGHT);
+    } else {
+        const int since = age - T;
+        cardFlash(c, X, Y, Wd, Hd, since, 140);
+        const int ph = since % 1000;
+        const int rr = rm + ph * (R - rm) / 1000;
+        const int lum = 255 - ph * 220 / 1000;
+        c.circle(mx, my, rr, Canvas::mix(pal::VOID, pal::SWEEP, lum, 255));
+        for (int i = 0; i < 8; i++) {              // debris thrown off the impact
+            const float a = (float)i * 0.7853982f + 0.39f;
+            const int d = rm + ph * (R - rm) * 9 / 10000;
+            cardPixel(c, X, Y, Wd, Hd, mx + (int)lrintf(cosf(a) * (float)d),
+                      my + (int)lrintf(sinf(a) * (float)d),
+                      Canvas::mix(pal::VOID, (i & 1) ? pal::BONE : pal::SWEEP_HI, lum, 255));
+        }
+        c.rect(X + 1, Y + 1, Wd - 2, Hd - 2, edge);
+    }
+    alertNameAndDetail(c, s, edge, X, Y, Wd, age);
+}
+
+// Lock-On: targeting rings converge on the muffin, then snap to a reticle.
+void drawAlertLockOn(Canvas& c, const State& s, uint16_t edge,
+                     int X, int Y, int Wd, int Hd, int age, int mx, int my) {
+    const int R = cardR(Wd, Hd), rm = R * 45 / 100;
+    const int T = ALERT_TRACE_MS;
+    drawMuffin(c, mx, my, rm, (uint32_t)(age / 16), age < T ? 110 : 85);
+    if (age < T) {
+        const int span = R - rm - 3;
+        for (int k = 0; k < 3; k++) {
+            int rr = rm + 3 + span * (T - age) / T + k * 3 * (T - age) / T;
+            if (rr > R) rr = R;
+            c.circle(mx, my, rr, Canvas::mix(pal::VOID, pal::SWEEP, 90 + 150 * age / T, 255));
+        }
+        const float ang = (float)age * 0.02f;
+        for (int j = 0; j < 4; j++) {
+            const float a = ang + (float)j * 1.5707963f;
+            c.line(mx + (int)lrintf(cosf(a) * (float)(rm + 2)), my + (int)lrintf(sinf(a) * (float)(rm + 2)),
+                   mx + (int)lrintf(cosf(a) * (float)(rm + 8)), my + (int)lrintf(sinf(a) * (float)(rm + 8)),
+                   pal::SWEEP_HI);
+        }
+    } else {
+        const int since = age - T;
+        cardFlash(c, X, Y, Wd, Hd, since, 100);
+        const int b = rm + 4 + (int)((since / 250) & 1);   // the lock breathes a pixel
+        for (int sx = -1; sx <= 1; sx += 2)
+            for (int sy = -1; sy <= 1; sy += 2) {
+                const int x = mx + sx * b, y = my + sy * b;
+                c.line(x, y, x - sx * 5, y, pal::SWEEP);
+                c.line(x, y, x, y - sy * 5, pal::SWEEP);
+            }
+        c.rect(X + 1, Y + 1, Wd - 2, Hd - 2, edge);
+    }
+    alertNameAndDetail(c, s, edge, X, Y, Wd, age);
+}
+
 } // namespace
 
 void drawAlert(Canvas& c, const State& s) {
@@ -451,6 +593,17 @@ void drawAlert(Canvas& c, const State& s) {
     // UMBRAVOX traces a ward. Both share the name resolving out of marks.
     if (s.set.theme == pal::TH_BAPH0MAU5) {
         drawAlertSummoned(c, s, edge, X, Y, Wd, Hd, age, mx, my);
+        return;
+    }
+
+    // COSMIC MUFFIN chooses among its own four rites.
+    if (s.set.theme == pal::TH_COSMICMUFFIN) {
+        switch (s.set.alertStyle) {
+            case AL_VORTEX: drawAlertVortex     (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+            case AL_COMET:  drawAlertCometStrike(c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+            case AL_LOCKON: drawAlertLockOn     (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+            default:        drawAlertSupernova  (c, s, edge, X, Y, Wd, Hd, age, mx, my); break;
+        }
         return;
     }
 
@@ -602,6 +755,10 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
                  s.frame, found, foundAngle,
                  s.alertActive ? (uint8_t)(s.alertConf * 85) : 0,
                  searchLift(s.set.sweep, s.frame), s.set.sweep);
+    } else if (s.set.theme == pal::TH_COSMICMUFFIN) {
+        // The muffin fills the dial; the search lights it the way the candle
+        // lights the seal (liftOverride), and sweeps draw over it below.
+        drawMuffin(c, cx, cy, rField, s.frame, searchLift(s.set.sweep, s.frame));
     } else {
         latticeDisc(c, cx, cy, rField - 1);
 
@@ -670,8 +827,9 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     // baselines); the cult theme announces itself in full.
     // The scan screen is home: it wears the brand wordmark even in plain-label
     // mode, which renames the sub-screens, not the masthead.
-    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5 ? "CVLT OF BAPH0MAU5"
-                                                      : "UMBRAVOX");
+    drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5   ? "CVLT OF BAPH0MAU5"
+                   : s.set.theme == pal::TH_COSMICMUFFIN ? "COSMIC MUFFIN"
+                                                         : "UMBRAVOX");
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);
     drawTile(c, TILE_Y[2], "BLE",   s.ble,              pal::GREEN);

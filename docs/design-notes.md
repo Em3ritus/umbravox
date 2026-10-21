@@ -198,15 +198,16 @@ What the instrument looks like, as opposed to how it captures. It is a
 separate screen, reached from the grimoire, because ATTUNE is full: `ui/layout.h`
 documents seven rows as its ceiling and all seven are used.
 
-Two pickers, each a label with a `-` and `+`:
+Three pickers, each a label with a `-` and `+`:
 
 | | choices | effect |
 |---|---|---|
-| THEME | UMBRAVOX / BAPH0MAU5 | the palette, the dial geometry and the centrepiece |
-| SWEEP | RADAR / GAZE / PULSE / STAR / CANDLE | how the dial searches the field |
+| THEME | UMBRAVOX / BAPH0MAU5 / COSMIC MUFFIN | the palette, the dial geometry and the centrepiece |
+| SWEEP | RADAR / GAZE / PULSE / STAR / CANDLE / GALAXY / ORBIT / STARFALL / PULSAR / COMET / AURORA | how the dial searches the field |
+| ALERT | WARD · SUMMONED · SUPERNOVA / VORTEX / COMET / LOCK-ON | the alert rite (see below) |
 
 Above them is a **live preview**: it calls the real dial code with the radii
-scaled down to a 30px bound, rather than drawing a picture of a dial. A
+scaled down to a 24px bound, rather than drawing a picture of a dial. A
 picture would drift from the dial it describes. FACE is a fixed bitmap and does
 not scale, so on BAPH0MAU5 the preview crops the seal to its middle -- horns and
 eyes -- which is a window onto the dial rather than a defect.
@@ -214,7 +215,26 @@ eyes -- which is a window onto the dial rather than a defect.
 The sweeps a theme offers are part of the theme: GAZE (two beams from the
 seal's eyes) exists only on BAPH0MAU5. Changing theme to one that does not
 offer the current sweep resets it to RADAR rather than keeping a preference
-that would draw nothing meaningful.
+that would draw nothing meaningful. The six **cosmic sweeps** (GALAXY, ORBIT,
+STARFALL, PULSAR, COMET, AURORA) are drawn entirely from `pal::` colours, so
+every theme offers them in its own palette. PULSAR finds by distance on the
+pulse's ring; GALAXY, ORBIT and COMET find by bearing like the radar; STARFALL
+and AURORA are washes that light nothing.
+
+**Alerts are per theme.** UMBRAVOX traces a ward and BAPH0MAU5 summons; those
+are fixed, and the ALERT row names them with its buttons dimmed. Only COSMIC
+MUFFIN has a choice -- Supernova, Vortex, Comet Strike or Lock-On -- stored as
+`Settings.alertStyle`. Confidence still owns the card's border colour in every
+rite.
+
+**COSMIC MUFFIN** is the third theme: a neon deep-space palette, and a
+centrepiece that is a full-colour bitmap rather than a drawn figure or a
+4-level ramp. `tools/gen_muffin.py` crops the committed pixel art in
+`ui/art/cosmic-muffin-src.png`, BOX-downsamples it to 72×72, quantises to 16
+colours and writes `ui/muffin.h`; `drawMuffin()` scales it to the dial and
+masks it to the circle, applying the same lift the seal uses so the candle and
+pulse can light it. The muffin has no eyes, so it does not offer the gaze. The
+ASPECT row abbreviates it to COSMIC; the scan masthead carries the full name.
 
 **The candle is deliberately subtle.** It has no beam: the circle is lit from
 the middle by a guttering flame, and the rings and the seal's brightness
