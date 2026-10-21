@@ -223,6 +223,24 @@ const NameSig NAMES[] = {
     {"Pigvision",      TH_FLOCK, CONF_HIGH, "FLOCK-PIG"},
     {"FS Ext Battery", TH_FLOCK, CONF_HIGH, "FLOCK-BATT"},
     {"Flock",          TH_FLOCK, CONF_MED,  "FLOCK-NAME"},
+    // Flipper Zero advertises a BLE name of "Flipper <name>". It is already
+    // caught HIGH by its service UUID (0x3081-0x3083) and company id (0x0E29);
+    // the name is a secondary hook, and only MED because a name is renameable
+    // and trivially spoofable.
+    {"Flipper",        TH_PENTEST, CONF_MED, "FLIPPER"},
+    // Bluetooth card-skimmer serial modules carrying their factory-default
+    // name. HC-05/HC-06 are the names field research (SparkFun, USENIX) finds
+    // on gas-pump skimmers. BIG CAVEAT: those are *Classic* Bluetooth (BR/EDR)
+    // and this platform's radio is BLE-only, so a genuine classic skimmer is
+    // invisible here regardless of signature -- these fire only on a BLE
+    // module/clone that advertises the same name. The names are also common in
+    // legitimate hobby gear, so a match is a warning, not proof: MED for the
+    // two canonical skimmer names, LOW for the broader module family.
+    {"HC-05",          TH_SKIMMER, CONF_MED, "SKIM-HC05"},
+    {"HC-06",          TH_SKIMMER, CONF_MED, "SKIM-HC06"},
+    {"HC-03",          TH_SKIMMER, CONF_LOW, "SKIM-HC03"},
+    {"HC-08",          TH_SKIMMER, CONF_LOW, "SKIM-HC08"},
+    {"BT05",           TH_SKIMMER, CONF_LOW, "SKIM-BT05"},
 };
 
 bool startsWith(const char* s, const char* prefix) {
