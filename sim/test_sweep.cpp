@@ -5,6 +5,7 @@
 #include "../ui/sweep.h"
 #include "../ui/model.h"
 #include <cstdio>
+#include <math.h>
 
 static int fails = 0;
 static void check(const char* w, bool ok) {
@@ -40,6 +41,40 @@ int main() {
             check(buf, (pal::sweepMask(t) & (uint16_t)(1u << m)) != 0);
             snprintf(buf, sizeof buf, "theme %d sweep %d draws in bounds", t, m);
             check(buf, drawsInBounds(m, 80, 60, 30));
+        }
+    }
+
+    // A sweep that finds by bearing must find where it is DRAWN. Orbit and
+    // Comet once reused the hidden radar beam, so contacts lit "found" in empty
+    // sky: every bearing reported hot must have lit pixels near it.
+    printf("detection follows the drawing:\n");
+    {
+        pal::setTheme(pal::TH_UMBRAVOX);
+        const int cx = 80, cy = 60, R = 30;
+        const uint8_t byBearing[2] = { SW_ORBIT, SW_COMET };
+        for (uint8_t m : byBearing) {
+            int hot = 0, blind = 0;
+            for (uint32_t f = 0; f < 200; f += 3) {
+                Canvas c; c.clear(0);
+                drawSearch(c, m, cx, cy, R, 0, 0, 0, f);
+                for (int b = 0; b < 360; b += 5) {
+                    if (!searchTouches(m, f, b, 60, R)) continue;
+                    hot++;
+                    bool lit = false;
+                    for (int d = -15; d <= 15 && !lit; d += 3)
+                        for (int r = 8; r <= R && !lit; r += 2) {
+                            const float a = (float)(b + d) * 3.14159265f / 180.0f;
+                            const int x = cx + (int)lrintf(sinf(a) * (float)r);
+                            const int y = cy - (int)lrintf(cosf(a) * (float)r);
+                            if (c.px[y * W + x] != 0) lit = true;
+                        }
+                    if (!lit) blind++;
+                }
+            }
+            char buf[96];
+            snprintf(buf, sizeof buf, "sweep %d: every hot bearing has drawing near it (%d/%d blind)",
+                     m, blind, hot);
+            check(buf, hot > 0 && blind == 0);
         }
     }
 
