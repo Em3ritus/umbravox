@@ -47,7 +47,9 @@ switchable themes, animated dials, a summoning-circle aesthetic.
   coordinator tier report back wirelessly, isolated per-fleet so neighbouring
   setups never cross-talk.
 - **Field diagnostics** — a plain-text `/diag.log` on the card records the reset
-  reason and errors, so a problem in the field can be sent back as a file.
+  reason and errors, and a `/perf.csv` records how the instrument is running
+  (frame cost, stalls, heap, capture and mesh rates), so a problem or a
+  slowdown in the field can be sent back as a file.
 - **Three themes, on-device** — UMBRAVOX (violet heptagram), CVLT OF BAPH0MAU5
   (a summoning seal) and COSMIC MUFFIN (a neon galaxy-frosted muffin on a
   deep-space dial). Each has its own centrepiece and its own alert: a warding
@@ -161,6 +163,17 @@ brownout leaves a fingerprint), plus a line on any SD-write failure or low-heap
 event. It caps at ~128 KB and rotates once. If something misbehaves, pull the card
 and send `diag.log`, or print it over USB serial with the `DIAG` command (115200
 baud).
+
+For performance, **`/perf.csv`** gets one row every 10 seconds: frames per second,
+average and worst draw/blit time, the longest stall between loops, free heap and
+its low-water mark, capture and mesh rates, and the cost of the SD writes
+themselves (written in batches of three rows, so one ~20 ms write per 30 s). It
+rotates at 1 MiB. Print it with the `PERF` command, or summarise a file from the
+card and see what is worth tuning:
+
+```sh
+python3 -I tools/perf_report.py perf.0.csv perf.csv     # oldest first
+```
 
 ## Project layout
 
