@@ -6,6 +6,7 @@
 #include "signatures.h"
 #include "seal.h"
 #include "muffinseal.h"
+#include "trigwrap.h"
 #include "sweep.h"
 #include "nav.h"
 #include <math.h>
@@ -36,7 +37,7 @@ uint16_t bandColor(uint8_t band) {
 
 // Radar convention: 0 degrees is up, angle increases clockwise.
 void polar(int cx, int cy, int r, float deg, int& x, int& y) {
-    const float a = deg * 3.14159265f / 180.0f;
+    const float a = wrapDeg(deg) * 3.14159265f / 180.0f;   // see trigwrap.h
     x = cx + (int)lrintf(sinf(a) * (float)r);
     y = cy - (int)lrintf(cosf(a) * (float)r);
 }
@@ -484,7 +485,7 @@ void drawAlertVortex(Canvas& c, const State& s, uint16_t edge,
         for (float t = 0.15f; t < 3.2f; t += 0.14f) {
             const float f = t / 3.2f;
             const float r = (float)R * pull * (0.12f + 0.88f * f);
-            const float a = t * 2.4f + (float)arm * 2.0943951f + spin;
+            const float a = wrapRad(t * 2.4f + (float)arm * 2.0943951f + spin);
             const int x = mx + (int)lrintf(cosf(a) * r), y = my + (int)lrintf(sinf(a) * r);
             const uint16_t col = Canvas::mix(pal::VOID, arms[arm], 250 - (int)(f * 150.0f), 255);
             if (px >= 0) c.line(px, py, x, y, col);
@@ -552,7 +553,7 @@ void drawAlertLockOn(Canvas& c, const State& s, uint16_t edge,
         }
         const float ang = (float)age * 0.02f;
         for (int j = 0; j < 4; j++) {
-            const float a = ang + (float)j * 1.5707963f;
+            const float a = wrapRad(ang + (float)j * 1.5707963f);
             c.line(mx + (int)lrintf(cosf(a) * (float)(rm + 2)), my + (int)lrintf(sinf(a) * (float)(rm + 2)),
                    mx + (int)lrintf(cosf(a) * (float)(rm + 8)), my + (int)lrintf(sinf(a) * (float)(rm + 8)),
                    pal::SWEEP_HI);
@@ -828,7 +829,7 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     // The scan screen is home: it wears the brand wordmark even in plain-label
     // mode, which renames the sub-screens, not the masthead.
     drawHeader(c, s, s.set.theme == pal::TH_BAPH0MAU5   ? "CVLT OF BAPH0MAU5"
-                   : s.set.theme == pal::TH_COSMICMUFFIN ? "COSMIC MUFFIN"
+                   : s.set.theme == pal::TH_COSMICMUFFIN ? "COSMIC MVFFIN"
                                                          : "UMBRAVOX");
     drawTile(c, TILE_Y[0], "WIFI",  s.nets24 + s.nets5, pal::MAGENTA);
     drawTile(c, TILE_Y[1], "5 GHZ", s.nets5,            pal::ICE);

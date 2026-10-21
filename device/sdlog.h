@@ -37,4 +37,9 @@ uint32_t sizeOf(const char* name);                                  // bytes, or
 bool     append(const char* name, const uint8_t* data, uint32_t len);
 bool     rotate(const char* name, const char* to);                  // to <- name
 
+// The longest a write held up the loop (ms) since this was last called, across
+// writeAtomic and append. Reading it clears it; perflog logs it so the cost of
+// the SD card itself is visible next to the frame times it competes with.
+uint32_t takeMaxStallMs();
+
 } // namespace sdlog

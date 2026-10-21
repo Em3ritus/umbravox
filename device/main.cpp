@@ -19,6 +19,7 @@
 #include "sdlog.h"
 #include "elog.h"
 #include "enrollwin.h"
+#include "perflog.h"
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
@@ -686,6 +687,10 @@ void pollConsole() {
                 injectNmea("GPRMC,120000.00,A,3746.4940,N,12225.1640,W,0.0,0.0,190126,,,A");
                 injectNmea("GPGGA,120000.00,3746.4940,N,12225.1640,W,1,08,0.9,10.0,M,0.0,M,,");
                 Serial.println("gpsfix: injected 37.7749,-122.4194 (2026-01-19)");
+            } else if (!strncmp(line, "PERF", 4)) {
+                Serial.println("=== PERF BEGIN ===");
+                perflog::dump(Serial);
+                Serial.println("=== PERF END ===");
             } else if (!strncmp(line, "DIAG", 4)) {
                 Serial.println("=== DIAG BEGIN ===");
                 elog::dump(Serial);
@@ -702,7 +707,7 @@ void pollConsole() {
                 else enroll::setNet((uint8_t)v);
             } else {
                 Serial.printf("unknown command '%s' "
-                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, GPSFIX, ENROLL, NETRESET, NETSET <id>)\n", line);
+                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, PERF, GPSFIX, ENROLL, NETRESET, NETSET <id>)\n", line);
             }
         } else if (n < 31) {
             line[n++] = c;
@@ -734,6 +739,7 @@ void loop() {
     static uint32_t frame = 0;
     static ui::Dirty dirty;
     const uint32_t t0 = millis();
+    perflog::loopStart(t0);        // the gap between loops is the stall we want to see
 
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
     // under 100 bytes, so this never blocks long enough to matter.
@@ -1071,6 +1077,10 @@ void loop() {
     // Feed the position history that dates node reports.
     gpstrack::push(millis(), live, ui::Gnss::fix().lat7, ui::Gnss::fix().lon7);
 
+    // One CSV row per interval to /perf.csv -- here, before the dark-screen
+    // branch below, so intervals spent with the screen off are logged as well.
+    perflog::tick(millis(), s, screenOff);
+
     // Nothing to look at: skip draw and blit entirely and give the time to
     // the radio. The next wake forces a full repaint, because every screen's
     // dirty tracking has been standing still.
@@ -1156,6 +1166,7 @@ void loop() {
         pushed += (uint32_t)dirty.r[i].w * dirty.r[i].h;
     }
     const uint32_t tBlit = millis();
+    perflog::frame(tDraw - t0, tBlit - tDraw);
 
     if ((frame % 30) == 0) {
         logf("f%-5u [%s] draw %2u blit %2u ms | wifi %4u/%-4u (2.4 %u, 5 %u) "

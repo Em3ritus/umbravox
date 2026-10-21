@@ -6,6 +6,11 @@
 namespace sdlog {
 namespace {
 bool mounted = false;
+uint32_t stallMax = 0;                         // longest write since takeMaxStallMs()
+inline void noteStall(uint32_t t0) {
+    const uint32_t d = millis() - t0;
+    if (d > stallMax) stallMax = d;
+}
 
 // SD chip-select, confirmed against RockBase's NM-CYD-C5 schematic (see
 // README: "SD CS 10"). PIN_CS (23) is the LCD's, touch is CS 1; SCK/MOSI/MISO
@@ -30,9 +35,22 @@ bool begin() {
 
 bool present() { return mounted; }
 
+static bool writeAtomicImpl(const char* name,
+                            uint32_t (*body)(Print&, uint32_t&),
+                            uint32_t& rows, uint32_t& skipped);
+
 bool writeAtomic(const char* name,
                  uint32_t (*body)(Print&, uint32_t&),
                  uint32_t& rows, uint32_t& skipped) {
+    const uint32_t t0 = millis();
+    const bool ok = writeAtomicImpl(name, body, rows, skipped);
+    noteStall(t0);
+    return ok;
+}
+
+static bool writeAtomicImpl(const char* name,
+                            uint32_t (*body)(Print&, uint32_t&),
+                            uint32_t& rows, uint32_t& skipped) {
     if (!mounted || !name || !name[0]) return false;
 
     // name.tmp / name.bak alongside the target. Guard the buffer: a silent
@@ -146,11 +164,19 @@ uint32_t sizeOf(const char* name) {
 
 bool append(const char* name, const uint8_t* data, uint32_t len) {
     if (!mounted || !name || !name[0] || !data) return false;
+    const uint32_t t0 = millis();
     File f = SD.open(name, FILE_APPEND);
-    if (!f) return false;
+    if (!f) { noteStall(t0); return false; }
     const size_t w = f.write(data, len);
     f.close();
+    noteStall(t0);
     return w == len;
+}
+
+uint32_t takeMaxStallMs() {
+    const uint32_t v = stallMax;
+    stallMax = 0;
+    return v;
 }
 
 bool rotate(const char* name, const char* to) {

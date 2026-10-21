@@ -1,5 +1,6 @@
 #include "sweep.h"
 #include "palette.h"
+#include "trigwrap.h"
 #include "model.h"
 #include "layout.h"
 #include <math.h>
@@ -8,7 +9,7 @@ namespace ui {
 namespace {
 
 void polar(int cx, int cy, float r, float deg, int& x, int& y) {
-    const float a = deg * 3.14159265f / 180.0f;
+    const float a = wrapDeg(deg) * 3.14159265f / 180.0f;   // see trigwrap.h
     x = cx + (int)lrintf(sinf(a) * r);
     y = cy - (int)lrintf(cosf(a) * r);
 }
@@ -17,7 +18,7 @@ void polar(int cx, int cy, float r, float deg, int& x, int& y) {
 // the eyes rather than the centre, so it cannot just be drawn to a radius --
 // it has to be walked and stopped at the bound.
 void ray(Canvas& c, int ox, int oy, float deg, int cx, int cy, int R, uint16_t col) {
-    const float a = deg * 3.14159265f / 180.0f;
+    const float a = wrapDeg(deg) * 3.14159265f / 180.0f;   // see trigwrap.h
     const float sx = sinf(a), sy = -cosf(a);
     for (float t = 0; t < 2.0f * (float)R; t += 0.7f) {
         const int x = ox + (int)lrintf(sx * t), y = oy + (int)lrintf(sy * t);
@@ -51,9 +52,9 @@ int starReach() {
 // The candle's gutter, about -1.9..1.9. One place, so the rings and the
 // seal's brightness flicker together and cannot drift apart.
 float gutter(uint32_t frame) {
-    return sinf((float)frame * 0.41f)
-         + 0.6f * sinf((float)frame * 1.07f)
-         + 0.3f * sinf((float)frame * 2.3f);
+    return sinf(wrapRad((float)frame * 0.41f))
+         + 0.6f * sinf(wrapRad((float)frame * 1.07f))
+         + 0.3f * sinf(wrapRad((float)frame * 2.3f));
 }
 
 // The pulse's leading ring, in pixels. Drawing and detection both read this,
@@ -233,8 +234,8 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
         // No beam. The circle is lit from the middle by something guttering,
         // and what is in it is simply there to be seen.
         const float g = gutter(frame);
-        const int jx = (int)lrintf(1.6f * sinf((float)frame * 0.23f));
-        const int jy = (int)lrintf(1.2f * sinf((float)frame * 0.31f));
+        const int jx = (int)lrintf(1.6f * sinf(wrapRad((float)frame * 0.23f)));
+        const int jy = (int)lrintf(1.2f * sinf(wrapRad((float)frame * 0.31f)));
         for (int t = 0; t < 4; t++) {
             const int r = rField - 3 - t * 5;
             if (r < 3) break;
@@ -258,7 +259,7 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
             for (float t = 0.2f; t < 3.0f; t += 0.12f) {
                 const float f = t / 3.0f;
                 const int r = (int)((0.40f + 0.60f * f) * (float)R);
-                const float a = t * 2.1f + (float)arm * 3.14159265f + rot;
+                const float a = wrapRad(t * 2.1f + (float)arm * 3.14159265f + rot);
                 const int x = cx + (int)lrintf(cosf(a) * (float)r);
                 const int y = cy + (int)lrintf(sinf(a) * (float)r);
                 if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > R * R) { px = -1; continue; }
@@ -284,7 +285,7 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
             px = x; py = y;
         }
         c.disc(px, py, 2, pal::BONE);
-        const float m = -(float)frame * 0.11f * 0.6f;
+        const float m = wrapRad(-(float)frame * 0.11f * 0.6f);
         const int mr = (rField - 1) * 6 / 10;
         c.disc(cx + (int)lrintf(cosf(m) * (float)mr), cy + (int)lrintf(sinf(m) * (float)mr), 1, pal::SWEEP_HI);
         break;
@@ -299,7 +300,7 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
             const int rad = (int)((h >> 9) % (uint32_t)(R > 1 ? R : 1));
             int x, y;
             polar(cx, cy, (float)rad, (float)ang, x, y);
-            int tw = 150 + (int)(105.0f * sinf((float)frame * 0.3f + (float)i));
+            int tw = 150 + (int)(105.0f * sinf(wrapRad((float)frame * 0.3f + (float)i)));
             tw = tw < 40 ? 40 : tw > 255 ? 255 : tw;
             const uint16_t col = Canvas::mix(pal::VOID, (i & 1) ? pal::SWEEP : pal::BONE, tw, 255);
             c.pixel(x, y, col);
@@ -359,7 +360,7 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
             int px = -1, py = -1;
             for (int s = 0; s <= 48; s++) {
                 const float a = 6.2831853f * (float)(s % 48) / 48.0f;
-                const float wob = sinf(a * 3.0f + (float)frame * 0.1f + (float)band * 1.3f)
+                const float wob = sinf(wrapRad(a * 3.0f + (float)frame * 0.1f + (float)band * 1.3f))
                                 * (float)rField * 0.05f;
                 int r = (int)(baseR + wob);
                 if (r > rField - 1) r = rField - 1;

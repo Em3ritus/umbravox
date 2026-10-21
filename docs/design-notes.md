@@ -396,6 +396,35 @@ Two things worth knowing if you extend this:
   different module's spinlock, and nesting two across modules is how a
   deadlock gets written.
 
+### Performance log
+
+`/perf.csv` on the CYD's card is one CSV row per 10 s, so a slowdown can be read
+back from a file instead of watched over USB. Columns: `t_s` (uptime, restarts
+at a boot), `dark` (screen off), `fps`, `draw_avg/max`, `blit_avg/max` (ms),
+`gap_max` (the longest time between two loop iterations -- the UI stall),
+`sd_max` (the longest SD write), `heap_free/min/blk` (free, low-water mark,
+largest block -- a shrinking block against steady free heap is fragmentation),
+`psram_free`, `stack_free`, `wifi_fps`, `ble_aps`, `wifi_n`, `ble_n`, `tbl_pct`
+(dedup table fill), `nodes`, `rep_s`, `loss_pct`, `camp`, `fix`, `theme`, `sweep`.
+
+The board is single-core, so a write stalls the loop: rows are held in RAM and
+appended three at a time (one ~20 ms stall per 30 s, and `sd_max` shows it, so
+the logger's own cost is in the log). The price is that a crash can lose up to
+the last 30 s of rows; the diag log still records the reset reason. The file
+rotates at 1 MiB (~19 h of rows). `tools/perf_report.py` summarises one or more
+files and lists what looks worth tuning; `PERF` over the console prints the
+current file.
+
+**What it found first.** Draw time doubled (7 -> 15 ms, 46 -> 34 fps) about 53 s
+after every boot. The cause was not load: the C5 has no FPU, so `sinf`/`cosf` are
+software, and newlib's fast path only covers arguments up to ~201 rad. Animation
+phases taken from the frame counter grow without bound, so the sweeps (dozens of
+trig calls a frame) fell onto the slow reduction path after a minute -- and the
+older themes' rune ring and star sweep would have after a few minutes more.
+`ui/trigwrap.h` reduces a phase to one turn first, and `sim/test_trig.cpp` runs
+every sweep, theme and alert at up to a week of frame counts through an auditing
+shim and fails if any trig call is handed more than 200 rad.
+
 ### Mesh: network enrolment
 
 Every frame carries a network id, and a board only talks to boards on the same
