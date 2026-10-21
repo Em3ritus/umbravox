@@ -83,11 +83,11 @@ void adjustAspect(Settings& st, int row, int dir) {
         clampSettings(st);          // the new theme may not offer this sweep
         return;
     }
-    const uint8_t mask = pal::sweepMask(st.theme);
+    const uint16_t mask = pal::sweepMask(st.theme);
     int v = st.sweep;
     for (int tries = 0; tries < SW_COUNT; tries++) {
         v = (v + dir + SW_COUNT) % SW_COUNT;
-        if (mask & (1 << v)) { st.sweep = (uint8_t)v; return; }
+        if (mask & (uint16_t)(1u << v)) { st.sweep = (uint8_t)v; return; }
     }
 }
 

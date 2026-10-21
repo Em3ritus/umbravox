@@ -130,20 +130,23 @@ int main() {
         tapBtn(st, SET_PLUS_X, 0);
         check("aspect: theme + steps to BAPH0MAU5", st.theme == pal::TH_BAPH0MAU5);
         tapBtn(st, SET_PLUS_X, 0);
+        check("aspect: theme + steps to COSMIC MUFFIN", st.theme == pal::TH_COSMICMUFFIN);
+        tapBtn(st, SET_PLUS_X, 0);
         check("aspect: theme + wraps to UMBRAVOX", st.theme == pal::TH_UMBRAVOX);
         tapBtn(st, SET_MINUS_X, 0);
-        check("aspect: theme - wraps to BAPH0MAU5", st.theme == pal::TH_BAPH0MAU5);
+        check("aspect: theme - wraps to COSMIC MUFFIN", st.theme == pal::TH_COSMICMUFFIN);
 
         // On BAPH0MAU5 the gaze is reachable.
-        st.sweep = SW_RADAR; pal::setTheme(pal::TH_BAPH0MAU5);
+        st.theme = pal::TH_BAPH0MAU5; st.sweep = SW_RADAR; pal::setTheme(pal::TH_BAPH0MAU5);
         tapBtn(st, SET_PLUS_X, 1);
         check("aspect: + from RADAR reaches GAZE on BAPH0MAU5", st.sweep == SW_GAZE);
 
-        // Leaving BAPH0MAU5 while on the gaze must not strand the sweep.
+        // Leaving BAPH0MAU5 while on the gaze must not strand the sweep: the
+        // next theme is COSMIC MUFFIN, which also has no eyes, so gaze resets.
         st.theme = pal::TH_BAPH0MAU5; st.sweep = SW_GAZE;
         tapBtn(st, SET_PLUS_X, 0);
         check("aspect: theme change off BAPH0MAU5 resets an unavailable gaze",
-              st.theme == pal::TH_UMBRAVOX && st.sweep == SW_RADAR);
+              st.theme == pal::TH_COSMICMUFFIN && st.sweep == SW_RADAR);
 
         // The tile opens the screen.
         Nav g; g.screen = SCR_GRIMOIRE; Settings gs;
