@@ -193,13 +193,12 @@ int main(int argc, char** argv) {
             st.alertActive = true; st.alertThreat = TH_DRONE; st.alertConf = CONF_HIGH;
             bool inside = true, drew = false;
             for (int age : ages) {
-                // The UMBRAVOX ward (the pre-existing rite, left as it was) is
-                // not clipped to its card: its first 90 ms strike is an oversized
-                // heptagram, and its inscription runes straddle the border by up
-                // to 3 px. So the ward is held to the card plus 4 px, and not
-                // before the strike has settled; the cosmic rites are strict.
-                const int slack = r == 0 ? 4 : 0;
-                if (r == 0 && age < 90) continue;
+                // The strike (age < 90) is held strict for an emblem ward: its
+                // figure is solid art, not thin lines. Once settled the ward's
+                // inscription runes (pre-existing rite code, shared by every
+                // theme) straddle the border by up to 3 px, so the ward is held
+                // to card + 4 px there. The cosmic rites are strict throughout.
+                const int slack = (r == 0 && age >= 90) ? 4 : 0;
                 Canvas c; c.clear(SENT);
                 st.alertAge = (uint16_t)age;
                 drawAlert(c, st);
@@ -221,6 +220,34 @@ int main(int argc, char** argv) {
         for (int a = 0; a < 5; a++) for (int b = a + 1; b < 5; b++)
             if (same(shot[a], shot[b])) distinct = false;
         check("the five rites draw five different pictures", distinct);
+    }
+
+    printf("emblem ward on the large dial:\n");
+    {
+        themepack::Pack p = mkPack("EMBLARGE", themepack::CENTRE_EMBLEM, themepack::RITE_WARD);
+        p.dial = themepack::DIAL_LARGE;
+        const int id = pal::addPack(p, &e96);
+        pal::setTheme((uint8_t)id);
+        State st; st.set.theme = (uint8_t)id;
+        st.alertActive = true; st.alertThreat = TH_DRONE; st.alertConf = CONF_HIGH;
+        bool inside = true, drew = false;
+        for (int age : {0, 20, 60, 89, 150, 420, 2500}) {
+            Canvas c; c.clear(SENT);
+            st.alertAge = (uint16_t)age;
+            drawAlert(c, st);
+            for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+                const bool onCard = x >= COL_R_X && x < COL_R_X + COL_R_W &&
+                                    y >= DIAL_Y && y < DIAL_Y + DIAL_H;
+                const int sl = age >= 90 ? 4 : 0;       // settled ward: rune overhang
+                const bool nearCard = x >= COL_R_X - sl && x < COL_R_X + COL_R_W + sl &&
+                                      y >= DIAL_Y - sl && y < DIAL_Y + DIAL_H + sl;
+                if (!nearCard && c.px[y * W + x] != SENT) inside = false;
+                if (onCard && c.px[y * W + x] != SENT) drew = true;
+            }
+        }
+        check("large dial: card is taller than the compact one", DIAL_H > 70);
+        check("large dial: emblem ward draws in the card", drew);
+        check("large dial: emblem ward strike (ages 0..89) strictly inside the card", inside);
     }
 
     printf("a CP_EMBLEM pack with no emblem:\n");

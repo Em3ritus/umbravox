@@ -319,7 +319,15 @@ int pentagramTrace(Canvas& c, int cx, int cy, int r, uint16_t col,
 
 void alertFigure(Canvas& c, const State& s, int cx, int cy, int r, uint16_t col) {
     if (pal::centrepiece(s.set.theme) == pal::CP_SEAL) sealFigure(c, cx, cy, r, col);
-    else drawMotif(c, s.set.theme, cx, cy, r, 0, 128, col);
+    else {
+        // The strike arrives oversized, which is thin lines for a heptagram but
+        // a solid disc for an emblem: keep that one inside the card.
+        if (pal::emblem(s.set.theme)) {
+            const int rMax = (COL_R_W < DIAL_H ? COL_R_W : DIAL_H) / 2 - 2;
+            if (r > rMax) r = rMax;
+        }
+        drawMotif(c, s.set.theme, cx, cy, r, 0, 128, col);
+    }
 }
 
 namespace {
