@@ -759,6 +759,8 @@ void loop() {
         const uint8_t own = meshcore::lossPct(), cl = collector::maxLossPct();
         s.meshLossPct = own > cl ? own : cl;
         s.meshCoords  = (uint8_t)collector::count();
+        s.netId       = mesh::netId;
+        s.enrollSecs  = (uint8_t)enroll::secsLeft(millis());
     }
     s.coreFound   = cap::foundBy(0);
 
@@ -854,6 +856,15 @@ void loop() {
         logging::toggle(millis(), ui::Gnss::utcEpoch(millis()));
         prefs::setLogging(logging::wantsActive());
         nav.logToggleRequested = false;
+    }
+
+    if (nav.enrollRequested) {
+        nav.enrollRequested = false;
+        enroll::open(millis());
+    }
+    if (nav.resetNetRequested) {
+        nav.resetNetRequested = false;
+        enroll::reset(millis());
     }
 
     if (nav.resetRequested) {

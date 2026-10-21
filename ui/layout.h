@@ -65,6 +65,12 @@ constexpr int SET_Y     = 14;
 constexpr int SET_H     = 12;
 constexpr int SET_MINUS_X = 114, SET_PLUS_X = 136, SET_BTN_W = 18, SET_BTN_H = 10;
 
+// MESH screen network-control row: the net id, then ENROLL and RESET buttons.
+constexpr int MESH_NET_Y = 85;
+constexpr int MESH_ENR_X = 62, MESH_ENR_W = 54;
+constexpr int MESH_RST_X = 120, MESH_RST_W = 37;
+constexpr int MESH_BTN_H = 11;
+
 // ASPECT: a live dial over two pickers. The preview is big enough to judge a
 // sweep by; the rows reuse ATTUNE's button geometry so the controls are the
 // same object in both places.

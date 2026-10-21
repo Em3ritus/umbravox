@@ -225,6 +225,10 @@ struct State {
     uint32_t meshHits = 0;     // every sighting, local and relayed
     uint8_t  meshLossPct = 0;  // reports lost, across every live node
     uint8_t  meshCoords = 0;   // live coordinators (0 = the Core runs the nodes itself)
+    // Mesh network id (device/mesh.h): 0 = the open network, else a private one.
+    // enrollSecs counts down a pairing window opened from the MESH screen.
+    uint8_t  netId = 0;
+    uint8_t  enrollSecs = 0;
     uint16_t coreFound = 0;    // devices this radio discovered first
 
     // The live alert, if any. `alertAtMs` is when it was last seen; the

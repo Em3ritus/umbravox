@@ -15,10 +15,9 @@ namespace {
 // columns of eight so sixteen fit at a pitch that still reads. The old
 // five-column table topped out at four nodes.
 constexpr int HEAD_Y = 15, RULE_Y = 24;
-constexpr int ROW_Y = 26, ROW_HT = 8, COL_ROWS = 8;
+constexpr int ROW_Y = 26, ROW_HT = 8, COL_ROWS = 7;   // 7x2 = 14 nodes; the row below carries the network controls
 constexpr int COL_X[2] = {5, 82};     // left edge of each node column
 constexpr int COL_W = 73;
-constexpr int SUM_Y = 92;             // the totals line
 
 void u2s(char* out, uint32_t v) {
     char tmp[12];
@@ -52,6 +51,13 @@ void cell(Canvas& c, int x, int y, uint16_t mark, const char* id, uint16_t idCol
 // Under 5% is the air being the air; a fifth missing is a problem.
 uint16_t lossInk(int pct) {
     return pct >= 20 ? pal::RED : pct >= 5 ? pal::AMBER : pal::GREEN;
+}
+
+// A framed button for the network-control row, in the given ink.
+void meshBtn(Canvas& c, int x, int y, int w, const char* label, uint16_t ink) {
+    c.fill(x, y, w, MESH_BTN_H, Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
+    c.rect(x, y, w, MESH_BTN_H, Canvas::mix(ink, pal::EDGE, 1, 2));
+    c.textCenter(x + w / 2, y + 2, label, ink);
 }
 
 } // namespace
@@ -122,21 +128,25 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
     // devices the mesh has found, so it goes here rather than being inferred
     // from a column that cannot mean that. When loss is high the right-hand
     // slot carries the advice instead.
-    c.hline(5, SUM_Y - 3, 148, pal::EDGE);
-    {
-        char b[32]; b[0] = 0; char n[12];
-        u2s(n, s.nets24 + s.nets5); cat(b, n); cat(b, " DEVICES");
-        c.text(11, SUM_Y, b, pal::BRIGHT);
-        if (s.meshLossPct >= 20) {
-            c.textRight(155, SUM_Y, "ADD COORD", pal::RED);
-        } else if (s.meshLossPct >= 10) {
-            c.textRight(155, SUM_Y, "NEAR LIMIT", pal::AMBER);
-        } else {
-            b[0] = 0;
-            u2s(n, s.meshHits); cat(b, n); cat(b, " HITS");
-            c.textRight(155, SUM_Y, b, pal::DIM);
-        }
+    // The network-control row: which net this fleet is on, and the pairing
+    // controls. ENROLL opens a 60s window that adopts open nodes/coordinators
+    // onto a private net (minting one if still open); RESET sends the fleet back
+    // to the open network. While a window is open the button shows a countdown.
+    c.hline(5, MESH_NET_Y - 3, 148, pal::EDGE);
+    char nb[12] = {'N', 'E', 'T', ' ', 0};
+    if (s.netId) u2s(nb + 4, s.netId);
+    else         cat(nb, "OPEN");
+    c.text(11, MESH_NET_Y + 1, nb, s.netId ? pal::GREEN : pal::DIM);
+
+    if (s.enrollSecs) {
+        char eb[16] = {'P', 'A', 'I', 'R', ' ', 0};
+        u2s(eb + 5, s.enrollSecs); cat(eb, "S");
+        meshBtn(c, MESH_ENR_X, MESH_NET_Y, MESH_ENR_W, eb, pal::GREEN);
+    } else {
+        meshBtn(c, MESH_ENR_X, MESH_NET_Y, MESH_ENR_W, "ENROLL", pal::WITCH_HI);
     }
+    meshBtn(c, MESH_RST_X, MESH_NET_Y, MESH_RST_W, "RESET",
+            s.netId ? pal::WITCH_HI : pal::DIM);
 
     drawFooter(c, s);
     drawReticle(c, s);
@@ -152,7 +162,8 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
             bool moved = s.nNodes != prev.nNodes || s.coreCamping != prev.coreCamping ||
                          s.coreFrames != prev.coreFrames ||
                          s.meshLossPct != prev.meshLossPct ||
-                         s.meshCoords != prev.meshCoords;
+                         s.meshCoords != prev.meshCoords ||
+                         s.netId != prev.netId || s.enrollSecs != prev.enrollSecs;
             for (int i = 0; !moved && i < s.nNodes; i++)
                 moved = s.nodes[i].recs != prev.nodes[i].recs ||
                         s.nodes[i].ageS != prev.nodes[i].ageS ||
