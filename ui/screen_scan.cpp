@@ -81,17 +81,6 @@ void panel(Canvas& c, int x, int y, int w, int h, uint16_t fillCol, bool cross =
     }
 }
 
-// 7x7 mark: a diamond bound on a vertical axis.
-void sigil(Canvas& c, int x, int y, uint16_t col) {
-    static const uint8_t G[7] = {
-        0b0001000, 0b0010100, 0b0101010, 0b1001001,
-        0b0101010, 0b0010100, 0b0001000,
-    };
-    for (int j = 0; j < 7; j++)
-        for (int i = 0; i < 7; i++)
-            if ((G[j] >> (6 - i)) & 1) c.pixel(x + i, y + j, col);
-}
-
 // 5x5 status rune for the footer.
 void statRune(Canvas& c, int x, int y, uint16_t col, bool filled) {
     static const uint8_t O[5] = {0b00100, 0b01010, 0b10001, 0b01010, 0b00100};
@@ -126,10 +115,16 @@ void drawHeader(Canvas& c, const State& s, const char* title) {
     c.fill(0, 0, W, HDR_H - 1, pal::PANEL);
     c.hline(0, HDR_H - 1, W, pal::EDGE_LIT);
 
-    // On a sub-screen the mark becomes the way out. Same spot, so the eye
-    // does not have to hunt for it.
+    // The menu button: a filled chip with a menu glyph, so it reads as the way
+    // in to everything -- the grid, settings, alerts -- rather than as a mark.
+    // A back arrow sits in the same spot on every sub-screen.
+    const int mbw = 14;
+    c.fill(0, 0, mbw, HDR_H - 1, Canvas::mix(pal::PANEL, pal::WITCH, 1, 2));
+    c.rect(0, 0, mbw, HDR_H - 1, pal::WITCH_HI);
     if (s.screen == 0) {
-        sigil(c, 2, 2, pal::BONE);
+        c.hline(3, 3, 8, pal::BRIGHT);        // three lines: the universal "menu"
+        c.hline(3, 5, 8, pal::BRIGHT);
+        c.hline(3, 7, 8, pal::BRIGHT);
     } else {
         static const uint8_t ARROW[7] = {
             0b0001000, 0b0011000, 0b0111000, 0b1111111,
@@ -137,13 +132,9 @@ void drawHeader(Canvas& c, const State& s, const char* title) {
         };
         for (int j = 0; j < 7; j++)
             for (int i = 0; i < 7; i++)
-                if ((ARROW[j] >> (6 - i)) & 1) c.pixel(2 + i, 2 + j, pal::WITCH_HI);
+                if ((ARROW[j] >> (6 - i)) & 1) c.pixel(3 + i, 2 + j, pal::BRIGHT);
     }
-    // Frame the mark as a button: it is the way in to the menu from the scan
-    // screen and the way back everywhere else, and a bare mark did not read as
-    // a control. A live edge so it looks tappable.
-    c.rect(0, 0, 11, HDR_H - 1, pal::EDGE_LIT);
-    c.text(12, 2, title, pal::WITCH_HI);
+    c.text(mbw + 3, 2, title, pal::WITCH_HI);
 
     // No cryptic header shortcut-marks any more: OMENS (alerts) and ATTUNE
     // (settings) are reached from the menu button, which opens a labelled grid.
@@ -571,8 +562,9 @@ void markDirty(Dirty& d, const State& s, const State& p, bool first) {
     else
         d.add(DIAL_CX - R_BOUND, DIAL_CY - R_BOUND, 2 * R_BOUND + 1, 2 * R_BOUND + 1);
 
-    // The channel readout sits outside that box, so it needs its own region.
-    if (s.chan != p.chan)
+    // The channel readout and the MESH marker sit outside that box, so they
+    // need their own region -- and it must repaint when a node comes or goes.
+    if (s.chan != p.chan || s.nNodes != p.nNodes)
         d.add(COL_R_X + 1, DIAL_Y + 1, COL_R_W - 2, 10);
 
     if (s.nets24 != p.nets24 || s.nets5 != p.nets5)
@@ -580,7 +572,7 @@ void markDirty(Dirty& d, const State& s, const State& p, bool first) {
     if (s.ble != p.ble)
         d.add(COL_L_X, TILE_Y[2], COL_L_W, TILE_H);
 
-    bool spec = s.chan != p.chan || s.on5 != p.on5;
+    bool spec = s.chan != p.chan || s.on5 != p.on5 || s.nNodes != p.nNodes;
     for (int i = 0; !spec && i < CH24; i++) spec = s.load24[i] != p.load24[i];
     for (int i = 0; !spec && i < CH5;  i++) spec = s.load5[i]  != p.load5[i];
     if (spec && SPEC_H > 0) d.add(COL_R_X, SPEC_Y, COL_R_W, SPEC_H);
@@ -689,6 +681,10 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
         char ch[8] = {'C', 'H', 0};
         u2s(ch + 2, s.chan, 2);
         c.textRight(COL_R_X + COL_R_W - 4, DIAL_Y + 3, ch, pal::DIM);
+        // Parked on the collection channel for the mesh: say so, or a channel
+        // that never moves reads as a stuck radio. Coverage comes from the
+        // nodes then, shown mesh-wide on the spectrum and the dial.
+        if (s.nNodes) c.text(COL_R_X + 3, DIAL_Y + 3, "MESH", pal::GREEN);
         c.text(COL_R_X + 3, DIAL_Y + DIAL_H - 9, "-90", pal::DIM);
     }
     drawDialAt(c, s, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND);
