@@ -41,7 +41,7 @@ struct Row {
 
 constexpr Row THEMES[TH_COUNT] = {
     {   "UMBRAVOX",
-        0b11101,                     // every sweep but the gaze
+        0b11111111101,               // every sweep but the gaze (incl. cosmic)
         13, 70, 109, 48,   22, 26, 31, 20,   85, 16,
         rgb(0x07,0x04,0x0E), rgb(0x13,0x0B,0x22), rgb(0x18,0x0F,0x2C),
         rgb(0x2E,0x1F,0x52), rgb(0x56,0x36,0x97),
@@ -58,7 +58,7 @@ constexpr Row THEMES[TH_COUNT] = {
         rgb(0xF5,0x9E,0x0B), rgb(0xEF,0x44,0x44),
     },
     {   "BAPH0MAU5",
-        0b11111,                     // all five
+        0b11111111111,               // all sweeps, cosmic + gaze
         13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
         rgb(0x06,0x03,0x0C), rgb(0x13,0x09,0x21), rgb(0x1D,0x11,0x33),
         rgb(0x3C,0x20,0x62), rgb(0x74,0x3C,0xB4),

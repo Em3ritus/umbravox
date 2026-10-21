@@ -46,7 +46,12 @@ struct Sighting {
 // How the dial searches the field. A sweep finds by bearing, a pulse by
 // distance, and a candle not at all -- these are different instruments, not
 // different decorations, so the id travels with the setting.
-enum Sweep : uint8_t { SW_RADAR = 0, SW_GAZE, SW_PULSE, SW_STAR, SW_CANDLE, SW_COUNT };
+enum Sweep : uint8_t { SW_RADAR = 0, SW_GAZE, SW_PULSE, SW_STAR, SW_CANDLE,
+                       // Cosmic sweeps -- drawn from pal:: colours, so they
+                       // recolour per theme; offered by every theme but the
+                       // gaze's eye requirement.
+                       SW_GALAXY, SW_ORBIT, SW_STARFALL, SW_PULSAR, SW_COMET,
+                       SW_AURORA, SW_COUNT };
 
 // The adjustable things. Each of these is a knob we found a real reason for
 // while building: the backlight because the panel is bright in the dark, and

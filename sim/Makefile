@@ -76,6 +76,9 @@ test_palette: test_palette.cpp ../ui/palette.cpp ../ui/palette.h ../ui/layout.h
 test_muffin: test_muffin.cpp ../ui/muffinseal.cpp ../ui/muffinseal.h ../ui/muffin.h ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp
 	$(CXX) $(CXXFLAGS) -o $@ test_muffin.cpp ../ui/muffinseal.cpp ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp -lm
 
+test_sweep: test_sweep.cpp ../ui/sweep.cpp ../ui/sweep.h ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_sweep.cpp ../ui/sweep.cpp ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp -lm
+
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -87,7 +90,7 @@ test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \

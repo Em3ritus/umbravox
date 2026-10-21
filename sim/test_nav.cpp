@@ -123,7 +123,7 @@ int main() {
         tapBtn(st, SET_MINUS_X, 1);
         check("aspect: - from PULSE returns to RADAR, skipping GAZE", st.sweep == SW_RADAR);
         tapBtn(st, SET_MINUS_X, 1);
-        check("aspect: - from RADAR wraps to CANDLE", st.sweep == SW_CANDLE);
+        check("aspect: - from RADAR wraps to the last sweep (AURORA)", st.sweep == SW_AURORA);
 
         // Theme row steps and wraps; stepping carries the sweep into range.
         st = Settings();

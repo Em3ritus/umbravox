@@ -28,6 +28,7 @@ sim/test_ble_ad
 sim/test_elog
 sim/test_muffin
 sim/test_palette
+sim/test_sweep
 ui/sigil.h.tmp
 
 # Isolated SDD worktrees

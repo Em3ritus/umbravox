@@ -75,7 +75,11 @@ int searchMarkLum(uint8_t mode, uint32_t frame, float markAngle, int floorLum) {
     switch (mode) {
         case SW_PULSE:
         case SW_CANDLE:
+        case SW_PULSAR:               // a distance-finder: marks hold bright
             return (255 + floorLum) / 2;
+        case SW_STARFALL:
+        case SW_AURORA:
+            return floorLum;          // a wash: marks hold at their floor
         case SW_STAR: {
             near = 180;
             for (int k = 0; k < STAR_N; k++) {
@@ -109,8 +113,16 @@ bool searchTouches(uint8_t mode, uint32_t frame, int angle, int dist, int rField
             }
             return false;
         }
+        case SW_PULSAR: {   // finds by distance, on the same ring the pulse uses
+            const int dp = contactRadius(dist, rField);
+            const int d  = dp - pulseHead(frame, rField);
+            return d <= 0 && d > -5;
+        }
         case SW_CANDLE:
+        case SW_STARFALL:
+        case SW_AURORA:
             return false;   // nothing sweeps, so nothing is ever just found
+        // SW_GALAXY / SW_ORBIT / SW_COMET find by bearing, like the radar.
         default:
             return (((int)beamOf(frame) - angle + 360) % 360) <= 26;
     }
@@ -203,6 +215,134 @@ void drawSearch(Canvas& c, uint8_t mode, int cx, int cy, int rField,
             if (lum < 6) continue;
             c.dottedCircle(cx + jx, cy + jy, r,
                            Canvas::mix(pal::VOID, pal::SWEEP, lum, 255), 4);
+        }
+        break;
+    }
+
+    // --- cosmic sweeps: every colour from pal::, so each theme recolours them,
+    //     and every pixel kept inside rField - 1. ---
+
+    case SW_GALAXY: {
+        // Two spiral arms turning about the core, drawn as continuous strokes.
+        const float rot = (float)frame * 0.06f;
+        const int R = rField - 1;
+        for (int arm = 0; arm < 2; arm++) {
+            int px = -1, py = -1;
+            for (float t = 0.2f; t < 3.0f; t += 0.12f) {
+                const float f = t / 3.0f;
+                const int r = (int)((0.40f + 0.60f * f) * (float)R);
+                const float a = t * 2.1f + (float)arm * 3.14159265f + rot;
+                const int x = cx + (int)lrintf(cosf(a) * (float)r);
+                const int y = cy + (int)lrintf(sinf(a) * (float)r);
+                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > R * R) { px = -1; continue; }
+                const uint16_t col = Canvas::mix(pal::VOID, arm ? pal::SWEEP : pal::SWEEP_HI,
+                                                 255 - (int)(f * 70.0f), 255);
+                if (px >= 0) c.line(px, py, x, y, col); else c.pixel(x, y, col);
+                px = x; py = y;
+            }
+        }
+        break;
+    }
+
+    case SW_ORBIT: {
+        // A planet riding the rim, a comet tail behind it, a moon inside.
+        const int rr = (rField - 1) * 9 / 10;
+        const float a = (float)frame * 0.11f;
+        int px = -1, py = -1;
+        for (int k = 14; k >= 0; k--) {
+            const float aa = a - (float)k * 0.12f;
+            const int x = cx + (int)lrintf(cosf(aa) * (float)rr);
+            const int y = cy + (int)lrintf(sinf(aa) * (float)rr);
+            const uint16_t col = Canvas::mix(pal::VOID, k < 7 ? pal::SWEEP : pal::WITCH, 255 - k * 13, 255);
+            if (px >= 0) c.line(px, py, x, y, col);
+            px = x; py = y;
+        }
+        c.disc(px, py, 2, pal::BONE);
+        const float m = -a * 0.6f;
+        const int mr = (rField - 1) * 6 / 10;
+        c.disc(cx + (int)lrintf(cosf(m) * (float)mr), cy + (int)lrintf(sinf(m) * (float)mr), 1, pal::SWEEP_HI);
+        break;
+    }
+
+    case SW_STARFALL: {
+        // A field that twinkles in place, and a shooting star crossing it.
+        const int R = rField - 2;
+        for (int i = 0; i < 18; i++) {
+            const uint32_t h = (uint32_t)i * 2654435761u;
+            const int ang = (int)(h % 360u);
+            const int rad = (int)((h >> 9) % (uint32_t)(R > 1 ? R : 1));
+            int x, y;
+            polar(cx, cy, (float)rad, (float)ang, x, y);
+            int tw = 150 + (int)(105.0f * sinf((float)frame * 0.3f + (float)i));
+            tw = tw < 40 ? 40 : tw > 255 ? 255 : tw;
+            const uint16_t col = Canvas::mix(pal::VOID, (i & 1) ? pal::SWEEP : pal::BONE, tw, 255);
+            c.pixel(x, y, col);
+            if (tw > 200) {                          // the bright ones flare into a cross
+                c.pixel(x - 1, y, col); c.pixel(x + 1, y, col);
+                c.pixel(x, y - 1, col); c.pixel(x, y + 1, col);
+            }
+        }
+        const float p = (float)(frame % 40u) / 40.0f;
+        const int hx = cx - R + (int)(p * 2.0f * (float)R);
+        const int hy = cy - R / 2 + (int)(p * (float)R);
+        for (int k = 9; k >= 0; k--) {
+            const int tx = hx - k * 2, ty = hy - k;
+            if ((tx - cx) * (tx - cx) + (ty - cy) * (ty - cy) > R * R) continue;
+            c.pixel(tx, ty, Canvas::mix(pal::VOID, k ? pal::SWEEP : pal::BONE, 255 - k * 22, 255));
+            if (k == 0) c.disc(tx, ty, 1, pal::BONE);
+        }
+        break;
+    }
+
+    case SW_PULSAR: {
+        // Three rings leaving the core on the pulse's own clock.
+        const int span = pulseSpan(rField);
+        for (int k = 0; k < 3; k++) {
+            const int r = (pulseHead(frame, rField) - 2 + k * span / 3) % span + 2;
+            if (r < 2 || r > rField - 1) continue;
+            const int lum = 255 - r * 120 / span;
+            const uint16_t col = Canvas::mix(pal::VOID, (k & 1) ? pal::SWEEP : pal::SWEEP_HI, lum, 255);
+            c.circle(cx, cy, r, col);
+            if (r > 2) c.circle(cx, cy, r - 1, col);
+        }
+        c.disc(cx, cy, 1, pal::BONE);
+        break;
+    }
+
+    case SW_COMET: {
+        // One comet whipping round the rim, a long tail behind it.
+        const int rr = (rField - 1) * 9 / 10;
+        const float a = (float)frame * 0.12f;
+        int px = -1, py = -1;
+        for (int k = 30; k >= 0; k--) {
+            const float aa = a - (float)k * 0.10f;
+            const int x = cx + (int)lrintf(cosf(aa) * (float)rr);
+            const int y = cy + (int)lrintf(sinf(aa) * (float)rr);
+            const uint16_t col = Canvas::mix(pal::VOID, k < 12 ? pal::SWEEP_HI : pal::SWEEP, 255 - k * 7, 255);
+            if (px >= 0) c.line(px, py, x, y, col);
+            px = x; py = y;
+        }
+        c.disc(px, py, 2, pal::BONE);
+        break;
+    }
+
+    case SW_AURORA: {
+        // Three bands that undulate around the dial like curtains of light.
+        for (int band = 0; band < 3; band++) {
+            const float baseR = (0.55f + 0.14f * (float)band) * (float)(rField - 1);
+            const uint16_t col = band == 0 ? pal::SWEEP : band == 1 ? pal::SWEEP_HI : pal::WITCH;
+            int px = -1, py = -1;
+            for (int s = 0; s <= 48; s++) {
+                const float a = 6.2831853f * (float)(s % 48) / 48.0f;
+                const float wob = sinf(a * 3.0f + (float)frame * 0.1f + (float)band * 1.3f)
+                                * (float)rField * 0.05f;
+                int r = (int)(baseR + wob);
+                if (r > rField - 1) r = rField - 1;
+                const int x = cx + (int)lrintf(cosf(a) * (float)r);
+                const int y = cy + (int)lrintf(sinf(a) * (float)r);
+                if (px >= 0) c.line(px, py, x, y, col);
+                px = x; py = y;
+            }
         }
         break;
     }
