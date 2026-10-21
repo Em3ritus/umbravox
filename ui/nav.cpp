@@ -212,6 +212,12 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
             if (hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H)) adjustAspect(st, r, +1);
         }
     }
+
+    if (n.screen == SCR_MESH) {
+        // The caller owns the radio, so nav only flags the request and clears it.
+        if (hit(x, y, MESH_ENR_X, MESH_NET_Y, MESH_ENR_W, MESH_BTN_H)) n.enrollRequested = true;
+        if (hit(x, y, MESH_RST_X, MESH_NET_Y, MESH_RST_W, MESH_BTN_H)) n.resetNetRequested = true;
+    }
     return false;
 }
 
