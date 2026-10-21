@@ -346,4 +346,51 @@ bool parse(const char* json, size_t n, Pack& out, char* why, size_t whyCap) {
     return ok;
 }
 
+namespace {
+
+// Returns nullptr when valid, else the reason. Fills `out` (including px) only
+// once every check has passed.
+const char* emblemCheck(const uint8_t* d, size_t n, Emblem& out) {
+    if (!d || n < 8) return "emblem truncated";
+    if (n > MAX_EMBLEM) return "emblem too large";
+    if (d[0] != 'U' || d[1] != 'V' || d[2] != 'E') return "emblem bad magic";
+    if (d[3] != 1) return "unsupported emblem version";
+    uint32_t w = d[4], h = d[5], nc = d[6];
+    if (w < 1 || w > (uint32_t)MAX_EMBLEM_DIM || h < 1 || h > (uint32_t)MAX_EMBLEM_DIM)
+        return "emblem size must be 1-96";
+    if (nc < 2 || nc > (uint32_t)MAX_EMBLEM_COLORS) return "emblem colours must be 2-16";
+    if (d[7] != 0) return "emblem reserved byte must be 0";
+    // Operands are all <= 96*96 and 16, so this cannot overflow 32 bits.
+    uint32_t total = 8 + nc * 2 + w * h;
+    if (n < total) return "emblem truncated";
+    if (n > total) return "emblem has trailing data";
+    const uint8_t* px = d + 8 + nc * 2;
+    for (uint32_t i = 0; i < w * h; i++)
+        if (px[i] >= nc) return "emblem index outside palette";
+    out.w = (uint8_t)w;
+    out.h = (uint8_t)h;
+    out.ncol = (uint8_t)nc;
+    for (uint32_t i = 0; i < nc; i++)
+        out.pal[i] = (uint16_t)(d[8 + 2 * i] | (d[9 + 2 * i] << 8));
+    for (uint32_t i = nc; i < (uint32_t)MAX_EMBLEM_COLORS; i++) out.pal[i] = 0;
+    out.px = px;
+    return nullptr;
+}
+
+}  // namespace
+
+bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t whyCap) {
+    out.px = nullptr;
+    const char* err = emblemCheck(data, n, out);
+    if (err) out.px = nullptr;
+    if (why && whyCap) {
+        if (!err) why[0] = 0;
+        else {
+            strncpy(why, err, whyCap - 1);
+            why[whyCap - 1] = 0;
+        }
+    }
+    return err == nullptr;
+}
+
 }  // namespace themepack

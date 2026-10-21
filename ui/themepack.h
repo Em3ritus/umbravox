@@ -51,4 +51,19 @@ struct Pack {
 // reason into why (if whyCap > 0). `out` is only meaningful on true.
 bool parse(const char* json, size_t n, Pack& out, char* why, size_t whyCap);
 
+// A parsed emblem.bin: indexed-colour art for the centrepiece. `px` points INTO
+// the buffer given to parseEmblem (w*h palette indices, row-major), so that
+// buffer must outlive the Emblem. Only meaningful after parseEmblem returns true.
+struct Emblem {
+    uint8_t w, h, ncol;
+    uint16_t pal[MAX_EMBLEM_COLORS];  // RGB565
+    const uint8_t* px;
+};
+
+// Parse n bytes of emblem.bin: 'U','V','E',1, w, h, ncol, 0, ncol little-endian
+// RGB565 values, then w*h indices. Everything is validated (size, limits, total
+// length, every index) before `out.px` is set; on failure returns false with a
+// short reason in why (if whyCap > 0) and `out.px` is null.
+bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t whyCap);
+
 }  // namespace themepack

@@ -88,6 +88,142 @@ static bool sane(const Pack& p) {
     return true;
 }
 
+
+// ---- emblem.bin ----------------------------------------------------------
+typedef std::string Bytes;
+
+// A valid emblem: header, ncol palette entries, w*h indices (i % ncol).
+static Bytes emblem(int w, int h, int ncol) {
+    Bytes b;
+    b += "UVE"; b += (char)1;
+    b += (char)w; b += (char)h; b += (char)ncol; b += (char)0;
+    for (int i = 0; i < ncol; i++) { b += (char)(0x10 + i); b += (char)(0xF0 - i); }
+    for (int i = 0; i < w * h; i++) b += (char)(ncol ? i % ncol : 0);
+    return b;
+}
+
+static bool saneE(const Emblem& e) {
+    if (e.w < 1 || e.w > MAX_EMBLEM_DIM || e.h < 1 || e.h > MAX_EMBLEM_DIM) return false;
+    if (e.ncol < 2 || e.ncol > MAX_EMBLEM_COLORS) return false;
+    if (!e.px) return false;
+    for (int i = 0; i < e.w * e.h; i++) if (e.px[i] >= e.ncol) return false;
+    return true;
+}
+
+// Runs parseEmblem on a heap copy of exactly n bytes (ASan sees any overread).
+static bool runE(const Bytes& s, Emblem& e, char* why, bool* sane = nullptr) {
+    why[0] = 0;
+    uint8_t* h = (uint8_t*)malloc(s.size() ? s.size() : 1);
+    memcpy(h, s.data(), s.size());
+    bool ok = parseEmblem(h, s.size(), e, why, 64);
+    if (sane) *sane = ok && saneE(e);  // px is only valid while h is alive
+    free(h);
+    return ok;
+}
+// Rejected, and for the intended reason (a substring of why).
+static void rejectsE(const char* what, const Bytes& s, const char* reason) {
+    Emblem e; char why[64];
+    bool ok = runE(s, e, why);
+    bool r = !ok && strstr(why, reason) != nullptr;
+    if (!r) printf("       why = \"%s\", wanted \"%s\"\n", why, reason);
+    check(what, r);
+}
+static void acceptsE(const char* what, const Bytes& s) {
+    Emblem e; char why[64];
+    check(what, runE(s, e, why));
+}
+static void emblemTests() {
+    Emblem e; char why[64];
+    {
+        Bytes b = emblem(72, 72, 16);
+        bool ok = runE(b, e, why);
+        check("72x72/16 emblem parses", ok);
+        check("emblem fields", e.w == 72 && e.h == 72 && e.ncol == 16);
+        check("palette is little-endian", e.pal[0] == 0xF010 && e.pal[1] == 0xEF11);
+        // px aliases the caller's buffer; runE has freed its copy, so re-parse
+        // straight from b, which is still alive.
+        Emblem e2;
+        bool ok2 = parseEmblem((const uint8_t*)b.data(), b.size(), e2, why, sizeof why);
+        check("px points into the caller's buffer at the indices",
+              ok2 && e2.px == (const uint8_t*)b.data() + 8 + 32 && e2.px[5] == 5 && e2.px[16] == 0);
+    }
+    acceptsE("96x96 ok", emblem(96, 96, 16));
+    acceptsE("1x1 ok", emblem(1, 1, 2));
+    rejectsE("97x96 rejected", emblem(97, 96, 4), "size must be 1-96");
+    rejectsE("96x97 rejected", emblem(96, 97, 4), "size must be 1-96");
+    rejectsE("w 0 rejected", emblem(0, 8, 4), "size must be 1-96");
+    rejectsE("h 0 rejected", emblem(8, 0, 4), "size must be 1-96");
+    rejectsE("ncol 1 rejected", emblem(8, 8, 1), "colours must be 2-16");
+    rejectsE("ncol 0 rejected", emblem(8, 8, 0), "colours must be 2-16");
+    rejectsE("ncol 17 rejected", emblem(8, 8, 17), "colours must be 2-16");
+    acceptsE("ncol 2 ok", emblem(8, 8, 2));
+    acceptsE("ncol 16 ok", emblem(8, 8, 16));
+    { Bytes b = emblem(8, 8, 4); b[0] = 'X'; rejectsE("wrong magic rejected", b, "bad magic"); }
+    { Bytes b = emblem(8, 8, 4); b[3] = 2; rejectsE("version 2 rejected", b, "version"); }
+    { Bytes b = emblem(8, 8, 4); b[3] = 0; rejectsE("version 0 rejected", b, "version"); }
+    { Bytes b = emblem(8, 8, 4); b[7] = 1; rejectsE("reserved byte rejected", b, "reserved"); }
+    {   // every proper prefix of a valid emblem is rejected as truncated
+        Bytes b = emblem(8, 8, 4);
+        int bad = 0;
+        for (size_t n = 0; n < b.size(); n++) {
+            Emblem t; char w[64];
+            if (runE(b.substr(0, n), t, w) || !strstr(w, "truncated")) bad++;
+        }
+        check("every truncation 0..full-1 rejected as truncated", bad == 0);
+    }
+    { Bytes b = emblem(8, 8, 4); b += (char)0;
+      rejectsE("one trailing byte rejected", b, "trailing"); }
+    { Bytes b = emblem(8, 8, 4); b[8 + 8 + 63] = 4;
+      rejectsE("last index == ncol rejected", b, "index"); }
+    { Bytes b = emblem(8, 8, 4); b[8 + 8] = (char)255;
+      rejectsE("first index 255 rejected", b, "index"); }
+    {   // Size cap: a valid 96x96/16 header (9256 bytes) padded past the cap.
+        // Legal dims/ncol top out at 9256, so the cap is only reachable with
+        // trailing data; at exactly the cap the trailing check must fire
+        // instead, which proves the cap is not firing early.
+        Bytes b = emblem(96, 96, 16);
+        b.resize(MAX_EMBLEM, 0);
+        rejectsE("9728 bytes: trailing, not the cap", b, "trailing");
+        b.push_back(0);
+        rejectsE("9729 bytes rejected by the size cap", b, "too large");
+    }
+    rejectsE("empty emblem rejected", "", "truncated");
+    {   // null pointer and whyCap tolerance
+        Emblem t; char w[8];
+        check("null data rejected", !parseEmblem(nullptr, 0, t, w, sizeof w));
+        Bytes b = emblem(8, 8, 4);
+        b[0] = 'X';
+        check("whyCap 0 tolerated",
+              !parseEmblem((const uint8_t*)b.data(), b.size(), t, nullptr, 0));
+        bool ok = parseEmblem((const uint8_t*)b.data(), b.size(), t, w, sizeof w);
+        check("emblem why truncated and terminated", !ok && strlen(w) == 7);
+    }
+    {   // Mutation fuzz with the invariant: sane accept or reasoned reject.
+        const Bytes seeds[] = {emblem(8, 8, 4), emblem(3, 5, 16), emblem(1, 1, 2)};
+        srand(0xE3B1E3);
+        int accepted = 0, bad = 0;
+        for (int it = 0; it < 20000; it++) {
+            Bytes s = seeds[it % 3];
+            int muts = 1 + rand() % 4;
+            for (int m = 0; m < muts && !s.empty(); m++) {
+                size_t pos = (size_t)rand() % s.size();
+                switch (rand() % 3) {
+                case 0: s[pos] = (char)(rand() & 0xFF); break;
+                case 1: s.insert(s.begin() + pos, (char)(rand() & 0xFF)); break;
+                default: s.erase(pos, 1);
+                }
+            }
+            Emblem fe; char fw[64];
+            bool sn = false;
+            bool ok = runE(s, fe, fw, &sn);
+            if (ok) { accepted++; if (!sn) bad++; }
+            else if (!fw[0]) bad++;
+        }
+        printf("  emblem fuzz: %d accepted of 20000\n", accepted);
+        check("emblem fuzz: invariant held for every mutation", bad == 0);
+    }
+}
+
 int main() {
     Pack p; char why[64];
 
@@ -207,6 +343,8 @@ int main() {
         printf("  fuzz: %d accepted of 20000\n", accepted);
         check("fuzz: invariant held for every mutation", bad == 0);
     }
+
+    emblemTests();
 
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;
