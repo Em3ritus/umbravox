@@ -51,8 +51,7 @@ test('limitation texts: 14 entries, each with id, text and where', () => {
 });
 
 const KB = (n) => (n / 1024 === Math.floor(n / 1024) ? [n / 1024 + ' KB'] : [(n / 1024).toFixed(1) + ' KB']);
-test('every numeric limit appears in docs/theme-packs.md',
-  { skip: 'enabled by Task 12, which writes docs/theme-packs.md' }, () => {
+test('every numeric limit appears in docs/theme-packs.md', () => {
     const doc = read('docs/theme-packs.md');
     for (const k of [...NUMERIC, 'MAX_FOLDERS_EXAMINED']) {
       const n = limits[k];

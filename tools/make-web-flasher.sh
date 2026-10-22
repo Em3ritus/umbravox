@@ -24,6 +24,8 @@ BOOT_APP0=""
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp web/index.html web/manifest-*.json "$OUT"/
+# The theme designer (needs web/designer/wasm built by tools/build-designer-wasm.sh).
+bash tools/assemble-designer.sh "$OUT"
 
 # Vendor the ESP Web Tools bundle same-origin. The tool writes firmware, so a
 # CDN compromise at flash time could ship a malicious flasher; a single SRI

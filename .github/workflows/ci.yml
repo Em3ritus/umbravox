@@ -17,6 +17,27 @@ jobs:
       - name: Run the host test suite
         run: make -C sim test
 
+  designer-tests:
+    name: Designer tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Read the pinned emscripten version
+        id: emsdk
+        run: echo "version=$(tr -d '[:space:]' < tools/emsdk-version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Install emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ steps.emsdk.outputs.version }}
+          actions-cache-folder: emsdk-cache
+      - name: Build the WebAssembly preview
+        run: bash tools/build-designer-wasm.sh
+      - name: Run the designer tests
+        run: npm test
+
   device-build:
     name: Build firmwares
     runs-on: ubuntu-latest
