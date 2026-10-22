@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "name": "COSMIC CLONE",
+  "author": "umbravox",
+  "header": "COSMIC MVFFIN",
+  "dial": "large",
+  "centrepiece": "emblem",
+  "sweeps": ["radar", "pulse", "star", "candle", "galaxy", "orbit", "starfall", "pulsar", "comet", "aurora"],
+  "sweep": "radar",
+  "alert": "supernova",
+  "colors": {
+    "void": "#09071C", "panel": "#16103A", "grid": "#1E1646",
+    "edge": "#3A2A6E", "edgeLit": "#A84DFF",
+    "dim": "#8A7BD0", "text": "#E8DEFF", "bright": "#FFFFFF",
+    "witch": "#A84DFF", "witchHi": "#FF1FCC", "bone": "#FFD04A",
+    "sweep": "#1EF5EE", "sweepHi": "#FF1FCC",
+    "live": "#FF58B0", "liveHi": "#FFF0D0",
+    "magenta": "#FF1FCC", "ice": "#1EF5EE", "green": "#3BFF9E",
+    "amber": "#FFC24A", "red": "#FF4D6A"
+  }
+}

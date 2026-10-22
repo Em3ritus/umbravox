@@ -10,12 +10,17 @@
 //   ./umbravox out.png --sheet 6        out-000.png .. out-005.png
 //   ./umbravox out.png --scale 2        320x240, exactly what the panel shows
 //   ./umbravox out.png --theme 2 --alert 1 --frame 20   an alert style mid-rite
+//   ./umbravox out.png --pack path/to/folder   render a theme pack (composes
+//                                       with --screen --sweep --alert --frame --scale)
+//   ./umbravox --check-pack path/to/folder     print OK <name> or the reason;
+//                                       exit 0 / 1; writes no PNG
 #include "../ui/screens.h"
 #include "../ui/demo.h"
 #include "../ui/nav.h"
 #include "../ui/palette.h"
 #include "../ui/signatures.h"
 #include "png_writer.h"
+#include "packload.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -39,6 +44,8 @@ int main(int argc, char** argv) {
     uint8_t netIdSim = 0;
     int alertSim = -1;                 // --alert: force an alert of this style
     const char* which = "scan";
+    const char* packDir = nullptr;
+    const char* checkDir = nullptr;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frame") && i + 1 < argc) frame = atoi(argv[++i]);
@@ -50,6 +57,23 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--labels") && i + 1 < argc) labelsId = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--netid") && i + 1 < argc) netIdSim = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--alert") && i + 1 < argc) alertSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--pack") && i + 1 < argc) packDir = argv[++i];
+        else if (!strcmp(argv[i], "--check-pack") && i + 1 < argc) checkDir = argv[++i];
+    }
+
+    // The loader's checks only: the verdict on stdout, nothing rendered.
+    if (checkDir) {
+        char why[128];
+        const int id = packload::load(checkDir, why, sizeof why);
+        if (id < 0) { printf("%s\n", why); return 1; }
+        printf("OK %s\n", pal::themeName((uint8_t)id));
+        return 0;
+    }
+    if (packDir) {
+        char why[128];
+        const int id = packload::load(packDir, why, sizeof why);
+        if (id < 0) { fprintf(stderr, "umbravox: pack %s: %s\n", packDir, why); return 1; }
+        themeId = (uint8_t)id;
     }
 
     // Nothing may draw before the palette points somewhere.

@@ -113,9 +113,19 @@ test_contrast: test_contrast.cpp $(SRC_NOMAIN) $(HDR)
 test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -include trig_audit.h -o $@ test_trig.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_perflog test_trig test_contrast
+# Links the host pack loader; PACKS_DIR is relative to sim/, where make runs it.
+test_pack_parity: test_pack_parity.cpp packload.h $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_pack_parity.cpp $(SRC_NOMAIN) -lm
 
-test: $(TESTS)
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_perflog test_trig test_contrast test_pack_parity
+
+# The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
+emblem-check:
+	@python3 -I ../tools/muffin_to_emblem.py ../ui/muffin.h $(CURDIR)/.emblem.tmp >/dev/null && \
+	 cmp $(CURDIR)/.emblem.tmp packs/cosmic-clone/emblem.bin && echo "emblem-check: emblem.bin matches ui/muffin.h"; \
+	 rc=$$?; rm -f $(CURDIR)/.emblem.tmp; exit $$rc
+
+test: $(TESTS) emblem-check
 	@rc=0; for t in $(TESTS); do \
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
@@ -140,4 +150,4 @@ regress: $(BIN)
 	 cd "$$d" && md5sum -c --quiet $(MANIFEST); \
 	 echo "regress: UMBRAVOX unchanged"
 
-.PHONY: run sheet clean test regress
+.PHONY: run sheet clean test regress emblem-check
