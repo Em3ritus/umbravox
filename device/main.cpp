@@ -38,6 +38,7 @@
 #if defined(WS_C5_35)
 #include "ws_c5_expander.h"
 #include "ws_c5_pmu.h"
+#include "ws_c5_gps.h"
 #include "font5x7.h"
 #endif
 
@@ -94,6 +95,13 @@ static ui::Canvas canvas;          // 38,400 bytes, internal SRAM by design
 static uint16_t   lineBuf[PANEL_W];
 #if !defined(WS_C5_35)
 static HardwareSerial gpsPort(1);
+#else
+// The last time anything touched the panel. The GPS shares the touch bus and
+// stays off it while a finger is down (and briefly after), so a drag is never
+// broken by a GPS cycle. loop() keeps it current.
+static uint32_t lastContactMs = 0;
+constexpr uint32_t GPS_TOUCH_QUIET_MS = 400;
+static void gnssSink(char c, uint32_t now) { ui::Gnss::feed(c, now); }
 #endif
 
 // One canvas rect -> the panel at 2x, nearest neighbour, at the board's
@@ -588,6 +596,7 @@ void setup() {
     touch::begin();
 #if defined(WS_C5_35)
     pmu::begin();     // on the touch bus, which exio::begin() opened
+    gpsi2c::begin();  // so is the LC76G
     stripTick(millis());
 #endif
     // Card first, then the session machine: it resumes into a fresh file when
@@ -600,7 +609,7 @@ void setup() {
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
     logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
 #if defined(WS_C5_35)
-    Serial.printf("panel up @ %d MHz SPI, no GPS on this board yet\n",
+    Serial.printf("panel up @ %d MHz SPI, GPS LC76G on I2C\n",
                   (int)(SPI_HZ / 1000000));
 #else
     Serial.printf("panel up @ %d MHz SPI, GPS on GPIO %d @ %d\n",
@@ -810,6 +819,21 @@ void pollConsole() {
                 injectNmea("GPRMC,120000.00,A,3746.4940,N,12225.1640,W,0.0,0.0,190126,,,A");
                 injectNmea("GPGGA,120000.00,3746.4940,N,12225.1640,W,1,08,0.9,10.0,M,0.0,M,,");
                 Serial.println("gpsfix: injected 37.7749,-122.4194 (2026-01-19)");
+#if defined(WS_C5_35)
+            } else if (!strcmp(line, "GPS")) {
+                const gpsi2c::Stats& g = gpsi2c::stats();
+                const ui::Gnss::Fix& f = ui::Gnss::fix();
+                Serial.printf("gps: i2c cycles %lu bytes %lu empty %lu fails %lu recov %lu wakes %lu\n",
+                              (unsigned long)g.cycles, (unsigned long)g.bytes, (unsigned long)g.empty,
+                              (unsigned long)g.fails, (unsigned long)g.recov, (unsigned long)g.wakes);
+                Serial.printf("gps: nmea good %lu bad %lu, in view %u, fix %s used %u",
+                              (unsigned long)ui::Gnss::good(), (unsigned long)ui::Gnss::bad(),
+                              (unsigned)ui::Gnss::inView(), f.valid ? "yes" : "no", (unsigned)f.used);
+                if (f.valid)
+                    Serial.printf(" at %.5f,%.5f, %lu ms old", f.lat7 / 1e7, f.lon7 / 1e7,
+                                  (unsigned long)(millis() - f.atMs));
+                Serial.println();
+#endif
             } else if (!strncmp(line, "PERF", 4)) {
                 Serial.println("=== PERF BEGIN ===");
                 perflog::dump(Serial);
@@ -830,7 +854,7 @@ void pollConsole() {
                 else enroll::setNet((uint8_t)v);
             } else {
                 Serial.printf("unknown command '%s' "
-                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, PERF, GPSFIX, ENROLL, NETRESET, NETSET <id>)\n", line);
+                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, PERF, GPS, GPSFIX, ENROLL, NETRESET, NETSET <id>)\n", line);
             }
         } else if (n < 31) {
             line[n++] = c;
@@ -868,6 +892,10 @@ void loop() {
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
     // under 100 bytes, so this never blocks long enough to matter.
     while (gpsPort.available()) ui::Gnss::feed((char)gpsPort.read(), millis());
+#else
+    // One short synchronous LC76G cycle, at most twice a second, and never
+    // while the panel is being touched. See ws_c5_gps.h.
+    if (millis() - lastContactMs >= GPS_TOUCH_QUIET_MS) gpsi2c::tick(gnssSink, millis());
 #endif
 
     cap::tick(millis());
@@ -1010,6 +1038,9 @@ void loop() {
     if (tp.any) {
         if (dimmed) { tpDown = false; }        // this one only wakes
         lastTouchMs = millis();
+#if defined(WS_C5_35)
+        lastContactMs = lastTouchMs;
+#endif
         dimmed = false;
     }
     const uint16_t idleS = ui::IDLE_S[set.idleIdx % ui::IDLE_N];
