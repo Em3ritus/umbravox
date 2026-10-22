@@ -33,25 +33,24 @@
 #include "layout.h"
 #include "palette.h"
 #include "wigle.h"
+#include "board.h"
+#include <SPI.h>
 
-// ---- pins (RockBase NM-CYD-C5, confirmed against Documention/2-sch) -------
-// LCD, touch and the SD card all share one SPI bus.
-static constexpr int8_t PIN_SCK  = 6;
-static constexpr int8_t PIN_MOSI = 7;
-static constexpr int8_t PIN_MISO = 2;
-static constexpr int8_t PIN_CS   = 23;
-static constexpr int8_t PIN_DC   = 24;
-static constexpr int8_t PIN_RST  = -1;   // tied to the C5's own reset
-static constexpr int8_t PIN_BL   = 25;   // NOT 27 -- 27 is the WS2812
-static constexpr int    PANEL_W  = 320;
-static constexpr int    PANEL_H  = 240;
+// ---- pins ------------------------------------------------------------------
+// Per board, in board.h. Aliased here so the rest of this file reads as it
+// always has.
+static constexpr int8_t PIN_SCK  = board::PIN_SCK;
+static constexpr int8_t PIN_MOSI = board::PIN_MOSI;
+static constexpr int8_t PIN_MISO = board::PIN_MISO;
+static constexpr int8_t PIN_CS   = board::PIN_CS;
+static constexpr int8_t PIN_DC   = board::PIN_DC;
+static constexpr int8_t PIN_RST  = board::PIN_RST;
+static constexpr int    PANEL_W  = board::PANEL_W;
+static constexpr int    PANEL_H  = board::PANEL_H;
 
-// GPS on header P5 (NOT P1 -- GPIO 4 appears on both, and only P5 carries the
-// receiver's TX). Confirmed on the board: ~9600 baud, measured from a 98us
-// minimum pulse width rather than guessed.
-static constexpr int8_t PIN_GPS_RX = 4;    // we receive on 4
-static constexpr int8_t PIN_GPS_TX = 5;
-static constexpr int    GPS_BAUD   = 9600;
+static constexpr int8_t PIN_GPS_RX = board::PIN_GPS_RX;
+static constexpr int8_t PIN_GPS_TX = board::PIN_GPS_TX;
+static constexpr int    GPS_BAUD   = board::GPS_BAUD;
 
 // 40MHz is the ceiling on this board, not a choice: measured 35ms/frame at
 // both 40 and 80MHz, and 112ms at 10MHz, so the parameter works and 80 is
@@ -61,16 +60,16 @@ static constexpr int    GPS_BAUD   = 9600;
 static constexpr int32_t SPI_HZ  = 40000000;
 
 static Arduino_DataBus* bus = new Arduino_ESP32SPI(PIN_DC, PIN_CS, PIN_SCK, PIN_MOSI, PIN_MISO);
-// Native panel is 240x320 portrait; rotation 3 lands it landscape, which is
-// how the board is cased and how the UI is laid out.
-static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, 3 /*rotation*/, false /*IPS*/,
+// Native panels are portrait; board::ROTATION lands each landscape.
+static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, board::ROTATION, false /*IPS*/,
                                              240, 320);
 
 static ui::Canvas canvas;          // 38,400 bytes, internal SRAM by design
 static uint16_t   lineBuf[PANEL_W];
 static HardwareSerial gpsPort(1);
 
-// One canvas rect -> the panel at 2x, nearest neighbour. Doubling into a line
+// One canvas rect -> the panel at 2x, nearest neighbour, at the board's
+// canvas origin (0,0 on the NM-CYD-C5, whose panel the canvas fills). Doubling into a line
 // buffer and pushing each row twice keeps the transfer sequential, which is
 // what matters: on a single-core C5 every millisecond in here is a
 // millisecond not spent capturing.
@@ -83,7 +82,8 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
     const int w = x1 - x0;
 
     gfx->startWrite();
-    gfx->writeAddrWindow(x0 * 2, y0 * 2, w * 2, (y1 - y0) * 2);
+    gfx->writeAddrWindow(board::CANVAS_X + x0 * 2, board::CANVAS_Y + y0 * 2,
+                         w * 2, (y1 - y0) * 2);
     for (int y = y0; y < y1; y++) {
         const uint16_t* s = src + (size_t)y * ui::W + x0;
         for (int x = 0; x < w; x++) {
@@ -95,6 +95,13 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
     }
     gfx->endWrite();
 }
+
+// The backlight, 0..255. A GPIO LEDC channel on the NM-CYD-C5; the I/O
+// expander's PWM register on the Waveshare, where no GPIO reaches it.
+static void setBacklight(uint8_t pwm) {
+    ledcWrite(board::PIN_BL, pwm);
+}
+
 
 // Defined with the console helpers below; setup() hands it to logging.
 namespace { static uint32_t writeWigle(Print& out, uint32_t& skipped); }
@@ -461,8 +468,14 @@ void setup() {
     // Arduino core 3.x LEDC. The old ledcSetup()/ledcAttachPin() pair is gone,
     // and ledcWrite() now takes the pin rather than a channel -- this is the
     // API break that makes porting core-2 firmware to the C5 expensive.
-    ledcAttach(PIN_BL, 5000, 8);
-    ledcWrite(PIN_BL, 204);     // 80%, matching Settings' default
+    ledcAttach(board::PIN_BL, 5000, 8);
+    setBacklight(204);          // 80%, matching Settings' default
+
+    // The panel's SPI bus is shared with the SD card (and, on the NM-CYD-C5,
+    // the touch controller). Bring it up here, once, for whoever joins it --
+    // not inside touch::begin(), which on a capacitive board is not on SPI.
+    // -1 for CS: each device on the bus drives its own.
+    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
 
     gpsPort.begin(GPS_BAUD, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
     cap::begin();
@@ -903,7 +916,7 @@ void loop() {
         const int step = 6;
         if (pwmNow < wantPwm) pwmNow = (uint8_t)(pwmNow + step > wantPwm ? wantPwm : pwmNow + step);
         else                  pwmNow = (uint8_t)(pwmNow - step < wantPwm ? wantPwm : pwmNow - step);
-        ledcWrite(PIN_BL, pwmNow);
+        setBacklight(pwmNow);
     }
     const bool screenOff = dimmed && pwmNow == wantPwm;
 

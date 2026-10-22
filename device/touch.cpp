@@ -1,15 +1,15 @@
 #include "touch.h"
 #include <Arduino.h>
-#include <SPI.h>
+#include "board.h"
 #include "canvas.h"
+
+#if defined(NM_CYD_C5)
+#include <SPI.h>
 
 namespace touch {
 namespace {
 
-constexpr int8_t PIN_SCK  = 6;
-constexpr int8_t PIN_MISO = 2;
-constexpr int8_t PIN_MOSI = 7;
-constexpr int8_t PIN_CS   = 1;      // touch CS; the panel is on 23
+constexpr int8_t PIN_CS = board::PIN_TOUCH_CS;   // the panel is on 23
 
 // 2MHz. The XPT2046 datasheet allows a little more, but the conversion needs
 // settling time and there is nothing to gain here -- a whole poll is five
@@ -81,9 +81,9 @@ int16_t mapInv(uint16_t raw, uint16_t lo, uint16_t hi, int16_t out) {
 void begin() {
     pinMode(PIN_CS, OUTPUT);
     digitalWrite(PIN_CS, HIGH);
-    // Same pins, same peripheral as the panel. -1 for CS: we drive it, so the
-    // driver must not also try to.
-    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
+    // The bus itself (SPI.begin on the panel's pins) is setup()'s now, not
+    // ours: the SD card needs it too, and on a board whose touch is not on
+    // SPI there would otherwise be nobody to bring it up.
     Serial.println("touch: XPT2046 on CS 1, polled (no IRQ line on this board)");
 }
 
@@ -116,3 +116,5 @@ Point read() {
 }
 
 } // namespace touch
+#endif // NM_CYD_C5
+
