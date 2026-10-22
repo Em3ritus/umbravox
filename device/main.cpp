@@ -40,6 +40,10 @@
 #include "ws_c5_pmu.h"
 #include "ws_c5_gps.h"
 #include "font5x7.h"
+#include <esp_system.h>
+#include "esp_private/periph_ctrl.h"
+#include "hal/spi_ll.h"
+#include "soc/pcr_struct.h"
 #endif
 
 // ---- pins ------------------------------------------------------------------
@@ -70,12 +74,8 @@ static constexpr int32_t SPI_HZ  = 40000000;
 #if defined(WS_C5_35)
 // Through Arduino's SPI class rather than Arduino_GFX's register-level ESP32
 // bus, so the panel and the SD card share one owner of the bus (the global SPI
-// instance).
-//
-// KNOWN ISSUE: after a SOFT reset (esptool's, a panic, the watchdog) the panel
-// can stay dark; the RST button or a power cycle brings it back. Not fixed and
-// root cause unknown -- switching to this bus did not change it. The NM-CYD-C5
-// never sees it because every reset there is a hard one (EN, via the CH340).
+// instance). A soft reset leaves the bus's SPI block holding the previous
+// firmware's state; setup() resets it before anything uses it.
 static Arduino_DataBus* bus = new Arduino_HWSPI(PIN_DC, PIN_CS, PIN_SCK, PIN_MOSI, PIN_MISO, &SPI);
 #else
 static Arduino_DataBus* bus = new Arduino_ESP32SPI(PIN_DC, PIN_CS, PIN_SCK, PIN_MOSI, PIN_MISO);
@@ -560,6 +560,22 @@ void setup() {
                   (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram());
 
 #if defined(WS_C5_35)
+    // Reset the SPI2 block (the panel's and SD card's bus) before anything
+    // uses it. Arduino's spiStartBus() resets it on the ESP32/S2/S3/P4 but has
+    // no C5 branch, and the old periph_module_reset() is non-functional on
+    // the C5, so after a soft reset the block keeps the last firmware's state.
+    // The registers are logged first, so a soft-reset boot can be compared
+    // with a power-up one.
+    Serial.printf("spi2: reset reason %d, PCR conf 0x%08lx clkm 0x%08lx (before)\n",
+                  (int)esp_reset_reason(), (unsigned long)PCR.spi2_conf.val,
+                  (unsigned long)PCR.spi2_clkm_conf.val);
+    PERIPH_RCC_ATOMIC() {
+        spi_ll_enable_bus_clock(SPI2_HOST, true);
+        spi_ll_reset_register(SPI2_HOST);
+        spi_ll_enable_clock(SPI2_HOST, true);
+    }
+    Serial.printf("spi2: PCR conf 0x%08lx clkm 0x%08lx (after reset)\n",
+                  (unsigned long)PCR.spi2_conf.val, (unsigned long)PCR.spi2_clkm_conf.val);
     // Panel power and its reset are on the expander: they have to be up
     // before the panel can be initialised at all.
     exio::begin();
