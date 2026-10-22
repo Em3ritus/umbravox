@@ -106,6 +106,7 @@ Point read() {
     p.rawX = rx;
     p.rawY = ry;
     p.down = (p.z > Z_THRESHOLD) && rx > 100 && ry > 100;
+    p.any  = p.down;
 
     if (p.down) {
         // Axes crossed: raw Y gives screen X, raw X gives screen Y.
@@ -118,3 +119,118 @@ Point read() {
 } // namespace touch
 #endif // NM_CYD_C5
 
+#if defined(WS_C5_35)
+#include <Wire.h>
+#include "ws_c5_expander.h"
+
+namespace touch {
+namespace {
+
+constexpr uint8_t ADDR      = 0x38;
+constexpr uint8_t TD_STATUS = 0x02;   // point count, then 6 bytes of point 1
+constexpr uint8_t ID_G_THGROUP = 0x80; // touch threshold; lower = more sensitive
+constexpr uint8_t ID_G_CIPHER  = 0xA3; // chip id
+
+// Native panel frame, before rotation: 320 across the short edge, 480 down
+// the long one.
+constexpr int NATIVE_W = 320;
+constexpr int NATIVE_H = 480;
+
+// A finger held still occasionally reads back as no points for one poll.
+// Bridge a gap this short so a press does not read as a lift and re-press.
+constexpr uint32_t DROPOUT_MS = 90;
+
+bool present = false;
+
+// Register read with a STOP between the address write and the read, not a
+// repeated start. The bus is shared with the expander and the PMU, and on
+// this board a repeated-start read is what can leave it wedged.
+bool readRegs(uint8_t reg, uint8_t* buf, uint8_t len) {
+    Wire.beginTransmission(ADDR);
+    Wire.write(reg);
+    if (Wire.endTransmission(true) != 0) return false;
+    if (Wire.requestFrom((int)ADDR, (int)len) != len) return false;
+    for (uint8_t i = 0; i < len; i++) buf[i] = (uint8_t)Wire.read();
+    return true;
+}
+
+// One raw sample in the native frame. The C5 quirk: after the early
+// Wire.begin(), reads stop completing (writes ACK, reads come back 0) until
+// the controller is re-opened, so it is re-opened on every read. Verified on
+// this board; do not remove.
+bool sample(uint16_t& nx, uint16_t& ny) {
+    for (int attempt = 0; attempt < 3; attempt++) {
+        Wire.end();
+        Wire.begin(board::PIN_SDA, board::PIN_SCL, 100000u);
+        uint8_t d[5];
+        if (!readRegs(TD_STATUS, d, sizeof d)) continue;
+        const uint8_t n = d[0] & 0x0F;
+        if (n == 0) return false;               // a clean "nobody there"
+        if (n > 2) continue;                    // garbage; try again
+        nx = (uint16_t)(((d[1] & 0x0F) << 8) | d[2]);
+        ny = (uint16_t)(((d[3] & 0x0F) << 8) | d[4]);
+        if (nx < NATIVE_W && ny < NATIVE_H) return true;
+    }
+    return false;
+}
+
+// Native portrait -> the landscape frame the display is drawn in. The panel
+// runs at Arduino_GFX rotation board::ROTATION; this is the same turn.
+void rotate(uint16_t nx, uint16_t ny, int& sx, int& sy) {
+    if (board::ROTATION == 1) { sx = ny;                sy = NATIVE_W - 1 - nx; }
+    else                      { sx = NATIVE_H - 1 - ny; sy = nx; }
+}
+
+} // namespace
+
+void begin() {
+    exio::begin();   // touch reset is on the expander; a no-op if already up
+    uint8_t id = 0;
+    present = readRegs(ID_G_CIPHER, &id, 1) && id == 0x64;   // FT6336U
+    Serial.printf("touch: FT6336 on I2C 0x38, id 0x%02X %s\n", id,
+                  present ? "(ok)" : "(not found -- no touch)");
+    // 12 rather than the default 22: a bare panel misses light taps at 22.
+    // Raise it toward 30-40 if a case or film brings phantom touches.
+    Wire.beginTransmission(ADDR);
+    Wire.write(ID_G_THGROUP);
+    Wire.write(12);
+    Wire.endTransmission();
+}
+
+Point read() {
+    static uint16_t lastX = 0, lastY = 0;
+    static uint32_t lastOk = 0;
+
+    Point p;
+    if (!present) return p;
+
+    uint16_t nx, ny;
+    const uint32_t now = millis();
+    if (sample(nx, ny)) {
+        lastX = nx; lastY = ny; lastOk = now;
+    } else if (!(lastOk && now - lastOk < DROPOUT_MS)) {
+        lastOk = 0;
+        return p;
+    }
+
+    int sx, sy;
+    rotate(lastX, lastY, sx, sy);
+    p.rawX = lastX;
+    p.rawY = lastY;
+    p.z    = 0;            // capacitive: no pressure worth the name
+    p.any  = true;
+
+    // Off the 2x canvas is the status strip or the side margins: a contact,
+    // but not one that lands on anything.
+    const int cx = (sx - board::CANVAS_X) / 2;
+    const int cy = (sy - board::CANVAS_Y) / 2;
+    if (sx < board::CANVAS_X || sy < board::CANVAS_Y || cx >= ui::W || cy >= ui::H)
+        return p;
+    p.down = true;
+    p.x = (int16_t)cx;
+    p.y = (int16_t)cy;
+    return p;
+}
+
+} // namespace touch
+#endif // WS_C5_35

@@ -35,6 +35,11 @@
 #include "wigle.h"
 #include "board.h"
 #include <SPI.h>
+#if defined(WS_C5_35)
+#include "ws_c5_expander.h"
+#include "ws_c5_pmu.h"
+#include "font5x7.h"
+#endif
 
 // ---- pins ------------------------------------------------------------------
 // Per board, in board.h. Aliased here so the rest of this file reads as it
@@ -48,9 +53,11 @@ static constexpr int8_t PIN_RST  = board::PIN_RST;
 static constexpr int    PANEL_W  = board::PANEL_W;
 static constexpr int    PANEL_H  = board::PANEL_H;
 
+#if !defined(WS_C5_35)
 static constexpr int8_t PIN_GPS_RX = board::PIN_GPS_RX;
 static constexpr int8_t PIN_GPS_TX = board::PIN_GPS_TX;
 static constexpr int    GPS_BAUD   = board::GPS_BAUD;
+#endif
 
 // 40MHz is the ceiling on this board, not a choice: measured 35ms/frame at
 // both 40 and 80MHz, and 112ms at 10MHz, so the parameter works and 80 is
@@ -59,14 +66,35 @@ static constexpr int    GPS_BAUD   = board::GPS_BAUD;
 // faster -- only smaller, which is what the dirty rectangles are for.
 static constexpr int32_t SPI_HZ  = 40000000;
 
+#if defined(WS_C5_35)
+// Through Arduino's SPI class rather than Arduino_GFX's register-level ESP32
+// bus, so the panel and the SD card share one owner of the bus (the global SPI
+// instance).
+//
+// KNOWN ISSUE: after a SOFT reset (esptool's, a panic, the watchdog) the panel
+// can stay dark; the RST button or a power cycle brings it back. Not fixed and
+// root cause unknown -- switching to this bus did not change it. The NM-CYD-C5
+// never sees it because every reset there is a hard one (EN, via the CH340).
+static Arduino_DataBus* bus = new Arduino_HWSPI(PIN_DC, PIN_CS, PIN_SCK, PIN_MOSI, PIN_MISO, &SPI);
+#else
 static Arduino_DataBus* bus = new Arduino_ESP32SPI(PIN_DC, PIN_CS, PIN_SCK, PIN_MOSI, PIN_MISO);
+#endif
 // Native panels are portrait; board::ROTATION lands each landscape.
+#if defined(WS_C5_35)
+// ST7796, 320x480. "IPS" in Arduino_GFX means INVON, which this panel wants
+// (Waveshare's own init sends 0x21).
+static Arduino_TFT* gfx = new Arduino_ST7796(bus, PIN_RST, board::ROTATION, true /*IPS*/,
+                                             320, 480);
+#else
 static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, board::ROTATION, false /*IPS*/,
                                              240, 320);
+#endif
 
 static ui::Canvas canvas;          // 38,400 bytes, internal SRAM by design
 static uint16_t   lineBuf[PANEL_W];
+#if !defined(WS_C5_35)
 static HardwareSerial gpsPort(1);
+#endif
 
 // One canvas rect -> the panel at 2x, nearest neighbour, at the board's
 // canvas origin (0,0 on the NM-CYD-C5, whose panel the canvas fills). Doubling into a line
@@ -99,9 +127,73 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
 // The backlight, 0..255. A GPIO LEDC channel on the NM-CYD-C5; the I/O
 // expander's PWM register on the Waveshare, where no GPIO reaches it.
 static void setBacklight(uint8_t pwm) {
+#if defined(WS_C5_35)
+    exio::backlight(pwm);
+#else
     ledcWrite(board::PIN_BL, pwm);
+#endif
 }
 
+#if defined(WS_C5_35)
+// --- the Waveshare's status strip --------------------------------------------
+//
+// The 2x canvas leaves an 80px band across the top of this panel. The battery
+// lives there rather than in the canvas header, which is already full at 160
+// pixels wide and is shared with a board that has no battery at all.
+//
+// What it shows is decided by the PMU, not guessed: power state always, and a
+// percentage only when a cell is actually connected. On USB with no cell it
+// says so -- a battery number there would be invented.
+static void stripText(const pmu::Batt& b, char* out, size_t n, uint16_t& fg) {
+    fg = pal::TEXT;
+    if (!b.ok)        { snprintf(out, n, "%s", ""); return; }
+    if (!b.cell)      { snprintf(out, n, "%s", b.usb ? "USB  NO CELL" : ""); fg = pal::DIM; return; }
+    if (b.charging)   { snprintf(out, n, "CHG %u%%", (unsigned)b.pct); fg = pal::GREEN; return; }
+    if (b.usb)        { snprintf(out, n, "USB %u%%", (unsigned)b.pct); fg = pal::GREEN; return; }
+    snprintf(out, n, "BAT %u%% %u.%02uV", (unsigned)b.pct,
+             (unsigned)(b.mv / 1000), (unsigned)(b.mv % 1000 / 10));
+    if (b.pct <= 10)      fg = pal::RED;
+    else if (b.pct <= 20) fg = pal::AMBER;
+}
+
+// Right-aligned in the strip, in the UI's own 5x7 face at 3x. Built a row at
+// a time in lineBuf, so the whole band goes out as one window -- this only
+// runs when the text changes, but there is no reason for it to flicker.
+static void drawStrip(const char* text, uint16_t fg) {
+    constexpr int S   = 3;
+    constexpr int TOP = (board::CANVAS_Y - Font::H * S) / 2;
+    const int x0 = PANEL_W - 16 - Font::width(text, S);
+    gfx->startWrite();
+    gfx->writeAddrWindow(0, TOP, PANEL_W, Font::H * S);
+    for (int r = 0; r < Font::H; r++) {
+        for (int x = 0; x < PANEL_W; x++) lineBuf[x] = RGB565_BLACK;
+        for (int i = 0; text[i]; i++) {
+            const uint8_t bits = Font::row(text[i], r);
+            for (int c = 0; c < Font::W; c++) {
+                if (!(bits & (0x10 >> c))) continue;
+                for (int k = 0; k < S; k++) {
+                    const int px = x0 + i * Font::ADV * S + c * S + k;
+                    if (px >= 0 && px < PANEL_W) lineBuf[px] = fg;
+                }
+            }
+        }
+        for (int k = 0; k < S; k++) gfx->writePixels(lineBuf, PANEL_W);
+    }
+    gfx->endWrite();
+}
+
+static void stripTick(uint32_t now) {
+    static char     shown[24] = "\x01";   // never matches, so the first tick draws
+    static uint16_t shownFg = 0;
+    char txt[24];
+    uint16_t fg;
+    stripText(pmu::read(now), txt, sizeof txt, fg);
+    if (strcmp(txt, shown) == 0 && fg == shownFg) return;
+    drawStrip(txt, fg);
+    snprintf(shown, sizeof shown, "%s", txt);
+    shownFg = fg;
+}
+#endif
 
 // Defined with the console helpers below; setup() hands it to logging.
 namespace { static uint32_t writeWigle(Print& out, uint32_t& skipped); }
@@ -459,6 +551,11 @@ void setup() {
     Serial.printf("psram : %u bytes (%u free)\n",
                   (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram());
 
+#if defined(WS_C5_35)
+    // Panel power and its reset are on the expander: they have to be up
+    // before the panel can be initialised at all.
+    exio::begin();
+#endif
     if (!gfx->begin(SPI_HZ)) {
         Serial.println("gfx->begin() FAILED");
         for (;;) delay(1000);
@@ -468,7 +565,9 @@ void setup() {
     // Arduino core 3.x LEDC. The old ledcSetup()/ledcAttachPin() pair is gone,
     // and ledcWrite() now takes the pin rather than a channel -- this is the
     // API break that makes porting core-2 firmware to the C5 expensive.
+#if !defined(WS_C5_35)
     ledcAttach(board::PIN_BL, 5000, 8);
+#endif
     setBacklight(204);          // 80%, matching Settings' default
 
     // The panel's SPI bus is shared with the SD card (and, on the NM-CYD-C5,
@@ -477,7 +576,9 @@ void setup() {
     // -1 for CS: each device on the bus drives its own.
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
 
+#if !defined(WS_C5_35)
     gpsPort.begin(GPS_BAUD, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
+#endif
     cap::begin();
     blescan::begin();
     meshcore::begin();
@@ -485,6 +586,10 @@ void setup() {
     // coordinator registers it claims nothing, so the node mesh is unchanged.
     meshcore::setCollector(collector::onFrame);   // netId is loaded + logged in loop()
     touch::begin();
+#if defined(WS_C5_35)
+    pmu::begin();     // on the touch bus, which exio::begin() opened
+    stripTick(millis());
+#endif
     // Card first, then the session machine: it resumes into a fresh file when
     // the last run ended mid-session. Known limitation (accepted): with no GPS
     // date yet the filename is the dateless WD-NNNN counter, which is not
@@ -494,8 +599,13 @@ void setup() {
     sdlog::begin();
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
     logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
+#if defined(WS_C5_35)
+    Serial.printf("panel up @ %d MHz SPI, no GPS on this board yet\n",
+                  (int)(SPI_HZ / 1000000));
+#else
     Serial.printf("panel up @ %d MHz SPI, GPS on GPIO %d @ %d\n",
                   (int)(SPI_HZ / 1000000), (int)PIN_GPS_RX, GPS_BAUD);
+#endif
 }
 
 // Console logging that the compiler checks.
@@ -754,9 +864,11 @@ void loop() {
     const uint32_t t0 = millis();
     perflog::loopStart(t0);        // the gap between loops is the stall we want to see
 
+#if !defined(WS_C5_35)
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
     // under 100 bytes, so this never blocks long enough to matter.
     while (gpsPort.available()) ui::Gnss::feed((char)gpsPort.read(), millis());
+#endif
 
     cap::tick(millis());
     // While a coordinator is live the CYD is a pure collector: its Core stops
@@ -895,7 +1007,7 @@ void loop() {
     }
 
     bool tpDown = tp.down;
-    if (tpDown) {
+    if (tp.any) {
         if (dimmed) { tpDown = false; }        // this one only wakes
         lastTouchMs = millis();
         dimmed = false;
@@ -1178,6 +1290,9 @@ void loop() {
         blitRect(canvas.px, dirty.r[i]);
         pushed += (uint32_t)dirty.r[i].w * dirty.r[i].h;
     }
+#if defined(WS_C5_35)
+    stripTick(millis());
+#endif
     const uint32_t tBlit = millis();
     perflog::frame(tDraw - t0, tBlit - tDraw);
 
