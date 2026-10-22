@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <map>
 
 using namespace themepack;
 
@@ -471,22 +472,56 @@ static void keepNameTests() {
 }
 
 // ---- Boot-loop guard over simulated boots ----------------------------------
-// A fake key-value store (the NVS keys "badpacks" and "loading") and a fake
-// card. boot() walks the same steps as device/themeload.cpp's scan(), calling
-// the same pure helpers: keepName, sortNames, badBoot, badMatch,
-// formatLoading. A folder marked `crashes` resets the board when parsed, which
-// here means boot() returns with "loading" still set.
+// A fake NVS behind the same GuardKv the device uses, with Preferences'
+// semantics (getString refuses a value that does not fit maxLen, via the
+// shared nvsGetFits), plus fault injection. boot() walks the steps of
+// device/themeload.cpp's scan(): keepName, sortNames, guardBoot, then per
+// folder badMatch, guardSet, parse, guardClear -- the same functions, so the
+// read capacity is whatever guardBoot itself passes. A folder marked
+// `crashes` resets the board when parsed: boot() returns at once, with
+// whatever "loading" holds left in the store.
 struct FakeKv {
-    bool   hasList = false;  char list[4096];  size_t listLen = 0;
-    bool   hasLoading = false; char loading[64];
-    int    listWrites = 0, loadingWrites = 0;
+    std::map<std::string, std::string> m;
+    bool failPutBad = false, failPutLoading = false, failRemoveLoading = false;
+    int  listWrites = 0, loadingWrites = 0;
+
+    static bool isKey(void* c, const char* k) { return ((FakeKv*)c)->m.count(k) != 0; }
+    static size_t getString(void* c, const char* k, char* buf, size_t maxLen) {
+        FakeKv& kv = *(FakeKv*)c;
+        if (!k || !buf || !maxLen) return 0;                 // Preferences.cpp:478
+        auto it = kv.m.find(k);
+        if (it == kv.m.end()) return 0;                       // :481-484
+        if (!nvsGetFits(it->second.size(), maxLen)) return 0; // :486-488
+        memcpy(buf, it->second.c_str(), it->second.size() + 1);
+        return it->second.size() + 1;
+    }
+    static size_t putString(void* c, const char* k, const char* v) {
+        FakeKv& kv = *(FakeKv*)c;
+        const bool bad = !strcmp(k, GUARD_KEY_BAD);
+        if (bad ? kv.failPutBad : kv.failPutLoading) return 0;
+        kv.m[k] = v;
+        (bad ? kv.listWrites : kv.loadingWrites)++;
+        return strlen(v);
+    }
+    static bool remove(void* c, const char* k) {
+        FakeKv& kv = *(FakeKv*)c;
+        const bool bad = !strcmp(k, GUARD_KEY_BAD);
+        if (!bad && kv.failRemoveLoading) return false;
+        if (!kv.m.erase(k)) return false;                     // nvs_erase_key: NOT_FOUND
+        (bad ? kv.listWrites : kv.loadingWrites)++;
+        return true;
+    }
+    GuardKv api() { return GuardKv{this, isKey, getString, putString, remove}; }
+    bool has(const char* k) const { return m.count(k) != 0; }
+    std::string get(const char* k) const { auto it = m.find(k); return it == m.end() ? "" : it->second; }
 };
 struct FakeFolder { char name[32]; uint32_t size; bool crashes; };
 struct BootResult {
-    bool crashed = false;
-    int  parsed = 0, loaded = 0, skippedBad = 0;
+    bool crashed = false, noPacks = false, reachedLoop = false;
+    int  parsed = 0, loaded = 0, skippedBad = 0, skippedNvs = 0;
     char loadedNames[MAX_PACKS * 4][32];
     int  listN = 0;
+    GuardBootResult g;
 };
 
 static BootResult boot(FakeKv& kv, const FakeFolder* card, int nCard) {
@@ -501,27 +536,25 @@ static BootResult boot(FakeKv& kv, const FakeFolder* card, int nCard) {
         for (int j = 0; j < nCard; j++)
             if (!strcmp(names[i], card[j].name)) { sizes[i] = card[j].size; crashes[i] = card[j].crashes; }
 
-    BadList bad;
-    char out[BAD_LIST_CAP];
-    if (badBoot(kv.hasList ? kv.list : nullptr, kv.hasList ? kv.listLen : 0,
-                kv.hasLoading ? kv.loading : nullptr, names, sizes, n, bad, out, sizeof out)) {
-        kv.listLen = strlen(out);
-        memcpy(kv.list, out, kv.listLen + 1);
-        kv.hasList = kv.listLen > 0;
-        kv.listWrites++;
-    }
-    if (kv.hasLoading) { kv.hasLoading = false; kv.loadingWrites++; }
+    const GuardKv api = kv.api();
+    static BadList bad;
+    static GuardScratch scratch;
+    GuardCur cur;
+    r.g = guardBoot(api, names, sizes, n, bad, scratch, cur);
     r.listN = bad.n;
+    if (!r.g.ok) { r.noPacks = true; r.reachedLoop = true; return r; }
     for (int i = 0; i < n; i++) {
         if (badMatch(bad, names[i], sizes[i])) { r.skippedBad++; continue; }
-        formatLoading(kv.loading, sizeof kv.loading, names[i], sizes[i]);
-        kv.hasLoading = true; kv.loadingWrites++;
+        char rec[BAD_REC];
+        formatLoading(rec, sizeof rec, names[i], sizes[i]);
+        if (!guardSet(api, cur, rec)) { r.skippedNvs++; continue; }
         r.parsed++;
         if (crashes[i]) { r.crashed = true; return r; }
-        kv.hasLoading = false; kv.loadingWrites++;
+        guardClear(api, cur);
         if (r.loaded < MAX_PACKS * 4) snprintf(r.loadedNames[r.loaded], 32, "%s", names[i]);
         r.loaded++;
     }
+    r.reachedLoop = true;
     return r;
 }
 
@@ -587,14 +620,14 @@ static void guardTests() {
         FakeKv kv;
         FakeFolder card[] = {{"A", 100, true}, {"B", 200, true}};
         for (int i = 0; i < 3; i++) boot(kv, card, 2);
-        check("guard e: list holds A and B", !strcmp(kv.list, "A:100,B:200"));
+        check("guard e: list holds A and B", kv.get(GUARD_KEY_BAD) == "A:100,B:200");
         FakeFolder onlyB[] = {{"B", 200, true}};
         BootResult r = boot(kv, onlyB, 1);
-        check("guard e: A removed -> pruned from the list", !strcmp(kv.list, "B:200") && !r.crashed && r.parsed == 0);
+        check("guard e: A removed -> pruned from the list", kv.get(GUARD_KEY_BAD) == "B:200" && !r.crashed && r.parsed == 0);
         FakeFolder bEdited[] = {{"B", 201, false}};
         r = boot(kv, bEdited, 1);
         check("guard e: B edited -> tried again and loads", !r.crashed && loadedHas(r, "B"));
-        check("guard e: ...and the list is emptied", !kv.hasList);
+        check("guard e: ...and the list is emptied", !kv.has(GUARD_KEY_BAD));
         FakeFolder bBadAgain[] = {{"B", 202, true}};
         r = boot(kv, bBadAgain, 1);
         BootResult r2 = boot(kv, bBadAgain, 1);
@@ -604,11 +637,11 @@ static void guardTests() {
     // (f) a stale record never blocks a different pack.
     {
         FakeKv kv;
-        strcpy(kv.list, "A:100"); kv.listLen = 5; kv.hasList = true;
+        kv.m[GUARD_KEY_BAD] = "A:100";
         FakeFolder card[] = {{"A", 200, false}, {"AA", 100, false}, {"D", 100, false}};
         BootResult r = boot(kv, card, 3);
         check("guard f: folder AND size must match", !r.crashed && r.loaded == 3);
-        check("guard f: the stale record is dropped", !kv.hasList);
+        check("guard f: the stale record is dropped", !kv.has(GUARD_KEY_BAD));
         BadList l; l.n = 0;
         badAdd(l, "A:100");
         check("guard f: badMatch needs both", badMatch(l, "A", 100) && !badMatch(l, "A", 10) &&
@@ -630,7 +663,7 @@ static void guardTests() {
         check("guard g: boot 33 is clean", firstClean == BAD_MAX + 1);
         BootResult after = boot(kv, card, 40);
         check("guard g: and stays clean with a full list", !after.crashed && after.parsed == 0 && after.listN == BAD_MAX);
-        check("guard g: stored list fits its cap", kv.listLen < BAD_LIST_CAP);
+        check("guard g: stored list fits its cap", kv.get(GUARD_KEY_BAD).size() < BAD_LIST_CAP);
 
         BadList l; l.n = 0;
         char rec[48];
@@ -686,6 +719,164 @@ static void guardTests() {
         check("guard h: badFormat stops at a whole record", !strcmp(tiny, "a:1"));
         BadList none; badParse(nullptr, 10, none);
         check("guard h: NULL stored list is empty", none.n == 0);
+    }
+}
+
+// Round 2: the guard's NVS read path, through the fake store's real maxLen.
+static void guardNvsTests() {
+    printf("boot-loop guard, NVS path:\n");
+    // A/B through the real read: the list persists across boots.
+    {
+        FakeKv kv;
+        FakeFolder card[] = {{"A", 100, true}, {"B", 200, true}};
+        BootResult b[6];
+        for (int i = 0; i < 6; i++) b[i] = boot(kv, card, 2);
+        bool ok = b[0].crashed && b[1].crashed;
+        for (int i = 2; i < 6; i++) if (b[i].crashed || b[i].parsed || !b[i].reachedLoop || b[i].g.listJunk) ok = false;
+        check("nvs: A/B -- scan completes from boot 3, nothing crashing parsed after", ok);
+        check("nvs: A/B -- the stored list holds both", kv.get(GUARD_KEY_BAD) == "A:100,B:200");
+        check("nvs: A/B -- no writes once settled", kv.listWrites == 2);
+    }
+    // Stored lists of 1, 2, 10 and 32 records read back intact. The 32 use
+    // 31-character names and 10-digit sizes: the largest list there can be.
+    {
+        const int ks[] = {1, 2, 10, 32};
+        for (int k : ks) {
+            FakeKv kv;
+            static FakeFolder card[BAD_MAX];
+            BadList l; l.n = 0;
+            for (int i = 0; i < k; i++) {
+                snprintf(card[i].name, 32, "%c%030d", 'a' + i % 26, i);
+                card[i].size = 4000000000u + (uint32_t)i;
+                card[i].crashes = true;
+                char rec[BAD_REC];
+                formatLoading(rec, sizeof rec, card[i].name, card[i].size);
+                badAdd(l, rec);
+            }
+            char stored[BAD_LIST_CAP];
+            badFormat(l, stored, sizeof stored);
+            kv.m[GUARD_KEY_BAD] = stored;
+            const std::string before = stored;
+            BootResult r = boot(kv, card, k);
+            char buf[96];
+            snprintf(buf, sizeof buf, "nvs: a stored list of %d records (%zu bytes) reads back intact", k, before.size());
+            check(buf, !r.g.listJunk && r.listN == k && r.skippedBad == k && r.parsed == 0 && !r.crashed &&
+                       kv.get(GUARD_KEY_BAD) == before && kv.listWrites == 0);
+        }
+    }
+    // Junk: an oversized stored list (getString refuses it) and a garbage one.
+    // Both are replaced, and a pending crash record is still folded in.
+    {
+        FakeKv kv;
+        kv.m[GUARD_KEY_BAD] = std::string(BAD_LIST_CAP + 500, 'z');
+        kv.m[GUARD_KEY_LOADING] = "A:100";
+        FakeFolder card[] = {{"A", 100, true}, {"C", 300, false}};
+        BootResult r = boot(kv, card, 2);
+        check("nvs: an oversized stored list reads as junk", r.g.listJunk);
+        check("nvs: ...is replaced, with the pending crash folded in",
+              kv.get(GUARD_KEY_BAD) == "A:100" && !r.crashed && r.parsed == 1 && r.loaded == 1);
+        check("nvs: ...and 'loading' is cleared", !kv.has(GUARD_KEY_LOADING) && !strcmp(r.g.folded, "A:100"));
+
+        FakeKv kv2;
+        kv2.m[GUARD_KEY_BAD] = "@@,##::,";
+        kv2.m[GUARD_KEY_LOADING] = "A:100";
+        r = boot(kv2, card, 2);
+        check("nvs: a garbage stored list is rewritten with the pending crash",
+              kv2.get(GUARD_KEY_BAD) == "A:100" && !r.crashed && r.skippedBad == 1);
+
+        FakeKv kv3;
+        kv3.m[GUARD_KEY_BAD] = std::string(3000, 'q');
+        FakeFolder good[] = {{"C", 300, false}};
+        r = boot(kv3, good, 1);
+        check("nvs: oversized junk with nothing pending is erased", r.g.listJunk && !kv3.has(GUARD_KEY_BAD) && r.loaded == 1);
+
+        FakeKv kv4;
+        kv4.m[GUARD_KEY_LOADING] = std::string(200, '9');      // junk in flight
+        r = boot(kv4, good, 1);
+        check("nvs: an oversized 'loading' is junk, cleared, and blocks nothing",
+              r.g.loadingJunk && !kv4.has(GUARD_KEY_LOADING) && r.loaded == 1 && !kv4.has(GUARD_KEY_BAD));
+    }
+    // A failed list write while a crash is pending: no packs this boot, the
+    // crash record is kept, and the next boot (write OK) folds it in.
+    {
+        FakeKv kv;
+        kv.m[GUARD_KEY_LOADING] = "A:100";
+        kv.failPutBad = true;
+        FakeFolder card[] = {{"A", 100, true}, {"C", 300, false}};
+        BootResult r = boot(kv, card, 2);
+        check("nvs: list write fails with a crash pending -> no packs read, loop reached",
+              !r.g.ok && r.noPacks && r.reachedLoop && r.parsed == 0 && r.g.listWriteFailed);
+        check("nvs: ...and 'loading' is left set", kv.get(GUARD_KEY_LOADING) == "A:100");
+        kv.failPutBad = false;
+        r = boot(kv, card, 2);
+        check("nvs: next boot folds it in, skips A, loads C",
+              r.g.ok && kv.get(GUARD_KEY_BAD) == "A:100" && r.skippedBad == 1 && r.loaded == 1 && !r.crashed);
+    }
+    // A failed list write with NOTHING pending (only pruning) is not fatal.
+    {
+        FakeKv kv;
+        kv.m[GUARD_KEY_BAD] = "gone:1,C:300";   // prunes to "C:300": a put, which fails
+        kv.failPutBad = true;
+        FakeFolder card[] = {{"C", 300, false}, {"D", 1, false}};
+        BootResult r = boot(kv, card, 2);
+        check("nvs: a failed prune-only write still reads packs", r.g.ok && r.g.listWriteFailed && r.loaded == 1);
+    }
+    // A failed remove of "loading": the boot still completes, and the worst
+    // case is a good pack treated as crashed once (conservative), never a loop.
+    {
+        FakeKv kv;
+        kv.m[GUARD_KEY_LOADING] = "A:100";
+        kv.failRemoveLoading = true;
+        FakeFolder card[] = {{"A", 100, true}, {"C", 300, false}};
+        bool ok = true;
+        for (int i = 0; i < 5; i++) {
+            BootResult r = boot(kv, card, 2);
+            if (r.crashed || !r.reachedLoop) ok = false;
+            if (i == 0 && !r.g.loadingClearFailed) ok = false;
+        }
+        check("nvs: 'loading' cannot be removed -> no crash, loop reached every boot", ok);
+        static BadList l;
+        const std::string st = kv.get(GUARD_KEY_BAD);
+        badParse(st.c_str(), st.size(), l);
+        check("nvs: ...A stays on the list", badMatch(l, "A", 100));
+    }
+    // A failed put of "loading": that folder is not parsed (unguarded).
+    {
+        FakeKv kv;
+        kv.failPutLoading = true;
+        FakeFolder card[] = {{"A", 100, true}, {"C", 300, false}};
+        BootResult r = boot(kv, card, 2);
+        check("nvs: 'loading' cannot be written -> nothing parsed, loop reached",
+              r.parsed == 0 && r.skippedNvs == 2 && r.reachedLoop && !r.crashed);
+    }
+    // Absent "loading": "" and nullptr are the same to badBoot, and an
+    // absent key folds nothing.
+    {
+        char names[2][32] = {"a", "d"};
+        uint32_t sizes[2] = {1, 2};
+        BadList o1, o2;
+        char s1[BAD_LIST_CAP], s2[BAD_LIST_CAP];
+        const bool c1 = badBoot("a:1", 3, nullptr, names, sizes, 2, o1, s1, sizeof s1);
+        const bool c2 = badBoot("a:1", 3, "", names, sizes, 2, o2, s2, sizeof s2);
+        check("nvs: absent loading as nullptr == as \"\"", c1 == c2 && !strcmp(s1, s2) && o1.n == o2.n && !c1);
+        FakeKv kv;
+        FakeFolder card[] = {{"C", 300, false}};
+        BootResult r = boot(kv, card, 1);
+        check("nvs: no keys at all -> nothing folded, nothing written",
+              !r.g.folded[0] && !kv.has(GUARD_KEY_BAD) && kv.listWrites == 0 && r.loaded == 1);
+    }
+    // guardReadResult itself.
+    {
+        char b[8] = "xyz";
+        bool junk = false;
+        check("nvs: getString 0 -> junk, empty", guardReadResult(0, b, sizeof b, junk) == 0 && junk && !b[0]);
+        strcpy(b, "abc");
+        check("nvs: getString 4 -> \"abc\"", guardReadResult(4, b, sizeof b, junk) == 3 && !junk);
+        memset(b, 'k', sizeof b);
+        check("nvs: an unterminated buffer is cut at cap-1", guardReadResult(8, b, sizeof b, junk) == 7 && !junk);
+        check("nvs: nvsGetFits matches Preferences (len+1 <= maxLen)",
+              nvsGetFits(3, 4) && !nvsGetFits(4, 4) && !nvsGetFits(BAD_LIST_CAP, BAD_LIST_CAP) &&
+              nvsGetFits(BAD_LIST_CAP - 1, BAD_LIST_CAP));
     }
 }
 
@@ -813,6 +1004,7 @@ int main() {
     admissionTests();
     keepNameTests();
     guardTests();
+    guardNvsTests();
 
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;

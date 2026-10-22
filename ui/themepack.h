@@ -121,7 +121,7 @@ bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize);
 // more than one slot per examined folder.
 constexpr int    BAD_MAX = 32;
 constexpr size_t BAD_REC = 48;                        // one formatLoading record
-constexpr size_t BAD_LIST_CAP = BAD_MAX * 44 + 1;     // 43 + ',' each, plus NUL
+constexpr size_t BAD_LIST_CAP = BAD_MAX * 44 + 1;     // records are <= 42 chars + ",": 1375 max, room to spare
 
 struct BadList {
     char rec[BAD_MAX][BAD_REC];
@@ -156,5 +156,72 @@ bool badMatch(const BadList& l, const char* folder, uint32_t size);
 bool badBoot(const char* stored, size_t storedLen, const char* loading,
              const char (*names)[32], const uint32_t* sizes, int nNames,
              BadList& out, char* newStored, size_t cap);
+
+// The element count of an ARRAY. Unlike sizeof, it does not compile when
+// handed a pointer, so a buffer's capacity cannot silently become 4 or 8.
+template <class T, size_t N>
+constexpr size_t capOf(const T (&)[N]) { return N; }
+
+// ---- The guard's NVS steps, shared by the device and the host test ---------
+// The device backs GuardKv with Preferences; the host test with a fake store
+// that keeps Preferences' semantics. Every read goes through guardRead, which
+// takes the buffer by reference, so its capacity cannot be mis-passed.
+constexpr const char* GUARD_KEY_LOADING = "loading";   // the folder in flight
+constexpr const char* GUARD_KEY_BAD     = "badpacks";  // every folder:size that crashed
+
+struct GuardKv {
+    void* ctx;
+    bool   (*isKey)(void* ctx, const char* key);
+    // Preferences::getString: copies the value and its NUL and returns that
+    // length (strlen + 1); 0 if absent, on error, or when nvsGetFits() is
+    // false, in which case nothing is copied.
+    size_t (*getString)(void* ctx, const char* key, char* buf, size_t maxLen);
+    size_t (*putString)(void* ctx, const char* key, const char* v);  // strlen(v), or 0
+    bool   (*remove)(void* ctx, const char* key);
+};
+
+// Preferences.cpp: getString refuses (returns 0) when the stored value plus
+// its NUL is longer than maxLen.
+constexpr bool nvsGetFits(size_t valueLen, size_t maxLen) { return valueLen + 1 <= maxLen; }
+
+// What a getString result means for the guard: 0 from a key that exists is
+// junk (too long for its buffer, or unreadable), read as "" with junk set.
+// Returns strlen of what is in buf, which is always NUL terminated.
+size_t guardReadResult(size_t got, char* buf, size_t cap, bool& junk);
+
+template <size_t N>
+size_t guardRead(const GuardKv& kv, const char* key, char (&buf)[N], bool& junk) {
+    static_assert(N > 1, "guardRead needs a real buffer");
+    buf[0] = 0;
+    junk = false;
+    if (!kv.isKey(kv.ctx, key)) return 0;
+    return guardReadResult(kv.getString(kv.ctx, key, buf, N), buf, N, junk);
+}
+
+struct GuardScratch {                 // big; the device keeps one static
+    char stored[BAD_LIST_CAP];
+    char fresh[BAD_LIST_CAP];
+};
+struct GuardCur { char v[BAD_REC]; }; // what "loading" holds now ("" = nothing)
+
+struct GuardBootResult {
+    bool ok;                  // false: a crash is pending and the list could not
+                              // be saved; read NO packs this boot ("loading" kept)
+    bool listJunk;            // the stored list was unreadable and was replaced
+    bool loadingJunk;
+    bool listWriteFailed;
+    bool loadingClearFailed;
+    char folded[BAD_REC];     // the in-flight record found at boot, or ""
+};
+
+// Boot: read both keys, badBoot, write the list back only if it changed (or
+// was junk), then clear "loading". `bad` is the list to skip against.
+GuardBootResult guardBoot(const GuardKv& kv, const char (*names)[32], const uint32_t* sizes,
+                          int nNames, BadList& bad, GuardScratch& s, GuardCur& cur);
+
+// Per folder: record it in flight (false: could not, so do not parse it) and
+// clear it afterwards. Neither writes when NVS already holds the value.
+bool guardSet(const GuardKv& kv, GuardCur& cur, const char* rec);
+void guardClear(const GuardKv& kv, GuardCur& cur);
 
 }  // namespace themepack

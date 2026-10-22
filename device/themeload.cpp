@@ -1,16 +1,22 @@
 // Theme packs off the SD card. See themeload.h.
 //
 // Everything a pack decides goes through ui/themepack (host-tested): this file
-// lists, measures and reads files, keeps the boot-loop guard in NVS, and
-// hands parsed packs to pal::addPack. Every buffer is fixed: the folder list,
-// the theme.json buffer, and at most MAX_PACKS emblem buffers of MAX_EMBLEM
-// bytes each in PSRAM. Nothing is sized from a file.
+// lists, measures and reads files, backs the boot-loop guard's GuardKv with
+// Preferences, and hands parsed packs to pal::addPack. Every buffer is fixed:
+// the folder list, the theme.json buffer, and at most MAX_PACKS emblem buffers
+// of MAX_EMBLEM bytes each in PSRAM. Nothing is sized from a file.
+//
+// Buffer capacities are never passed by hand: every helper that fills a
+// buffer takes it as an array reference (char (&)[N]) and derives N itself,
+// so a pointer cannot be handed in where an array was meant; the rest use
+// capOf(), which does not compile on a pointer. No sizeof on a buffer here.
 #include "themeload.h"
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_heap_caps.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include "sdlog.h"
 #include "elog.h"
 #include "palette.h"
@@ -23,13 +29,12 @@ using namespace themepack;
 
 constexpr const char* DIR = "/themes";
 constexpr const char* NS  = "aether";        // device/prefs.cpp's namespace
-constexpr const char* KEY = "loading";        // the one folder being read now
-constexpr const char* BAD = "badpacks";       // every folder:size that crashed it
 // Folders considered per boot: the MAX_FOLDERS smallest names (keepName), so
 // the choice does not depend on directory order. 32 is four times the packs
 // that can load; anything past it is counted, logged and skipped.
 constexpr int    MAX_FOLDERS = BAD_MAX;     // the crash list needs one slot per folder
-constexpr size_t REC_CAP = 48;               // formatLoading: 31 + ':' + 10 + NUL
+constexpr size_t PATH_CAP = 64;              // "/themes/" + 31 + "/" + "theme.json" + NUL = 51
+constexpr size_t WHY_CAP  = 96;
 
 uint8_t  nSkipped = 0;
 
@@ -38,7 +43,12 @@ uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS];
 int      nNames = 0;
 uint16_t nSeen = 0;                          // valid-named folders listed
 
-uint8_t  json[MAX_JSON];                     // one theme.json at a time
+// One theme.json at a time. The guard's scratch is needed only before the
+// first theme.json is read, so the two share storage.
+union {
+    uint8_t      json[MAX_JSON];
+    GuardScratch guard;
+} buf;
 
 // The registered packs' emblems. pal::addPack stores the Emblem POINTER and
 // Emblem::px points into its buffer, so both live for the whole program:
@@ -51,36 +61,53 @@ uint8_t*    spare = nullptr;
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
 
-// The boot-loop guard (decisions in themepack's bad* helpers). `bad` is the
-// list of packs that have crashed the loader, skipped on sight; `cur` is what
-// "loading" holds now, so nothing is written that is already there.
+// The boot-loop guard. The decisions (themepack::guardBoot, guardSet,
+// guardClear, badMatch) are shared with the host test; this is the NVS
+// behind them. `bad` is the list of packs that have crashed the loader.
 Preferences nvs;
 BadList     bad;
-char        cur[REC_CAP] = {};
+GuardCur    cur;
+
+bool   kvIsKey(void*, const char* k)                              { return nvs.isKey(k); }
+size_t kvGet(void*, const char* k, char* b, size_t maxLen)        { return nvs.getString(k, b, maxLen); }
+size_t kvPut(void*, const char* k, const char* v)                 { return nvs.putString(k, v); }
+bool   kvRemove(void*, const char* k)                             { return nvs.remove(k); }
+const GuardKv KV = {nullptr, kvIsKey, kvGet, kvPut, kvRemove};
 
 void countSkip() { if (nSkipped < 255) nSkipped++; }
 
 // A folder name off the card is hostile until folderNameOk says otherwise:
-// for the log, keep it printable and short.
-void logSafe(char* out, size_t cap, const char* in) {
+// for the log, keep it printable and at most 31 characters.
+template <size_t N>
+void logSafe(char (&out)[N], const char* in) {
+    static_assert(N >= 32, "room for a 31-character name");
     size_t o = 0;
-    for (; in && in[o] && o < 31 && o + 1 < cap; o++)
+    for (; in && in[o] && o < 31; o++)
         out[o] = (in[o] >= 0x20 && in[o] < 0x7F) ? in[o] : '?';
     out[o] = 0;
 }
 
 void skip(const char* folder, const char* why) {
     char safe[32];
-    logSafe(safe, sizeof safe, folder);
+    logSafe(safe, folder);
     elog::event(elog::WARN, "theme", "%s: %s", safe, why);
     countSkip();
 }
 
-// False if the path would not fit (it always does for a folderNameOk name:
-// 8 + 31 + 1 + 10 < 64), in which case `out` is empty and every read fails.
-bool pathOf(char* out, size_t cap, const char* folder, const char* file) {
-    const int w = snprintf(out, cap, "%s/%s/%s", DIR, folder, file);
-    if (w > 0 && (size_t)w < cap) return true;
+template <size_t N>
+__attribute__((format(printf, 2, 3)))
+void setWhy(char (&why)[N], const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(why, N, fmt, ap);
+    va_end(ap);
+}
+
+// False if the path would not fit (it always does for a folderNameOk name),
+// in which case `out` is empty and every read fails.
+bool pathOf(char (&out)[PATH_CAP], const char* folder, const char* file) {
+    const int w = snprintf(out, PATH_CAP, "%s/%s/%s", DIR, folder, file);
+    if (w > 0 && (size_t)w < PATH_CAP) return true;
     out[0] = 0;
     return false;
 }
@@ -95,10 +122,10 @@ void onEntry(const char* name, bool isDir, void*) {
 }
 
 void measure() {
-    char path[64];
+    char path[PATH_CAP];
     for (int i = 0; i < nNames; i++) {
-        jsonSz[i] = pathOf(path, sizeof path, names[i], "theme.json") ? sdlog::sizeOf(path) : 0;
-        embSz[i]  = pathOf(path, sizeof path, names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
+        jsonSz[i] = pathOf(path, names[i], "theme.json") ? sdlog::sizeOf(path) : 0;
+        embSz[i]  = pathOf(path, names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
     }
 }
 
@@ -109,103 +136,70 @@ uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot w
 
 // --- boot-loop guard -------------------------------------------------------
 
-bool guardPut(const char* v) {
-    if (!strcmp(cur, v)) return true;
-    const bool ok = v[0] ? nvs.putString(KEY, v) == strlen(v) : nvs.remove(KEY);
-    if (ok) snprintf(cur, sizeof cur, "%s", v);
-    return ok;
-}
-
-// A string key read into buf; "" if absent. A value too long for buf (junk,
-// or written by something else) also reads as "", and `junk` says so.
-size_t readKey(const char* key, char* buf, size_t cap, bool& junk) {
-    buf[0] = 0;
-    junk = false;
-    if (!nvs.isKey(key)) return 0;
-    const size_t n = nvs.getString(key, buf, cap);
-    buf[cap - 1] = 0;
-    if (n == 0) { buf[0] = 0; junk = true; }
-    return strlen(buf);
-}
-
-// Fold a "loading" record left by a reset into the crash list, prune the
-// list against this boot's folders (badBoot), write it back only if it
-// changed, then clear "loading". Written in that order so a reset in
-// between only repeats an idempotent merge. False if the list could not be
-// written: then "loading" is left alone and no pack is read this boot, since
-// clearing it would forget the crash.
+// Fold a crash left by the last boot into the list (guardBoot) and log what
+// it found. False: no pack may be read this boot.
 bool guardBegin() {
-    // The theme.json buffer is idle until the first pack is read: borrow it.
-    static_assert(2 * BAD_LIST_CAP <= sizeof json, "crash-list buffers must fit in json");
-    char* const stored = (char*)json;
-    char* const fresh  = stored + BAD_LIST_CAP;
-    char loading[REC_CAP];
-    bool listJunk, loadJunk;
-    const size_t sl = readKey(BAD, stored, sizeof stored, listJunk);
-    readKey(KEY, loading, sizeof loading, loadJunk);
     uint32_t sizes[MAX_FOLDERS];
     for (int i = 0; i < nNames; i++) sizes[i] = totalOf(i);
-    const bool changed = badBoot(stored, sl, loading, names, sizes, nNames, bad, fresh, BAD_LIST_CAP);
-    if (changed || listJunk) {
-        const bool ok = fresh[0] ? nvs.putString(BAD, fresh) == strlen(fresh) : nvs.remove(BAD);
-        if (!ok && loading[0]) return false;
-    }
-    if (loading[0] || loadJunk) nvs.remove(KEY);
-    cur[0] = 0;
-    if (loading[0]) {
+    const GuardBootResult g = guardBoot(KV, names, sizes, nNames, bad, buf.guard, cur);
+    if (g.listJunk)
+        elog::event(elog::WARN, "theme", "crash list in NVS was unreadable; replaced");
+    if (g.folded[0]) {
         char safe[32];
-        logSafe(safe, sizeof safe, loading);
+        logSafe(safe, g.folded);
         elog::event(elog::WARN, "theme", "reset while loading %s; skipped until it changes", safe);
     }
-    return true;
+    if (g.listWriteFailed)
+        elog::event(elog::ERR, "theme", "could not save the crash list in NVS");
+    if (g.loadingClearFailed)
+        elog::event(elog::ERR, "theme", "could not clear the loading record in NVS");
+    return g.ok;
 }
-
-// After a folder, loaded or cleanly skipped: nothing is in flight.
-void guardEnd() { guardPut(""); }
 
 // --- one pack --------------------------------------------------------------
 
-const Emblem* loadEmblem(const char* folder, uint32_t size, char* why, size_t whyCap) {
-    if (size == 0) { snprintf(why, whyCap, "centre is emblem but emblem.bin is missing"); return nullptr; }
-    if (size > MAX_EMBLEM) { snprintf(why, whyCap, "emblem.bin over %u bytes", (unsigned)MAX_EMBLEM); return nullptr; }
+const Emblem* loadEmblem(const char* folder, uint32_t size, char (&why)[WHY_CAP]) {
+    if (size == 0) { setWhy(why, "centre is emblem but emblem.bin is missing"); return nullptr; }
+    if (size > MAX_EMBLEM) { setWhy(why, "emblem.bin over %u bytes", (unsigned)MAX_EMBLEM); return nullptr; }
     if (!spare) spare = (uint8_t*)heap_caps_malloc(MAX_EMBLEM, MALLOC_CAP_SPIRAM);
-    if (!spare) { snprintf(why, whyCap, "no PSRAM for emblem.bin"); return nullptr; }
-    char path[64];
-    const uint32_t n = pathOf(path, sizeof path, folder, "emblem.bin")
+    if (!spare) { setWhy(why, "no PSRAM for emblem.bin"); return nullptr; }
+    char path[PATH_CAP];
+    const uint32_t n = pathOf(path, folder, "emblem.bin")
                      ? sdlog::readFile(path, spare, (uint32_t)MAX_EMBLEM) : 0;
-    if (n != size) { snprintf(why, whyCap, "emblem.bin could not be read"); return nullptr; }
+    if (n != size) { setWhy(why, "emblem.bin could not be read"); return nullptr; }
     Emblem& e = emblems[nTaken];             // the slot the next admitted pack takes
     char ewhy[40];
-    if (!parseEmblem(spare, n, e, ewhy, sizeof ewhy)) {
-        snprintf(why, whyCap, "emblem.bin: %s", ewhy);
+    if (!parseEmblem(spare, n, e, ewhy, capOf(ewhy))) {
+        setWhy(why, "emblem.bin: %s", ewhy);
         return nullptr;
     }
     return &e;
 }
 
-bool loadPack(const char* folder, uint32_t js, uint32_t es, char* why, size_t whyCap) {
-    char path[64];
-    const uint32_t n = pathOf(path, sizeof path, folder, "theme.json")
-                     ? sdlog::readFile(path, json, (uint32_t)sizeof json) : 0;
-    if (n == 0 || n != js) { snprintf(why, whyCap, "theme.json could not be read"); return false; }
+bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]) {
+    static_assert(capOf(buf.json) == MAX_JSON, "theme.json buffer");
+    char path[PATH_CAP];
+    const uint32_t n = pathOf(path, folder, "theme.json")
+                     ? sdlog::readFile(path, buf.json, (uint32_t)MAX_JSON) : 0;
+    if (n == 0 || n != js) { setWhy(why, "theme.json could not be read"); return false; }
 
     Pack p;
     char pwhy[48];
-    if (!parse((const char*)json, n, p, pwhy, sizeof pwhy)) {
-        snprintf(why, whyCap, "theme.json: %s", pwhy);
+    if (!parse((const char*)buf.json, n, p, pwhy, capOf(pwhy))) {
+        setWhy(why, "theme.json: %s", pwhy);
         return false;
     }
     const Emblem* em = nullptr;
-    if (p.centre == CENTRE_EMBLEM && !(em = loadEmblem(folder, es, why, whyCap))) return false;
+    if (p.centre == CENTRE_EMBLEM && !(em = loadEmblem(folder, es, why))) return false;
 
     const Admit a = admit(folder, p, taken, nTaken);
-    if (a != ADMIT_OK) { snprintf(why, whyCap, "%s", admitWhy(a)); return false; }
+    if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); return false; }
 
     Pack probe = p;                          // addPack sanitises its own copy
     if (sanitizeStatus(probe))
         elog::event(elog::WARN, "theme", "%s: status colours too faint, replaced", folder);
     const int id = pal::addPack(p, em);
-    if (id < 0) { snprintf(why, whyCap, "%s", admitWhy(ADMIT_FULL)); return false; }
+    if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); return false; }
     taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
     elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d", folder, p.name, id);
@@ -223,12 +217,12 @@ void visit(int i) {
     if (jsonSz[i] == 0) { skip(folder, "no theme.json"); return; }
     if (jsonSz[i] > MAX_JSON) { skip(folder, "theme.json over 4096 bytes"); return; }
 
-    char rec[REC_CAP];
-    formatLoading(rec, sizeof rec, folder, total);
-    if (!guardPut(rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
-    char why[96] = "unknown";
-    const bool ok = loadPack(folder, jsonSz[i], embSz[i], why, sizeof why);
-    guardEnd();
+    char rec[BAD_REC];
+    formatLoading(rec, capOf(rec), folder, total);
+    if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
+    char why[WHY_CAP] = "unknown";
+    const bool ok = loadPack(folder, jsonSz[i], embSz[i], why);
+    guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }
 
@@ -254,7 +248,7 @@ void scan() {
         return;
     }
     if (!guardBegin()) {
-        elog::event(elog::ERR, "theme", "could not record a crashed pack in NVS, %d pack folders not loaded", nNames);
+        elog::event(elog::ERR, "theme", "a crash could not be recorded, %d pack folders not loaded", nNames);
         for (int i = 0; i < nNames; i++) countSkip();
         nvs.end();
         return;

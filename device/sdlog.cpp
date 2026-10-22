@@ -5,6 +5,10 @@
 
 namespace sdlog {
 namespace {
+// The element count of an ARRAY; does not compile on a pointer (see
+// themepack::capOf), so no buffer capacity here can become sizeof(char*).
+template <class T, size_t N>
+constexpr size_t capOf(const T (&)[N]) { return N; }
 bool mounted = false;
 uint32_t stallMax = 0;                         // longest write since takeMaxStallMs()
 inline void noteStall(uint32_t t0) {
@@ -56,8 +60,8 @@ static bool writeAtomicImpl(const char* name,
     // name.tmp / name.bak alongside the target. Guard the buffer: a silent
     // snprintf truncation could make tmp == name and destroy the live file.
     char tmp[64], bak[64];
-    if (snprintf(tmp, sizeof tmp, "%s.tmp", name) >= (int)sizeof tmp) return false;
-    if (snprintf(bak, sizeof bak, "%s.bak", name) >= (int)sizeof bak) return false;
+    if (snprintf(tmp, capOf(tmp), "%s.tmp", name) >= (int)capOf(tmp)) return false;
+    if (snprintf(bak, capOf(bak), "%s.bak", name) >= (int)capOf(bak)) return false;
 
     // 1. Write the whole document to a temp file. The live file is not touched
     //    at all until this has run and closed cleanly, so any failure here
@@ -120,7 +124,7 @@ bool dump(Print& out, const char* name) {
     if (!f) return false;
     uint8_t buf[256];
     while (f.available()) {
-        const int k = f.read(buf, sizeof buf);
+        const int k = f.read(buf, capOf(buf));
         if (k <= 0) break;
         out.write(buf, (size_t)k);
     }

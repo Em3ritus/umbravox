@@ -601,4 +601,64 @@ bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize) 
     return strncmp(record, want, sizeof want) == 0 && strlen(record) < sizeof want;
 }
 
+// ---- guard NVS steps ---------------------------------------------------------
+
+size_t guardReadResult(size_t got, char* buf, size_t cap, bool& junk) {
+    junk = false;
+    if (!buf || cap == 0) return 0;
+    if (got == 0) { buf[0] = 0; junk = true; return 0; }
+    buf[cap - 1] = 0;
+    return strnlen(buf, cap);
+}
+
+namespace {
+void curSet(GuardCur& cur, const char* v) {
+    size_t i = 0;
+    for (; v && v[i] && i + 1 < capOf(cur.v); i++) cur.v[i] = v[i];
+    cur.v[i] = 0;
+}
+} // namespace
+
+GuardBootResult guardBoot(const GuardKv& kv, const char (*names)[32], const uint32_t* sizes,
+                          int nNames, BadList& bad, GuardScratch& s, GuardCur& cur) {
+    GuardBootResult r = {};
+    char loading[BAD_REC];
+    const size_t sl = guardRead(kv, GUARD_KEY_BAD, s.stored, r.listJunk);
+    guardRead(kv, GUARD_KEY_LOADING, loading, r.loadingJunk);
+    curSet(cur, loading);                       // what "loading" holds now
+    if (r.loadingJunk) curSet(cur, "?");        // something, not a record: clear it
+    memcpy(r.folded, loading, capOf(r.folded));
+
+    const bool changed = badBoot(s.stored, sl, loading, names, sizes, nNames, bad,
+                                 s.fresh, capOf(s.fresh));
+    if (changed || r.listJunk) {
+        const bool ok = s.fresh[0]
+            ? kv.putString(kv.ctx, GUARD_KEY_BAD, s.fresh) == strnlen(s.fresh, capOf(s.fresh))
+            : kv.remove(kv.ctx, GUARD_KEY_BAD);
+        r.listWriteFailed = !ok;
+        // A crash we could not save: keep "loading" and read nothing, or the
+        // next folder's record would overwrite the only trace of it.
+        if (!ok && loading[0]) { r.ok = false; return r; }
+    }
+    if (cur.v[0]) {
+        if (kv.remove(kv.ctx, GUARD_KEY_LOADING)) cur.v[0] = 0;
+        else r.loadingClearFailed = true;
+    }
+    r.ok = true;
+    return r;
+}
+
+bool guardSet(const GuardKv& kv, GuardCur& cur, const char* rec) {
+    if (!rec || !rec[0]) return false;
+    if (strncmp(cur.v, rec, capOf(cur.v)) == 0) return true;
+    if (kv.putString(kv.ctx, GUARD_KEY_LOADING, rec) != strnlen(rec, capOf(cur.v))) return false;
+    curSet(cur, rec);
+    return true;
+}
+
+void guardClear(const GuardKv& kv, GuardCur& cur) {
+    if (!cur.v[0]) return;
+    if (kv.remove(kv.ctx, GUARD_KEY_LOADING)) cur.v[0] = 0;
+}
+
 }  // namespace themepack
