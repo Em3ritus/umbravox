@@ -210,6 +210,14 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     return TH_COUNT + slot;
 }
 
+// Host tools and tests only; the device never calls it (see palette.h).
+void clearPacks() {
+    memset(PACKS, 0, sizeof PACKS);
+    memset(PACK_ROWS, 0, sizeof PACK_ROWS);
+    for (int s = 0; s < themepack::MAX_PACKS; s++) PACK_EMBLEM[s] = nullptr;
+    nPacks = 0;
+}
+
 int findPack(const char* name) {
     if (!name || !name[0]) return -1;
     for (int s = 0; s < nPacks; s++)

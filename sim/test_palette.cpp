@@ -195,6 +195,31 @@ int main() {
         check("empty name, garbage id -> UMBRAVOX", pal::resolveSaved("", 200) == pal::TH_UMBRAVOX);
     }
 
+    // Host tools only (the designer's wasm bridge replaces its draft pack):
+    // the device never calls clearPacks.
+    printf("clearPacks:\n");
+    {
+        check("table full before clearing", pal::themeCount() == 11);
+        pal::clearPacks();
+        check("cleared: only the built-ins", pal::themeCount() == pal::TH_COUNT);
+        check("old pack id 3 is UMBRAVOX again", !strcmp(pal::themeName(3), "UMBRAVOX"));
+        check("old pack id 10 is UMBRAVOX again", !strcmp(pal::themeName(10), "UMBRAVOX"));
+        check("old pack name not found", pal::findPack("SANE") == -1 && pal::findPack("P7") == -1);
+        check("old emblem pointer gone", pal::emblem(4) == nullptr);
+        check("old centrepiece gone", pal::centrepiece(4) == pal::CP_HEPTAGRAM);
+        pal::setTheme(4);
+        check("old pack id draws UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
+        check("built-ins survive clearing", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD &&
+                                            !strcmp(pal::themeName(pal::TH_BAPH0MAU5), "BAPH0MAU5"));
+        themepack::Pack again = mkPack("AGAIN", themepack::DIAL_COMPACT, 0x0001, ui::SW_RADAR, 0x5000);
+        check("registering again starts at slot 0", pal::addPack(again, nullptr) == pal::TH_COUNT);
+        check("count after re-register", pal::themeCount() == pal::TH_COUNT + 1);
+        check("re-registered pack resolves", pal::findPack("AGAIN") == pal::TH_COUNT &&
+                                             !strcmp(pal::themeName(pal::TH_COUNT), "AGAIN"));
+        pal::clearPacks();
+        check("clearing twice is harmless", pal::themeCount() == pal::TH_COUNT);
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

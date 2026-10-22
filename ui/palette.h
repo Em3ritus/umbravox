@@ -85,6 +85,13 @@ int themeCount();
 // Not thread-safe: call before anything draws (boot, or the sim's setup).
 int addPack(const themepack::Pack& p, const themepack::Emblem* e);
 
+// Forget every loaded pack: the count goes back to TH_COUNT, the storage is
+// zeroed, old pack ids fall back to UMBRAVOX and the next addPack is slot 0.
+// HOST TOOLS ONLY (the designer's WebAssembly preview replacing its draft, and
+// tests): the device never calls this -- its packs are loaded once at boot.
+// It does not repaint: the caller runs setTheme before anything draws.
+void clearPacks();
+
 // The theme id of the pack with exactly this name, or -1. Packs only: a
 // built-in's name never matches.
 int findPack(const char* name);

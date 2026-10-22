@@ -46,3 +46,8 @@ sim/test_contrast
 
 # JS tooling
 node_modules/
+
+# Designer WebAssembly preview: build outputs of tools/build-designer-wasm.sh
+web/designer/wasm/uv_preview.js
+web/designer/wasm/uv_preview.wasm
+web/designer/wasm/build/
