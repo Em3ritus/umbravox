@@ -4,9 +4,15 @@
 export const ROLES = ['void', 'panel', 'grid', 'edge', 'edgeLit', 'dim', 'text', 'bright',
   'witch', 'witchHi', 'bone', 'sweep', 'sweepHi', 'live', 'liveHi', 'magenta', 'ice', 'green', 'amber', 'red'];
 
+// Safe text for a value in an error message (never throws, even for objects).
+export function describe(v) {
+  try { return typeof v === 'symbol' ? v.toString() : String(v); } catch (e) { return '[unprintable]'; }
+}
+
 export const isHex = (s) => typeof s === 'string' && /^#[0-9A-Fa-f]{6}$/.test(s);
 
 function rgb(hex) {
+  if (!isHex(hex)) throw new Error('expected #RRGGBB, got ' + describe(hex));
   return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 }
 const toHex = (r, g, b) =>

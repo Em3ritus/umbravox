@@ -119,3 +119,27 @@ test('contrast numbers are shown with one decimal', () => {
   const t = base(); t.colors.panel = '#000000'; t.colors.text = '#FFFFFF';
   assert.ok(find(runChecks(t, null), 'ok', /21\.0:1/).length >= 1);
 });
+
+test('malformed colours are named error results and never throw', () => {
+  const t = base(); t.colors.witch = 'zzz';
+  const rs = runChecks(t, null);
+  assert.ok(find(rs, 'error', /colour 'witch' is not #RRGGBB: zzz/).length === 1);
+  assert.equal(errors(rs).filter((r) => /not #RRGGBB/.test(r.text)).length, 1);
+  for (const r of rs) assert.ok(!/NaN|Infinity/.test(r.text), r.text);
+  for (const v of [5, null, undefined, '#FFF', {}, '']) {
+    const u = base(); u.colors.text = v; u.colors.amber = v; u.colors.dim = v;
+    let out;
+    assert.doesNotThrow(() => { out = runChecks(u, null); }, String(v));
+    assert.ok(find(out, 'error', /colour 'text' is not #RRGGBB/).length === 1);
+    for (const r of out) assert.ok(!/NaN|Infinity/.test(r.text), r.text);
+  }
+});
+
+test('runChecks survives themes with no or empty colours', () => {
+  for (const th of [{}, { colors: {} }, { colors: null }, { colors: 7 }, { name: 'X', colors: undefined }, undefined, null]) {
+    let out;
+    assert.doesNotThrow(() => { out = runChecks(th, null); });
+    assert.ok(find(out, 'error', /colour '\w+' is not #RRGGBB/).length >= 1);
+    for (const r of out) assert.ok(!/NaN|Infinity/.test(r.text), r.text);
+  }
+});

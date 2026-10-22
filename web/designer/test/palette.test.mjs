@@ -62,3 +62,16 @@ test('fromAccent is deterministic and accepts lowercase', () => {
 test('fromAccent differs for different accents', () => {
   assert.notDeepEqual(fromAccent('#FF0000'), fromAccent('#0000FF'));
 });
+
+test('helpers throw a clear error for anything but #RRGGBB', () => {
+  const bad = ['zzz', '', null, undefined, 123, '#FFF', 'FFFFFF', '#GGGGGG', '#FFFFFFF'];
+  for (const b of bad) {
+    const re = new RegExp('expected #RRGGBB, got ' + String(b).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    assert.throws(() => fromAccent(b), re, 'fromAccent ' + String(b));
+    assert.throws(() => toRgb565(b), re, 'toRgb565 ' + String(b));
+    assert.throws(() => clamp565(b), re, 'clamp565 ' + String(b));
+  }
+  assert.equal(toRgb565('#abcdef'), toRgb565('#ABCDEF'));
+  assert.equal(clamp565('#abcdef'), clamp565('#ABCDEF'));
+  assert.equal(contrastRatio('#abcdef', '#000000'), contrastRatio('#ABCDEF', '#000000'));
+});

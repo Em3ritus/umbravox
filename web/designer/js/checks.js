@@ -1,7 +1,7 @@
 // Everything the designer can tell the user about a theme before it is built,
 // using the same rules as the firmware (ui/themepack.cpp, ui/contrast.h).
 import limits from './limits.json' with { type: 'json' };
-import { ROLES, isHex, toRgb565, contrastX10, contrastRatio, fmtRatio } from './palette.js';
+import { ROLES, isHex, describe, toRgb565, contrastX10, contrastRatio, fmtRatio } from './palette.js';
 import { themeJson } from './pack.js';
 
 const ok = (text) => ({ level: 'ok', text });
@@ -21,8 +21,8 @@ export function runChecks(theme, emblem) {
 
   // colours
   const bad = ROLES.filter((r) => !isHex(c[r]));
-  if (bad.length) out.push(error('Colours missing or not #RRGGBB: ' + bad.join(', ') + '.'));
-  else out.push(ok('All ' + ROLES.length + ' colours are set.'));
+  for (const r of bad) out.push(error("colour '" + r + "' is not #RRGGBB: " + describe(c[r])));
+  if (!bad.length) out.push(ok('All ' + ROLES.length + ' colours are set.'));
   const have = (...rs) => rs.every((r) => isHex(c[r]));
   const ratio = (a, b) => contrastRatio(c[a], c[b]);
 

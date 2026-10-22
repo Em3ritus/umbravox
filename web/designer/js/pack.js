@@ -1,6 +1,6 @@
 // Theme + emblem -> the files of a pack, exactly as the device parser reads them.
 import limits from './limits.json' with { type: 'json' };
-import { ROLES, isHex } from './palette.js';
+import { ROLES, isHex, describe } from './palette.js';
 import { emblemToBin } from './emblem.js';
 
 // Strings are never escaped: the device rejects escapes, so refuse instead.
@@ -25,7 +25,7 @@ export function themeJson(t) {
   lines.push('  "alert": ' + q(t.alert || 'ward', 'alert'));
   const cols = ROLES.map((r) => {
     const v = t.colors && t.colors[r];
-    if (!isHex(v)) throw new Error('colour ' + r + ' must be #RRGGBB');
+    if (!isHex(v)) throw new Error("colour '" + r + "' is not #RRGGBB: " + describe(v));
     return '    "' + r + '": "' + v.toUpperCase() + '"';
   });
   lines.push('  "colors": {\n' + cols.join(',\n') + '\n  }');

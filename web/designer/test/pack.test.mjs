@@ -79,3 +79,9 @@ reject('a 21-character name', theme({ name: 'A'.repeat(21) }), /name/);
 reject('a bad header character', theme({ header: 'A{B' }), /header/);
 reject('a lowercase name', theme({ name: 'lower' }), /name/);
 reject('an empty sweeps list', theme({ sweeps: [] }), /sweeps/);
+
+test('buildPack names the bad colour', () => {
+  const t = theme(); t.colors = { ...t.colors, witch: 'zzz' };
+  assert.throws(() => buildPack(t, null), /colour 'witch' is not #RRGGBB: zzz/);
+  assert.throws(() => buildPack(theme({ colors: {} }), null), /colour 'void' is not #RRGGBB: undefined/);
+});
