@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+#include "board.h"
 
 namespace sdlog {
 namespace {
@@ -12,17 +13,18 @@ inline void noteStall(uint32_t t0) {
     if (d > stallMax) stallMax = d;
 }
 
-// SD chip-select, confirmed against RockBase's NM-CYD-C5 schematic (see
-// README: "SD CS 10"). PIN_CS (23) is the LCD's, touch is CS 1; SCK/MOSI/MISO
-// (6/7/2) are the shared bus the SD joins on CS 10.
-constexpr int SD_CS = 10;
+// SD chip-select, from board.h: CS 10 on the NM-CYD-C5 (its LCD is 23, touch
+// 1), CS 9 on the Waveshare C5 3.5 (LCD 8). On both, SCK/MOSI/MISO (6/7/2)
+// are the display's bus, and the card joins it.
+constexpr int SD_CS = board::PIN_SD_CS;
 }
 
 bool begin() {
-    // touch::begin() has already brought up the shared SPI bus (SCK 6 / MISO 2
-    // / MOSI 7) on the global SPI instance, and the panel shares it under the
-    // HAL lock. SD joins the same bus on CS 10; SD.begin reuses the already-
-    // begun SPI and drives CS 10 itself, holding it high between transactions.
+    // setup() has already brought up the shared SPI bus (SCK 6 / MISO 2 /
+    // MOSI 7) on the global SPI instance, and the panel shares it under the
+    // HAL lock. SD joins the same bus on its own CS; SD.begin reuses the
+    // already-begun SPI and drives CS itself, holding it high between
+    // transactions.
     mounted = (SD_CS >= 0) && SD.begin(SD_CS, SPI);
     if (mounted) {
         Serial.printf("sdlog: card mounted on CS %d, %llu MB\n",
