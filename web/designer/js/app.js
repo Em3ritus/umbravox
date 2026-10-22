@@ -9,9 +9,10 @@ import { buildPack, folderName } from './pack.js';
 import { makeZip } from './zip.js';
 import { imageToEmblem } from './emblem.js';
 import {
-  TEMPLATES, makeTemplate, blankTheme, sanitizeText, sanitizeName, themeFromState, openPackFiles, startSweep,
+  TEMPLATES, makeTemplate, blankTheme, sanitizeText, sanitizeName, themeFromState, openPackFiles, selectPackFiles, startSweep,
 } from './model.js';
 import { limitsFor, placeLimitations, renderLimitList, DESIGN_PLACES } from './limitations.js';
+import { installGate } from './gate.js';
 import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
 import { loadWasm, W, H } from './preview.js';
@@ -31,12 +32,26 @@ function el(tag, props = {}, ...kids) {
 const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
 
 // ---------------------------------------------------------------- views
+function installBlock() {
+  if (!state.theme) return 'Choose a template first.';
+  const g = installGate(currentTheme(), state.emblem);
+  return g.ok ? null : g.reason;
+}
 function show(view) {
+  if (view === 'install') {
+    const why = installBlock();
+    if (why) {
+      const m = state.view === 'start' ? $('open-msg') : $('action-msg');
+      m.className = 'msg err'; m.textContent = 'The Install step is closed. ' + why;
+      if (state.view === 'install') view = 'design'; else return;
+    }
+  }
   state.view = view;
   for (const s of document.querySelectorAll('.view')) s.hidden = s.dataset.view !== view;
   for (const b of document.querySelectorAll('.step')) {
     if (b.dataset.view === view) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
-    if (b.dataset.view !== 'start') b.disabled = !state.theme;
+    if (b.dataset.view === 'design') b.disabled = !state.theme;
+    if (b.dataset.view === 'install') { const why = installBlock(); b.disabled = !!why; b.title = why || ''; }
   }
   if (view === 'install') enterInstall();
 }
@@ -83,16 +98,13 @@ function begin(theme, emblem) {
 }
 
 // open an existing theme: files, folder or drop
-async function readFiles(list) {
-  const out = [];
-  for (const f of list) out.push({ name: f.webkitRelativePath || f.name, data: new Uint8Array(await f.arrayBuffer()) });
-  return out;
-}
+// Descriptors only; contents are read after selectPackFiles has chosen what may be read.
+const describeFile = (f, path) => ({ name: path || f.webkitRelativePath || f.name, webkitRelativePath: path || f.webkitRelativePath || '', size: f.size, file: f });
 async function entriesToFiles(items) {
   const files = [];
   const walk = async (entry, depth) => {
-    if (entry.isFile) files.push(await new Promise((res, rej) => entry.file(res, rej)));
-    else if (entry.isDirectory && depth < 2) {
+    if (entry.isFile) { const f = await new Promise((res, rej) => entry.file(res, rej)); files.push(describeFile(f, entry.fullPath.replace(/^\//, ''))); }
+    else if (entry.isDirectory && depth < 3) {
       const r = entry.createReader();
       for (;;) {
         const batch = await new Promise((res, rej) => r.readEntries(res, rej));
@@ -104,10 +116,14 @@ async function entriesToFiles(items) {
   for (const it of items) { const e = it.webkitGetAsEntry && it.webkitGetAsEntry(); if (e) await walk(e, 0); }
   return files;
 }
-async function openThese(fileList) {
+async function openThese(descs) {
   const msg = $('open-msg'); msg.className = 'msg';
   try {
-    const r = openPackFiles(await readFiles(fileList));
+    const sel = selectPackFiles(descs);
+    if (!sel.ok) { msg.className = 'msg err'; msg.textContent = sel.error; return; }
+    const read = [];
+    for (const d of sel.picked) read.push({ name: d.name, data: new Uint8Array(await d.file.arrayBuffer()) });
+    const r = openPackFiles(read);
     if (!r.ok) { msg.className = 'msg err'; msg.textContent = r.error; return; }
     begin(r.theme, r.emblem);
     if (r.warnings.length) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'Opened with changes: ' + r.warnings.join(' '); }
@@ -115,8 +131,8 @@ async function openThese(fileList) {
 }
 $('btn-open-files').addEventListener('click', () => $('in-files').click());
 $('btn-open-folder').addEventListener('click', () => $('in-folder').click());
-$('in-files').addEventListener('change', (e) => openThese([...e.target.files]));
-$('in-folder').addEventListener('change', (e) => openThese([...e.target.files]));
+$('in-files').addEventListener('change', (e) => openThese([...e.target.files].map((f) => describeFile(f))));
+$('in-folder').addEventListener('change', (e) => openThese([...e.target.files].map((f) => describeFile(f))));
 const drop = $('drop');
 drop.addEventListener('click', () => $('in-files').click());
 drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') $('in-files').click(); });
@@ -125,8 +141,8 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', async (e) => {
   e.preventDefault(); drop.classList.remove('over');
   const items = [...e.dataTransfer.items];
-  const files = items.some((i) => i.webkitGetAsEntry) ? await entriesToFiles(items) : [...e.dataTransfer.files];
-  openThese(files.length ? files : [...e.dataTransfer.files]);
+  const files = items.some((i) => i.webkitGetAsEntry) ? await entriesToFiles(items) : [];
+  openThese(files.length ? files : [...e.dataTransfer.files].map((f) => describeFile(f)));
 });
 
 // ---------------------------------------------------------------- design: form
@@ -270,6 +286,8 @@ function refreshChecks() {
   }
   const bad = checksNow.some((c) => c.level === 'error');
   for (const id of ['btn-download', 'btn-install']) { $(id).disabled = bad; $(id).title = bad ? 'Fix the errors in the checks first.' : ''; }
+  const nav = document.querySelector('.step[data-view="install"]'), why = installBlock();
+  nav.disabled = !!why; nav.title = why || '';
 }
 function refresh() {
   if (!preview || !state.theme) return;
@@ -316,7 +334,10 @@ $('btn-install').addEventListener('click', () => show('install'));
 function logLine(text, cls = '') { $('log').append(el('li', { class: cls, text })); }
 function enterInstall() {
   let pack;
-  try { pack = currentPack(); } catch (e) { show('design'); return; }
+  try { pack = currentPack(); } catch (e) {
+    const m = $('action-msg'); m.className = 'msg err'; m.textContent = 'Cannot install: ' + e.message;
+    state.view = 'design'; show('design'); return;
+  }
   state.lastPack = pack;
   if (preview && preview.hasDraft()) paint($('install-preview'), preview.renderDraft('scan', 24));
   const folder = pack.files[0].path.split('/')[0];
@@ -387,10 +408,15 @@ $('btn-write').addEventListener('click', async () => {
     const res = await installToCard(state.card, files);
     for (const w of res.wrote) log('wrote /' + w);
     for (const r of res.removed) log('removed the old /' + r);
-    if (!res.ok) { log('stopped: ' + res.error, 'err'); $('btn-write').disabled = false; return; }
+    if (!res.ok) {
+      log('stopped: ' + res.error, 'err');
+      log(res.message, res.state === 'unknown' ? 'err' : 'warn');
+      $('btn-write').disabled = false; return;
+    }
     if (res.verified) log('read it back and checked it');
     else {
       for (const m of res.mismatched) log('/' + m + ' does not read back the same as what was written', 'err');
+      log(res.message, 'err');
       log('The card may be failing or write-protected. Try again, or use the zip.', 'err');
       $('btn-write').disabled = false;
       return;

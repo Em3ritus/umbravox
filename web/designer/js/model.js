@@ -167,16 +167,42 @@ export function parseThemeJson(text) {
   return { ok: true, theme, warnings };
 }
 
+// Which of the files the user chose may be read at all. Takes descriptors
+// {name, webkitRelativePath, size} (or {name, data}) -- no contents -- so a
+// card root picked by mistake costs nothing. Keeps only theme.json and
+// emblem.bin, checks their size BEFORE any read, refuses more than one
+// theme.json and an emblem.bin from a different folder.
+export function selectPackFiles(list) {
+  const pathOf = (f) => String(f.webkitRelativePath || f.name);
+  const base = (f) => pathOf(f).split('/').pop();
+  const dir = (f) => pathOf(f).split('/').slice(0, -1).join('/');
+  const size = (f) => (typeof f.size === 'number' ? f.size : f.data ? f.data.length : 0);
+  const themes = list.filter((f) => base(f) === 'theme.json');
+  const emblems = list.filter((f) => base(f) === 'emblem.bin');
+  if (!themes.length) return { ok: false, error: 'No theme.json found. Choose a theme.json, or the theme folder that holds one.' };
+  if (themes.length > 1) return { ok: false, error: 'Found more than one theme.json (' + themes.length + '). Choose one theme folder, not a folder of themes.' };
+  const t = themes[0];
+  if (size(t) > limits.MAX_JSON) return { ok: false, error: 'theme.json is ' + size(t) + ' bytes; a theme.json over ' + limits.MAX_JSON + ' bytes is not a theme and was not read.' };
+  const picked = [t];
+  for (const e of emblems) {
+    if (dir(e) !== dir(t)) return { ok: false, error: 'emblem.bin is not in the same folder as theme.json. Choose one theme folder.' };
+    if (size(e) > limits.MAX_EMBLEM) return { ok: false, error: 'emblem.bin is ' + size(e) + ' bytes; over the ' + limits.MAX_EMBLEM + ' byte limit, so it was not read.' };
+    picked.push(e);
+  }
+  return { ok: true, picked };
+}
+
 // Files the user gave us ({name, data}) -> {ok, theme, emblem, warnings} | {ok:false, error}.
 export function openPackFiles(files) {
+  const sel = selectPackFiles(files);
+  if (!sel.ok) return sel;
   const base = (f) => String(f.name).split('/').pop();
-  const tj = files.find((f) => base(f) === 'theme.json');
-  if (!tj) return { ok: false, error: 'No theme.json found. Choose a theme.json, or the theme folder that holds one.' };
+  const tj = sel.picked.find((f) => base(f) === 'theme.json');
   const r = parseThemeJson(new TextDecoder().decode(tj.data));
   if (!r.ok) return r;
   let emblem = null;
   if (r.theme.centrepiece === 'emblem') {
-    const eb = files.find((f) => base(f) === 'emblem.bin');
+    const eb = sel.picked.find((f) => base(f) === 'emblem.bin');
     if (!eb) return { ok: false, error: 'This theme uses an emblem but no emblem.bin came with it. Choose the whole theme folder, or select theme.json and emblem.bin together.' };
     emblem = emblemFromBin(eb.data);
     if (!emblem) return { ok: false, error: 'emblem.bin is not a valid emblem (wrong header, size or palette).' };

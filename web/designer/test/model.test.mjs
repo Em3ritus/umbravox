@@ -140,3 +140,42 @@ test('emblemFromBin rejects garbage with null, never throws', () => {
     assert.equal(emblemFromBin(b), null);
   }
 });
+
+import { selectPackFiles } from '../js/model.js';
+const mk = (name, size = 10, rel = '') => ({ name, webkitRelativePath: rel, size });
+
+test('selectPackFiles: a 100 MB theme.json is rejected by size, naming the file', () => {
+  const r = selectPackFiles([mk('theme.json', 100 * 1024 * 1024)]);
+  assert.equal(r.ok, false); assert.match(r.error, /theme\.json/); assert.match(r.error, /4096/);
+});
+test('selectPackFiles: an oversized emblem.bin is rejected by size', () => {
+  const r = selectPackFiles([mk('theme.json'), mk('emblem.bin', 50000)]);
+  assert.equal(r.ok, false); assert.match(r.error, /emblem\.bin/);
+});
+test('selectPackFiles: everything but theme.json and emblem.bin is ignored (never read)', () => {
+  const r = selectPackFiles([mk('big.csv', 1e9, 'card/big.csv'), mk('theme.json', 100, 'card/p/theme.json'), mk('diag.log', 1e8, 'card/p/diag.log')]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.picked.map((f) => f.name), ['theme.json']);
+});
+test('selectPackFiles: two theme.json (e.g. /themes picked) is refused', () => {
+  const r = selectPackFiles([mk('theme.json', 10, 'themes/a/theme.json'), mk('theme.json', 10, 'themes/b/theme.json')]);
+  assert.equal(r.ok, false); assert.match(r.error, /more than one theme\.json/i);
+});
+test('selectPackFiles: matching pair in one folder accepted; emblem from another folder refused', () => {
+  const ok = selectPackFiles([mk('theme.json', 10, 'p/theme.json'), mk('emblem.bin', 10, 'p/emblem.bin')]);
+  assert.equal(ok.ok, true); assert.equal(ok.picked.length, 2);
+  const bad = selectPackFiles([mk('theme.json', 10, 'p/theme.json'), mk('emblem.bin', 10, 'q/emblem.bin')]);
+  assert.equal(bad.ok, false); assert.match(bad.error, /same folder/i);
+});
+test('selectPackFiles: loose files without a path are accepted', () => {
+  const r = selectPackFiles([mk('theme.json'), mk('emblem.bin')]);
+  assert.equal(r.ok, true); assert.equal(r.picked.length, 2);
+});
+test('selectPackFiles: no theme.json is a clear error', () => {
+  assert.match(selectPackFiles([mk('readme.txt')]).error, /theme\.json/);
+});
+test('openPackFiles applies the same rules to data it was handed', () => {
+  const d = new Uint8Array(5);
+  const r = openPackFiles([{ name: 'a/theme.json', data: d }, { name: 'b/theme.json', data: d }]);
+  assert.equal(r.ok, false); assert.match(r.error, /more than one/i);
+});

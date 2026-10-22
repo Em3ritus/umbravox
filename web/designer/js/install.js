@@ -15,32 +15,45 @@ async function exists(dir, name) {
 
 // files: [{path: '<folder>/<file>', data: Uint8Array}] as buildPack returns.
 // Never throws for card problems: the result says what happened.
+//
+// Order: (1) remove an emblem.bin the new pack does not have, (2) write
+// emblem.bin, (3) write theme.json LAST. The device only trusts a folder
+// through its theme.json, so a failure part-way never leaves a NEW theme.json
+// beside an OLD emblem; at worst the old theme.json meets the new emblem
+// or nothing changed. Each write is aborted (no .crswap left) if it fails.
+// state: 'untouched' (nothing on the card changed), 'unknown' (the folder may
+// be incomplete or mixed), 'complete' (written and read back identical).
 export async function installToCard(root, files) {
-  const res = { ok: true, unsupported: false, verified: false, wrote: [], removed: [], mismatched: [], error: null };
+  const res = { ok: true, unsupported: false, verified: false, state: 'untouched', wrote: [], removed: [], mismatched: [], error: null, message: '' };
   if (!root) { res.ok = false; res.unsupported = true; return res; }
+  const folders = [...new Set(files.map((f) => f.path.split('/')[0]))];
+  const ordered = [...files].sort((a, b) => (a.path.endsWith('/theme.json') ? 1 : 0) - (b.path.endsWith('/theme.json') ? 1 : 0));
   try {
     const themes = await root.getDirectoryHandle('themes', { create: true });
     const dirs = new Map();
-    for (const f of files) {
-      const [folder, ...rest] = f.path.split('/');
-      const name = rest.join('/');
-      let d = dirs.get(folder);
-      if (!d) { d = await themes.getDirectoryHandle(folder, { create: true }); dirs.set(folder, d); }
-      const fh = await d.getFileHandle(name, { create: true });
-      const w = await fh.createWritable();
-      await w.write(f.data);
-      await w.close();
-      res.wrote.push('themes/' + f.path);
-    }
-    // An overwrite must not leave the old pack's emblem behind when this one has none.
+    for (const folder of folders) dirs.set(folder, await themes.getDirectoryHandle(folder, { create: true }));
     for (const [folder, d] of dirs) {
       if (!files.some((f) => f.path === folder + '/emblem.bin') && await exists(d, 'emblem.bin')) {
+        res.state = 'unknown';
         await d.removeEntry('emblem.bin');
         res.removed.push('themes/' + folder + '/emblem.bin');
       }
     }
-    // Read it all back.
-    for (const f of files) {
+    for (const f of ordered) {
+      const [folder, ...rest] = f.path.split('/');
+      const fh = await dirs.get(folder).getFileHandle(rest.join('/'), { create: true });
+      const w = await fh.createWritable();
+      try {
+        await w.write(f.data);
+        await w.close();
+      } catch (e) {
+        try { await w.abort(); } catch (e2) { /* the first error is the one to report */ }
+        throw e;
+      }
+      res.state = 'unknown';
+      res.wrote.push('themes/' + f.path);
+    }
+    for (const f of ordered) {
       const [folder, ...rest] = f.path.split('/');
       let ok = false;
       try {
@@ -51,8 +64,15 @@ export async function installToCard(root, files) {
       if (!ok) res.mismatched.push('themes/' + f.path);
     }
     res.verified = res.mismatched.length === 0;
+    res.state = res.verified ? 'complete' : 'unknown';
   } catch (e) {
     res.ok = false; res.verified = false; res.error = (e && e.message) || String(e);
+  }
+  if (res.state === 'unknown') {
+    res.message = 'The folder ' + folders.map((f) => '/themes/' + f).join(', ') + ' on the card may be incomplete or mixed (part new, part old). ' +
+      'Run the install again, or delete that folder from the card.';
+  } else if (res.state === 'untouched' && !res.ok) {
+    res.message = 'Nothing on the card was changed.';
   }
   return res;
 }
