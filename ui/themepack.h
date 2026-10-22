@@ -106,4 +106,55 @@ int keepName(char (*names)[32], int n, int cap, const char* name);
 void formatLoading(char* out, size_t cap, const char* folder, uint32_t totalSize);
 bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize);
 
+// Boot-loop guard, memory half: the packs that have crashed the loader.
+//
+// One in-flight record is not enough: with two crashing packs A < B, each
+// boot's crash overwrites the other's record and the board alternates
+// between them forever. So the in-flight record ("loading") is folded at boot
+// into a persistent list ("badpacks") of every folder:size that has crashed,
+// and any folder matching an entry is skipped. Entries are pruned when their
+// folder is no longer listed or its size changed (an edited pack is tried
+// again). The list is stored as records joined by ','.
+//
+// BAD_MAX equals the loader's folder limit: after pruning, every entry names
+// a distinct folder that is listed this boot, so the list can never need
+// more than one slot per examined folder.
+constexpr int    BAD_MAX = 32;
+constexpr size_t BAD_REC = 48;                        // one formatLoading record
+constexpr size_t BAD_LIST_CAP = BAD_MAX * 44 + 1;     // 43 + ',' each, plus NUL
+
+struct BadList {
+    char rec[BAD_MAX][BAD_REC];
+    int  n;
+};
+
+// Parse up to n bytes of a stored list (need not be NUL terminated). Only
+// well-formed records ("<folderNameOk>:<1-10 digits>") are kept, duplicates
+// once, at most BAD_MAX; anything else is dropped. Returns out.n.
+int badParse(const char* s, size_t n, BadList& out);
+
+// Join the list into out as "r1,r2,...". Stops before a record that would not
+// fit, so the result is always whole records and NUL terminated (cap > 0).
+// Returns the length written.
+size_t badFormat(const BadList& l, char* out, size_t cap);
+
+// Add a well-formed record unless it is already held. False (list unchanged)
+// if it is malformed, a duplicate, or the list is full.
+bool badAdd(BadList& l, const char* rec);
+
+// Keep only entries that match (skipAfterCrash) a listed folder at its size.
+void badPrune(BadList& l, const char (*names)[32], const uint32_t* sizes, int nNames);
+
+// Whether this folder at this size has crashed the loader before.
+bool badMatch(const BadList& l, const char* folder, uint32_t size);
+
+// The whole boot-time decision: parse the stored list (storedLen bytes), fold
+// in the in-flight `loading` record (NULL or "" if none), prune against this
+// boot's folders, and format the result into newStored. Returns true when
+// newStored differs from what is stored, i.e. the list must be rewritten
+// (an empty newStored means erase it). `out` is the list to skip against.
+bool badBoot(const char* stored, size_t storedLen, const char* loading,
+             const char (*names)[32], const uint32_t* sizes, int nNames,
+             BadList& out, char* newStored, size_t cap);
+
 }  // namespace themepack

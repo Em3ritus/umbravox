@@ -3,6 +3,7 @@
 #include "model.h"
 #include "contrast.h"
 #include <string.h>
+#include <stdio.h>
 
 namespace themepack {
 namespace {
@@ -485,6 +486,112 @@ void formatLoading(char* out, size_t cap, const char* folder, uint32_t totalSize
     do { digits[nd++] = (char)('0' + totalSize % 10); totalSize /= 10; } while (totalSize);
     while (nd && o + 1 < cap) out[o++] = digits[--nd];
     out[o] = 0;
+}
+
+namespace {
+// "<folderNameOk>:<1-10 digits>", exactly what formatLoading writes.
+bool recordOk(const char* r, size_t len) {
+    if (len == 0 || len >= BAD_REC) return false;
+    size_t colon = 0;
+    while (colon < len && r[colon] != ':') colon++;
+    if (colon == 0 || colon >= len || colon > 31) return false;
+    char folder[32];
+    memcpy(folder, r, colon);
+    folder[colon] = 0;
+    if (!folderNameOk(folder)) return false;
+    const size_t nd = len - colon - 1;
+    if (nd < 1 || nd > 10) return false;
+    for (size_t i = colon + 1; i < len; i++)
+        if (r[i] < '0' || r[i] > '9') return false;
+    return true;
+}
+
+bool badHas(const BadList& l, const char* rec) {
+    for (int i = 0; i < l.n; i++)
+        if (strncmp(l.rec[i], rec, BAD_REC) == 0) return true;
+    return false;
+}
+
+// Add len bytes of r (already checked) unless held or full.
+bool badAddN(BadList& l, const char* r, size_t len) {
+    if (!recordOk(r, len) || l.n >= BAD_MAX) return false;
+    char tmp[BAD_REC];
+    memcpy(tmp, r, len);
+    tmp[len] = 0;
+    if (badHas(l, tmp)) return false;
+    memcpy(l.rec[l.n++], tmp, len + 1);
+    return true;
+}
+} // namespace
+
+int badParse(const char* s, size_t n, BadList& out) {
+    out.n = 0;
+    if (!s) return 0;
+    size_t i = 0;
+    while (i < n && s[i]) {
+        const size_t start = i;
+        while (i < n && s[i] && s[i] != ',') i++;
+        badAddN(out, s + start, i - start);   // malformed or surplus: dropped
+        if (i < n && s[i] == ',') i++;
+    }
+    return out.n;
+}
+
+size_t badFormat(const BadList& l, char* out, size_t cap) {
+    if (!out || cap == 0) return 0;
+    size_t o = 0;
+    for (int i = 0; i < l.n && i < BAD_MAX; i++) {
+        const size_t len = strnlen(l.rec[i], BAD_REC - 1);
+        const size_t need = len + (o ? 1 : 0);
+        if (o + need + 1 > cap) break;          // whole records only
+        if (o) out[o++] = ',';
+        memcpy(out + o, l.rec[i], len);
+        o += len;
+    }
+    out[o] = 0;
+    return o;
+}
+
+bool badAdd(BadList& l, const char* rec) {
+    if (!rec) return false;
+    return badAddN(l, rec, strnlen(rec, BAD_REC));
+}
+
+void badPrune(BadList& l, const char (*names)[32], const uint32_t* sizes, int nNames) {
+    int k = 0;
+    for (int i = 0; i < l.n; i++) {
+        bool live = false;
+        for (int j = 0; names && sizes && j < nNames && !live; j++)
+            live = skipAfterCrash(l.rec[i], names[j], sizes[j]);
+        if (live) {
+            if (k != i) memcpy(l.rec[k], l.rec[i], BAD_REC);
+            k++;
+        }
+    }
+    l.n = k;
+}
+
+bool badMatch(const BadList& l, const char* folder, uint32_t size) {
+    for (int i = 0; i < l.n; i++)
+        if (skipAfterCrash(l.rec[i], folder, size)) return true;
+    return false;
+}
+
+bool badBoot(const char* stored, size_t storedLen, const char* loading,
+             const char (*names)[32], const uint32_t* sizes, int nNames,
+             BadList& out, char* newStored, size_t cap) {
+    badParse(stored, storedLen, out);
+    // Prune first, so the in-flight record always has a slot: every entry
+    // left names a distinct listed folder that was skipped, and the one that
+    // was loading was not skipped, so it is not among them.
+    badPrune(out, names, sizes, nNames);
+    if (loading) badAdd(out, loading);
+    badPrune(out, names, sizes, nNames);      // a stale in-flight record goes
+    const size_t len = badFormat(out, newStored, cap);
+    // Rewrite only if the stored bytes differ from the new form.
+    size_t sl = 0;
+    while (stored && sl < storedLen && stored[sl]) sl++;
+    return !(sl == len && (len == 0 || memcmp(stored, newStored, len) == 0));
 }
 
 bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize) {

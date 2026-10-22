@@ -470,6 +470,225 @@ static void keepNameTests() {
     check("keep: full + smaller name evicts the largest", n == 2 && !strcmp(full[0], "a") && !strcmp(full[1], "B"));
 }
 
+// ---- Boot-loop guard over simulated boots ----------------------------------
+// A fake key-value store (the NVS keys "badpacks" and "loading") and a fake
+// card. boot() walks the same steps as device/themeload.cpp's scan(), calling
+// the same pure helpers: keepName, sortNames, badBoot, badMatch,
+// formatLoading. A folder marked `crashes` resets the board when parsed, which
+// here means boot() returns with "loading" still set.
+struct FakeKv {
+    bool   hasList = false;  char list[4096];  size_t listLen = 0;
+    bool   hasLoading = false; char loading[64];
+    int    listWrites = 0, loadingWrites = 0;
+};
+struct FakeFolder { char name[32]; uint32_t size; bool crashes; };
+struct BootResult {
+    bool crashed = false;
+    int  parsed = 0, loaded = 0, skippedBad = 0;
+    char loadedNames[MAX_PACKS * 4][32];
+    int  listN = 0;
+};
+
+static BootResult boot(FakeKv& kv, const FakeFolder* card, int nCard) {
+    BootResult r;
+    char names[BAD_MAX][32]; memset(names, 0, sizeof names);
+    int n = 0;
+    for (int i = 0; i < nCard; i++) n = keepName(names, n, BAD_MAX, card[i].name);
+    sortNames(names, n);
+    uint32_t sizes[BAD_MAX];
+    bool crashes[BAD_MAX];
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < nCard; j++)
+            if (!strcmp(names[i], card[j].name)) { sizes[i] = card[j].size; crashes[i] = card[j].crashes; }
+
+    BadList bad;
+    char out[BAD_LIST_CAP];
+    if (badBoot(kv.hasList ? kv.list : nullptr, kv.hasList ? kv.listLen : 0,
+                kv.hasLoading ? kv.loading : nullptr, names, sizes, n, bad, out, sizeof out)) {
+        kv.listLen = strlen(out);
+        memcpy(kv.list, out, kv.listLen + 1);
+        kv.hasList = kv.listLen > 0;
+        kv.listWrites++;
+    }
+    if (kv.hasLoading) { kv.hasLoading = false; kv.loadingWrites++; }
+    r.listN = bad.n;
+    for (int i = 0; i < n; i++) {
+        if (badMatch(bad, names[i], sizes[i])) { r.skippedBad++; continue; }
+        formatLoading(kv.loading, sizeof kv.loading, names[i], sizes[i]);
+        kv.hasLoading = true; kv.loadingWrites++;
+        r.parsed++;
+        if (crashes[i]) { r.crashed = true; return r; }
+        kv.hasLoading = false; kv.loadingWrites++;
+        if (r.loaded < MAX_PACKS * 4) snprintf(r.loadedNames[r.loaded], 32, "%s", names[i]);
+        r.loaded++;
+    }
+    return r;
+}
+
+static bool loadedHas(const BootResult& r, const char* nm) {
+    for (int i = 0; i < r.loaded && i < MAX_PACKS * 4; i++) if (!strcmp(r.loadedNames[i], nm)) return true;
+    return false;
+}
+
+static void guardTests() {
+    printf("boot-loop guard:\n");
+    // (a) two crashing packs, A < B.
+    {
+        FakeKv kv;
+        FakeFolder card[] = {{"A", 100, true}, {"B", 200, true}};
+        BootResult b[6];
+        for (int i = 0; i < 6; i++) b[i] = boot(kv, card, 2);
+        check("guard a: boots 1 and 2 crash (once per pack)", b[0].crashed && b[1].crashed);
+        bool clean = true;
+        for (int i = 2; i < 6; i++) if (b[i].crashed || b[i].parsed) clean = false;
+        check("guard a: from boot 3 on nothing crashes and nothing is parsed", clean);
+        check("guard a: both are remembered", b[5].listN == 2);
+    }
+    // (b) the same bad pack copied into two folders.
+    {
+        FakeKv kv;
+        FakeFolder card[] = {{"bad-copy", 777, true}, {"bad-orig", 777, true}};
+        BootResult b[5];
+        for (int i = 0; i < 5; i++) b[i] = boot(kv, card, 2);
+        bool clean = true;
+        for (int i = 2; i < 5; i++) if (b[i].crashed || b[i].parsed) clean = false;
+        check("guard b: one bad pack in two folders: clean from boot 3", clean);
+    }
+    // (c) A and B crash, good C after them.
+    {
+        FakeKv kv;
+        FakeFolder card[] = {{"A", 100, true}, {"B", 200, true}, {"C", 300, false}};
+        BootResult b[5];
+        for (int i = 0; i < 5; i++) b[i] = boot(kv, card, 3);
+        check("guard c: boot 3 is clean and loads C",
+              !b[2].crashed && b[2].loaded == 1 && loadedHas(b[2], "C"));
+        check("guard c: boot 5 still loads C and only C",
+              !b[4].crashed && b[4].parsed == 1 && loadedHas(b[4], "C"));
+    }
+    // (d) one crashing pack, as before: skipped every boot while unchanged,
+    // and the list is not rewritten once settled (flash wear).
+    {
+        FakeKv kv;
+        FakeFolder card[] = {{"X", 50, true}, {"Y", 60, false}};
+        BootResult b1 = boot(kv, card, 2);
+        check("guard d: boot 1 crashes on X", b1.crashed && b1.parsed == 1);
+        bool ok = true;
+        BootResult b2 = boot(kv, card, 2);
+        const int writes = kv.listWrites;
+        for (int i = 0; i < 6; i++) {
+            BootResult b = boot(kv, card, 2);
+            if (b.crashed || b.skippedBad != 1 || !loadedHas(b, "Y")) ok = false;
+        }
+        check("guard d: X skipped and Y loaded on every later boot", ok && !b2.crashed && loadedHas(b2, "Y"));
+        check("guard d: the list is written once, not every boot", kv.listWrites == writes && writes == 1);
+    }
+    // (e) pruning: a bad folder removed, or its size changed.
+    {
+        FakeKv kv;
+        FakeFolder card[] = {{"A", 100, true}, {"B", 200, true}};
+        for (int i = 0; i < 3; i++) boot(kv, card, 2);
+        check("guard e: list holds A and B", !strcmp(kv.list, "A:100,B:200"));
+        FakeFolder onlyB[] = {{"B", 200, true}};
+        BootResult r = boot(kv, onlyB, 1);
+        check("guard e: A removed -> pruned from the list", !strcmp(kv.list, "B:200") && !r.crashed && r.parsed == 0);
+        FakeFolder bEdited[] = {{"B", 201, false}};
+        r = boot(kv, bEdited, 1);
+        check("guard e: B edited -> tried again and loads", !r.crashed && loadedHas(r, "B"));
+        check("guard e: ...and the list is emptied", !kv.hasList);
+        FakeFolder bBadAgain[] = {{"B", 202, true}};
+        r = boot(kv, bBadAgain, 1);
+        BootResult r2 = boot(kv, bBadAgain, 1);
+        check("guard e: B edited into another crash -> one crash, then skipped",
+              r.crashed && !r2.crashed && r2.skippedBad == 1);
+    }
+    // (f) a stale record never blocks a different pack.
+    {
+        FakeKv kv;
+        strcpy(kv.list, "A:100"); kv.listLen = 5; kv.hasList = true;
+        FakeFolder card[] = {{"A", 200, false}, {"AA", 100, false}, {"D", 100, false}};
+        BootResult r = boot(kv, card, 3);
+        check("guard f: folder AND size must match", !r.crashed && r.loaded == 3);
+        check("guard f: the stale record is dropped", !kv.hasList);
+        BadList l; l.n = 0;
+        badAdd(l, "A:100");
+        check("guard f: badMatch needs both", badMatch(l, "A", 100) && !badMatch(l, "A", 10) &&
+              !badMatch(l, "AA", 100) && !badMatch(l, "B", 100));
+    }
+    // (g) the cap: 40 crashing folders, of which the loader examines 32.
+    {
+        FakeKv kv;
+        static FakeFolder card[40];
+        for (int i = 0; i < 40; i++) { snprintf(card[i].name, 32, "p%02d", i); card[i].size = 1000 + i; card[i].crashes = true; }
+        int crashes = 0, firstClean = -1;
+        for (int i = 0; i < 40; i++) {
+            BootResult b = boot(kv, card, 40);
+            if (b.crashed) crashes++;
+            else if (firstClean < 0) firstClean = i + 1;
+            if (b.listN > BAD_MAX) crashes = 1000;
+        }
+        check("guard g: 32 crashes, one per examined folder", crashes == BAD_MAX);
+        check("guard g: boot 33 is clean", firstClean == BAD_MAX + 1);
+        BootResult after = boot(kv, card, 40);
+        check("guard g: and stays clean with a full list", !after.crashed && after.parsed == 0 && after.listN == BAD_MAX);
+        check("guard g: stored list fits its cap", kv.listLen < BAD_LIST_CAP);
+
+        BadList l; l.n = 0;
+        char rec[48];
+        for (int i = 0; i < BAD_MAX; i++) { formatLoading(rec, sizeof rec, card[i].name, card[i].size); badAdd(l, rec); }
+        check("guard g: full at BAD_MAX", l.n == BAD_MAX);
+        check("guard g: a 33rd record is refused", !badAdd(l, "zzz:1") && l.n == BAD_MAX);
+        bool kept = true;
+        for (int i = 0; i < BAD_MAX; i++) if (!badMatch(l, card[i].name, card[i].size)) kept = false;
+        check("guard g: ...and every earlier record is still held", kept);
+        check("guard g: duplicates are not added twice", !badAdd(l, "p00:1000"));
+        char big[BAD_LIST_CAP];
+        const size_t len = badFormat(l, big, sizeof big);
+        BadList back; badParse(big, len, back);
+        bool same = back.n == l.n;
+        for (int i = 0; same && i < l.n; i++) if (strcmp(back.rec[i], l.rec[i])) same = false;
+        check("guard g: a full list round-trips through its stored form", same);
+    }
+    // (h) garbage on flash.
+    {
+        // 3000 bytes, no NUL anywhere: ASan catches any read past them.
+        char* junk = (char*)malloc(3000);
+        memset(junk, 'x', 3000);
+        BadList l;
+        check("guard h: 3000 bytes of junk parse to nothing", badParse(junk, 3000, l) == 0);
+        for (int i = 0; i < 3000; i++) junk[i] = (i % 7 == 0) ? ',' : (i % 5 == 0) ? ':' : (char)('a' + i % 26);
+        badParse(junk, 3000, l);
+        bool wf = l.n <= BAD_MAX;
+        for (int i = 0; i < l.n; i++) if (strlen(l.rec[i]) >= BAD_REC || !strchr(l.rec[i], ':')) wf = false;
+        check("guard h: mixed junk keeps only well-formed records, bounded", wf);
+        free(junk);
+
+        const char* mixed = "a:1,,::,b c:2,:5,c:,c:12345678901,"
+                            "abcdefghijklmnopqrstuvwxyz0123456789:1,d:2,a:1,e:x9,f:9:9";
+        badParse(mixed, strlen(mixed), l);
+        check("guard h: only a:1 and d:2 survive", l.n == 2 && !strcmp(l.rec[0], "a:1") && !strcmp(l.rec[1], "d:2"));
+
+        std::string many;
+        for (int i = 0; i < 40; i++) { char r[16]; snprintf(r, sizeof r, "%sq%02d:%d", i ? "," : "", i, i); many += r; }
+        badParse(many.data(), many.size(), l);
+        check("guard h: an over-long list is truncated to BAD_MAX", l.n == BAD_MAX && !strcmp(l.rec[BAD_MAX - 1], "q31:31"));
+
+        char names[2][32] = {"a", "d"};
+        uint32_t sizes[2] = {1, 2};
+        BadList o; char out[BAD_LIST_CAP];
+        const bool changed = badBoot(mixed, strlen(mixed), "!!garbage!!", names, sizes, 2, o, out, sizeof out);
+        check("guard h: badBoot cleans junk and garbage loading, and rewrites", changed && !strcmp(out, "a:1,d:2"));
+        char again[BAD_LIST_CAP];
+        check("guard h: an identical stored list is not rewritten",
+              !badBoot(out, strlen(out), nullptr, names, sizes, 2, o, again, sizeof again) &&
+              !strcmp(again, out));
+        char tiny[6];
+        badFormat(o, tiny, sizeof tiny);
+        check("guard h: badFormat stops at a whole record", !strcmp(tiny, "a:1"));
+        BadList none; badParse(nullptr, 10, none);
+        check("guard h: NULL stored list is empty", none.n == 0);
+    }
+}
+
 int main() {
     Pack p; char why[64];
 
@@ -593,6 +812,7 @@ int main() {
     emblemTests();
     admissionTests();
     keepNameTests();
+    guardTests();
 
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;

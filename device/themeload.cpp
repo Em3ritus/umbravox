@@ -23,11 +23,12 @@ using namespace themepack;
 
 constexpr const char* DIR = "/themes";
 constexpr const char* NS  = "aether";        // device/prefs.cpp's namespace
-constexpr const char* KEY = "loading";
+constexpr const char* KEY = "loading";        // the one folder being read now
+constexpr const char* BAD = "badpacks";       // every folder:size that crashed it
 // Folders considered per boot: the MAX_FOLDERS smallest names (keepName), so
 // the choice does not depend on directory order. 32 is four times the packs
 // that can load; anything past it is counted, logged and skipped.
-constexpr int    MAX_FOLDERS = 32;
+constexpr int    MAX_FOLDERS = BAD_MAX;     // the crash list needs one slot per folder
 constexpr size_t REC_CAP = 48;               // formatLoading: 31 + ':' + 10 + NUL
 
 uint8_t  nSkipped = 0;
@@ -50,13 +51,12 @@ uint8_t*    spare = nullptr;
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
 
-// The boot-loop guard. `record` is what NVS held at boot; `keep` says it
-// still names a folder at its recorded size, so it must survive this boot;
-// `cur` is what NVS holds now, so nothing is written that is already there.
+// The boot-loop guard (decisions in themepack's bad* helpers). `bad` is the
+// list of packs that have crashed the loader, skipped on sight; `cur` is what
+// "loading" holds now, so nothing is written that is already there.
 Preferences nvs;
-char        record[REC_CAP] = {};
+BadList     bad;
 char        cur[REC_CAP] = {};
-bool        keep = false;
 
 void countSkip() { if (nSkipped < 255) nSkipped++; }
 
@@ -116,26 +116,52 @@ bool guardPut(const char* v) {
     return ok;
 }
 
-// Read the record, decide whether it still applies, clear it if not.
-void guardBegin() {
-    const bool had = nvs.isKey(KEY);
-    if (had) nvs.getString(KEY, record, sizeof record);   // too long reads as ""
-    record[sizeof record - 1] = 0;
-    for (int i = 0; i < nNames && !keep; i++)
-        keep = skipAfterCrash(record, names[i], totalOf(i));
-    if (keep) {
-        snprintf(cur, sizeof cur, "%s", record);
-    } else {
-        // The folder is gone, or changed size (edited: it gets another go),
-        // or the record is junk. One erase, only if there is something.
-        record[0] = 0;
-        cur[0] = 0;
-        if (had) nvs.remove(KEY);
-    }
+// A string key read into buf; "" if absent. A value too long for buf (junk,
+// or written by something else) also reads as "", and `junk` says so.
+size_t readKey(const char* key, char* buf, size_t cap, bool& junk) {
+    buf[0] = 0;
+    junk = false;
+    if (!nvs.isKey(key)) return 0;
+    const size_t n = nvs.getString(key, buf, cap);
+    buf[cap - 1] = 0;
+    if (n == 0) { buf[0] = 0; junk = true; }
+    return strlen(buf);
 }
 
-// After a folder: back to the kept record, or to nothing.
-void guardEnd() { guardPut(keep ? record : ""); }
+// Fold a "loading" record left by a reset into the crash list, prune the
+// list against this boot's folders (badBoot), write it back only if it
+// changed, then clear "loading". Written in that order so a reset in
+// between only repeats an idempotent merge. False if the list could not be
+// written: then "loading" is left alone and no pack is read this boot, since
+// clearing it would forget the crash.
+bool guardBegin() {
+    // The theme.json buffer is idle until the first pack is read: borrow it.
+    static_assert(2 * BAD_LIST_CAP <= sizeof json, "crash-list buffers must fit in json");
+    char* const stored = (char*)json;
+    char* const fresh  = stored + BAD_LIST_CAP;
+    char loading[REC_CAP];
+    bool listJunk, loadJunk;
+    const size_t sl = readKey(BAD, stored, sizeof stored, listJunk);
+    readKey(KEY, loading, sizeof loading, loadJunk);
+    uint32_t sizes[MAX_FOLDERS];
+    for (int i = 0; i < nNames; i++) sizes[i] = totalOf(i);
+    const bool changed = badBoot(stored, sl, loading, names, sizes, nNames, bad, fresh, BAD_LIST_CAP);
+    if (changed || listJunk) {
+        const bool ok = fresh[0] ? nvs.putString(BAD, fresh) == strlen(fresh) : nvs.remove(BAD);
+        if (!ok && loading[0]) return false;
+    }
+    if (loading[0] || loadJunk) nvs.remove(KEY);
+    cur[0] = 0;
+    if (loading[0]) {
+        char safe[32];
+        logSafe(safe, sizeof safe, loading);
+        elog::event(elog::WARN, "theme", "reset while loading %s; skipped until it changes", safe);
+    }
+    return true;
+}
+
+// After a folder, loaded or cleanly skipped: nothing is in flight.
+void guardEnd() { guardPut(""); }
 
 // --- one pack --------------------------------------------------------------
 
@@ -189,7 +215,7 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, char* why, size_t wh
 void visit(int i) {
     const char* folder = names[i];
     const uint32_t total = totalOf(i);
-    if (skipAfterCrash(record, folder, total)) {
+    if (badMatch(bad, folder, total)) {
         skip(folder, "skipped, a reset happened while loading it");
         return;
     }
@@ -227,7 +253,12 @@ void scan() {
         for (int i = 0; i < nNames; i++) countSkip();
         return;
     }
-    guardBegin();
+    if (!guardBegin()) {
+        elog::event(elog::ERR, "theme", "could not record a crashed pack in NVS, %d pack folders not loaded", nNames);
+        for (int i = 0; i < nNames; i++) countSkip();
+        nvs.end();
+        return;
+    }
     for (int i = 0; i < nNames; i++) visit(i);
     nvs.end();
     elog::event(elog::INFO, "theme", "%d packs loaded, %u skipped", nTaken, (unsigned)nSkipped);
