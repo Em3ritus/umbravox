@@ -1,1 +1,1 @@
-{"private": true, "type": "module", "scripts": {"test": "node --test \"web/designer/test/*.test.mjs\""}}
+{"private": true, "type": "module", "scripts": {"test": "node --test --test-concurrency=1 \"web/designer/test/*.test.mjs\""}}

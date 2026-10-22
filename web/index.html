@@ -84,6 +84,12 @@
     </esp-web-install-button>
   </div>
 
+  <div class="card">
+    <h2>Theme designer</h2>
+    <p>Design your own look for the CYD &mdash; colours, centrepiece picture, sweeps &mdash; preview it with the real device drawing code, and put it on the SD card. Themes are plain data files; they add no radio features.</p>
+    <a class="btn" href="designer/" style="text-decoration:none">Open the designer</a>
+  </div>
+
   <div class="req">
     <p><b>How:</b> plug the board in by USB, click Flash, and pick its serial port. A desktop Chromium browser (Chrome, Edge, Opera) over HTTPS is required &mdash; Web Serial does not exist in Firefox or Safari, or on phones.</p>
     <p><b>Node boards:</b> some newer C5 silicon (eco3) needs <code>--no-stub</code> flashing the browser tool can't do. If a node stalls at the first write, flash it over USB with PlatformIO instead (<code>pio run -e nm-c5-node -t upload</code>). The CYD flashes from the browser without trouble.</p>

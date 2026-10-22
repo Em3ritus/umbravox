@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UMBRAVOX theme designer</title>
+<link rel="stylesheet" href="./designer.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><a href="../" class="logo">UMBRAVOX</a><span class="tag">theme designer</span></div>
+  <nav class="steps" aria-label="Steps">
+    <button type="button" class="step" data-view="start" aria-current="page">1&nbsp; Start</button>
+    <button type="button" class="step" data-view="design" disabled>2&nbsp; Design</button>
+    <button type="button" class="step" data-view="install" disabled>3&nbsp; Install</button>
+  </nav>
+</header>
+
+<div id="boot-fail" class="boot-fail" hidden>
+  <b>This page did not start.</b> It needs a recent browser: Chrome 123+, Edge 123+, Safari 17.2+ or Firefox 138+
+  (the code loads as modules that import JSON). Update your browser and reload.
+</div>
+
+<main>
+<!-- ============ 1 START ============ -->
+<section id="view-start" class="view" data-view="start">
+  <h1>Start from a look you like</h1>
+  <p class="lede">Pick a template and change it, begin blank, or open a theme you already made.</p>
+  <div id="templates" class="templates"></div>
+  <div class="two">
+    <div class="card">
+      <h2>Begin blank</h2>
+      <p class="muted">Every colour starts neutral. Good if you already know the look.</p>
+      <button type="button" id="btn-blank" class="btn">New blank theme</button>
+    </div>
+    <div class="card">
+      <h2>Open an existing theme</h2>
+      <p class="muted">Drop a theme.json (with its emblem.bin) or a whole theme folder here to keep editing it.</p>
+      <div id="drop" class="drop" tabindex="0">drop a theme here, or browse...</div>
+      <div class="row">
+        <button type="button" id="btn-open-files" class="btn small">Choose files</button>
+        <button type="button" id="btn-open-folder" class="btn small">Choose a folder</button>
+      </div>
+      <input type="file" id="in-files" multiple accept=".json,.bin" hidden>
+      <input type="file" id="in-folder" webkitdirectory hidden>
+      <div id="open-msg" class="msg" role="status"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2 DESIGN ============ -->
+<section id="view-design" class="view" data-view="design" hidden>
+  <div class="design">
+    <div class="col">
+      <div class="card" id="panel-identity">
+        <h3>Identity</h3>
+        <label class="field"><span>Name</span><input id="f-name" type="text" maxlength="20" autocomplete="off" spellcheck="false"></label>
+        <label class="field"><span>Author</span><input id="f-author" type="text" maxlength="24" autocomplete="off" spellcheck="false"></label>
+        <label class="field"><span>Header</span><input id="f-header" type="text" maxlength="18" autocomplete="off" spellcheck="false"></label>
+        <div id="id-note" class="msg warn" role="status"></div>
+        <div data-limits="identity"></div>
+      </div>
+      <div class="card" id="panel-palette">
+        <div class="cardhead"><h3>Palette</h3>
+          <button type="button" id="btn-accent" class="btn small">Make one from a single colour</button>
+          <input type="color" id="in-accent" value="#a84dff" hidden>
+        </div>
+        <div id="palette"></div>
+        <p class="tiny muted">Colours are clamped to what the panel can show (RGB565).</p>
+        <div data-limits="palette"></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card" id="panel-centre">
+        <h3>Centrepiece</h3>
+        <div class="seg" id="seg-centre" role="group" aria-label="Centrepiece">
+          <button type="button" data-v="heptagram">Heptagram</button>
+          <button type="button" data-v="emblem">Emblem (your image)</button>
+        </div>
+        <div id="emblem-box" hidden>
+          <div class="emblem-frame"><canvas id="emblem-canvas" width="96" height="96"></canvas></div>
+          <div id="emblem-info" class="info"></div>
+          <div class="row"><button type="button" id="btn-image" class="btn small">Choose image</button></div>
+          <input type="file" id="in-image" accept="image/*" hidden>
+          <p class="tiny muted">An image is shrunk to fit and reduced to 16 colours.</p>
+        </div>
+        <div id="emblem-msg" class="msg" role="status"></div>
+        <div data-limits="centre"></div>
+      </div>
+      <div class="card" id="panel-motion">
+        <h3>Motion</h3>
+        <div class="field"><span>Dial</span>
+          <div class="seg" id="seg-dial" role="group" aria-label="Dial"><button type="button" data-v="compact">Compact</button><button type="button" data-v="large">Large</button></div>
+        </div>
+        <label class="field"><span>Starts on</span><select id="f-sweep"></select></label>
+        <div class="sub">Offers</div>
+        <div id="sweeps" class="sweeps"></div>
+        <label class="field"><span>Alert</span><select id="f-alert"></select></label>
+        <div data-limits="motion"></div>
+      </div>
+    </div>
+
+    <div class="col wide">
+      <div class="card">
+        <div class="cardhead"><h3>Live preview</h3>
+          <div class="tabs" id="tabs" role="tablist">
+            <button type="button" data-v="scan" role="tab">Scan</button>
+            <button type="button" data-v="mesh" role="tab">Mesh</button>
+            <button type="button" data-v="alert" role="tab">Alert</button>
+            <button type="button" data-v="menu" role="tab">Menu</button>
+          </div>
+        </div>
+        <div class="screen"><canvas id="preview" width="160" height="120" aria-label="Preview of the device screen"></canvas></div>
+        <div id="preview-msg" class="msg" role="status"></div>
+        <p class="tiny muted">Runs the real device drawing code, so it is exactly what the panel will show.</p>
+      </div>
+      <div class="card">
+        <h3>Checks</h3>
+        <ul id="checks" class="checks"></ul>
+        <div class="actions">
+          <button type="button" id="btn-download" class="btn">Download pack</button>
+          <button type="button" id="btn-install" class="btn go">Install to SD card</button>
+          <button type="button" id="btn-share" class="btn">Share...</button>
+        </div>
+        <div id="action-msg" class="msg" role="status"></div>
+        <div data-limits="rest"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3 INSTALL ============ -->
+<section id="view-install" class="view" data-view="install" hidden>
+  <h1>Put it on your card</h1>
+  <p class="lede">Plug the SD card into this computer, pick it, and the theme is copied across.</p>
+  <div class="two install">
+    <div class="card">
+      <h3 class="num">1&nbsp; Choose the card</h3>
+      <p class="muted">Your browser asks for permission to write to one folder -- the card.</p>
+      <div class="row">
+        <button type="button" id="btn-pick" class="btn go">Pick SD card...</button>
+        <span id="pick-note" class="muted small">Needs desktop Chrome, Edge or Opera.</span>
+      </div>
+      <div id="unsupported" class="msg warn" hidden></div>
+      <hr>
+      <h3 class="num">2&nbsp; Copying</h3>
+      <ul id="log" class="log"></ul>
+      <div id="collide" class="collide" hidden></div>
+      <div class="row"><button type="button" id="btn-write" class="btn go" disabled>Write to card</button>
+        <button type="button" id="btn-zip2" class="btn small">Download zip instead</button></div>
+      <hr>
+      <h3 class="num" id="done-head">3&nbsp; Done</h3>
+      <div id="done" class="done"><p class="muted">Not yet.</p></div>
+      <div data-limits="rest"></div>
+    </div>
+    <div class="card">
+      <h3>What is going onto the card</h3>
+      <div class="screen"><canvas id="install-preview" width="160" height="120" aria-label="Preview of the theme"></canvas></div>
+      <div id="install-info" class="info"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <p><b>Browsers:</b> this page needs Chrome 123+, Edge 123+, Safari 17.2+ or Firefox 138+ (its code is loaded as modules that import JSON).
+  Installing straight onto the card needs a Chromium desktop browser (Chrome or Edge); Firefox and Safari get the zip download, and you copy the folder to the card by hand.</p>
+  <p><b>Passive by design:</b> a theme only changes how UMBRAVOX looks. It adds no radio features.</p>
+</footer>
+
+<script>
+// A browser too old for the module code never runs it: say so instead of a blank page.
+setTimeout(function () { if (!window.__designerBooted) document.getElementById('boot-fail').hidden = false; }, 4000);
+</script>
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
