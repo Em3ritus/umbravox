@@ -835,13 +835,16 @@ void pollConsole() {
                 injectNmea("GPRMC,120000.00,A,3746.4940,N,12225.1640,W,0.0,0.0,190126,,,A");
                 injectNmea("GPGGA,120000.00,3746.4940,N,12225.1640,W,1,08,0.9,10.0,M,0.0,M,,");
                 Serial.println("gpsfix: injected 37.7749,-122.4194 (2026-01-19)");
-#if defined(WS_C5_35)
             } else if (!strcmp(line, "GPS")) {
+                // Receiver status on any board; the I2C link counters only
+                // where the GPS is on I2C.
+#if defined(WS_C5_35)
                 const gpsi2c::Stats& g = gpsi2c::stats();
-                const ui::Gnss::Fix& f = ui::Gnss::fix();
                 Serial.printf("gps: i2c cycles %lu bytes %lu empty %lu fails %lu recov %lu wakes %lu\n",
                               (unsigned long)g.cycles, (unsigned long)g.bytes, (unsigned long)g.empty,
                               (unsigned long)g.fails, (unsigned long)g.recov, (unsigned long)g.wakes);
+#endif
+                const ui::Gnss::Fix& f = ui::Gnss::fix();
                 Serial.printf("gps: nmea good %lu bad %lu, in view %u, fix %s used %u",
                               (unsigned long)ui::Gnss::good(), (unsigned long)ui::Gnss::bad(),
                               (unsigned)ui::Gnss::inView(), f.valid ? "yes" : "no", (unsigned)f.used);
@@ -849,7 +852,6 @@ void pollConsole() {
                     Serial.printf(" at %.5f,%.5f, %lu ms old", f.lat7 / 1e7, f.lon7 / 1e7,
                                   (unsigned long)(millis() - f.atMs));
                 Serial.println();
-#endif
             } else if (!strncmp(line, "PERF", 4)) {
                 Serial.println("=== PERF BEGIN ===");
                 perflog::dump(Serial);
