@@ -25,6 +25,7 @@ Exit status: 0 when every step was confirmed by the device, 1 otherwise.
 """
 import os
 import re
+import stat
 import sys
 import time
 import zlib
@@ -61,28 +62,69 @@ def chunk_line(offset, data):
     return "D %d %s" % (offset, data.hex())
 
 
+def read_pack_file(folder_real, fname, cap):
+    """The bytes of <folder_real>/<fname>, or None if it does not exist.
+
+    Pack folders come out of zips anyone can make, so a file is read only if
+    it is a REGULAR file that really sits in the folder: a symlink (even to a
+    file inside the pack), a FIFO, a device or a directory is refused, and so
+    is a file that changes between the check and the read. The size cap is
+    checked before anything is read, let alone sent."""
+    path = os.path.join(folder_real, fname)
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        raise ValueError("%s is not a regular file (a symlink, FIFO, device or "
+                         "directory): refused" % path)
+    if os.path.dirname(os.path.realpath(path)) != folder_real:
+        raise ValueError("%s resolves outside the pack folder: refused" % path)
+    if st.st_size == 0:
+        raise ValueError("%s is empty" % path)
+    if st.st_size > cap:
+        raise ValueError("%s is over %d bytes" % (path, cap))
+    # O_NOFOLLOW: a symlink swapped in after the lstat fails to open (ELOOP);
+    # O_NONBLOCK: a FIFO swapped in cannot hang the open. Then fstat the very
+    # file that was opened and require it to be the one lstat saw.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as e:
+        raise ValueError("%s changed while it was being read (%s): refused" % (path, e.strerror))
+    with os.fdopen(fd, "rb") as fh:
+        ft = os.fstat(fh.fileno())
+        if (not stat.S_ISREG(ft.st_mode) or ft.st_ino != st.st_ino or ft.st_dev != st.st_dev
+                or ft.st_size != st.st_size):
+            raise ValueError("%s changed while it was being read: refused" % path)
+        data = fh.read(cap + 1)
+    if len(data) != st.st_size:
+        raise ValueError("%s changed while it was being read: refused" % path)
+    return data
+
+
 def pack_files(folder):
     """[(device path, bytes)] for a pack folder: emblem.bin first, so a
-    theme.json that needs it never lands on the card without it."""
+    theme.json that needs it never lands on the card without it.
+
+    The folder ARGUMENT itself is followed if it is a symlink (you typed it),
+    and the pack is named after it as typed; no file INSIDE it is ever
+    followed (read_pack_file)."""
     folder = os.path.normpath(folder)
     name = folder_name(os.path.basename(folder))
     if not folder_ok(name):
         raise ValueError("folder name %r is not usable on the device" % name)
-    files = []
-    emb = os.path.join(folder, "emblem.bin")
-    js = os.path.join(folder, "theme.json")
-    if not os.path.isfile(js):
+    real = os.path.realpath(folder)
+    if not os.path.isdir(real):
+        raise ValueError("%s is not a folder" % folder)
+    emblem = read_pack_file(real, "emblem.bin", MAX_EMBLEM)
+    theme = read_pack_file(real, "theme.json", MAX_JSON)
+    if theme is None:
         raise ValueError("%s has no theme.json" % folder)
-    for path, cap, dev in ((emb, MAX_EMBLEM, "emblem.bin"), (js, MAX_JSON, "theme.json")):
-        if not os.path.isfile(path):
-            continue
-        with open(path, "rb") as fh:
-            data = fh.read(cap + 1)
-        if not data:
-            raise ValueError("%s is empty" % path)
-        if len(data) > cap:
-            raise ValueError("%s is over %d bytes" % (path, cap))
-        files.append(("/themes/%s/%s" % (name, dev), data))
+    files = []
+    if emblem is not None:
+        files.append(("/themes/%s/emblem.bin" % name, emblem))
+    files.append(("/themes/%s/theme.json" % name, theme))
     return name, files
 
 
@@ -134,8 +176,116 @@ def selftest():
     steps = put_steps("/themes/x/theme.json", bytes(range(200)))
     check("200 bytes: SDPUT, 3 chunks, END", len(steps) == 5 and steps[-1][0] == "END")
     check("chunk offsets 0/96/192", [s[1] for s in steps[1:4]] == ["OK 0", "OK 96", "OK 192"])
+    selftest_files(check)
+    for a, ok in (("/WD-0001.csv", True), ("/themes/x/theme.json", True), ("/thèmes/x", False),
+                  ("caf\u00e9", False), ("a b", False), ("a\tb", False), ("", False), ("x" * 121, False)):
+        check("arg_ok(%r) is %s" % (a, ok), arg_ok(a) == ok)
+
+    class FakeLink:                       # answers SDPUT and the first chunk, then Ctrl-C
+        def __init__(self):
+            self.sent = []
+        def send(self, line):
+            self.sent.append(line)
+            if len(self.sent) == 3:
+                raise KeyboardInterrupt
+        def expect(self, want, timeout):
+            return want
+    fl = FakeLink()
+    devnull = open(os.devnull, "w")
+    old_err, sys.stderr = sys.stderr, devnull
+    try:
+        r = put_all(fl, [("/themes/x/theme.json", bytes(300))])
+    finally:
+        sys.stderr = old_err
+        devnull.close()
+    check("Ctrl-C mid-put: returns failure and sends ABORT", r is False and fl.sent[-1] == "ABORT")      # counts through check(); not `fails += ...`, which reads fails first
     print("\n%d FAILED" % fails if fails else "\nsdput.py selftest: all passed")
     return 1 if fails else 0
+
+
+def selftest_files(check):
+    """pack_files() on hostile pack folders: nothing but regular files that
+    really sit in the folder is ever read, and the caps hold before sending."""
+    import tempfile
+
+    def refused(folder, what):
+        try:
+            pack_files(folder)
+        except ValueError as e:
+            return what in str(e)
+        return False
+
+    with tempfile.TemporaryDirectory() as td:
+        secret = os.path.join(td, "id_ed25519")
+        with open(secret, "wb") as fh:
+            fh.write(b"-----BEGIN OPENSSH PRIVATE KEY-----\n")
+
+        def pack(name, theme=b"{}\n", emblem=None):
+            d = os.path.join(td, name)
+            os.mkdir(d)
+            if theme is not None:
+                with open(os.path.join(d, "theme.json"), "wb") as fh:
+                    fh.write(theme)
+            if emblem is not None:
+                with open(os.path.join(d, "emblem.bin"), "wb") as fh:
+                    fh.write(emblem)
+            return d
+
+        good = pack("good-pack", emblem=b"UVE\x01")
+        name, files = pack_files(good)
+        check("a plain pack is read", name == "good-pack" and [f[0] for f in files] ==
+              ["/themes/good-pack/emblem.bin", "/themes/good-pack/theme.json"])
+
+        d = pack("sym-theme", theme=None)
+        os.symlink(secret, os.path.join(d, "theme.json"))
+        check("symlinked theme.json refused", refused(d, "not a regular file"))
+
+        d = pack("sym-emblem")
+        os.symlink(secret, os.path.join(d, "emblem.bin"))
+        check("symlinked emblem.bin refused", refused(d, "not a regular file"))
+
+        d = pack("sym-inside")
+        os.symlink("theme.json", os.path.join(d, "emblem.bin"))   # even to a file in the pack
+        check("symlink to a file inside the pack refused", refused(d, "not a regular file"))
+
+        d = pack("fifo-theme", theme=None)
+        os.mkfifo(os.path.join(d, "theme.json"))
+        check("FIFO theme.json refused (and never opened)", refused(d, "not a regular file"))
+
+        d = pack("dir-emblem")
+        os.mkdir(os.path.join(d, "emblem.bin"))
+        check("a directory named emblem.bin refused", refused(d, "not a regular file"))
+
+        d = pack("big-theme", theme=b" " * (MAX_JSON + 1))
+        check("theme.json over 4096 bytes refused before sending", refused(d, "over 4096"))
+        d = pack("big-emblem", emblem=b"\0" * (MAX_EMBLEM + 1))
+        check("emblem.bin over 9728 bytes refused before sending", refused(d, "over 9728"))
+        d = pack("empty-theme", theme=b"")
+        check("empty theme.json refused", refused(d, "empty"))
+
+        link = os.path.join(td, "linked-pack")
+        os.symlink(good, link)
+        try:
+            name, files = pack_files(link)
+            ok = name == "linked-pack" and len(files) == 2
+        except ValueError:
+            ok = False
+        check("a symlinked FOLDER argument is followed, named as typed", ok)
+
+        # The race: lstat sees a regular file, open() sees something else.
+        d = pack("swap-race")
+        real_open = os.open
+
+        def swapping_open(path, flags, *a):
+            if path.endswith("theme.json"):
+                os.remove(path)
+                os.symlink(secret, path)
+            return real_open(path, flags, *a)
+        os.open = swapping_open
+        try:
+            check("a file swapped for a symlink after lstat refused", refused(d, "changed"))
+        finally:
+            os.open = real_open
 
 
 # --- the serial link ---------------------------------------------------------
@@ -228,6 +378,31 @@ def upload(link, path, data):
     return True
 
 
+def put_all(link, files):
+    """Upload each file in turn. On Ctrl-C or any error mid-way, tell the
+    device to ABORT before giving up, so it removes the temp at once rather
+    than holding the console for its 10 s idle timeout."""
+    try:
+        for path, data in files:
+            if not upload(link, path, data):
+                return False
+        return True
+    except (KeyboardInterrupt, Exception) as e:
+        what = "interrupted" if isinstance(e, KeyboardInterrupt) else "error: %s" % e
+        try:
+            link.send("ABORT")
+            link.expect("OK aborted", 2.0)
+        except (KeyboardInterrupt, Exception):
+            pass
+        print("put %s: sent ABORT; the card keeps the files it had" % what, file=sys.stderr)
+        return False
+
+
+def arg_ok(a):
+    """del/rmdir/ls arguments go on the wire as one ASCII token."""
+    return bool(a) and a.isascii() and a.isprintable() and " " not in a and len(a) <= 120
+
+
 def simple(link, line, want, timeout=5.0):
     link.send(line)
     r = link.expect(want, timeout)
@@ -270,6 +445,10 @@ def main(argv):
     elif want_args.get(cmd) != len(args):
         print(__doc__, file=sys.stderr)
         return 1
+    for a in args if cmd in ("del", "rmdir", "ls") else ():
+        if not arg_ok(a):
+            print("%s: %r is not usable: paths are printable ASCII with no spaces" % (cmd, a), file=sys.stderr)
+            return 1
     if cmd == "put":
         try:
             name, files = pack_files(args[0])
@@ -285,9 +464,8 @@ def main(argv):
         return 1
     try:
         if cmd == "put":
-            for path, data in files:
-                if not upload(link, path, data):
-                    return 1
+            if not put_all(link, files):
+                return 1
             print("installed /themes/%s -- packs load at boot: sdput.py %s reboot" % (name, port))
             return 0
         if cmd == "del":
@@ -303,4 +481,8 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:      # outside a put (put_all sends ABORT itself)
+        print("interrupted", file=sys.stderr)
+        sys.exit(1)
