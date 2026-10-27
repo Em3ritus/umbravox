@@ -72,6 +72,15 @@ Requirements (user: "Screen time out to either low power animation or turn off")
 
 ---
 
-### Task 5: Apply the Task 1 fixes
+### Task 5: Apply the Task 1 fixes (receive-only, low risk)
 
-Defined after Task 1's report (the controller writes this task's brief from the report; the fixes chosen are those marked high-confidence and low-risk; the rest are reported to the user).
+Source: `.superpowers/sdd/2026-10-27-field-fixes/task-1-report.md` (read its sections for each item: file:line evidence, expected effects, host tests). Implement, each with a failing host test first where the report says a pure helper is testable:
+1. `cap::insert` table-full backstop: no overwrite of another AP's slot, no evil-twin pass, bounded probe, count + `elog` (rate-limited). Pure helper + host test. (Task 3 may already have part of this: read the code first; do not duplicate.)
+2. BLE scan recycling in `blescan::tick`: periodically (or when the library's result count exceeds 64) stop/restart the scan to clear the Arduino BLEScan result map; restart when it has stopped; pure `shouldRecycle(...)` decision + host test; elog on restart.
+3. perflog counter deltas reset-safe (the 429410830 underflow after RESET COUNTERS). Host test in `sim/test_perflog.cpp`.
+4. Mesh node expiry: `NODE_TIMEOUT_MS` to 60-90 s (choose 75 s, constant), wrap-safe compare, and a camp hold-over (`CAMP_HOLD_MS` 120 s) after the last node so the Core does not drop off channel 1 as soon as the last node expires. Pure helpers + host tests (expiry across the millis wrap; hold window). No new transmissions.
+5. GPS: `gpsPort.setRxBufferSize(2048)` before `begin`; debounce a single quality-0 GGA (keep the fix valid until `FRESH_MS` expires, or 3 consecutive quality-0s); host tests in `sim/test_gnss.cpp` exactly as the report describes; add `gps_bad`/`gps_q0` perflog columns only if `sim/test_perflog.cpp` and `tools/perf_report.py` are updated consistently.
+6. elog diagnostics and heap-warning re-arm hysteresis (as the report describes).
+7. Exporter rows via `snprintf` + `write` only if Task 3 has not already removed the per-row malloc; byte-identical output, host test.
+NOT in scope (report to the user, do not implement): node keepalive transmissions, the loop watchdog, the evil-twin index rework, NimBLE sdkconfig trimming, replacing BLEScan with raw NimBLE.
+All three firmware envs must build; `make -C sim test` and `make -C sim regress` must pass.
