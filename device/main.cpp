@@ -792,6 +792,9 @@ void loop() {
     static ui::Dirty dirty;
     const uint32_t t0 = millis();
     perflog::loopStart(t0);        // the gap between loops is the stall we want to see
+    static uint32_t prevLoopMs = 0;
+    const uint32_t loopGap = prevLoopMs ? t0 - prevLoopMs : 0;
+    prevLoopMs = t0;
 
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
     // under 100 bytes, so this never blocks long enough to matter.
@@ -808,9 +811,9 @@ void loop() {
     blescan::tick(millis());
     logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
 
-    // Diagnostics to /diag.log: an SD write failure, once per occurrence, and a
-    // low-heap warning once (re-armed after the heap recovers) so a slow leak
-    // leaves a fingerprint instead of just a silent reboot.
+    // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
+    // low-heap warnings at 40, 24 and 16 KB (each re-armed 8 KB above it) so a
+    // slow leak leaves a fingerprint instead of just a silent reboot.
     if (logging::takeWriteError())
         elog::event(elog::ERR, "sd", "log write failed (card full or I/O error)");
     if (logging::takeFileRestart())
@@ -844,18 +847,25 @@ void loop() {
     }
     {
         static uint32_t lastHeapChk = 0;
-        static bool heapWarned = false;
+        static elog::HeapWarn heapWarn;      // 40 / 24 / 16 KB, re-armed 8 KB up
         const uint32_t now = millis();
         if (now - lastHeapChk >= 5000) {
             lastHeapChk = now;
             const uint32_t freeK = ESP.getFreeHeap() >> 10;
-            if (freeK < 40 && !heapWarned) {
-                elog::event(elog::WARN, "heap", "low, %uKB free", (unsigned)freeK);
-                heapWarned = true;
-            } else if (freeK > 60) {
-                heapWarned = false;     // recovered: re-arm the one-shot
-            }
+            const uint32_t level = heapWarn.step(freeK);
+            if (level)
+                elog::event(elog::WARN, "heap", "low, %uKB free (under %uKB), largest block %uKB",
+                            (unsigned)freeK, (unsigned)level,
+                            (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) >> 10));
         }
+    }
+    // A loop iteration that took over 2 s: the UI, NMEA drain and mesh
+    // assignments all stopped that long. At most one line a minute.
+    {
+        static elog::Gate stallGate;
+        if (loopGap > 2000 && stallGate.allow(millis(), 60000))
+            elog::event(elog::WARN, "loop", "stalled %lu ms, heap %uKB",
+                        (unsigned long)loopGap, (unsigned)(ESP.getFreeHeap() >> 10));
     }
 
     // With nodes in the mesh the Core stops sweeping and holds the report

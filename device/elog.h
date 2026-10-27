@@ -58,6 +58,27 @@ struct Gate {
     }
 };
 
+// Low-heap warnings with hysteresis. The old rule warned once below 40 KB and
+// re-armed only above 60 KB, which never happens with BLE scanning, so each
+// boot logged one line and then nothing, even at 16 KB. Now each level (40,
+// 24, 16 KB) warns once, and re-arms when free heap is REARM_K above it.
+// step() takes free heap in KB and returns the level to warn about (the
+// lowest newly crossed, so a sudden drop is one line), or 0. Pure.
+struct HeapWarn {
+    static constexpr int      N = 3;
+    static constexpr uint32_t LEVEL_K[N] = {40, 24, 16};
+    static constexpr uint32_t REARM_K = 8;
+    bool warned[N] = {false, false, false};
+    uint32_t step(uint32_t freeK) {
+        uint32_t hit = 0;
+        for (int i = 0; i < N; i++) {
+            if (warned[i] && freeK >= LEVEL_K[i] + REARM_K) warned[i] = false;
+            if (!warned[i] && freeK < LEVEL_K[i]) { warned[i] = true; hit = LEVEL_K[i]; }
+        }
+        return hit;
+    }
+};
+
 // Rotate once at 128 KB (-> at most ~256 KB on the card across both files).
 constexpr uint32_t CAP  = 128u * 1024u;
 constexpr const char* PATH = "/diag.log";

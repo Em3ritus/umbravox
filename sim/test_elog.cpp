@@ -59,6 +59,25 @@ int main() {
         check("passes 30 s after, across the wrap", w.allow(0xFFFFF000u + 30000u, 30000));
     }
 
+    printf("heap warning levels:\n");
+    {
+        // The old rule warned once below 40 KB and re-armed only above 60 KB,
+        // which never happens with BLE on: one line per boot, even at 16 KB.
+        HeapWarn h;
+        check("64 KB: nothing",                   h.step(64) == 0);
+        check("39 KB: warn at 40",                h.step(39) == 40);
+        check("35 KB: already said",              h.step(35) == 0);
+        check("23 KB: warn at 24",                h.step(23) == 24);
+        check("15 KB: warn at 16",                h.step(15) == 16);
+        check("15 KB again: quiet",               h.step(15) == 0);
+        check("23 KB (not 8 above 16): no re-arm", h.step(23) == 0 && h.step(15) == 0);
+        check("24 KB re-arms 16",                 h.step(24) == 0 && h.step(15) == 16);
+        check("48 KB re-arms all",                h.step(48) == 0 && h.step(39) == 40);
+        HeapWarn d;
+        check("a drop straight to 10 KB warns once, at the lowest", d.step(10) == 16);
+        check("and the higher levels are spent",  d.step(30) == 0 && d.step(20) == 0);
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }
