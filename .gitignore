@@ -39,3 +39,6 @@ ui/sigil.h.tmp
 
 # Web flasher build output (built by CI / make-web-flasher.sh)
 web/dist/
+sim/test_applog
+sim/test_wiglerow
+sim/test_footer

@@ -81,6 +81,14 @@ test_muffin: test_muffin.cpp ../ui/muffinseal.cpp ../ui/muffinseal.h ../ui/muffi
 
 test_sweep: test_sweep.cpp ../ui/sweep.cpp ../ui/sweep.h ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp
 	$(CXX) $(CXXFLAGS) -o $@ test_sweep.cpp ../ui/sweep.cpp ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp -lm
+# The append-only WiGLE logger core: cursors, row cap, retry, exact-once
+# delivery across failed writes, and the rollover rule. Pure; faked card.
+test_applog: test_applog.cpp ../device/applog.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_applog.cpp -lm
+
+test_wiglerow: test_wiglerow.cpp ../device/wiglerow.h ../device/csv.h
+	$(CXX) $(CXXFLAGS) -o $@ test_wiglerow.cpp -lm
+
 test_enrollwin: test_enrollwin.cpp ../device/enrollwin.h
 	$(CXX) $(CXXFLAGS) -o $@ test_enrollwin.cpp -lm
 
@@ -103,7 +111,7 @@ test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
 test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_footer.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_perflog test_trig
+TESTS = test_applog test_wiglerow test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_perflog test_trig
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
