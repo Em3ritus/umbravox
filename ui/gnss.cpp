@@ -12,7 +12,7 @@ uint32_t dateYmd   = 0;      // yyyymmdd, from RMC
 char     buf[100];
 int      bufN = 0;
 Fix      cur;
-uint32_t nGood = 0, nBad = 0;
+uint32_t nGood = 0, nBad = 0, nQual0 = 0;
 
 // One slot per talker ID we accept, so GSV totals can be summed rather than
 // overwritten. Index is the two-character talker, packed.
@@ -152,7 +152,14 @@ bool sentence(const char* s, uint32_t nowMs) {
 
     field(s, 6, f, sizeof f);
     const int qual = toInt(f);
-    if (qual <= 0) { cur.valid = false; return true; }
+    // Quality 0: the receiver has no solution this second. Not a reason to
+    // drop the fix at once -- one such GGA used to, and it was most of the
+    // fix flapping in the field logs. Nothing here changes: no position is
+    // taken from it, atMs is not refreshed, and fresh() ages the fix out
+    // FRESH_MS after the last good GGA, the window a missing GGA already
+    // gets. (Chosen over "3 consecutive": independent of the receiver's
+    // output rate, and no new state.) Counted for diag.log.
+    if (qual <= 0) { nQual0++; return true; }
 
     field(s, 7, f, sizeof f);
     cur.used = (uint8_t)toInt(f);
@@ -202,9 +209,10 @@ uint32_t toEpoch(int y, int mo, int d, int h, int mi, int s) {
 
 uint32_t good() { return nGood; }
 uint32_t bad()  { return nBad; }
+uint32_t qualZero() { return nQual0; }
 
 void reset() {
-    bufN = 0; nViews = 0; nGood = 0; nBad = 0;
+    bufN = 0; nViews = 0; nGood = 0; nBad = 0; nQual0 = 0;
     epoch = 0; epochAtMs = 0; todaySecs = 0; dateYmd = 0;
     cur = Fix{};
 }

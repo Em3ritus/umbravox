@@ -510,6 +510,10 @@ void setup() {
     ledcAttach(PIN_BL, 5000, 8);
     ledcWrite(PIN_BL, 204);     // 80%, matching Settings' default
 
+    // 2 KB of RX buffer (~2 s of NMEA at 9600 baud) instead of the default
+    // 256 B (~0.25 s): a loop stall no longer loses sentences. arduino-esp32
+    // 3.x only honours this before begin().
+    gpsPort.setRxBufferSize(2048);
     gpsPort.begin(GPS_BAUD, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
     cap::begin();
     blescan::begin();
@@ -1188,6 +1192,22 @@ void loop() {
 
     const bool live = ui::Gnss::fresh(millis());
     s.gpsFix = live;
+    // Why a fix was lost, for diag.log: quality-0 GGAs mean the receiver lost
+    // the sky; checksum failures mean sentences were mangled (a stall or the
+    // wiring); neither means GGAs simply stopped arriving. One line per loss,
+    // at most one per 30 s.
+    {
+        static bool wasLive = false;
+        static uint32_t q0At = 0, badAt = 0;
+        static elog::Gate lostGate;
+        if (live && !wasLive) { q0At = ui::Gnss::qualZero(); badAt = ui::Gnss::bad(); }
+        if (!live && wasLive && lostGate.allow(millis(), 30000))
+            elog::event(elog::INFO, "gps", "fix lost: %lu quality-0 GGAs, %lu bad checksums "
+                        "while it was held",
+                        (unsigned long)(ui::Gnss::qualZero() - q0At),
+                        (unsigned long)(ui::Gnss::bad() - badAt));
+        wasLive = live;
+    }
     s.sats   = live ? ui::Gnss::fix().used : 0;
 
     // Feed the position history that dates node reports.
