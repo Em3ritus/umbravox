@@ -844,6 +844,14 @@ void loop() {
                         (unsigned long)lp, (unsigned)dedup::PROBE_LIMIT);
             seenLong = lp;
         }
+        static elog::Gate twinGate;
+        static uint32_t seenTwin = 0;
+        const uint32_t ts = cap::twinSkips();
+        if (ts != seenTwin && twinGate.allow(millis(), 60000)) {
+            elog::event(elog::WARN, "cap", "evil-twin scan skipped %lu times under load",
+                        (unsigned long)ts);
+            seenTwin = ts;
+        }
     }
     {
         static uint32_t lastHeapChk = 0;

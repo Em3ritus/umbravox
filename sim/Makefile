@@ -107,6 +107,11 @@ test_blerecycle: test_blerecycle.cpp ../device/blerecycle.h
 test_meshlive: test_meshlive.cpp ../device/meshlive.h
 	$(CXX) $(CXXFLAGS) -o $@ test_meshlive.cpp -lm
 
+# The evil-twin pass budget: a token bucket of entry visits, so a beacon flood
+# cannot keep interrupts off for the whole table on every fake SSID.
+test_twinbudget: test_twinbudget.cpp ../device/twinbudget.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_twinbudget.cpp -lm
+
 test_enrollwin: test_enrollwin.cpp ../device/enrollwin.h
 	$(CXX) $(CXXFLAGS) -o $@ test_enrollwin.cpp -lm
 
@@ -132,7 +137,7 @@ test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
 test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_footer.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_dedup test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_idlemode test_perflog test_trig
+TESTS = test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_idlemode test_perflog test_trig
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \

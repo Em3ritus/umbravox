@@ -94,5 +94,7 @@ uint32_t tableDrops();
 // Inserts that needed a probe chain past dedup::PROBE_LIMIT while the table
 // was not crowded: under the keyed hash, the sign of a collision flood.
 uint32_t longProbes();
+// Evil-twin passes skipped because the visit budget was spent (a beacon flood).
+uint32_t twinSkips();
 
 } // namespace cap

@@ -15,6 +15,7 @@
 #include "wiglerow.h"
 #include "plotproj.h"
 #include "dedup.h"
+#include "twinbudget.h"
 #include <string.h>
 
 namespace cap {
@@ -80,6 +81,10 @@ static_assert(applog::ROLL_HARD_APS < INSERT_LIMIT,
 uint32_t  maxProbe_ = 0;
 volatile uint32_t nTableDrops = 0;
 volatile uint32_t nLongProbes = 0;   // inserts past PROBE_LIMIT: collision flood?
+// The evil-twin pass budget (twinbudget.h) and the passes it skipped.
+twinbudget::Bucket twinBudget;
+volatile uint32_t nTwinSkips = 0;
+static_assert(twinbudget::BURST >= (uint32_t)TABLE, "a pass over a full table must be affordable");
 static_assert(applog::ROLLOVER_APS <= dedup::crowdLimit(TABLE),
               "below the rollover no insert may be dropped for a long probe");
 
@@ -370,8 +375,24 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     // What a legitimate deployment does *not* do is advertise different
     // security on the same name. A disagreement there means one of them is
     // not what it claims.
-    if (dedup::runTwinPass(hit, name, auth)) {
+    //
+    // The pass walks the whole table, so it draws from a budget of entry
+    // visits (twinbudget.h): under a beacon flood it is skipped and counted
+    // rather than run for every fake SSID. And the lock is released every
+    // CHUNK visits so interrupts are never off for the whole walk. That is
+    // safe on this single-core part: every insert() runs on the Wi-Fi task
+    // (promiscuous and ESP-NOW receive callbacks), and the only other writers,
+    // reset()/rollover(), run on loopTask, which cannot preempt it; nothing that
+    // can run in the gap (ISRs, the few higher-priority tasks) touches the
+    // table. The pass only reads other entries. On a dual-core build the lock
+    // is simply held for the whole pass, as before.
+    bool twin = dedup::runTwinPass(hit, name, auth);
+    if (twin && !twinBudget.take(millis(), nOrder)) { nTwinSkips++; twin = false; }
+    if (twin) {
         for (uint32_t q = 0; q < nOrder; q++) {
+#if CONFIG_FREERTOS_UNICORE
+            if (twinbudget::chunkDue(q)) { portEXIT_CRITICAL(&mux); portENTER_CRITICAL(&mux); }
+#endif
             Node& o = table_[order_[q]];
             if (&o == &table_[slot] || !o.ssid[0] || !o.auth) continue;
             if (o.auth == auth) continue;
@@ -923,5 +944,6 @@ uint16_t tableUse() { return (uint16_t)(nUsed > 65535 ? 65535 : nUsed); }
 uint16_t tableCap() { return (uint16_t)(TABLE > 65535 ? 65535 : TABLE); }
 uint32_t tableDrops() { return nTableDrops; }
 uint32_t longProbes() { return nLongProbes; }
+uint32_t twinSkips()  { return nTwinSkips; }
 
 } // namespace cap
