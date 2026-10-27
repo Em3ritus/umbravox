@@ -26,6 +26,8 @@ bool truncateTo(const char* name, uint32_t len);
 // "<size>  <name>"; dump() streams one file's bytes to `out` and returns
 // false if the card is absent or the file does not exist.
 void list(Print& out);
+// SDLS <dir>: the same listing for one directory ('/' first), "/" = root.
+void list(Print& out, const char* dir);
 bool dump(Print& out, const char* name);
 
 // Highest N among root files named "<prefix>NNNN<suffix>", or 0 if none.
@@ -74,5 +76,25 @@ uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap);
 // the session appends (openAppend..closeAppend) and append. Reading it clears it; perflog logs it so the cost of
 // the SD card itself is visible next to the frame times it competes with.
 uint32_t takeMaxStallMs();
+
+// --- the serial install commands (device/sdcmd.h's Io) -----------------------
+// Plain file operations on absolute paths; all false with no card. They are
+// reached only from the wired console, and only for paths sdcmd's policy has
+// already allowed. Each records its stall like the appends do.
+bool isDir(const char* path);
+bool makeDir(const char* path);                     // false if it exists
+bool removeFile(const char* path);
+bool removeDir(const char* path);                   // FAT refuses a non-empty one
+bool renameFile(const char* from, const char* to);  // FAT refuses an existing `to`
+// The one upload temp file, held open between console lines ("w+": read back
+// to check a repeated chunk). Separate from the session append; elog's
+// open/append/close is unaffected. upWrite is false on a short write.
+bool upOpen(const char* path);
+bool upWrite(const uint8_t* data, uint32_t len);
+long upRead(uint32_t off, uint8_t* buf, uint32_t len);   // bytes, -1 on error
+bool upClose();                                          // flush + close; false on error
+// Stream a closed file through cb in 256-byte reads; false if absent/unreadable.
+bool readEach(const char* path, void (*cb)(const uint8_t* d, uint32_t n, void* ctx), void* ctx,
+              uint32_t& size);
 
 } // namespace sdlog

@@ -109,12 +109,20 @@ bool truncateTo(const char* name, uint32_t len) {
     return ok;
 }
 
-void list(Print& out) {
+void list(Print& out) { list(out, "/"); }
+
+void list(Print& out, const char* dir) {
     if (!mounted) { out.println("sdlog: no card"); return; }
-    File root = SD.open("/");
-    if (!root) { out.println("sdlog: cannot open root"); return; }
+    if (!dir || dir[0] != '/') { out.println("sdlog: path must start with /"); return; }
+    File root = SD.open(dir);
+    if (!root || !root.isDirectory()) {
+        if (root) root.close();
+        out.printf("sdlog: cannot open %s\n", dir);
+        return;
+    }
     for (File f = root.openNextFile(); f; f = root.openNextFile()) {
-        out.printf("%8lu  %s\n", (unsigned long)f.size(), f.name());
+        if (f.isDirectory()) out.printf("   <dir>  %s/\n", f.name());
+        else out.printf("%8lu  %s\n", (unsigned long)f.size(), f.name());
         f.close();
     }
     root.close();
@@ -208,6 +216,122 @@ uint32_t takeMaxStallMs() {
     const uint32_t v = stallMax;
     stallMax = 0;
     return v;
+}
+
+// --- the serial install commands ---------------------------------------------
+bool isDir(const char* path) {
+    if (!mounted || !path || path[0] != '/') return false;
+    File f = SD.open(path, FILE_READ);
+    if (!f) return false;
+    const bool d = f.isDirectory();
+    f.close();
+    return d;
+}
+
+bool makeDir(const char* path) {
+    if (!mounted || !path || path[0] != '/' || SD.exists(path)) return false;
+    const uint32_t t0 = millis();
+    const bool ok = SD.mkdir(path);
+    noteStall(t0);
+    return ok;
+}
+
+bool removeFile(const char* path) {
+    if (!mounted || !path || path[0] != '/') return false;
+    const uint32_t t0 = millis();
+    const bool ok = SD.remove(path);
+    noteStall(t0);
+    return ok;
+}
+
+bool removeDir(const char* path) {
+    if (!mounted || !path || path[0] != '/') return false;
+    const uint32_t t0 = millis();
+    const bool ok = SD.rmdir(path);
+    noteStall(t0);
+    return ok;
+}
+
+bool renameFile(const char* from, const char* to) {
+    if (!mounted || !from || !to || from[0] != '/' || to[0] != '/' || SD.exists(to)) return false;
+    const uint32_t t0 = millis();
+    const bool ok = SD.rename(from, to);
+    noteStall(t0);
+    return ok;
+}
+
+namespace {
+File upF;
+bool upReadSince = false;     // a read moved the position: seek to the end before writing
+bool upOk = false;
+}
+
+bool upOpen(const char* path) {
+    if (!mounted || !path || path[0] != '/') return false;
+    if (upF) upF.close();
+    const uint32_t t0 = millis();
+    upF = SD.open(path, "w+");            // created / truncated, readable
+    noteStall(t0);
+    upReadSince = false;
+    upOk = (bool)upF;
+    return upOk;
+}
+
+bool upWrite(const uint8_t* data, uint32_t len) {
+    if (!mounted || !upF || !data) return false;
+    const uint32_t t0 = millis();
+    if (upReadSince) { upF.seek(0, SeekEnd); upReadSince = false; }
+    // Into the 4 KB stdio buffer: a card write only when it fills (about
+    // every 43 chunks of 96 bytes), so most chunks cost a memcpy.
+    const size_t w = upF.write(data, len);
+    noteStall(t0);
+    if (w != len) upOk = false;
+    return w == len;
+}
+
+long upRead(uint32_t off, uint8_t* buf, uint32_t len) {
+    if (!mounted || !upF || !buf) return -1;
+    const uint32_t t0 = millis();
+    upReadSince = true;
+    if (!upF.seek(off, SeekSet)) { noteStall(t0); return -1; }
+    uint32_t got = 0;
+    while (got < len) {
+        const size_t k = upF.read(buf + got, len - got);
+        if (k == 0 || k > len - got) break;
+        got += (uint32_t)k;
+    }
+    noteStall(t0);
+    return (long)got;
+}
+
+bool upClose() {
+    if (!upF) return false;
+    const uint32_t t0 = millis();
+    upF.flush();                          // fflush + fsync; results unreported (see closeAppend)
+    upF.close();
+    noteStall(t0);
+    const bool ok = upOk && mounted;
+    upOk = false;
+    return ok;                            // sdcmd re-reads the file to verify it anyway
+}
+
+bool readEach(const char* path, void (*cb)(const uint8_t* d, uint32_t n, void* ctx), void* ctx,
+              uint32_t& size) {
+    if (!mounted || !path || path[0] != '/' || !cb) return false;
+    const uint32_t t0 = millis();
+    File f = SD.open(path, FILE_READ);
+    if (!f || f.isDirectory()) { if (f) f.close(); noteStall(t0); return false; }
+    uint8_t buf[256];
+    size = 0;
+    for (;;) {
+        const int k = f.read(buf, capOf(buf));
+        if (k <= 0) break;
+        cb(buf, (uint32_t)k, ctx);
+        size += (uint32_t)k;
+    }
+    f.close();
+    noteStall(t0);
+    return true;
 }
 
 bool rotate(const char* name, const char* to) {

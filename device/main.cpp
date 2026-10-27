@@ -19,6 +19,7 @@
 #include "sdlog.h"
 #include "elog.h"
 #include "themeload.h"
+#include "sdcmd.h"
 #include "enrollwin.h"
 #include "dedup.h"
 #include "meshlive.h"
@@ -845,15 +846,81 @@ void tick(uint32_t nowMs) {
 }
 } // namespace enroll
 
-void pollConsole() {
-    static char line[32];
-    static int  n = 0;
+// --- installing packs over the wired console (device/sdcmd.h) -------------
+// SDPUT/D/END/ABORT, SDDEL, SDRMDIR and REBOOT. The policy and the upload
+// state machine are sdcmd's (host-tested); this is the card behind them.
+// Every write happens here, in the loop task, a <= 96-byte chunk per console
+// line, so the logger's own appends (also loop-task) never interleave with one.
+namespace sdio {
+struct CardIo : sdcmd::Io {
+    bool present() override                         { return sdlog::present(); }
+    bool exists(const char* p) override             { return sdlog::exists(p); }
+    bool isDir(const char* p) override              { return sdlog::isDir(p); }
+    bool mkdir(const char* p) override              { return sdlog::makeDir(p); }
+    bool remove(const char* p) override             { return sdlog::removeFile(p); }
+    bool rmdir(const char* p) override              { return sdlog::removeDir(p); }
+    bool rename(const char* a, const char* b) override { return sdlog::renameFile(a, b); }
+    bool tmpOpen(const char* p) override            { return sdlog::upOpen(p); }
+    bool tmpAppend(const uint8_t* d, size_t n) override { return sdlog::upWrite(d, (uint32_t)n); }
+    long tmpRead(uint32_t off, uint8_t* b, size_t n) override { return sdlog::upRead(off, b, (uint32_t)n); }
+    bool tmpClose() override                        { return sdlog::upClose(); }
+    bool crcOf(const char* p, uint32_t& size, uint32_t& crc) override {
+        crc = 0;
+        return sdlog::readEach(p, [](const uint8_t* d, uint32_t n, void* c) {
+            *(uint32_t*)c = sdcmd::crc32(*(uint32_t*)c, d, n);
+        }, &crc, size);
+    }
+    void note(bool warn, const char* msg) override {
+        elog::event(warn ? elog::WARN : elog::INFO, "sd", "%s", msg);
+    }
+};
+CardIo io;
+sdcmd::Console console(io);
+} // namespace sdio
+
+// REBOOT: packs load only at boot. Write the logging session's held rows
+// first (logging::stop drains them), keep the "was logging" flag so the
+// next boot resumes into a fresh file as it would after a power cut, and
+// save any settings still on the debounce timer.
+static void rebootNow(const ui::Settings& set) {
+    const bool was = logging::wantsActive();
+    logging::stop(millis());
+    prefs::setLogging(was);
+    prefs::flush(set);
+    elog::event(elog::INFO, "sys", "reboot requested on the console%s",
+                was ? ", logging resumes at boot" : "");
+    Serial.println("OK rebooting");
+    Serial.flush();
+    delay(100);
+    esp_restart();
+}
+
+// Returns true when REBOOT was received (loop() restarts the board).
+bool pollConsole() {
+    static sdcmd::LineBuf lb;
+    char reply[sdcmd::REPLY_CAP];
+    if (sdio::console.tick(millis(), reply, sizeof reply)) Serial.println(reply);
     while (Serial.available()) {
-        const char c = (char)Serial.read();
-        if (c == '\n' || c == '\r') {
-            if (!n) continue;
-            line[n] = 0;
-            n = 0;
+        const sdcmd::LineBuf::Kind k = lb.feed((char)Serial.read());
+        if (k == sdcmd::LineBuf::NONE) continue;
+        if (k == sdcmd::LineBuf::OVERLONG) {
+            Serial.printf("ERR line too long (max %u)\n", (unsigned)sdcmd::LINE_CAP);
+            continue;
+        }
+        if (k == sdcmd::LineBuf::BADBYTE) {
+            // Line noise (a garbage byte as the port opens): never a command.
+            if (sdio::console.uploading()) Serial.println("ERR non-printable byte in line");
+            else Serial.println("unknown command (non-printable bytes, ignored)");
+            continue;
+        }
+        const char* line = lb.buf;
+        {
+            const sdcmd::Action a = sdio::console.line(line, millis(), logging::fileName(),
+                                                       reply, sizeof reply);
+            if (a == sdcmd::REBOOT) return true;      // rebootNow prints the reply
+            if (a == sdcmd::HANDLED) { Serial.println(reply); continue; }
+        }
+        {
             if (!strncmp(line, "TEST", 4)) {
                 testStep = 0;
                 testAt   = millis();
@@ -876,11 +943,16 @@ void pollConsole() {
                      "(no position or no UTC)\n",
                      (unsigned long)n, (unsigned long)skipped);
             } else if (!strncmp(line, "SDLS", 4)) {
-                sdlog::list(Serial);
+                const char* d = line + 4;
+                while (*d == ' ') d++;
+                if (!*d) d = "/";
+                Serial.printf("=== SDLS %s ===\n", d);
+                sdlog::list(Serial, d);
+                Serial.println("=== SDLS END ===");
             } else if (!strncmp(line, "SDCAT", 5)) {
                 const char* nm = line + 5;
                 while (*nm == ' ') nm++;
-                char path[40];
+                char path[sdcmd::LINE_CAP + 8];
                 if (*nm != '/') { snprintf(path, sizeof path, "/%s", nm); nm = path; }
                 Serial.printf("=== SDCAT %s ===\n", nm);
                 if (!sdlog::dump(Serial, nm)) Serial.println("sdlog: no such file");
@@ -928,12 +1000,12 @@ void pollConsole() {
                 else enroll::setNet((uint8_t)v);
             } else {
                 Serial.printf("unknown command '%s' "
-                              "(try TEST, WIGLE, SDLS, SDCAT <file>, DIAG, PERF, GPS, GPSFIX, ENROLL, NETRESET, NETSET <id>)\n", line);
+                              "(try TEST, WIGLE, SDLS [dir], SDCAT <file>, DIAG, PERF, GPS, GPSFIX, ENROLL, NETRESET, NETSET <id>, "
+                              "SDPUT, SDDEL <path>, SDRMDIR <folder>, REBOOT)\n", line);
             }
-        } else if (n < 31) {
-            line[n++] = c;
         }
     }
+    return false;
 }
 
 // Fills `s` from the test sequence if one is running. Deliberately ignores
@@ -1281,7 +1353,7 @@ void loop() {
     // Alerts: take the strongest recent hit from either radio that clears
     // the confidence floor. The card fades rather than latching, so one on
     // the glass means the thing is still in range.
-    pollConsole();
+    if (pollConsole()) rebootNow(set);
 
     constexpr uint32_t ALERT_MS = 6000;
     s.alertActive = false;
