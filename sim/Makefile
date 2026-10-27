@@ -100,7 +100,10 @@ test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -include trig_audit.h -o $@ test_trig.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_perflog test_trig
+test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_footer.cpp $(SRC_NOMAIN) -lm
+
+TESTS = test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_perflog test_trig
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \

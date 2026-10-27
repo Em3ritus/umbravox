@@ -208,20 +208,11 @@ void drawFooter(Canvas& c, const State& s) {
 
     const uint16_t fc = s.gpsFix ? pal::GREEN : pal::AMBER;
     statRune(c, 3, ty + 1, fc, s.gpsFix);
-    if (s.gpsFix) {
-        char b[12] = {'F', 'I', 'X', ' ', 0};
-        u2s(b + 4, s.sats, 2);
-        int n = 0; while (b[n]) n++;
-        b[n] = 'S'; b[n + 1] = 'V'; b[n + 2] = 0;
-        c.text(11, ty, b, fc);
-    } else {
-        c.text(11, ty, "NO FIX", fc);
-    }
+    c.text(11, ty, s.gpsFix ? "FIXED" : "NO GPS", fc);
 
     // The record control, framed as a button so it reads as tappable, sitting
     // on the right. The universal record dot: hollow = ready to log, filled =
-    // recording. The elapsed time shows only while recording -- there is no
-    // idle clock, which was just noise competing with the controls.
+    // recording. No elapsed timer: the label says what a tap will do.
     const bool rec    = (s.logState == 1);
     const bool nocard = (s.logState == 2) || (s.logState == 0 && !s.sdOk);
     const int  rx = LOG_X, ry = FOOT_Y + 2, rw = LOG_W, rh = H - FOOT_Y - 3;
@@ -233,13 +224,9 @@ void drawFooter(Canvas& c, const State& s) {
     if (nocard) {
         c.text(rx + 12, ty, "NO CARD", pal::RED);
     } else if (rec) {
-        char r[12] = {'R', 'E', 'C', ' ', 0};
-        uint32_t mm = s.logSecs / 60, ss = s.logSecs % 60;   // saturate past 99:59
-        if (mm > 99) { mm = 99; ss = 59; }
-        u2s(r + 4, mm, 2); r[6] = ':'; u2s(r + 7, ss, 2);
-        c.text(rx + 12, ty, r, pal::BRIGHT);
+        c.text(rx + 12, ty, "STOP", pal::BRIGHT);
     } else {
-        c.text(rx + 12, ty, "REC", pal::WITCH_HI);
+        c.text(rx + 12, ty, "START", pal::WITCH_HI);
     }
 }
 
@@ -682,7 +669,7 @@ void dirtyChrome(Dirty& d, const State& s, const State& p) {
 
     if (s.uptimeS != p.uptimeS || s.sats != p.sats ||
         s.gpsFix != p.gpsFix || s.sdOk != p.sdOk ||
-        s.logState != p.logState || s.logSecs != p.logSecs)
+        s.logState != p.logState)
         d.add(0, FOOT_Y, W, H - FOOT_Y);
 
     // The reticle needs two regions: where it is, and where it was.

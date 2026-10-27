@@ -1110,7 +1110,6 @@ void loop() {
 
     // Publish the logging session for the footer, after any toggle above.
     s.logState = (uint8_t)logging::state();
-    s.logSecs  = logging::sessionSecs(millis());
     memset(s.logName, 0, sizeof s.logName);
     strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
 
