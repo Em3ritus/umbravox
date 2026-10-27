@@ -160,6 +160,39 @@
       <div id="install-info" class="info"></div>
     </div>
   </div>
+
+  <!-- Install over USB (Web Serial). Sends only SDLS /themes, SDPUT, D, END and
+       ABORT: the device's delete and restart commands are deliberately never
+       offered here (security review: they act without confirmation on the device). -->
+  <div class="card usb" id="usb-route">
+    <h2>Or install over USB, with the card left in the CYD</h2>
+    <p class="muted">Plug the CYD into this computer with its USB cable. The page sends the pack down the cable and the CYD writes it to its own card.</p>
+    <div id="usb-unsupported" class="msg warn" hidden></div>
+    <div id="usb-body">
+      <h3 class="num">1&nbsp; Connect</h3>
+      <p class="small"><b>Connecting may reset the board.</b> If it restarts, it is back in a few seconds; the page waits for it to finish booting before it sends anything.</p>
+      <p class="small">Close any serial monitor (Arduino IDE, PlatformIO, screen) first: only one program can use the port at a time.</p>
+      <div class="row">
+        <button type="button" id="btn-usb-connect" class="btn go">Connect to the CYD...</button>
+        <button type="button" id="btn-usb-disconnect" class="btn small" hidden>Disconnect</button>
+        <label class="small"><input type="checkbox" id="usb-all"> show every serial port, not only the CYD's CH340</label>
+      </div>
+      <hr>
+      <h3 class="num">2&nbsp; Send</h3>
+      <ul id="usb-log" class="log"></ul>
+      <div id="usb-collide" class="collide" hidden></div>
+      <progress id="usb-progress" class="usb-progress" max="1" value="0" hidden></progress>
+      <div class="row">
+        <button type="button" id="btn-usb-send" class="btn go" disabled>Send over USB</button>
+        <button type="button" id="btn-usb-cancel" class="btn small" hidden>Cancel</button>
+      </div>
+      <hr>
+      <h3 class="num" id="usb-done-head">3&nbsp; Done</h3>
+      <div id="usb-done" class="done"><p class="muted">Not yet.</p></div>
+      <p class="tiny muted">Over USB this page can only list /themes and write theme.json and emblem.bin into one pack folder. By design it cannot delete anything on the card or restart the board: those device commands act without asking, so a web page never sends them. To delete a pack or reboot from a computer, use tools/sdput.py.</p>
+      <div data-limits="usb"></div>
+    </div>
+  </div>
 </section>
 </main>
 

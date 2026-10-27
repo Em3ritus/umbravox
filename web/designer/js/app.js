@@ -15,6 +15,7 @@ import { limitsFor, placeLimitations, renderLimitList, DESIGN_PLACES } from './l
 import { installGate } from './gate.js';
 import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
+import { installOverSerial, wrapWebSerial, usbSupported, CH340, BAUD } from './usbinstall.js';
 import { loadWasm, W, H } from './preview.js';
 
 const $ = (id) => document.getElementById(id);
@@ -353,7 +354,8 @@ function enterInstall() {
       ' folder into the themes folder on the SD card (make a folder called themes at the top of the card if there is none). Then eject the card and reboot the device.';
   }
   if (state.card) logLine('card chosen: ' + state.card.name);
-  fillLimits('install', {});
+  fillLimits('install', USB_PLACES);
+  enterUsb();
 }
 $('btn-pick').addEventListener('click', async () => {
   try {
@@ -370,14 +372,15 @@ $('btn-pick').addEventListener('click', async () => {
 });
 
 // Ask what to do about an existing folder. Resolves 'overwrite' | 'alternative' | 'proceed' | 'cancel'.
-function askCollision(plan) {
-  const box = $('collide'); clear(box); box.hidden = false;
+// `unread` says why the folder's theme name is not known (name === null).
+function askCollision(plan, box = $('collide'), unread = 'its theme.json could not be read') {
+  clear(box); box.hidden = false;
   return new Promise((resolve) => {
     const done = (v) => { box.hidden = true; resolve(v); };
     const btn = (label, v, cls = 'btn small') => { const b = el('button', { type: 'button', class: cls, text: label }); b.addEventListener('click', () => done(v)); return b; };
     const row = el('div', { class: 'row' });
     if (plan.collision) {
-      const what = plan.collision.name === null ? 'its theme.json could not be read' : 'its theme name is "' + plan.collision.name + '"';
+      const what = plan.collision.name === null ? unread : 'its theme name is "' + plan.collision.name + '"';
       box.append(el('p', { text: '/themes/' + plan.collision.folder + ' is already on the card; ' + what + '.' }));
       row.append(btn('Overwrite', 'overwrite'));
       if (plan.sameName) box.append(el('p', { class: 'small', text: 'It has the same theme name as this one, so installing under another folder would give the device two themes with one name and it would skip one. Overwrite, or rename this theme first.' }));
@@ -428,6 +431,109 @@ $('btn-write').addEventListener('click', async () => {
     $('btn-write').disabled = false;
   } catch (e) {
     log('failed: ' + ((e && e.message) || e), 'err'); $('btn-write').disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------- install over USB (Web Serial)
+// DESIGN RULE (security review): the page sends only SDLS /themes, SDPUT, D, END
+// and ABORT (usbinstall.js refuses anything else before writing it). The device's
+// delete, remove-folder and restart commands act without any confirmation on the
+// device, so no button, link or code path here ever sends them.
+// Device output is untrusted text: it reaches the page through el(..., {text}) only.
+const USB_PLACES = { usbbrowser: 'usb', usbreset: 'usb', usbreboot: 'usb', usbexclusive: 'usb' };
+const usb = { port: null, link: null, busy: false, ac: null };
+function usbLog(text, cls = '') { $('usb-log').append(el('li', { class: cls, text })); }
+function usbButtons() {
+  $('btn-usb-connect').disabled = !!usb.link || usb.busy;
+  $('btn-usb-disconnect').hidden = !usb.link;
+  $('btn-usb-disconnect').disabled = usb.busy;
+  $('btn-usb-send').disabled = !usb.link || usb.busy || !state.lastPack;
+  $('btn-usb-cancel').hidden = !usb.busy;
+}
+function enterUsb() {
+  const ok = usbSupported();
+  $('usb-body').hidden = !ok;
+  const un = $('usb-unsupported'); un.hidden = ok;
+  if (!ok) un.textContent = 'Installing over USB needs desktop Chrome or Edge (Web Serial, version 89 or later). This browser has no Web Serial: Firefox and Safari do not support it, nor do phones. Use the SD card route above, or the zip.';
+  if (!usb.busy) {
+    clear($('usb-done')); $('usb-done').append(el('p', { class: 'muted', text: 'Not yet.' })); $('usb-done-head').className = 'num';
+    $('usb-collide').hidden = true; $('usb-progress').hidden = true;
+  }
+  usbButtons();
+}
+async function usbDisconnect(why) {
+  const link = usb.link;
+  usb.link = null; usb.port = null;
+  if (link) { try { await link.close(); } catch (e) { /* closed already */ } }
+  if (why) usbLog(why, 'warn');
+  usbButtons();
+}
+$('btn-usb-connect').addEventListener('click', async () => {
+  if (!usbSupported() || usb.link) return;
+  let port;
+  try {
+    port = await navigator.serial.requestPort($('usb-all').checked ? {} : { filters: [CH340] });
+  } catch (e) {
+    if (e && e.name === 'NotFoundError') return;          // the chooser was closed
+    usbLog('could not choose a port: ' + ((e && e.message) || e), 'err'); return;
+  }
+  try {
+    await port.open({ baudRate: BAUD, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
+  } catch (e) {
+    usbLog('could not open the port' + (e && e.name === 'NetworkError' ? ': another program (a serial monitor?) has it open. Close it and try again.' : ': ' + ((e && e.message) || e)), 'err');
+    return;
+  }
+  // Hold DTR and RTS low at once: on the CYD's CH340 they drive the auto-reset
+  // circuit. Opening the port may already have pulsed them (the board resets).
+  try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); }
+  catch (e) { usbLog('could not lower DTR/RTS (' + ((e && e.message) || e) + '); the board may reset', 'warn'); }
+  usb.port = port; usb.link = wrapWebSerial(port);
+  clear($('usb-log'));
+  usbLog('connected at 115200 baud. If the board restarted, it is booting; the page waits for it before sending.');
+  usbButtons();
+});
+$('btn-usb-disconnect').addEventListener('click', () => { if (!usb.busy) usbDisconnect('disconnected; the port is free for other programs'); });
+if (usbSupported()) {
+  navigator.serial.addEventListener('disconnect', (e) => {
+    if (usb.port && e.target === usb.port) { if (usb.ac) usb.ac.abort(); usbDisconnect('the CYD was unplugged'); }
+  });
+}
+$('btn-usb-cancel').addEventListener('click', () => { if (usb.ac) usb.ac.abort(); });
+$('btn-usb-send').addEventListener('click', async () => {
+  if (!usb.link || usb.busy || !state.lastPack) return;
+  usb.busy = true; usb.ac = new AbortController(); usbButtons();
+  const theme = currentTheme(), bar = $('usb-progress');
+  bar.hidden = false; bar.value = 0;
+  clear($('usb-done')); $('usb-done').append(el('p', { class: 'muted', text: 'Not yet.' })); $('usb-done-head').className = 'num';
+  const said = new Set();
+  try {
+    const res = await installOverSerial(usb.link, state.lastPack.files, {
+      themeName: theme.name,
+      signal: usb.ac.signal,
+      decide: (plan) => askCollision(plan, $('usb-collide'), 'over USB the page reads folder names only, so it cannot tell which theme is in it'),
+      onProgress: (p) => {
+        bar.max = p.total || 1; bar.value = p.sent;
+        const say = (k, t) => { if (!said.has(k)) { said.add(k); usbLog(t); } };
+        if (p.phase === 'connect') say('connect', 'waiting for the board to be ready...');
+        if (p.phase === 'list') say('list', 'reading the folder list of /themes on the card');
+        if (p.phase === 'upload' && p.file) say(p.file, 'sending ' + p.file);
+      },
+    });
+    for (const w of res.wrote) usbLog(w + ': the device read it back from the card, size and CRC-32 match');
+    if (!res.ok) {
+      usbLog(res.cancelled ? 'cancelled' : 'stopped: ' + res.error, res.cancelled ? 'warn' : 'err');
+      if (res.message) usbLog(res.message, res.folderState === 'untouched' ? 'warn' : 'err');
+      return;
+    }
+    const done = $('usb-done'); clear(done); $('usb-done-head').className = 'num ok';
+    done.append(el('p', { text: 'The pack is on the card in /themes/' + res.folder + '/. It loads at the next boot.' }),
+      el('p', { text: 'Restart the CYD yourself: press its reset (RST) button, or unplug the USB cable and plug it back in. This page does not restart the board.' }),
+      el('p', { text: 'Then Menu -> ASPECT -> THEME, and step to  ' + theme.name + '.' }),
+      el('p', { class: 'tiny muted', text: 'A theme that fails to load is skipped and the reason goes in /diag.log.' }));
+  } catch (e) {
+    usbLog('failed: ' + ((e && e.message) || e), 'err');
+  } finally {
+    usb.busy = false; usb.ac = null; usbButtons();
   }
 });
 
