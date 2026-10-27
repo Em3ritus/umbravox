@@ -91,6 +91,26 @@
       "id": "trust",
       "text": "Packs are checked for format, not for taste or origin: nothing here signs, vets or moderates a pack. Only install packs from people you trust.",
       "where": ["install", "docs"]
+    },
+    "usbbrowser": {
+      "id": "usbbrowser",
+      "text": "Installing over USB needs desktop Chrome or Edge (Web Serial, from version 89; this page needs 123 or later anyway). Firefox and Safari cannot; use the SD card route or the zip there.",
+      "where": ["install", "docs"]
+    },
+    "usbreset": {
+      "id": "usbreset",
+      "text": "Connecting over USB may reset the board. It restarts in a few seconds, and the page waits for it to finish booting before it sends anything.",
+      "where": ["install", "docs"]
+    },
+    "usbreboot": {
+      "id": "usbreboot",
+      "text": "A pack sent over USB is on the card at once but loads at the next boot. The page never restarts the board; press its reset button or unplug and replug the cable.",
+      "where": ["install", "docs"]
+    },
+    "usbexclusive": {
+      "id": "usbexclusive",
+      "text": "Only one program can use the USB serial port at a time. Close any serial monitor (Arduino IDE, PlatformIO, screen) before connecting, and disconnect here before opening one.",
+      "where": ["install", "docs"]
     }
   }
 }

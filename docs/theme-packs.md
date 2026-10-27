@@ -127,7 +127,9 @@ These numbers are the same ones the device and the designer use
    helper), the centrepiece (drop a PNG, or choose the heptagram) and the motion
    (sweeps, starting sweep, alert). The preview shows Scan, Mesh, Alert and Menu with
    colours after RGB565 clamping. The checks explain anything that is wrong.
-4. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**.
+4. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**. The
+   Install page has two routes: write to the card in a card reader, or send the pack
+   over the CYD's USB cable with the card left in the CYD.
 
 ### Install in the browser
 
@@ -140,6 +142,46 @@ the same theme name, because the device would then skip one of two same-named pa
 Folder names come from the theme name lowercased, with each run of other characters
 turned into `-`, so `A.B`, `A-B` and `A B` all become `a-b`; the install page checks
 the card for exactly this clash. Then eject the card properly and reboot the device.
+
+### Install over USB in the browser (card stays in the CYD)
+
+The Install page's second route, **Install over USB**, sends the pack down the CYD's
+USB cable using Web Serial, speaking the same protocol as `tools/sdput.py` (below).
+It is shown only where the browser has Web Serial: desktop Chrome or Edge (Web
+Serial arrived in version 89; the designer needs 123 or later anyway). Firefox and
+Safari do not have it; the page says so and points to the card route or the zip.
+
+1. Close any serial monitor (Arduino IDE, PlatformIO, `screen`): only one program can
+   use the port at a time.
+2. Plug the CYD in and choose **Connect to the CYD...**. The browser lists CH340
+   ports (USB ID 1a86:7523); tick *show every serial port* if yours is not listed.
+   The page opens it at 115200 8N1 and lowers DTR and RTS at once. **Connecting may
+   reset the board**: it restarts in a few seconds, and the page listens for the boot
+   banner and waits for the firmware's main loop before it sends anything.
+3. Choose **Send over USB**. The page first lists `/themes` (`SDLS /themes`). If a
+   folder with that name is already there it asks, with the same choices as the card
+   route: overwrite, install under another folder name (`<name>-2`...), or cancel.
+   Over USB only folder names are read, so the page cannot tell which theme an
+   existing folder holds; it never overwrites without asking.
+4. It sends `emblem.bin` (if any) and then `theme.json`, each chunk acknowledged, with
+   a progress bar. Success is claimed only when the device has answered `DONE` with
+   the size and CRC-32 the page computed, for every file. The failure table under
+   *Installing over USB without removing the card* says what the card holds if it
+   stops part-way; the page shows the same.
+5. The pack loads at the **next boot**. The page does not restart the board: press its
+   reset (RST) button, or unplug and replug the cable.
+
+By design the web page sends only `SDLS /themes`, `SDPUT`, `D`, `END` and `ABORT`.
+It never sends `SDDEL`, `SDRMDIR` or `REBOOT`: those act without any confirmation on
+the device, and a web page is not where they belong (see the note at the end of the
+next section). To delete a pack or reboot from a computer, use `tools/sdput.py`.
+Device output is shown as plain text only, lines are bounded at 512 characters, and
+the page buffers at most 16 KB of console output.
+
+The protocol client is tested against a fake device (lost replies, corrupted chunks,
+banner noise, a silent or flooding port) and against the real `device/sdcmd.h` state
+machine through `sim/sdcmd_console`. **It has not yet been run in a real browser
+against a real CYD**; treat it as experimental until that is recorded.
 
 ### Install by hand (any browser)
 
@@ -216,12 +258,12 @@ it does not reset the board; if your board still resets when the port opens, run
 `stty -F /dev/ttyUSB0 -hupcl` once first. The protocol is described at the top of
 `device/sdcmd.h`.
 
-Known limitation, for any future tool that drives this port from a web page (Web
-Serial): `SDDEL` and `REBOOT` act without a confirmation on the device. Anything
-that can write to the port can delete pack files and old logs or restart the unit.
-A browser path must either leave those two commands out or get an on-device
-confirmation added first. Nothing of the kind is built now; `tools/sdput.py`, run
-by you on your own computer, is the only client.
+Known limitation: `SDDEL`, `SDRMDIR` and `REBOOT` act without a confirmation on the
+device. Anything that can write to the port can delete pack files and old logs or
+restart the unit. The designer's Web Serial route therefore leaves all three out
+(it sends only `SDLS /themes`, `SDPUT`, `D`, `END` and `ABORT`, and refuses anything
+else before writing it); only `tools/sdput.py`, run by you on your own computer,
+can delete or reboot.
 
 ## How the device treats a pack
 
@@ -248,7 +290,7 @@ by you on your own computer, is the only client.
   that loads fine but faults later, when drawn, is not covered (see Troubleshooting).
 - The Baphomet seal's own sweeps and rite are not in packs; alerts always show.
 
-## The 13 limitations
+## The 17 limitations
 
 1. **Reboot.** A new or changed pack needs a reboot to appear. The device reads the SD
    card at boot only.
@@ -281,6 +323,18 @@ by you on your own computer, is the only client.
     dial preview, and the reason is in `/diag.log`.
 13. **Format, not taste.** Packs are checked for format, not for taste or origin: nothing
     here signs, vets or moderates a pack. Only install packs from people you trust.
+14. **USB route: browsers.** Installing over USB needs desktop Chrome or Edge (Web
+    Serial, from version 89; this page needs 123 or later anyway). Firefox and Safari
+    cannot; use the SD card route or the zip there.
+15. **USB route: reset on connect.** Connecting over USB may reset the board. It
+    restarts in a few seconds, and the page waits for it to finish booting before it
+    sends anything.
+16. **USB route: next boot.** A pack sent over USB is on the card at once but loads at
+    the next boot. The page never restarts the board; press its reset button or unplug
+    and replug the cable.
+17. **USB route: one program.** Only one program can use the USB serial port at a time.
+    Close any serial monitor (Arduino IDE, PlatformIO, screen) before connecting, and
+    disconnect here before opening one.
 
 What is tested and what is not. The pure rules are host-tested: the theme.json and
 emblem.bin parsers, pack admission, the boot-loop guard's decisions, the ASPECT drawing

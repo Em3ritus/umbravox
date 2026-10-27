@@ -34,9 +34,9 @@ test('folder rule matches folderNameOk', () => {
   for (const bad of ['', '.', '..', 'a b', 'x'.repeat(32), 'a/b', 'é']) assert.ok(!re.test(bad), bad);
 });
 
-test('limitation texts: 14 entries, each with id, text and where', () => {
+test('limitation texts: 18 entries, each with id, text and where', () => {
   const entries = Object.entries(limits.limitations);
-  assert.equal(entries.length, 14);
+  assert.equal(entries.length, 18);
   for (const [k, v] of entries) {
     assert.equal(v.id, k);
     assert.ok(typeof v.text === 'string' && v.text.length > 20 && v.text.length < 400, k);
@@ -48,6 +48,23 @@ test('limitation texts: 14 entries, each with id, text and where', () => {
   assert.match(limits.limitations.skipped.text, /N SKIPPED/);
   assert.match(limits.limitations.skipped.text, /DIAG LOG/);
   assert.match(limits.limitations.characters.text, /quote/);
+  for (const id of ['usbbrowser', 'usbreset', 'usbreboot', 'usbexclusive']) assert.deepEqual(limits.limitations[id].where, ['install', 'docs'], id);
+  assert.match(limits.limitations.usbbrowser.text, /Chrome or Edge/);
+  assert.match(limits.limitations.usbreset.text, /reset/);
+  assert.match(limits.limitations.usbreboot.text, /next boot/);
+  assert.match(limits.limitations.usbexclusive.text, /serial monitor/);
+});
+
+test('every limitation is in docs/theme-packs.md, and the heading counts them', () => {
+  const doc = read('docs/theme-packs.md');
+  const m = /^## The (\d+) limitations$/m.exec(doc);
+  assert.ok(m, 'heading');
+  const items = doc.slice(m.index).split(/\n## /)[0].match(/^\d+\. \*\*/gm) || [];
+  assert.equal(items.length, Number(m[1]), 'the heading number equals the numbered items');
+  for (const k of ['usbbrowser', 'usbreset', 'usbreboot', 'usbexclusive']) {
+    const words = limits.limitations[k].text.split('.')[0];
+    assert.ok(doc.replace(/\s+/g, ' ').includes(words), k + ': "' + words + '" missing from the docs');
+  }
 });
 
 const KB = (n) => (n / 1024 === Math.floor(n / 1024) ? [n / 1024 + ' KB'] : [(n / 1024).toFixed(1) + ' KB']);
