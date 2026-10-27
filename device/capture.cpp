@@ -435,8 +435,9 @@ bool park(int i) {
 } // namespace
 
 void begin() {
-    // PSRAM if it is there, internal if it is not -- the code should still
-    // run on a board without it, just with less room.
+    // PSRAM. The internal-RAM fallback below cannot succeed: the table is
+    // ~3 MB and internal RAM is 320 KB, so without PSRAM the unit halts at
+    // boot with the FATAL serial message. Kept as written, not relied on.
     table_ = (Node*)heap_caps_malloc(sizeof(Node) * TABLE, MALLOC_CAP_SPIRAM);
     used_  = (bool*)heap_caps_malloc(sizeof(bool) * TABLE, MALLOC_CAP_SPIRAM);
     order_ = (uint16_t*)heap_caps_malloc(sizeof(uint16_t) * TABLE, MALLOC_CAP_SPIRAM);

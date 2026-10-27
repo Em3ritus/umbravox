@@ -233,8 +233,10 @@ BLEScan* scan = nullptr;
 } // namespace
 
 void begin() {
-    // Allocate before touching any of it. PSRAM if it is there, internal if
-    // it is not -- the code should still run on a board without it.
+    // Allocate before touching any of it, in PSRAM. The internal-RAM fallback
+    // needs ~300 KB, more than the heap has free once Wi-Fi and BLE are up, so
+    // in practice a board without PSRAM halts with the FATAL serial message
+    // (and capture's table would already have halted it). Not relied on.
     addrs  = (uint8_t(*)[6])heap_caps_malloc(6 * TABLE, MALLOC_CAP_SPIRAM);
     rssis  = (int8_t*)heap_caps_malloc(TABLE, MALLOC_CAP_SPIRAM);
     used_  = (bool*)heap_caps_malloc(TABLE, MALLOC_CAP_SPIRAM);
