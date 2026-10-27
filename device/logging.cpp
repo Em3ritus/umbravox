@@ -28,6 +28,9 @@ char     prevName[32] = "";  // the last session's file, never reused
 // opposed to a card that was simply removed). main reads+clears it and writes
 // one diagnostic line, so this file keeps no dependency on elog.
 bool     writeErr = false;
+// Latched when the session file came up shorter than committed and logging
+// moved to a new file (main logs it).
+bool     fileRestart = false;
 
 // The append machinery: one cursor per source, the session file's state, and
 // the batch scratch (static: the loop task's stack is only 8 KB).
@@ -110,12 +113,15 @@ applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch, bool final = false) 
         return r;
     }
     nextFlushMs = nowMs + FLUSH_MS;
-    if (r.clash) {                        // someone else's file: a new name
+    if (r.clash || r.shrunk) {
+        // Someone else's file, or ours lost rows we had counted: a new file,
+        // with the cursors reset so the whole table is logged into it.
         newFile(nowEpoch);
         nextFlushMs = nowMs + CATCHUP_MS;
+        if (r.shrunk) fileRestart = true;
     }
     if (!sdlog::present()) st = NO_CARD;
-    else if (!r.clash) writeErr = true;   // card there but the write failed
+    else if (!r.clash && !r.shrunk) writeErr = true;   // card there but the write failed
     return r;
 }
 
@@ -286,5 +292,6 @@ uint32_t    sessionSecs(uint32_t nowMs) {
     return st == IDLE ? 0 : (nowMs - startedMs) / 1000;
 }
 bool        takeWriteError()        { bool e = writeErr; writeErr = false; return e; }
+bool        takeFileRestart()       { bool e = fileRestart; fileRestart = false; return e; }
 
 } // namespace logging

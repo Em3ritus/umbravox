@@ -3,6 +3,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <unistd.h>
+#include "applog.h"
 
 namespace sdlog {
 namespace {
@@ -40,7 +41,8 @@ bool present() { return mounted; }
 namespace {
 File     appF;
 bool     appOk = false;
-uint32_t appT0 = 0, appBytes = 0;
+uint32_t appT0 = 0, appBytes = 0, appSize0 = 0;
+char     appName[64] = "";
 }
 
 bool exists(const char* name) {
@@ -54,6 +56,8 @@ bool openAppend(const char* name, uint32_t& size) {
     appF = SD.open(name, FILE_APPEND);      // created if missing
     if (!appF) { noteStall(appT0); return false; }
     size = (uint32_t)appF.size();           // its length before this append
+    appSize0 = size;
+    snprintf(appName, sizeof appName, "%s", name);
     appOk = true;
     appBytes = 0;
     return true;
@@ -71,10 +75,14 @@ bool closeAppend() {
     if (!appF) return false;
     // flush() is fflush + fsync: the directory entry's size is committed here,
     // so a power cut before it leaves the file at its previous (whole-line)
-    // length under FatFs semantics.
+    // length under FatFs semantics. But Arduino's VFSFileImpl::flush ignores
+    // both results and getWriteError() stays 0, and the last buffered bytes
+    // (up to the 4 KB stdio buffer) are only written by that flush -- so a
+    // full card would look like success. Check the size on the card instead.
     appF.flush();
-    const bool ok = appOk && appF.getWriteError() == 0;
     appF.close();
+    const uint32_t after = sizeOf(appName);
+    const bool ok = applog::closeVerified(appOk, appSize0, appBytes, after);
     const uint32_t ms = millis() - appT0;
     noteStall(appT0);
     // Acceptance item #7: the per-save stall, now proportional to the batch.

@@ -78,5 +78,8 @@ uint32_t    rollovers();     // since boot
 // Latched true when a flush failed with the card still present (a card-full or
 // I/O error, not a missing card). main reads+clears it to log one diagnostic.
 bool        takeWriteError();
+// Latched when the session file was found shorter than what was committed
+// (rows counted as written never landed) and logging moved to a new file.
+bool        takeFileRestart();
 
 } // namespace logging

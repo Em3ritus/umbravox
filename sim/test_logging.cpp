@@ -18,6 +18,10 @@ uint32_t maxOnCard = 0;
 std::map<std::string, std::string> files;
 std::string openName;
 bool isOpen = false, failWrites = false;
+// A card whose last flush silently fails: the tail of each append never
+// lands. `verifyClose` = sdlog's size check after the flush (the fix).
+int  dropTail = 0; bool verifyClose = true;
+uint32_t sizeAtOpen = 0, written = 0;
 int opens = 0;
 }
 namespace sdlog {
@@ -30,14 +34,22 @@ bool openAppend(const char* name, uint32_t& size) {
     opens++;
     openName = name; isOpen = true;
     size = (uint32_t)files[openName].size();
+    sizeAtOpen = size; written = 0;
     return true;
 }
 bool writeAppend(const char* d, uint32_t len) {
     if (!isOpen || failWrites) return false;
     files[openName].append(d, len);
+    written += len;
     return true;
 }
-bool closeAppend() { const bool was = isOpen; isOpen = false; return was && !failWrites; }
+bool closeAppend() {
+    const bool was = isOpen; isOpen = false;
+    std::string& f = files[openName];
+    if (dropTail) f.resize(f.size() > (size_t)dropTail ? f.size() - dropTail : 0);
+    const bool ok = was && !failWrites;
+    return verifyClose ? applog::closeVerified(ok, sizeAtOpen, written, (uint32_t)f.size()) : ok;
+}
 bool truncateTo(const char* name, uint32_t len) {
     if (!cardPresent || !files.count(name)) return false;
     if (files[name].size() > len) files[name].resize(len);
@@ -87,7 +99,7 @@ static logging::Hooks hooks() {
 }
 static void fresh() {
     files.clear(); wifi.v.clear(); ble.v.clear(); wifi.heldRow.clear(); ble.heldRow.clear();
-    cardPresent = true; failWrites = false; maxOnCard = 0;
+    cardPresent = true; failWrites = false; maxOnCard = 0; dropTail = 0; verifyClose = true;
     clears = rolls = 0; opens = 0; totalLost = 0;
 }
 static std::string header() {
@@ -462,6 +474,45 @@ int main() {
               (uint32_t)occurrences(files[old2], "\nW") + lastLost == 5000);
         failWrites = false;
         stop(t + 1);
+    }
+
+    printf("a silently failed fsync is caught by the size check and retried:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string f = fileName();
+        wifi.add(3);
+        dropTail = 4;                              // the final flush loses 4 bytes
+        tick(FLUSH_MS, T0);
+        check("reported as a write error", takeWriteError());
+        check("nothing committed: the fragment is cut back", files[f] == header());
+        dropTail = 0;
+        tick(2 * FLUSH_MS, T0);
+        check("retried into the same file, each row once",
+              files[f] == header() + row("W", 0) + row("W", 1) + row("W", 2));
+        stop(2 * FLUSH_MS + 1);
+    }
+
+    printf("a file shorter than committed (undetected loss) moves to a new file:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string f = fileName();
+        wifi.add(3);
+        verifyClose = false; dropTail = 4;         // a sink that cannot tell
+        tick(FLUSH_MS, T0);
+        verifyClose = true; dropTail = 0;
+        wifi.add(1);
+        tick(2 * FLUSH_MS, T0);
+        check("the short file is left alone", files[f].size() + 4 == header().size() + 3 * row("W", 0).size());
+        check("the restart is reported once", takeFileRestart() && !takeFileRestart());
+        check("a new session file", fileName() != f);
+        tick(3 * FLUSH_MS, T0);
+        check("the new file has the whole table, each row once",
+              files[fileName()] == header() + row("W", 0) + row("W", 1) + row("W", 2) + row("W", 3));
+        stop(3 * FLUSH_MS + 1);
     }
 
     printf("held rows (AP still in range) are released by STOP, rollover and RESET:\n");

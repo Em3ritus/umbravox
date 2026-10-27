@@ -795,6 +795,9 @@ void loop() {
     // leaves a fingerprint instead of just a silent reboot.
     if (logging::takeWriteError())
         elog::event(elog::ERR, "sd", "log write failed (card full or I/O error)");
+    if (logging::takeFileRestart())
+        elog::event(elog::WARN, "sd", "log file shorter than written, continuing in %s",
+                    logging::fileName());
     {
         static uint32_t lastHeapChk = 0;
         static bool heapWarned = false;

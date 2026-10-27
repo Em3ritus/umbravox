@@ -98,12 +98,21 @@ struct Source {
     virtual int      format(uint32_t i, char* buf, int cap) = 0;
 };
 
+// The close check a real card needs: the Arduino File flush ignores fflush/
+// fsync failures, so the size on the card after the flush must be what was
+// there at open plus every byte written, or the append did not fully land.
+inline bool closeVerified(bool closedOk, uint32_t sizeAtOpen, uint32_t written,
+                          uint32_t sizeAfter) {
+    return closedOk && sizeAfter == sizeAtOpen + written;
+}
+
 // One append to the card: open, writes, close.
 struct Sink {
     // Open `name` for appending (created if missing); `size` = its length now.
     virtual bool open(const char* name, uint32_t& size) = 0;
     virtual bool write(const char* data, uint32_t len) = 0;
-    // Flush and close. False if anything since open() failed.
+    // Flush and close. False if anything since open() failed, including a
+    // size on the card that does not match (closeVerified).
     virtual bool close() = 0;
     virtual bool truncate(const char* name, uint32_t len) = 0;
 };
@@ -124,6 +133,8 @@ struct Result {
     bool     ok = false;     // the batch (possibly empty) is on the card
     bool     more = false;   // stopped at the row cap: rows remain
     bool     clash = false;  // the file existed before we wrote to it: rename
+    bool     shrunk = false; // shorter than we committed (bytes we counted never
+                             // landed, or the file was replaced): start a new file
     uint32_t rows = 0;       // rows committed by this call
     uint32_t waiting = 0;    // rows seen that were not exportable yet
     uint32_t bytes = 0;      // bytes committed by this call
@@ -204,10 +215,11 @@ inline Result appendBatch(const char* name, FileState& f, Sink& sink, const char
     if (size != f.goodLen) {
         sink.close();
         // Not ours to cut: a file we have not written yet that already has
-        // bytes is an earlier session's; one shorter than our committed length
-        // has been replaced or damaged under us.
+        // bytes is an earlier session's. One shorter than our committed length
+        // lost rows we marked done (a flush that failed without saying so) or
+        // was replaced: the caller moves to a new file and logs the table again.
         if (!f.started) { r.clash = true; return r; }
-        if (size < f.goodLen) return r;
+        if (size < f.goodLen) { r.shrunk = true; return r; }
         // Longer: the residue of a failed append. Cut it, or write nothing.
         if (!sink.truncate(name, f.goodLen)) return r;
         if (!sink.open(name, size)) return r;

@@ -285,8 +285,15 @@ int main() {
         r.wifi.add(WRITE);
         Result x = r.batch();
         check("refused", !x.ok);
+        check("flagged as shrunk (the caller starts a new file)", x.shrunk && !x.clash);
         check("file untouched", r.file() == "XY");
     }
+
+    printf("close is verified against the size on the card:\n");
+    check("clean and the right size: ok", closeVerified(true, 100, 50, 150));
+    check("flush/fsync said ok but bytes are missing: not ok", !closeVerified(true, 100, 50, 146));
+    check("more bytes than written: not ok", !closeVerified(true, 100, 50, 151));
+    check("close itself failed: not ok", !closeVerified(false, 100, 50, 150));
 
     printf("open failure: nothing marked:\n");
     {
