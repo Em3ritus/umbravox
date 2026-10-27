@@ -51,6 +51,16 @@ void   (*resetClear)() = nullptr;
 // Anything earlier than this is the RTC's power-on default, not a real date.
 constexpr uint32_t EPOCH_KNOWN = 1577836800u;   // 2020-01-01 00:00:00 UTC
 
+// The last real date any caller handed in, and when, so a path that has no
+// epoch of its own (STOP) can still name a file it has to start.
+uint32_t knownEpoch = 0, knownEpochMs = 0;
+void noteEpoch(uint32_t nowMs, uint32_t nowEpoch) {
+    if (nowEpoch >= EPOCH_KNOWN) { knownEpoch = nowEpoch; knownEpochMs = nowMs; }
+}
+uint32_t epochAt(uint32_t nowMs) {
+    return knownEpoch ? knownEpoch + (nowMs - knownEpochMs) / 1000 : 0;
+}
+
 // sdlog's append calls as an applog::Sink.
 struct SdSink : applog::Sink {
     bool open(const char* n, uint32_t& size) override { return sdlog::openAppend(n, size); }
@@ -157,6 +167,12 @@ void doRoll(uint32_t nowMs, uint32_t nowEpoch, bool forced, uint32_t lost) {
         info.newName = name;
         if (hk.onRollover) hk.onRollover(info);
         flushOnce(nowMs, nowEpoch);       // the new file, header first
+    } else if (st == NO_CARD) {
+        // Logging, but the card is out: the new table belongs in a new file
+        // when the card returns, never appended to the old one.
+        newFile(nowEpoch);
+        info.newName = name;
+        if (hk.onRollover) hk.onRollover(info);
     } else {
         resetCursors();                   // nothing logged; the table restarts
         if (hk.onRollover) hk.onRollover(info);
@@ -202,6 +218,7 @@ void checkRoll(uint32_t nowMs, uint32_t nowEpoch, Flushed f) {
 } // namespace
 
 void start(uint32_t nowMs, uint32_t nowEpoch) {
+    noteEpoch(nowMs, nowEpoch);
     if (st != IDLE) return;
     want = true;
     newFile(nowEpoch);
@@ -221,8 +238,11 @@ void stop(uint32_t nowMs) {
         const uint32_t t0 = hk.clockMs ? hk.clockMs() : 0;
         for (int k = 0; st == ACTIVE; k++) {
             if (hk.clockMs ? hk.clockMs() - t0 >= STOP_DRAIN_MAX_MS : k >= FINAL_BATCHES) break;
-            const applog::Result r = flushOnce(nowMs, 0, true);
-            if (!r.ok || !r.more) break;
+            // A clash/shrink starts a new file (dated from the session's
+            // clock, not WD-NNNN) and owes it every row: keep draining.
+            const applog::Result r = flushOnce(nowMs, epochAt(nowMs), true);
+            if (!r.ok && !(r.clash || r.shrunk)) break;
+            if (r.ok && !r.more) break;
         }
         lost = applog::pendingRows(srcs, curs, nSrc, nowMs, true);
     }
@@ -258,6 +278,8 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
     prevName[0] = 0;
     rollWaiting = false;
     resetClear = nullptr;
+    knownEpoch = knownEpochMs = 0;
+    noteEpoch(nowMs, nowEpoch);
     resetCursors();
     // Advance the dateless counter past any WD-NNNN.csv (or .CSV from older firmware) already on the card, so
     // a reboot before a GPS fix cannot overwrite an earlier dateless session.
@@ -266,6 +288,7 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
 }
 
 void tick(uint32_t nowMs, uint32_t nowEpoch) {
+    noteEpoch(nowMs, nowEpoch);
     // Notice a due roll before this tick's flush, so that flush is already
     // final (releases held rows) and can count as the drain.
     if (st == ACTIVE && thresholdDue()) armRoll(nowMs);
@@ -282,6 +305,7 @@ void tick(uint32_t nowMs, uint32_t nowEpoch) {
 }
 
 void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
+    noteEpoch(nowMs, nowEpoch);
     if (st != ACTIVE) {
         if (clear) clear();
         resetCursors();

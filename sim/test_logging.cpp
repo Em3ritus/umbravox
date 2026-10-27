@@ -668,6 +668,53 @@ int main() {
           rolls == 1 && occurrences(files[h3], row("W", applog::ROLLOVER_APS - 1)) == 1);
     stop(400 * CATCHUP_MS);
 
+    printf("a file restart during the STOP drain keeps a dated name:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        wifi.add(2);
+        tick(FLUSH_MS, T0 + 10);
+        const std::string s1 = fileName();
+        check("dated session file", s1.rfind("/WD-2026", 0) == 0);
+        files[s1].resize(5);                       // the card lost the tail
+        wifi.add(3);                               // rows still owed at STOP
+        stop(FLUSH_MS + 5000);
+        bool dated = false, dateless = false;
+        for (auto& kv : files) {
+            if (kv.first == s1) continue;
+            if (kv.first.rfind("/WD-2026", 0) == 0) dated = true;
+            if (kv.first.rfind("/WD-0", 0) == 0) dateless = true;
+        }
+        check("the restart file is dated, from the session's clock", dated);
+        check("no dateless WD-NNNN file was made", !dateless);
+    }
+
+    printf("a rollover while the card is out starts a fresh file:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        wifi.add(2);
+        tick(FLUSH_MS, T0 + 10);
+        const std::string s1 = fileName();
+        const std::string body = files[s1];
+        cardPresent = false;
+        wifi.add(1);
+        tick(2 * FLUSH_MS, T0 + 20);
+        check("card out -> NO_CARD", state() == NO_CARD);
+        wifi.add((int)applog::ROLLOVER_APS);
+        tick(2 * FLUSH_MS + 100, T0 + 21);
+        check("the rollover cleared the table", wifi.v.empty() && clears == 1);
+        wifi.add(2);
+        cardPresent = true;
+        tick(2 * FLUSH_MS + 200, T0 + 22);
+        tick(3 * FLUSH_MS + 300, T0 + 32);
+        check("the old session file is untouched", files[s1] == body);
+        check("logging continues in a new file", state() == ACTIVE && fileName() != s1 &&
+              files.count(fileName()) && occurrences(files[fileName()], "\nW") == 2);
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }
