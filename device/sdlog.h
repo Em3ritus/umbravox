@@ -33,6 +33,22 @@ bool dump(Print& out, const char* name);
 // already on the card, so a reboot before a GPS fix can't overwrite one.
 uint32_t maxIndex(const char* prefix, const char* suffix);
 
+// Case-insensitive on the prefix and the suffix. Does `name` (a bare or '/'-led basename) look like "<prefix>NNNN<suffix>"?
+// Sets `v` to N. Pure, so the host test runs the very matcher the card scan uses.
+inline char lower(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
+inline bool matchIndex(const char* name, const char* prefix, const char* suffix, uint32_t& v) {
+    if (name[0] == '/') name++;
+    if (prefix[0] == '/') prefix++;
+    // ASCII case-insensitive, like FAT: files from older firmware end ".CSV".
+    for (; *prefix; prefix++, name++) if (lower(*prefix) != lower(*name)) return false;
+    uint32_t n = 0; bool any = false;
+    while (*name >= '0' && *name <= '9') { n = n * 10 + (uint32_t)(*name - '0'); name++; any = true; }
+    for (; *suffix; suffix++, name++) if (lower(*suffix) != lower(*name)) return false;
+    if (!any || *name) return false;
+    v = n;
+    return true;
+}
+
 // Append-mode helpers for the diagnostic log (elog). These grow a file in
 // place; the caller (elog) owns rotation so it never fills the
 // card. All are best-effort and no-ops when no card is mounted.

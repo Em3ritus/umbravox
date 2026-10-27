@@ -19,7 +19,7 @@ uint32_t rows = 0, skipped = 0;
 uint32_t nRolls = 0;
 // Names sessions when no date is known yet. The in-memory counter restarts at
 // 0 each boot, so begin() seeds it from the card (sdlog::maxIndex scans for
-// existing WD-NNNN.CSV) to advance PAST them -- so a reboot before a GPS fix
+// existing WD-NNNN.CSV/.csv, any case) to advance PAST them -- so a reboot before a GPS fix
 // cannot overwrite an earlier dateless session (spec s7).
 uint32_t counter = 0;
 char     name[32] = "";
@@ -72,7 +72,7 @@ void makeName(uint32_t nowEpoch) {
     if (nowEpoch >= EPOCH_KNOWN) {
         char ts[24];
         csv::stampUtc(ts, nowEpoch);              // "YYYY-MM-DD HH:MM:SS"
-        snprintf(name, sizeof name, "/WD-%.4s%.2s%.2s-%.2s%.2s%.2s.CSV",
+        snprintf(name, sizeof name, "/WD-%.4s%.2s%.2s-%.2s%.2s%.2s.csv",
                  ts, ts + 5, ts + 8, ts + 11, ts + 14, ts + 17);
         // Two sessions in the same second would share a name.
         if (strcmp(name, prevName) != 0 && !sdlog::exists(name)) {
@@ -81,7 +81,7 @@ void makeName(uint32_t nowEpoch) {
         }
     }
     for (int tries = 0; tries < 100; tries++) {
-        snprintf(name, sizeof name, "/WD-%04u.CSV", (unsigned)(++counter % 10000));
+        snprintf(name, sizeof name, "/WD-%04u.csv", (unsigned)(++counter % 10000));
         if (!sdlog::exists(name)) break;
     }
     strcpy(prevName, name);
@@ -259,9 +259,9 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
     rollWaiting = false;
     resetClear = nullptr;
     resetCursors();
-    // Advance the dateless counter past any WD-NNNN.CSV already on the card, so
+    // Advance the dateless counter past any WD-NNNN.csv (or .CSV from older firmware) already on the card, so
     // a reboot before a GPS fix cannot overwrite an earlier dateless session.
-    counter = sdlog::maxIndex("/WD-", ".CSV");
+    counter = sdlog::maxIndex("/WD-", ".csv");
     if (wasActive) start(nowMs, nowEpoch);   // a fresh file, never the old one
 }
 

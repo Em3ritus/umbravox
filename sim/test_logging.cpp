@@ -6,6 +6,7 @@
 #include "../device/sdlog.h"
 #include "../device/wigle.h"
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
 #include <map>
 #include <string>
@@ -15,6 +16,7 @@
 namespace {
 bool cardPresent = true;
 uint32_t maxOnCard = 0;
+int forcedMax = -1;
 std::map<std::string, std::string> files;
 std::string openName;
 bool isOpen = false, failWrites = false;
@@ -29,13 +31,32 @@ int opens = 0;
 namespace sdlog {
 bool begin() { return cardPresent; }
 bool present() { return cardPresent; }
-uint32_t maxIndex(const char*, const char*) { return maxOnCard; }
-bool exists(const char* name) { return cardPresent && files.count(name); }
+// FAT matches names case-insensitively, so the fake card does too: every
+// lookup goes through find(), which returns the stored key whatever its case.
+static bool ieq(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++)
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) return false;
+    return true;
+}
+static std::string find(const std::string& n) {
+    for (auto& kv : files) if (ieq(kv.first, n)) return kv.first;
+    return n;
+}
+// maxOnCard >= 0 forces the scan's answer (a scan that missed a file);
+// -1 runs the real matcher over the card's files.
+uint32_t maxIndex(const char* prefix, const char* suffix) {
+    if (forcedMax >= 0) return (uint32_t)forcedMax;
+    uint32_t hi = 0, v;
+    for (auto& kv : files) if (matchIndex(kv.first.c_str(), prefix, suffix, v) && v > hi) hi = v;
+    return hi;
+}
+bool exists(const char* name) { return cardPresent && files.count(find(name)); }
 bool openAppend(const char* name, uint32_t& size) {
     if (!cardPresent) return false;
     opens++;
     fakeClock += cardMs;
-    openName = name; isOpen = true;
+    openName = find(name); isOpen = true;
     size = (uint32_t)files[openName].size();
     sizeAtOpen = size; written = 0;
     return true;
@@ -53,7 +74,8 @@ bool closeAppend() {
     const bool ok = was && !failWrites;
     return verifyClose ? applog::closeVerified(ok, sizeAtOpen, written, (uint32_t)f.size()) : ok;
 }
-bool truncateTo(const char* name, uint32_t len) {
+bool truncateTo(const char* nm, uint32_t len) {
+    const std::string name = find(nm);
     if (!cardPresent || !files.count(name)) return false;
     if (files[name].size() > len) files[name].resize(len);
     return true;
@@ -107,7 +129,7 @@ static logging::Hooks hooks() {
 }
 static void fresh() {
     files.clear(); wifi.v.clear(); ble.v.clear(); wifi.heldRow.clear(); ble.heldRow.clear();
-    cardPresent = true; failWrites = false; maxOnCard = 0; dropTail = 0; verifyClose = true;
+    cardPresent = true; failWrites = false; maxOnCard = 0; forcedMax = -1; dropTail = 0; verifyClose = true;
     cardMs = 10; stopReports = 0; stopLost = 0; stopReset = false;
     clears = rolls = 0; opens = 0; totalLost = 0;
 }
@@ -226,25 +248,56 @@ int main() {
     check("the new file has the rows again", files[fileName()] == header() + row("W", 0) + row("W", 1));
     check("the earlier file untouched", files[a] == aBody);
 
-    printf("dateless counter advances past files already on the card:\n");
+    printf("new files are generated with a lowercase extension:\n");
     fresh();
-    maxOnCard = 7;
+    begin(false, hooks(), 0, T0);
+    start(0, T0);
+    check("dated name is lowercase .csv", strcmp(fileName(), "/WD-20261026-000000.csv") == 0);
+    check("dated name format is exact", !strncmp(fileName(), "/WD-2026", 8) && fileName()[12] == '-');
+    fresh();
     begin(false, hooks(), 0, 0);
     start(0, 0);
-    check("names past WD-0007 -> WD-0008", strcmp(fileName(), "/WD-0008.CSV") == 0);
+    check("dateless name is exactly /WD-0001.csv", strcmp(fileName(), "/WD-0001.csv") == 0);
 
-    printf("a name that already exists is never reused:\n");
+    printf("dateless counter advances past files already on the card (any case):\n");
     fresh();
-    files["/WD-20261026-000000.CSV"] = "EARLIER SESSION\n";
-    files["/WD-0001.CSV"] = "EARLIER DATELESS\n";      // maxIndex missed it
-    begin(false, hooks(), 0, T0);
-    wifi.add(1);
-    start(0, T0);
-    check("not the dated name", strcmp(fileName(), "/WD-20261026-000000.CSV") != 0);
-    check("not the existing dateless name", strcmp(fileName(), "/WD-0001.CSV") != 0);
-    check("earlier dated file untouched", files["/WD-20261026-000000.CSV"] == "EARLIER SESSION\n");
-    check("earlier dateless file untouched", files["/WD-0001.CSV"] == "EARLIER DATELESS\n");
-    check("the session landed in its own file", files[fileName()] == header() + row("W", 0));
+    files["/WD-0007.CSV"] = "OLD FIRMWARE\n";          // uppercase, earlier firmware
+    begin(false, hooks(), 0, 0);
+    start(0, 0);
+    check("old WD-0007.CSV -> WD-0008.csv", strcmp(fileName(), "/WD-0008.csv") == 0);
+    check("old file untouched", files["/WD-0007.CSV"] == "OLD FIRMWARE\n");
+    fresh();
+    files["/WD-0012.Csv"] = "MIXED\n";
+    files["/wd-0003.csv"] = "LOWER PREFIX\n";
+    begin(false, hooks(), 0, 0);
+    start(0, 0);
+    check("mixed-case .Csv counts -> WD-0013.csv", strcmp(fileName(), "/WD-0013.csv") == 0);
+    fresh();
+    maxOnCard = 7; forcedMax = 7;
+    begin(false, hooks(), 0, 0);
+    start(0, 0);
+    check("names past WD-0007 -> WD-0008", strcmp(fileName(), "/WD-0008.csv") == 0);
+
+    printf("a name that already exists is never reused, in any case:\n");
+    const char* const exts[] = {".CSV", ".Csv", ".csv"};
+    for (const char* ext : exts) {
+        fresh();
+        forcedMax = 0;                                      // the scan missed them
+        const std::string dated = std::string("/WD-20261026-000000") + ext;
+        const std::string dl = std::string("/WD-0001") + ext;
+        files[dated] = "EARLIER SESSION\n";
+        files[dl] = "EARLIER DATELESS\n";
+        begin(false, hooks(), 0, T0);
+        wifi.add(1);
+        start(0, T0);
+        printf("  existing %s\n", ext);
+        check("not the dated name", strcasecmp(fileName(), dated.c_str()) != 0);
+        check("not the existing dateless name", strcasecmp(fileName(), dl.c_str()) != 0);
+        check("earlier dated file untouched", files[dated] == "EARLIER SESSION\n");
+        check("earlier dateless file untouched", files[dl] == "EARLIER DATELESS\n");
+        check("no case-variant duplicate created", files.size() == 3);
+        check("the session landed in its own file", files[fileName()] == header() + row("W", 0));
+    }
 
     printf("a failed write latches the error and loses nothing:\n");
     fresh();
