@@ -60,8 +60,8 @@ int main() {
         }
         printf("     (%ld points, %ld inside, %ld edge flips)\n", n, inOld, decisionFlips);
         check("inside points land within 1 px of the old position", offByMore == 0);
-        check("inside/beyond agrees except on the rounding edge (< 0.1%)",
-              decisionFlips * 1000 < n);
+        check("inside/beyond agrees except on the rounding edge (<= 5 of 1,000,000)",
+              n == 1000000 && decisionFlips <= 5);
     }
 
     printf("the bounding box never culls a point the circle would keep:\n");
