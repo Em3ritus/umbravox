@@ -806,6 +806,20 @@ void loop() {
     if (logging::takeFileRestart())
         elog::event(elog::WARN, "sd", "log file shorter than written, continuing in %s",
                     logging::fileName());
+    // The table-full backstop (dedup.h) firing means the rollover did not
+    // keep up. Rare by design, so worth a line -- at most one per 30 s.
+    {
+        static elog::Gate fullGate;
+        static uint32_t seenWifi = 0, seenBle = 0;
+        const uint32_t dw = cap::tableDrops(), db = blescan::tableDrops();
+        if ((dw != seenWifi || db != seenBle) && fullGate.allow(millis(), 30000)) {
+            elog::event(elog::WARN, "cap", "table full: %lu Wi-Fi frames, %lu BLE adverts "
+                        "from new devices dropped (%u/%u slots)",
+                        (unsigned long)dw, (unsigned long)db,
+                        (unsigned)cap::tableUse(), (unsigned)cap::tableCap());
+            seenWifi = dw; seenBle = db;
+        }
+    }
     {
         static uint32_t lastHeapChk = 0;
         static bool heapWarned = false;

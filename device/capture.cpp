@@ -14,6 +14,7 @@
 #include "applog.h"
 #include "wiglerow.h"
 #include "plotproj.h"
+#include "dedup.h"
 #include <string.h>
 
 namespace cap {
@@ -36,7 +37,8 @@ constexpr int N_CHAN = ui::CH24 + ui::CH5;
 //
 // The session rolls over to a new log file and clears this table at
 // applog::ROLLOVER_APS uniques, long before it fills: linear probing degrades
-// sharply near full (an unknown BSSID scans every slot with interrupts off).
+// sharply near full. Behind that, dedup.h stops inserts at 15/16 full and
+// bounds every probe, so a full table drops new APs instead of freezing.
 // To change the size, edit TABLE (and ROLLOVER_APS in applog.h); the asserts
 // keep the pair sane.
 constexpr int TABLE  = 32768;         // dedup slots, open addressed
@@ -69,6 +71,14 @@ struct Node {
 Node*     table_ = nullptr;
 bool*     used_  = nullptr;
 uint32_t  nUsed = 0;
+// The backstop behind the rollover (dedup.h): inserts stop at INSERT_LIMIT,
+// lookups stop after maxProbe_ + 1 probes once they do, and a frame that finds
+// no slot is counted here instead of overwriting another AP's slot.
+constexpr uint32_t INSERT_LIMIT = dedup::insertLimit(TABLE);
+static_assert(applog::ROLL_HARD_APS < INSERT_LIMIT,
+              "the forced roll must come before the table refuses inserts");
+uint32_t  maxProbe_ = 0;
+volatile uint32_t nTableDrops = 0;
 
 // Slots in the order they were first seen, so the codex can show newest
 // first without sorting 512 entries every frame.
@@ -300,35 +310,38 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     if (h >= 0 && h < N_CHAN && loadCount[h] < 0xFFFF) loadCount[h]++;
 
     const uint32_t hsh = hashMac(bssid);
-    int slot = (int)(hsh % TABLE);
-    bool isNew = true;
-    for (int probe = 0; probe < TABLE; probe++) {
-        const int i = (slot + probe) % TABLE;
-        if (!used_[i]) {
-            if (nUsed < TABLE) {
-                used_[i] = true;
-                for (int k = 0; k < 6; k++) table_[i].mac[k] = bssid[k];
-                table_[i].band = band;
-                table_[i].ssid[0] = 0;
-                table_[i].firstMs = millis();
-                table_[i].firstEpoch = ui::Gnss::utcEpoch(millis());
-                table_[i].threat = ui::TH_NONE;
-                table_[i].conf = ui::CONF_LOW;
-                table_[i].why = "";
-                table_[i].histN = 0;
-                table_[i].located = false;
-                table_[i].bestRssi = -127;
-                table_[i].finder = src;
-                table_[i].auth = 0;
-                if (src < MAX_SRC) foundBy_[src]++;
-                order_[nOrder++] = (uint16_t)i;
-                nUsed++;
-                if (is5) nUnique5++; else nUnique24++;
-            }
-            slot = i;
-            break;
-        }
-        if (macEq(table_[i].mac, bssid)) { slot = i; isNew = false; break; }
+    // Bounded, and FULL rather than an overwrite once the table is past its
+    // insert limit (dedup.h). A dropped frame is counted and changes nothing.
+    const dedup::Hit hit = dedup::find(hsh, TABLE, nUsed, INSERT_LIMIT, maxProbe_,
+        [](uint32_t i) { return used_[i]; },
+        [bssid](uint32_t i) { return macEq(table_[i].mac, bssid); });
+    if (hit.kind == dedup::FULL) {
+        nTableDrops++;
+        portEXIT_CRITICAL(&mux);
+        return;
+    }
+    const int slot = hit.slot;
+    if (hit.kind == dedup::INSERT) {
+        const int i = slot;
+        used_[i] = true;
+        for (int k = 0; k < 6; k++) table_[i].mac[k] = bssid[k];
+        table_[i].band = band;
+        table_[i].ssid[0] = 0;
+        table_[i].firstMs = millis();
+        table_[i].firstEpoch = ui::Gnss::utcEpoch(millis());
+        table_[i].threat = ui::TH_NONE;
+        table_[i].conf = ui::CONF_LOW;
+        table_[i].why = "";
+        table_[i].histN = 0;
+        table_[i].located = false;
+        table_[i].bestRssi = -127;
+        table_[i].finder = src;
+        table_[i].auth = 0;
+        if (src < MAX_SRC) foundBy_[src]++;
+        order_[nOrder++] = (uint16_t)i;
+        nUsed++;
+        if (is5) nUnique5++; else nUnique24++;
+        dedup::noteInsert(maxProbe_, hit);
     }
     table_[slot].rssi   = rssi;
     table_[slot].chan   = (uint8_t)chanAt(h);
@@ -354,7 +367,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     // What a legitimate deployment does *not* do is advertise different
     // security on the same name. A disagreement there means one of them is
     // not what it claims.
-    if (isNew && name && name[0] && auth) {
+    if (dedup::runTwinPass(hit, name, auth)) {
         for (uint32_t q = 0; q < nOrder; q++) {
             Node& o = table_[order_[q]];
             if (&o == &table_[slot] || !o.ssid[0] || !o.auth) continue;
@@ -863,6 +876,7 @@ void reset() {
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; }
     nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
+    maxProbe_ = 0; nTableDrops = 0;
     nProbes = 0; nProbeFrames = 0;
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
@@ -880,6 +894,7 @@ void rollover() {
     portENTER_CRITICAL(&mux);
     memset(used_, 0, sizeof(bool) * TABLE);
     nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
+    maxProbe_ = 0;                  // an empty table has no probe chains
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     tableGen++;
     portEXIT_CRITICAL(&mux);
@@ -900,5 +915,6 @@ uint32_t localFrames() { return nLocal; }
 uint32_t uniques()  { return nUnique24 + nUnique5; }
 uint16_t tableUse() { return (uint16_t)(nUsed > 65535 ? 65535 : nUsed); }
 uint16_t tableCap() { return (uint16_t)(TABLE > 65535 ? 65535 : TABLE); }
+uint32_t tableDrops() { return nTableDrops; }
 
 } // namespace cap

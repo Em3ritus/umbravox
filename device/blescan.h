@@ -51,5 +51,6 @@ void rollover();
 
 uint32_t uniques();
 uint32_t adverts();
+uint32_t tableDrops();   // adverts from new addresses dropped: table past its insert limit
 
 } // namespace blescan

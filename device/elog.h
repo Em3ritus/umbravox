@@ -45,6 +45,19 @@ inline bool shouldRotate(uint32_t curSize, uint32_t addLen, uint32_t cap) {
     return (uint64_t)curSize + addLen > cap;
 }
 
+// A rate limit for repeating diagnostics (table full, scan restarted, loop
+// stall, node expired): the first event passes, then at most one per `gapMs`.
+// Elapsed time is unsigned, so it holds across the millis() wrap. Pure.
+struct Gate {
+    bool     fired  = false;
+    uint32_t lastMs = 0;
+    bool allow(uint32_t nowMs, uint32_t gapMs) {
+        if (fired && nowMs - lastMs < gapMs) return false;
+        fired = true; lastMs = nowMs;
+        return true;
+    }
+};
+
 // Rotate once at 128 KB (-> at most ~256 KB on the card across both files).
 constexpr uint32_t CAP  = 128u * 1024u;
 constexpr const char* PATH = "/diag.log";

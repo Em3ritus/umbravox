@@ -10,6 +10,7 @@
 #include "csv.h"
 #include "applog.h"
 #include "wiglerow.h"
+#include "dedup.h"
 #include <string.h>
 #include "gpstrack.h"
 #include "gnss.h"
@@ -23,9 +24,9 @@ uint8_t duty = 30;                                // % of the radio BLE takes
 
 // Also PSRAM-backed. BLE sees far more distinct addresses than WiFi does,
 // because most of them are randomised and rotate every few minutes.
-// When full, a new address is simply not tracked (slot stays -1): no
-// corruption, but every unknown advert then scans all slots under the lock --
-// so the log rolls over at applog::ROLLOVER_BLE, well before that.
+// Past its insert limit a new address is simply not tracked (counted in
+// tableDrops()), after a bounded probe (dedup.h) -- and the log rolls over at
+// applog::ROLLOVER_BLE, well before that.
 constexpr int TABLE  = 4096;                      // distinct addresses tracked
 static_assert(applog::ROLLOVER_BLE * 100u <= (uint32_t)TABLE * 65u,
               "BLE rollover must leave the address table <= 65% full");
@@ -79,6 +80,12 @@ int8_t*  rssis = nullptr;
 Extra*   extra = nullptr;
 bool*    used_ = nullptr;
 uint32_t nUsed = 0;
+// The table-full backstop (dedup.h), as in capture.
+constexpr uint32_t INSERT_LIMIT = dedup::insertLimit(TABLE);
+static_assert(applog::ROLL_HARD_BLE < INSERT_LIMIT,
+              "the forced roll must come before the table refuses inserts");
+uint32_t maxProbe_ = 0;
+volatile uint32_t nTableDrops = 0;
 
 // Insertion order, so the codex can list newest first without sorting.
 uint16_t* order_ = nullptr;
@@ -159,37 +166,35 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
             alert_.atMs = millis();
         }
         const uint32_t h = hashAddr(a);
-        int slot = -1;
-        const int home = (int)(h % TABLE);
-        for (int probe = 0; probe < TABLE; probe++) {
-            const int i = (home + probe) % TABLE;
-            if (!used_[i]) {
-                if (nUsed < TABLE) {
-                    used_[i] = true;
-                    for (int k = 0; k < 6; k++) addrs[i][k] = a[k];
-                    rssis[i] = (int8_t)rssi;
-                    extra[i] = Extra{};
-                    extra[i].bestRssi = -127;
-                    extra[i].firstEpoch = ui::Gnss::utcEpoch(millis());
-                    extra[i].firstMs = millis();
-                    {
-                        int32_t la, lo;
-                        if (gpstrack::at(millis(), 0, la, lo)) {
-                            extra[i].firstLat7 = la;
-                            extra[i].firstLon7 = lo;
-                            extra[i].hasFirst = true;
-                        }
-                    }
-                    order_[nOrder++] = (uint16_t)i;
-                    nUsed++;
-                    nUnique++;
-                    slot = i;
+        // Bounded, and FULL (not tracked, counted) past the insert limit:
+        // the same backstop as capture's table (dedup.h).
+        const dedup::Hit hit = dedup::find(h, TABLE, nUsed, INSERT_LIMIT, maxProbe_,
+            [](uint32_t i) { return used_[i]; },
+            [a](uint32_t i) { return memcmp(addrs[i], a, 6) == 0; });
+        int slot = hit.slot;
+        if (hit.kind == dedup::FULL) nTableDrops++;
+        if (hit.kind == dedup::FOUND) rssis[slot] = (int8_t)rssi;
+        if (hit.kind == dedup::INSERT) {
+            const int i = slot;
+            used_[i] = true;
+            for (int k = 0; k < 6; k++) addrs[i][k] = a[k];
+            rssis[i] = (int8_t)rssi;
+            extra[i] = Extra{};
+            extra[i].bestRssi = -127;
+            extra[i].firstEpoch = ui::Gnss::utcEpoch(millis());
+            extra[i].firstMs = millis();
+            {
+                int32_t la, lo;
+                if (gpstrack::at(millis(), 0, la, lo)) {
+                    extra[i].firstLat7 = la;
+                    extra[i].firstLon7 = lo;
+                    extra[i].hasFirst = true;
                 }
-                break;
             }
-            bool same = true;
-            for (int k = 0; k < 6; k++) if (addrs[i][k] != a[k]) { same = false; break; }
-            if (same) { rssis[i] = (int8_t)rssi; slot = i; break; }
+            order_[nOrder++] = (uint16_t)i;
+            nUsed++;
+            nUnique++;
+            dedup::noteInsert(maxProbe_, hit);
         }
 
         // Name and position, recorded at the strongest sighting.
@@ -443,6 +448,7 @@ void reset() {
     for (int i = 0; i < TABLE;  i++) used_[i] = false;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     nUsed = 0; nOrder = 0; nAdverts = 0; nUnique = 0;
+    maxProbe_ = 0; nTableDrops = 0;
     alert_ = ui::AlertRec{};
     for (int i = 0; i < TABLE; i++) extra[i] = Extra{};
     nFollowing = 0;
@@ -464,6 +470,7 @@ void rollover() {
     portENTER_CRITICAL(&mux);
     memset(used_, 0, TABLE);
     nUsed = 0; nOrder = 0; nUnique = 0;
+    maxProbe_ = 0;
     nFollowing = 0;
     portEXIT_CRITICAL(&mux);
 }
@@ -539,5 +546,6 @@ uint32_t exportRows(Print& out, uint32_t& skipped) {
 
 uint32_t uniques() { return nUnique; }
 uint32_t adverts() { return nAdverts; }
+uint32_t tableDrops() { return nTableDrops; }
 
 } // namespace blescan

@@ -88,5 +88,8 @@ uint32_t localFrames(); // only what this radio heard
 uint32_t uniques();     // distinct BSSIDs
 uint16_t tableUse();    // dedup slots used
 uint16_t tableCap();
+// Frames from new APs dropped because the table was past its insert limit
+// (dedup.h): the backstop behind the rollover, zero in normal running.
+uint32_t tableDrops();
 
 } // namespace cap

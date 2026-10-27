@@ -43,6 +43,22 @@ int main() {
     // 64-bit math: a near-full counter must not wrap and skip a rotation.
     check("near-full no wrap",       shouldRotate(0xFFFFFF00u, 0x200, CAP));
 
+    printf("rate-limit gate:\n");
+    {
+        Gate g;
+        check("the first event always passes",    g.allow(1000, 30000));
+        check("inside the gap: held",             !g.allow(20000, 30000));
+        check("held again just before the gap",   !g.allow(30999, 30000));
+        check("at the gap: passes",               g.allow(31000, 30000));
+        check("the gap restarts from that one",   !g.allow(40000, 30000));
+        Gate z;
+        check("first event at t=0 passes",        z.allow(0, 30000));
+        check("and holds the next at t=10",       !z.allow(10, 30000));
+        Gate w; w.allow(0xFFFFF000u, 30000);
+        check("held across the millis wrap",      !w.allow(0x00001000u, 30000));
+        check("passes 30 s after, across the wrap", w.allow(0xFFFFF000u + 30000u, 30000));
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }
