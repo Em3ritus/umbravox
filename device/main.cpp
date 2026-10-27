@@ -120,6 +120,11 @@ void onRollover(const logging::RollInfo& r) {
         elog::event(elog::INFO, "log", "%s at %u APs (%u BLE), new file %s", why,
                     (unsigned)r.wifiAps, (unsigned)r.bleAddrs, r.newName);
 }
+uint32_t clockMs() { return millis(); }
+void onStopLoss(uint32_t lost, bool reset) {
+    elog::event(elog::WARN, "log", "%u rows not written at stop%s", (unsigned)lost,
+                reset ? " (reset pending)" : "");
+}
 logging::Hooks hooks() {
     logging::Hooks h;
     h.wifi = &cap::logSource();
@@ -128,6 +133,8 @@ logging::Hooks hooks() {
     h.bleUniques  = bleUniques;
     h.clearTables = clearTables;
     h.onRollover  = onRollover;
+    h.clockMs     = clockMs;
+    h.onStopLoss  = onStopLoss;
     return h;
 }
 // RESET COUNTERS: the full reset, which logging turns into a rollover to a

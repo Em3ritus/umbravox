@@ -44,7 +44,7 @@ char              header[320] = "";
 // A rollover that is due but waiting for pending rows to reach the card.
 // rollDueAt is set once, when it first becomes due, and never refreshed.
 bool     rollWaiting = false;
-uint32_t rollDueAt = 0, lastProgress = 0, nextRollTry = 0;
+uint32_t rollDueAt = 0, nextRollTry = 0;
 // A RESET COUNTERS waiting on the same path: its clear replaces clearTables.
 void   (*resetClear)() = nullptr;
 
@@ -137,7 +137,7 @@ void drain(uint32_t nowMs, uint32_t nowEpoch) {
 void armRoll(uint32_t nowMs) {
     if (rollWaiting) return;
     rollWaiting = true;
-    rollDueAt = lastProgress = nextRollTry = nowMs;
+    rollDueAt = nextRollTry = nowMs;
 }
 
 void doRoll(uint32_t nowMs, uint32_t nowEpoch, bool forced, uint32_t lost) {
@@ -193,10 +193,9 @@ void checkRoll(uint32_t nowMs, uint32_t nowEpoch, Flushed f) {
         f = outcome(flushOnce(nowMs, nowEpoch));
     }
     if (f == DRAINED) { doRoll(nowMs, nowEpoch, false, 0); return; }
-    if (f == PARTIAL) lastProgress = nowMs;
     const bool hard = applog::rolloverHard(hk.wifiUniques ? hk.wifiUniques() : 0,
                                            hk.bleUniques ? hk.bleUniques() : 0);
-    if (hard || nowMs - rollDueAt >= ROLL_MAX_WAIT_MS || nowMs - lastProgress >= ROLL_GRACE_MS)
+    if (hard || nowMs - rollDueAt >= ROLL_MAX_WAIT_MS)
         forceRoll(nowMs, nowEpoch);
 }
 
@@ -214,7 +213,20 @@ void start(uint32_t nowMs, uint32_t nowEpoch) {
 }
 
 void stop(uint32_t nowMs) {
-    if (st == ACTIVE) drain(nowMs, 0);
+    uint32_t lost = 0;
+    const bool wasActive = st == ACTIVE;
+    if (wasActive) {
+        // Drain everything (final: held rows too), bounded by the wall clock
+        // and stopping at the first failed batch; then count what is left.
+        const uint32_t t0 = hk.clockMs ? hk.clockMs() : 0;
+        for (int k = 0; st == ACTIVE; k++) {
+            if (hk.clockMs ? hk.clockMs() - t0 >= STOP_DRAIN_MAX_MS : k >= FINAL_BATCHES) break;
+            const applog::Result r = flushOnce(nowMs, 0, true);
+            if (!r.ok || !r.more) break;
+        }
+        lost = applog::pendingRows(srcs, curs, nSrc, nowMs, true);
+    }
+    const bool hadReset = resetClear != nullptr;
     want = false;
     st = IDLE;
     name[0] = 0;
@@ -224,6 +236,7 @@ void stop(uint32_t nowMs) {
         resetClear = nullptr;
         resetCursors();
     }
+    if (wasActive && lost && hk.onStopLoss) hk.onStopLoss(lost, hadReset);
 }
 
 void toggle(uint32_t nowMs, uint32_t nowEpoch) {

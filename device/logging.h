@@ -23,6 +23,12 @@ struct Hooks {
     void (*clearTables)() = nullptr;           // rollover: clear both dedup tables
     // After a rollover (or a RESET while logging).
     void (*onRollover)(const struct RollInfo& r) = nullptr;
+    // A wall clock (millis) for STOP's drain bound. Without one, STOP writes
+    // FINAL_BATCHES at most.
+    uint32_t (*clockMs)() = nullptr;
+    // STOP left `lost` exportable rows unwritten (`reset`: a RESET was pending
+    // and its clear has now been applied).
+    void (*onStopLoss)(uint32_t lost, bool reset) = nullptr;
 };
 
 struct RollInfo {
@@ -40,14 +46,18 @@ constexpr uint32_t FLUSH_MS = 10000;
 constexpr uint32_t CATCHUP_MS = 1000;
 // A due rollover (or a RESET) waits for pending rows to reach the card, but is
 // forced -- after at most FINAL_BATCHES more, with the rest counted as lost --
-// when ROLL_MAX_WAIT_MS has passed since it first became due, when the table
-// reaches applog::ROLL_HARD_APS / ROLL_HARD_BLE, or when the card has made no
-// progress for ROLL_GRACE_MS. Arrivals faster than the drain cannot defer it.
+// when ROLL_MAX_WAIT_MS has passed since it first became due, or when the
+// table reaches applog::ROLL_HARD_APS / ROLL_HARD_BLE. Arrivals faster than
+// the drain cannot defer it.
 constexpr uint32_t ROLL_MAX_WAIT_MS = 30000;
-constexpr uint32_t ROLL_GRACE_MS = 60000;
-// Batches written at STOP / RESET before the file is closed (bounds the stall
+// Batches written by a forced roll / RESET before the clear (bounds that stall
 // to a few hundred ms even with a backlog).
 constexpr int FINAL_BATCHES = 4;
+// STOP is the user's: it drains the whole backlog (with the hold, every AP
+// heard in the last 20 s, parked ones up to 120 s -- easily over 800 rows in
+// a dense area), stopping only after this much wall-clock time or a failed
+// batch. What is left is counted and reported (Hooks::onStopLoss).
+constexpr uint32_t STOP_DRAIN_MAX_MS = 3000;
 
 // At boot: resume if we died logging. `nowEpoch` seeds the session filename
 // when a date is already known.

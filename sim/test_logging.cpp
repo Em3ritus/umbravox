@@ -22,6 +22,8 @@ bool isOpen = false, failWrites = false;
 // lands. `verifyClose` = sdlog's size check after the flush (the fix).
 int  dropTail = 0; bool verifyClose = true;
 uint32_t sizeAtOpen = 0, written = 0;
+// The wall clock logging reads for its STOP bound; each batch "costs" cardMs.
+uint32_t fakeClock = 0, cardMs = 10;
 int opens = 0;
 }
 namespace sdlog {
@@ -32,6 +34,7 @@ bool exists(const char* name) { return cardPresent && files.count(name); }
 bool openAppend(const char* name, uint32_t& size) {
     if (!cardPresent) return false;
     opens++;
+    fakeClock += cardMs;
     openName = name; isOpen = true;
     size = (uint32_t)files[openName].size();
     sizeAtOpen = size; written = 0;
@@ -90,16 +93,22 @@ void onRoll(const logging::RollInfo& r) {
     lastReset = r.reset; lastLost = r.lost; totalLost += r.lost;
 }
 
+uint32_t clockMs() { return fakeClock; }
+int stopReports = 0; uint32_t stopLost = 0; bool stopReset = false;
+void onStop(uint32_t lost, bool reset) { stopReports++; stopLost = lost; stopReset = reset; }
+
 static logging::Hooks hooks() {
     logging::Hooks h;
     h.wifi = &wifi; h.ble = &ble;
     h.wifiUniques = wifiU; h.bleUniques = bleU;
     h.clearTables = clearTables; h.onRollover = onRoll;
+    h.clockMs = clockMs; h.onStopLoss = onStop;
     return h;
 }
 static void fresh() {
     files.clear(); wifi.v.clear(); ble.v.clear(); wifi.heldRow.clear(); ble.heldRow.clear();
     cardPresent = true; failWrites = false; maxOnCard = 0; dropTail = 0; verifyClose = true;
+    cardMs = 10; stopReports = 0; stopLost = 0; stopReset = false;
     clears = rolls = 0; opens = 0; totalLost = 0;
 }
 static std::string header() {
@@ -513,6 +522,62 @@ int main() {
         check("the new file has the whole table, each row once",
               files[fileName()] == header() + row("W", 0) + row("W", 1) + row("W", 2) + row("W", 3));
         stop(3 * FLUSH_MS + 1);
+    }
+
+    printf("STOP drains the whole held backlog, within a wall-clock bound:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string f = fileName();
+        wifi.add(2000); wifi.heldRow.assign(2000, true);   // a dense area, all in range
+        tick(FLUSH_MS, T0);
+        check("held through the routine flush", occurrences(files[f], "\nW") == 0);
+        stop(FLUSH_MS + 1);
+        check("STOP wrote all 2000 (10 batches, more than FINAL_BATCHES)",
+              occurrences(files[f], "\nW") == 2000);
+        check("nothing to report", stopReports == 0);
+
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string g = fileName();
+        wifi.add(2000); wifi.heldRow.assign(2000, true);
+        cardMs = 1000;                                      // a slow card
+        stop(1);
+        check("STOP_DRAIN_MAX_MS is 3 s", STOP_DRAIN_MAX_MS == 3000);
+        check("the bound stops the drain", occurrences(files[g], "\nW") < 2000);
+        check("the remainder is reported exactly",
+              stopReports == 1 && (uint32_t)occurrences(files[g], "\nW") + stopLost == 2000);
+
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        wifi.add(2000); wifi.heldRow.assign(2000, true);
+        failWrites = true;                                  // a failing card
+        stop(1);
+        check("failing card: every row reported", stopReports == 1 && stopLost == 2000);
+        failWrites = false;
+    }
+
+    printf("STOP with a RESET still pending: drain, report, then clear:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string f = fileName();
+        wifi.add(5000);
+        failWrites = true;
+        resetTables(UC::clear, 10, T0 + 1);                 // cannot drain: pending
+        check("reset pending", rolls == 0);
+        failWrites = false;
+        cardMs = 500;                                       // slowish card
+        stop(20);
+        check("rows on the card + reported == 5000",
+              stopReports == 1 && stopReset &&
+              (uint32_t)occurrences(files[f], "\nW") + stopLost == 5000);
+        check("the reset's clear was applied", wifi.v.empty());
+        check("idle", state() == IDLE);
     }
 
     printf("held rows (AP still in range) are released by STOP, rollover and RESET:\n");
