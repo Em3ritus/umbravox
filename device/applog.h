@@ -48,6 +48,16 @@ inline bool rolloverDue(uint32_t wifiUniques, uint32_t bleUniques) {
     return wifiUniques >= ROLLOVER_APS || bleUniques >= ROLLOVER_BLE;
 }
 
+// A due roll waits for pending rows to reach the card, but never past these:
+// at this occupancy it is forced at once (the rows not yet written are counted
+// and logged), so arrivals faster than the drain cannot fill the table.
+// 27000 of 32768 is 82%; 3300 of 4096 is 81% (asserted in capture/blescan).
+constexpr uint32_t ROLL_HARD_APS = 27000;
+constexpr uint32_t ROLL_HARD_BLE = 3300;
+inline bool rolloverHard(uint32_t wifiUniques, uint32_t bleUniques) {
+    return wifiUniques >= ROLL_HARD_APS || bleUniques >= ROLL_HARD_BLE;
+}
+
 enum Verdict : uint8_t {
     WRITE,   // exportable now
     WAIT,    // not yet (no position, or held): ask again next flush
@@ -135,6 +145,20 @@ inline void resetCursor(Cursor& c, Source& s) {
 inline uint32_t rowsIn(Source& s) {
     const uint32_t n = s.count(), cap = s.capacity();
     return n < cap ? n : cap;
+}
+
+// Rows that could be written now (with `final`, held rows count) but are not
+// on the card yet: what a forced roll gives up.
+inline uint32_t pendingRows(Source* const* src, Cursor* cur, int nSrc,
+                            uint32_t nowMs, bool final) {
+    uint32_t n = 0;
+    for (int s = 0; s < nSrc; s++) {
+        Source& S = *src[s];
+        const uint32_t c = rowsIn(S);
+        for (uint32_t i = cur[s].low; i < c; i++)
+            if (!isDone(S, i) && S.verdict(i, nowMs, final) == WRITE) n++;
+    }
+    return n;
 }
 
 // Append up to maxRows new rows from the sources (in order: all of source 0's

@@ -39,8 +39,11 @@ applog::Pending   pend[applog::BATCH_ROWS];
 char              header[320] = "";
 
 // A rollover that is due but waiting for pending rows to reach the card.
+// rollDueAt is set once, when it first becomes due, and never refreshed.
 bool     rollWaiting = false;
-uint32_t rollSince = 0, nextRollTry = 0;
+uint32_t rollDueAt = 0, lastProgress = 0, nextRollTry = 0;
+// A RESET COUNTERS waiting on the same path: its clear replaces clearTables.
+void   (*resetClear)() = nullptr;
 
 // Anything earlier than this is the RTC's power-on default, not a real date.
 constexpr uint32_t EPOCH_KNOWN = 1577836800u;   // 2020-01-01 00:00:00 UTC
@@ -124,20 +127,41 @@ void drain(uint32_t nowMs, uint32_t nowEpoch) {
     }
 }
 
-void doRoll(uint32_t nowMs, uint32_t nowEpoch, bool forced) {
-    const uint32_t aps = hk.wifiUniques ? hk.wifiUniques() : 0;
-    const uint32_t ble = hk.bleUniques  ? hk.bleUniques()  : 0;
-    if (hk.clearTables) hk.clearTables();
+// Begin waiting for a roll (threshold or RESET), if not already.
+void armRoll(uint32_t nowMs) {
+    if (rollWaiting) return;
+    rollWaiting = true;
+    rollDueAt = lastProgress = nextRollTry = nowMs;
+}
+
+void doRoll(uint32_t nowMs, uint32_t nowEpoch, bool forced, uint32_t lost) {
+    RollInfo info;
+    info.wifiAps  = hk.wifiUniques ? hk.wifiUniques() : 0;
+    info.bleAddrs = hk.bleUniques  ? hk.bleUniques()  : 0;
+    info.forced = forced;
+    info.lost = lost;
+    info.reset = resetClear != nullptr;
+    if (resetClear) resetClear();
+    else if (hk.clearTables) hk.clearTables();
+    resetClear = nullptr;
     nRolls++;
     rollWaiting = false;
     if (st == ACTIVE) {
         newFile(nowEpoch);
-        if (hk.onRollover) hk.onRollover(aps, ble, name, forced);
+        info.newName = name;
+        if (hk.onRollover) hk.onRollover(info);
         flushOnce(nowMs, nowEpoch);       // the new file, header first
     } else {
         resetCursors();                   // nothing logged; the table restarts
-        if (hk.onRollover) hk.onRollover(aps, ble, "", forced);
+        if (hk.onRollover) hk.onRollover(info);
     }
+}
+
+// Forced: up to FINAL_BATCHES more (~800 rows, ~0.4 s), then count the rest.
+void forceRoll(uint32_t nowMs, uint32_t nowEpoch) {
+    drain(nowMs, nowEpoch);
+    const uint32_t lost = applog::pendingRows(srcs, curs, nSrc, nowMs, true);
+    doRoll(nowMs, nowEpoch, lost > 0, lost);
 }
 
 // What a flush this tick did, if any.
@@ -146,24 +170,28 @@ Flushed outcome(const applog::Result& r) {
     return !r.ok ? FAILED : r.more ? PARTIAL : DRAINED;
 }
 
+bool thresholdDue() {
+    return applog::rolloverDue(hk.wifiUniques ? hk.wifiUniques() : 0,
+                               hk.bleUniques ? hk.bleUniques() : 0);
+}
+
 // Runs every tick, so a due rollover is noticed within one loop, not one
-// flush interval. The roll waits until every pending row is on the card; it is
-// forced only when the card has made no progress for ROLL_GRACE_MS (a long but
-// healthy drain keeps resetting the clock).
+// flush interval. It completes when a (final) flush drains everything, or is
+// forced by the bounds in logging.h.
 void checkRoll(uint32_t nowMs, uint32_t nowEpoch, Flushed f) {
-    const uint32_t w = hk.wifiUniques ? hk.wifiUniques() : 0;
-    const uint32_t b = hk.bleUniques  ? hk.bleUniques()  : 0;
-    if (!applog::rolloverDue(w, b)) { rollWaiting = false; return; }
-    if (st != ACTIVE) { doRoll(nowMs, nowEpoch, false); return; }
-    if (!rollWaiting) { rollWaiting = true; rollSince = nowMs; nextRollTry = nowMs; }
-    if (f == NONE) {
-        if ((int32_t)(nowMs - nextRollTry) < 0) return;
+    if (!thresholdDue() && !resetClear) { rollWaiting = false; return; }
+    if (st != ACTIVE) { doRoll(nowMs, nowEpoch, false, 0); return; }
+    armRoll(nowMs);
+    if (f == NONE && (int32_t)(nowMs - nextRollTry) >= 0) {
         nextRollTry = nowMs + CATCHUP_MS;
         f = outcome(flushOnce(nowMs, nowEpoch));
     }
-    if (f == DRAINED) { doRoll(nowMs, nowEpoch, false); return; }
-    if (f == PARTIAL) rollSince = nowMs;              // progress: keep waiting
-    if (nowMs - rollSince >= ROLL_GRACE_MS) doRoll(nowMs, nowEpoch, true);
+    if (f == DRAINED) { doRoll(nowMs, nowEpoch, false, 0); return; }
+    if (f == PARTIAL) lastProgress = nowMs;
+    const bool hard = applog::rolloverHard(hk.wifiUniques ? hk.wifiUniques() : 0,
+                                           hk.bleUniques ? hk.bleUniques() : 0);
+    if (hard || nowMs - rollDueAt >= ROLL_MAX_WAIT_MS || nowMs - lastProgress >= ROLL_GRACE_MS)
+        forceRoll(nowMs, nowEpoch);
 }
 
 } // namespace
@@ -185,6 +213,11 @@ void stop(uint32_t nowMs) {
     st = IDLE;
     name[0] = 0;
     rollWaiting = false;
+    if (resetClear) {                     // a RESET was still draining: apply it
+        resetClear();
+        resetClear = nullptr;
+        resetCursors();
+    }
 }
 
 void toggle(uint32_t nowMs, uint32_t nowEpoch) {
@@ -205,6 +238,7 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
     name[0] = 0;
     prevName[0] = 0;
     rollWaiting = false;
+    resetClear = nullptr;
     resetCursors();
     // Advance the dateless counter past any WD-NNNN.CSV already on the card, so
     // a reboot before a GPS fix cannot overwrite an earlier dateless session.
@@ -215,11 +249,7 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
 void tick(uint32_t nowMs, uint32_t nowEpoch) {
     // Notice a due roll before this tick's flush, so that flush is already
     // final (releases held rows) and can count as the drain.
-    if (st == ACTIVE && !rollWaiting &&
-        applog::rolloverDue(hk.wifiUniques ? hk.wifiUniques() : 0,
-                            hk.bleUniques ? hk.bleUniques() : 0)) {
-        rollWaiting = true; rollSince = nowMs; nextRollTry = nowMs;
-    }
+    if (st == ACTIVE && thresholdDue()) armRoll(nowMs);
     Flushed f = NONE;
     if (st == NO_CARD) {
         if (sdlog::present()) {
@@ -233,15 +263,17 @@ void tick(uint32_t nowMs, uint32_t nowEpoch) {
 }
 
 void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
-    if (st == ACTIVE) drain(nowMs, nowEpoch);   // what was seen reaches the old file
-    if (clear) clear();
-    rollWaiting = false;
-    if (st == ACTIVE) {
-        newFile(nowEpoch);
-        flushOnce(nowMs, nowEpoch);
-    } else {
+    if (st != ACTIVE) {
+        if (clear) clear();
         resetCursors();
+        return;
     }
+    resetClear = clear;
+    armRoll(nowMs);
+    drain(nowMs, nowEpoch);               // usually everything, in one batch
+    if (st == ACTIVE && applog::pendingRows(srcs, curs, nSrc, nowMs, true) == 0)
+        doRoll(nowMs, nowEpoch, false, 0);
+    // else: checkRoll finishes it on the next ticks, within the roll bounds.
 }
 
 State       state()                 { return st; }

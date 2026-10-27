@@ -71,10 +71,11 @@ uint32_t wifiU() { return (uint32_t)wifi.v.size(); }
 uint32_t bleU()  { return (uint32_t)ble.v.size(); }
 int clears = 0;
 void clearTables() { clears++; wifi.v.clear(); ble.v.clear(); }
-int rolls = 0; bool lastForced = false;
-uint32_t rollAps = 0; std::string rollName;
-void onRoll(uint32_t aps, uint32_t, const char* nm, bool forced) {
-    rolls++; rollAps = aps; rollName = nm; lastForced = forced;
+int rolls = 0; bool lastForced = false, lastReset = false;
+uint32_t rollAps = 0, lastLost = 0, totalLost = 0; std::string rollName;
+void onRoll(const logging::RollInfo& r) {
+    rolls++; rollAps = r.wifiAps; rollName = r.newName; lastForced = r.forced;
+    lastReset = r.reset; lastLost = r.lost; totalLost += r.lost;
 }
 
 static logging::Hooks hooks() {
@@ -87,7 +88,7 @@ static logging::Hooks hooks() {
 static void fresh() {
     files.clear(); wifi.v.clear(); ble.v.clear(); wifi.heldRow.clear(); ble.heldRow.clear();
     cardPresent = true; failWrites = false; maxOnCard = 0;
-    clears = rolls = 0; opens = 0;
+    clears = rolls = 0; opens = 0; totalLost = 0;
 }
 static std::string header() {
     struct S : ui_wigle::Sink { std::string s; void put(const char* p) override { s += p; } } s;
@@ -278,15 +279,18 @@ int main() {
     begin(false, hooks(), 0, T0);
     start(0, T0);
     const std::string r2 = fileName();
-    wifi.add((int)applog::ROLLOVER_APS);           // all arrive at once
-    tick(CATCHUP_MS, T0);
+    wifi.add((int)applog::ROLLOVER_APS - 4000);
+    uint32_t tw = 0;
+    while (occurrences(files[r2], "\nW") < (int)applog::ROLLOVER_APS - 4000) { tw += CATCHUP_MS; tick(tw, T0); }
+    wifi.add(4000);                                // a 4000-row burst crosses the line
+    tw += CATCHUP_MS; tick(tw, T0);
     check("not rolled while rows are pending", rolls == 0);
-    for (uint32_t k = 2; k < 200 && rolls == 0; k++) tick(k * CATCHUP_MS, T0);
-    check("rolled after the drain", rolls == 1);
+    for (int k = 0; k < 40 && rolls == 0; k++) { tw += CATCHUP_MS; tick(tw, T0); }
+    check("rolled after the drain, not forced", rolls == 1 && !lastForced && lastLost == 0);
     check("every row reached the old file first", occurrences(files[r2], "\nW") == (int)applog::ROLLOVER_APS);
-    stop(400 * CATCHUP_MS);
+    stop(tw + 1);
 
-    printf("rollover with a failing card is forced after ROLL_GRACE_MS:\n");
+    printf("rollover with a failing card is forced after ROLL_MAX_WAIT_MS:\n");
     fresh();
     begin(false, hooks(), 0, T0);
     start(0, T0);
@@ -294,12 +298,13 @@ int main() {
     wifi.add((int)applog::ROLLOVER_APS);
     tick(CATCHUP_MS, T0);
     check("not rolled at once", rolls == 0);
-    tick(CATCHUP_MS + ROLL_GRACE_MS - 1, T0);
-    check("not before the grace period", rolls == 0);
-    tick(CATCHUP_MS + ROLL_GRACE_MS, T0);
+    tick(CATCHUP_MS + ROLL_MAX_WAIT_MS - 1, T0);
+    check("not before ROLL_MAX_WAIT_MS", rolls == 0);
+    tick(CATCHUP_MS + ROLL_MAX_WAIT_MS, T0);
     check("forced roll keeps capture going", rolls == 1 && clears == 1 && lastForced);
+    check("every unwritten row counted", lastLost == applog::ROLLOVER_APS);
     failWrites = false;
-    stop(CATCHUP_MS + ROLL_GRACE_MS + 1);
+    stop(CATCHUP_MS + ROLL_MAX_WAIT_MS + 1);
 
     printf("BLE reaching its threshold rolls too:\n");
     fresh();
@@ -353,6 +358,112 @@ int main() {
     start(20, T0);
     check("the next session logs from position 0", files[fileName()] == header() + row("W", 0));
 
+    printf("a sustained flood above the drain rate still rolls, by the timer:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string old = fileName();
+        const uint32_t R = 400;                    // new APs per second, > 200/s drain
+        uint32_t t = 0, maxSeen = 0, dueAt = 0, rolledAt = 0, atRoll = 0;
+        bool due = false;
+        while (t < 200000 && rolls == 0) {
+            t += 100;
+            wifi.add((int)(R / 10));
+            if (!due && wifi.v.size() >= applog::ROLLOVER_APS) { due = true; dueAt = t; }
+            if (wifi.v.size() > maxSeen) maxSeen = (uint32_t)wifi.v.size();
+            atRoll = (uint32_t)wifi.v.size();
+            tick(t, T0);
+            if (rolls) rolledAt = t;
+        }
+        printf("     (due at %u ms, rolled at %u ms, peak %u APs, lost %u)\n",
+               (unsigned)dueAt, (unsigned)rolledAt, (unsigned)maxSeen, (unsigned)lastLost);
+        check("rolled", rolls == 1 && clears == 1);
+        check("within ROLL_MAX_WAIT_MS of becoming due", rolledAt - dueAt <= ROLL_MAX_WAIT_MS);
+        check("ROLL_MAX_WAIT_MS is 30 s", ROLL_MAX_WAIT_MS == 30000);
+        check("table never past the hard ceiling + one flush interval of arrivals",
+              maxSeen <= applog::ROLL_HARD_APS + R * FLUSH_MS / 1000);
+        check("forced, with a counted loss", lastForced && lastLost > 0);
+        check("every row is on the card or counted lost (never silent)",
+              (uint32_t)occurrences(files[old], "\nW") + lastLost == atRoll);
+        stop(t + 1);
+    }
+
+    printf("a faster flood rolls at the hard ceiling, before the timer:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        uint32_t t = 0, maxSeen = 0;
+        while (t < 200000 && rolls == 0) {
+            t += 100;
+            wifi.add(500);                          // 5000 APs/s
+            if (wifi.v.size() > maxSeen) maxSeen = (uint32_t)wifi.v.size();
+            tick(t, T0);
+        }
+        check("ROLL_HARD_APS is 27000", applog::ROLL_HARD_APS == 27000);
+        check("rolled by the ceiling (well inside 30 s)", rolls == 1 && t < 10000);
+        check("never past the ceiling + one tick of arrivals", maxSeen <= applog::ROLL_HARD_APS + 500);
+        check("BLE has its own ceiling under its 4096 table",
+              applog::ROLL_HARD_BLE > applog::ROLLOVER_BLE && applog::ROLL_HARD_BLE < 4096);
+        stop(t + 1);
+    }
+
+    printf("the forced roll writes at most FINAL_BATCHES first:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string old = fileName();
+        failWrites = true;
+        wifi.add((int)applog::ROLLOVER_APS);
+        tick(100, T0);
+        failWrites = false;                          // the card recovers...
+        wifi.add((int)(applog::ROLL_HARD_APS - applog::ROLLOVER_APS));   // ...a burst hits the ceiling
+        tick(200, T0);
+        check("rolled, forced", rolls == 1 && lastForced);
+        check("old file got at most FINAL_BATCHES * BATCH_ROWS rows",
+              occurrences(files[old], "\nW") <= FINAL_BATCHES * (int)applog::BATCH_ROWS);
+        check("the rest is counted",
+              (uint32_t)occurrences(files[old], "\nW") + lastLost == applog::ROLL_HARD_APS);
+        stop(300);
+    }
+
+    printf("RESET with a 5000-row backlog: every row on the card or counted:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string old = fileName();
+        tick(FLUSH_MS, T0);
+        wifi.add(5000);
+        resetTables(UC::clear, FLUSH_MS + 1, T0 + 1);
+        check("not cleared while rows are still going to the card", rolls == 0 || clears == 0);
+        uint32_t t = FLUSH_MS + 1;
+        for (int k = 0; k < 100 && rolls == 0; k++) { t += CATCHUP_MS; tick(t, T0 + 1); }
+        check("the reset completed", rolls == 1 && lastReset);
+        check("table cleared by the user's clear", wifi.v.empty());
+        check("old file has all 5000 rows (drained in time, nothing lost)",
+              occurrences(files[old], "\nW") == 5000 && totalLost == 0);
+        check("a new file", fileName() != old);
+        stop(t + 1);
+
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        const std::string old2 = fileName();
+        wifi.add(5000);
+        failWrites = true;                           // the card is failing
+        resetTables(UC::clear, 10, T0 + 1);
+        t = 10;
+        for (int k = 0; k < 100 && rolls == 0; k++) { t += CATCHUP_MS; tick(t, T0 + 1); }
+        check("forced after ROLL_MAX_WAIT_MS", rolls == 1 && lastForced && lastReset && t <= 10 + ROLL_MAX_WAIT_MS + CATCHUP_MS);
+        check("the loss is counted, not silent",
+              (uint32_t)occurrences(files[old2], "\nW") + lastLost == 5000);
+        failWrites = false;
+        stop(t + 1);
+    }
+
     printf("held rows (AP still in range) are released by STOP, rollover and RESET:\n");
     fresh();
     begin(false, hooks(), 0, T0);
@@ -377,10 +488,13 @@ int main() {
     begin(false, hooks(), 0, T0);
     start(0, T0);
     const std::string h3 = fileName();
-    wifi.add((int)applog::ROLLOVER_APS);
+    wifi.add((int)applog::ROLLOVER_APS - 1);
+    uint32_t th = 0;
+    while (occurrences(files[h3], "\nW") < (int)applog::ROLLOVER_APS - 1) { th += CATCHUP_MS; tick(th, T0); }
+    wifi.add(1);
     wifi.heldRow.assign(applog::ROLLOVER_APS, false);
     wifi.heldRow[applog::ROLLOVER_APS - 1] = true;      // the last AP is still in range
-    for (uint32_t k = 1; k < 300 && rolls == 0; k++) tick(k * CATCHUP_MS, T0);
+    for (uint32_t k = 1; k < 300 && rolls == 0; k++) tick(th + k * CATCHUP_MS, T0);
     check("rollover writes it to the old file before the clear",
           rolls == 1 && occurrences(files[h3], row("W", applog::ROLLOVER_APS - 1)) == 1);
     stop(400 * CATCHUP_MS);

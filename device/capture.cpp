@@ -42,6 +42,8 @@ constexpr int TABLE  = 32768;         // dedup slots, open addressed
 static_assert(applog::ROLLOVER_APS * 100u <= (uint32_t)TABLE * 65u,
               "rollover must leave the dedup table <= 65% full");
 static_assert(TABLE <= 65536, "order_ and applog::Pending hold 16-bit slot indices");
+static_assert(applog::ROLL_HARD_APS > applog::ROLLOVER_APS && applog::ROLL_HARD_APS * 100u <= (uint32_t)TABLE * 85u,
+              "the forced-roll ceiling sits above the rollover, below a full table");
 constexpr int RECENT = ui::MAX_CONTACTS;
 
 struct Node {

@@ -21,10 +21,16 @@ struct Hooks {
     uint32_t (*wifiUniques)() = nullptr;       // drives the rollover rule
     uint32_t (*bleUniques)()  = nullptr;
     void (*clearTables)() = nullptr;           // rollover: clear both dedup tables
-    // After a rollover. `newName` is "" when not logging; `forced` when rows
-    // still pending had to be given up (the card kept failing).
-    void (*onRollover)(uint32_t wifiAps, uint32_t bleAddrs,
-                       const char* newName, bool forced) = nullptr;
+    // After a rollover (or a RESET while logging).
+    void (*onRollover)(const struct RollInfo& r) = nullptr;
+};
+
+struct RollInfo {
+    uint32_t    wifiAps = 0, bleAddrs = 0;  // table sizes when it rolled
+    const char* newName = "";               // "" when not logging
+    bool        forced = false;             // rows were given up (see `lost`)
+    bool        reset = false;              // RESET COUNTERS, not the threshold
+    uint32_t    lost = 0;                   // exportable rows not on the card
 };
 
 // The routine flush interval. Appends are cheap, so this is shorter than the
@@ -32,9 +38,12 @@ struct Hooks {
 constexpr uint32_t FLUSH_MS = 10000;
 // When a flush stopped at the row cap, the next one comes this soon.
 constexpr uint32_t CATCHUP_MS = 1000;
-// A due rollover waits for pending rows to reach the card; if the card makes
-// no progress for this long it rolls anyway (the unwritten rows are given up),
-// so a failing card cannot let the table fill.
+// A due rollover (or a RESET) waits for pending rows to reach the card, but is
+// forced -- after at most FINAL_BATCHES more, with the rest counted as lost --
+// when ROLL_MAX_WAIT_MS has passed since it first became due, when the table
+// reaches applog::ROLL_HARD_APS / ROLL_HARD_BLE, or when the card has made no
+// progress for ROLL_GRACE_MS. Arrivals faster than the drain cannot defer it.
+constexpr uint32_t ROLL_MAX_WAIT_MS = 30000;
 constexpr uint32_t ROLL_GRACE_MS = 60000;
 // Batches written at STOP / RESET before the file is closed (bounds the stall
 // to a few hundred ms even with a backlog).
@@ -52,9 +61,11 @@ void stop(uint32_t nowMs);
 // appears; checks the rollover rule.
 void tick(uint32_t nowMs, uint32_t nowEpoch);
 
-// RESET COUNTERS. While logging this is a rollover: pending rows go to the
-// current file, `clear` runs, and the session continues in a NEW file from
-// position 0 -- the old file is never rewritten. Idle: just `clear`.
+// RESET COUNTERS. While logging this is a rollover through the same path:
+// pending rows go to the current file (now, or over the next ticks within the
+// roll bounds above, any rest counted as lost), then `clear` runs and the
+// session continues in a NEW file from position 0 -- the old file is never
+// rewritten. Idle: `clear` runs at once.
 void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch);
 
 State       state();

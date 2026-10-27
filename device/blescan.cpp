@@ -30,6 +30,8 @@ constexpr int TABLE  = 4096;                      // distinct addresses tracked
 static_assert(applog::ROLLOVER_BLE * 100u <= (uint32_t)TABLE * 65u,
               "BLE rollover must leave the address table <= 65% full");
 static_assert(TABLE <= 65536, "order_ and applog::Pending hold 16-bit slot indices");
+static_assert(applog::ROLL_HARD_BLE > applog::ROLLOVER_BLE && applog::ROLL_HARD_BLE * 100u <= (uint32_t)TABLE * 85u,
+              "the forced-roll ceiling sits above the rollover, below a full table");
 constexpr int RECENT = 16;                        // blips BLE may put on the dial
 
 // Per-device detail, mirroring what capture keeps for access points. BLE

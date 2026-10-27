@@ -107,14 +107,18 @@ namespace logwire {
 uint32_t wifiUniques() { return cap::uniques(); }
 uint32_t bleUniques()  { return blescan::uniques(); }
 void clearTables()     { cap::rollover(); blescan::rollover(); }
-void onRollover(uint32_t aps, uint32_t ble, const char* newName, bool forced) {
-    if (newName[0])
-        elog::event(forced ? elog::WARN : elog::INFO, "log",
-                    "rollover at %u APs (%u BLE), new file %s%s", (unsigned)aps,
-                    (unsigned)ble, newName, forced ? " (card failing: pending rows dropped)" : "");
+void onRollover(const logging::RollInfo& r) {
+    const char* why = r.reset ? "reset" : "rollover";
+    if (!r.newName[0])
+        elog::event(elog::INFO, "log", "%s at %u APs (%u BLE), not logging", why,
+                    (unsigned)r.wifiAps, (unsigned)r.bleAddrs);
+    else if (r.forced)
+        elog::event(elog::WARN, "log", "%s at %u APs (%u BLE), new file %s, forced: "
+                    "%u rows not written", why, (unsigned)r.wifiAps, (unsigned)r.bleAddrs,
+                    r.newName, (unsigned)r.lost);
     else
-        elog::event(elog::INFO, "log", "rollover at %u APs (%u BLE), not logging",
-                    (unsigned)aps, (unsigned)ble);
+        elog::event(elog::INFO, "log", "%s at %u APs (%u BLE), new file %s", why,
+                    (unsigned)r.wifiAps, (unsigned)r.bleAddrs, r.newName);
 }
 logging::Hooks hooks() {
     logging::Hooks h;
