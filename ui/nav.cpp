@@ -36,8 +36,7 @@ void adjust(Settings& st, int row, int dir) {
             break;
         }
         case 5: {
-            int v = (int)st.idleIdx + dir;
-            st.idleIdx = (uint8_t)((v + IDLE_N) % IDLE_N);
+            idleStep(st, dir);
             break;
         }
         case 4: {
@@ -207,9 +206,6 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
                     n.resetRequested = true;
                 continue;
             }
-            if (r == SET_IDLE_ROW && st.idleIdx != 0 &&
-                hit(x, y, SET_VAL_X, y0, SET_VAL_W, SET_H))
-                st.idleMode = idlemodeNext(st.idleMode);
             if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H)) adjust(st, r, -1);
             if (hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H)) adjust(st, r, +1);
         }

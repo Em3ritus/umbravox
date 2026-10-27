@@ -23,10 +23,6 @@ int main() {
 
     printf("mode values and clamping:\n");
     check("default mode is DIM (0)", ui::Settings().idleMode == ui::IDLE_DIM);
-    check("next cycles DIM->OFF->ANIM->DIM",
-          ui::idlemodeNext(ui::IDLE_DIM) == ui::IDLE_OFF && ui::idlemodeNext(ui::IDLE_OFF) == ui::IDLE_ANIM &&
-          ui::idlemodeNext(ui::IDLE_ANIM) == ui::IDLE_DIM);
-    check("next of garbage lands on a valid mode", ui::idlemodeNext(200) < ui::IDLE_MODE_N);
     check("plan treats an unknown mode as DIM",
           plan(9, true, DIMP, BR, DIMP).pwm == DIMP && !plan(9, true, DIMP, BR, DIMP).anim);
     {
@@ -196,6 +192,66 @@ int main() {
         check("timeout set to NEVER while animating: exit + repaint", s.exit && !as.active);
     }
 
+    printf("combined idle position (NEVER, then 15S..5M x DIM/OFF/ANIM):\n");
+    {
+        using namespace ui;
+        check("16 states", IDLE_COMBINED_N == 16);
+        // forward cycle visits all 16 once and wraps
+        Settings s; s.idleIdx = 0; s.idleMode = IDLE_DIM;
+        bool seen[16] = {}; int dupes = 0; bool order = true;
+        for (int i = 0; i < 16; i++) {
+            const int c = idleCombinedIndex(s.idleIdx, s.idleMode);
+            if (c != i) order = false;
+            if (seen[c]) dupes++;
+            seen[c] = true;
+            idleStep(s, +1);
+        }
+        check("forward: visits all 16 in order, once each", order && !dupes);
+        check("forward: wraps back to NEVER", s.idleIdx == 0);
+        bool back = true;
+        for (int i = 0; i < 16; i++) {
+            const int before = idleCombinedIndex(s.idleIdx, s.idleMode);
+            idleStep(s, -1);
+            if (idleCombinedIndex(s.idleIdx, s.idleMode) != (before + 15) % 16) back = false;
+        }
+        check("backward: full cycle, each step one back", back && s.idleIdx == 0);
+        // spec'd edges
+        Settings e; e.idleIdx = 0; e.idleMode = IDLE_ANIM;
+        idleStep(e, +1);
+        check("NEVER + -> 15S DIM (regardless of stored mode)", e.idleIdx == 1 && e.idleMode == IDLE_DIM);
+        e.idleIdx = 0; e.idleMode = IDLE_DIM;
+        idleStep(e, -1);
+        check("NEVER - -> 5M ANIM", e.idleIdx == 5 && e.idleMode == IDLE_ANIM);
+        e.idleIdx = 1; e.idleMode = IDLE_DIM; idleStep(e, -1);
+        check("15S DIM - -> NEVER", e.idleIdx == 0);
+        e.idleIdx = 5; e.idleMode = IDLE_ANIM; idleStep(e, +1);
+        check("5M ANIM + -> NEVER", e.idleIdx == 0);
+        check("reaching NEVER keeps the previous mode stored", e.idleMode == IDLE_ANIM);
+        // every saved state, old and new, steps consistently
+        bool consistent = true;
+        for (int i = 0; i < IDLE_N; i++)
+            for (int m = 0; m < IDLE_MODE_N; m++) {
+                Settings x; x.idleIdx = (uint8_t)i; x.idleMode = (uint8_t)m;
+                const int c = idleCombinedIndex(x.idleIdx, x.idleMode);
+                Settings f = x, b = x;
+                idleStep(f, +1); idleStep(b, -1);
+                if (idleCombinedIndex(f.idleIdx, f.idleMode) != (c + 1) % 16) consistent = false;
+                if (idleCombinedIndex(b.idleIdx, b.idleMode) != (c + 15) % 16) consistent = false;
+                if (i == 0 && c != 0) consistent = false;   // NEVER is position 0 whatever the mode
+            }
+        check("every saved (idleIdx, idleMode) steps +1/-1 consistently", consistent);
+        // old stores: mode 0 -> DIM positions 1..5
+        check("old saved 30S (mode 0) is 30S DIM", idleCombinedIndex(2, 0) == 2);
+        // garbage is clamped like clampSettings does
+        Settings g; g.idleIdx = 9; g.idleMode = 77;
+        Settings h = g; clampSettings(h);
+        check("garbage idleMode reads as DIM, bad idleIdx as the clamp's 30S",
+              idleCombinedIndex(g.idleIdx, g.idleMode) == idleCombinedIndex(h.idleIdx, h.idleMode) &&
+              idleCombinedIndex(g.idleIdx, g.idleMode) == 2);
+        idleStep(g, +1);
+        check("stepping from garbage lands on a valid state", g.idleIdx < IDLE_N && g.idleMode < IDLE_MODE_N);
+    }
+
     printf("settings screen: the IDLE row carries the mode:\n");
     {
         auto tap = [](ui::Nav& n, ui::Settings& s, int x, int y) {
@@ -203,22 +259,25 @@ int main() {
             ui::navTouch(n, s, false, (int16_t)x, (int16_t)y);
         };
         const int rowY = ui::SET_Y + ui::SET_IDLE_ROW * ui::SET_H + ui::SET_H / 2;
-        const int valX = ui::SET_VAL_X + ui::SET_VAL_W / 2;
+        const int valX = 70;     // the value text: no longer a control
         ui::Nav n; n.screen = ui::SCR_ATTUNE;
-        ui::Settings s;                       // idleIdx 2 = 30 s
-        tap(n, s, valX, rowY);
-        check("tap on the value: DIM -> OFF", s.idleMode == ui::IDLE_OFF);
-        tap(n, s, valX, rowY);
-        check("tap again: OFF -> ANIM", s.idleMode == ui::IDLE_ANIM);
-        tap(n, s, valX, rowY);
-        check("tap again: ANIM -> DIM", s.idleMode == ui::IDLE_DIM);
+        ui::Settings s;                       // idleIdx 2 = 30 s, DIM
         tap(n, s, ui::SET_PLUS_X + 2, rowY);
-        check("+ still steps the timeout, mode untouched", s.idleIdx == 3 && s.idleMode == ui::IDLE_DIM);
-        tap(n, s, valX, ui::SET_Y + 4 * ui::SET_H + 4);
-        check("value zone of another row does not touch the mode", s.idleMode == ui::IDLE_DIM);
-        s.idleIdx = 0;
+        check("+ : 30S DIM -> 1M DIM", s.idleIdx == 3 && s.idleMode == ui::IDLE_DIM);
+        tap(n, s, ui::SET_MINUS_X + 2, rowY);
+        check("- : back to 30S DIM", s.idleIdx == 2 && s.idleMode == ui::IDLE_DIM);
+        s.idleIdx = 5; s.idleMode = ui::IDLE_DIM;
+        tap(n, s, ui::SET_PLUS_X + 2, rowY);
+        check("+ from 5M DIM rolls on to 15S OFF", s.idleIdx == 1 && s.idleMode == ui::IDLE_OFF);
+        tap(n, s, ui::SET_MINUS_X + 2, rowY);
+        check("- from 15S OFF returns to 5M DIM", s.idleIdx == 5 && s.idleMode == ui::IDLE_DIM);
+        s.idleMode = ui::IDLE_MODE_N - 1; s.idleIdx = 2;
         tap(n, s, valX, rowY);
-        check("with timeout NEVER the mode is not changed", s.idleMode == ui::IDLE_DIM);
+        check("tapping the value text is inert", s.idleIdx == 2 && s.idleMode == ui::IDLE_ANIM);
+        tap(n, s, 20, rowY);
+        check("tapping the label is inert", s.idleIdx == 2 && s.idleMode == ui::IDLE_ANIM);
+        tap(n, s, ui::SET_PLUS_X + 2, ui::SET_Y + 4 * ui::SET_H + 4);
+        check("another row's + does not touch idle", s.idleIdx == 2 && s.idleMode == ui::IDLE_ANIM);
 
         // render: default shows DIM, the other two differ from it and each other
         pal::setTheme(pal::TH_UMBRAVOX);
@@ -248,6 +307,7 @@ int main() {
         static ui::Canvas e, f0;
         ui::drawAttune(e, sx, nullptr); ui::drawAttune(f0, sn, nullptr);
         const int y0 = ui::SET_Y + ui::SET_IDLE_ROW * ui::SET_H, y1 = y0 + ui::SET_H;
+        const int ZX = 44, ZW = 66;   // the space between the label and the buttons
         int minX = 999, maxX = -1; bool touchesMinus = false;
         for (int y = y0; y < y1; y++)
             for (int x = 0; x < ui::W; x++)
@@ -257,9 +317,9 @@ int main() {
                     if (x >= ui::SET_MINUS_X - 1) touchesMinus = true;
                 }
         printf("       value text spans x %d..%d (zone %d..%d, minus at %d)\n",
-               minX, maxX, ui::SET_VAL_X, ui::SET_VAL_X + ui::SET_VAL_W - 1, ui::SET_MINUS_X);
+               minX, maxX, ZX, ZX + ZW - 1, ui::SET_MINUS_X);
         check("longest value renders inside the value zone",
-              maxX >= 0 && minX >= ui::SET_VAL_X && maxX < ui::SET_VAL_X + ui::SET_VAL_W);
+              maxX >= 0 && minX >= ZX && maxX < ZX + ZW);
         check("longest value does not touch the minus button", !touchesMinus);
     }
 

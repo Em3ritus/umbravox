@@ -21,7 +21,7 @@ namespace idlemode {
 
 struct Rect { int16_t x, y, w, h; };
 
-// Mode clamping and cycling live in ui (clampSettings, idlemodeNext): one
+// Mode clamping and stepping live in ui (clampSettings, idleStep): one
 // source of truth. An unknown mode here simply behaves as DIM.
 
 struct Plan {

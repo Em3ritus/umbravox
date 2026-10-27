@@ -107,14 +107,39 @@ enum AlertStyle : uint8_t { AL_SUPERNOVA = 0, AL_VORTEX, AL_COMET, AL_LOCKON,
 // default; unknown stored values clamp to it.
 enum IdleMode : uint8_t { IDLE_DIM = 0, IDLE_OFF = 1, IDLE_ANIM = 2, IDLE_MODE_N = 3 };
 
-inline constexpr uint8_t idlemodeNext(uint8_t m) {
-    return (uint8_t)((m < IDLE_MODE_N ? m + 1 : 1) % IDLE_MODE_N);
-}
-
 inline constexpr uint16_t IDLE_S[] = {0, 15, 30, 60, 120, 300};
 constexpr int IDLE_N = (int)(sizeof(IDLE_S) / sizeof(IDLE_S[0]));
 
-constexpr int SET_IDLE_ROW = 5;   // the IDLE row: timeout, and mode on a tap of its value
+// The IDLE row's -/+ walk one round-robin list: NEVER, then every timeout
+// with DIM, then with OFF, then with ANIM, and round to NEVER again. Stored
+// as (idleIdx, idleMode); this maps between the two. Position 0 is NEVER
+// whatever mode is stored; 1..15 = 1 + mode * 5 + (idleIdx - 1).
+constexpr int IDLE_COMBINED_N = 1 + (IDLE_N - 1) * IDLE_MODE_N;   // 16
+
+// Unknown values read the way clampSettings would clamp them (mode -> DIM,
+// idleIdx out of range -> 2).
+inline int idleCombinedIndex(uint8_t idleIdx, uint8_t idleMode) {
+    if (idleIdx >= IDLE_N) idleIdx = 2;
+    if (idleIdx == 0) return 0;
+    if (idleMode >= IDLE_MODE_N) idleMode = IDLE_DIM;
+    return 1 + idleMode * (IDLE_N - 1) + (idleIdx - 1);
+}
+
+// Step the row. Reaching NEVER leaves the stored mode alone; leaving NEVER
+// always starts from 15S DIM (+) or 5M ANIM (-).
+inline void idleStep(Settings& s, int dir) {
+    const int c = (idleCombinedIndex(s.idleIdx, s.idleMode) + (dir < 0 ? IDLE_COMBINED_N - 1 : 1))
+                  % IDLE_COMBINED_N;
+    if (c == 0) {
+        s.idleIdx = 0;
+        if (s.idleMode >= IDLE_MODE_N) s.idleMode = IDLE_DIM;
+        return;
+    }
+    s.idleIdx  = (uint8_t)((c - 1) % (IDLE_N - 1) + 1);
+    s.idleMode = (uint8_t)((c - 1) / (IDLE_N - 1));
+}
+
+constexpr int SET_IDLE_ROW = 5;   // the IDLE row: timeout and mode, round-robin on -/+
 constexpr int SET_ROWS = 7;   // six knobs and a reset
 
 // How many RSSI samples a device keeps. One per sighting rather than one
