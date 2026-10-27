@@ -32,8 +32,8 @@
 namespace sdcmd {
 
 // The longest console line. The longest D line is "D 9727 " + 192 hex = 199.
-constexpr size_t   LINE_MAX  = 200;
-// Raw bytes per D line. Hex keeps a 96-byte chunk under LINE_MAX.
+constexpr size_t   LINE_CAP  = 200;
+// Raw bytes per D line. Hex keeps a 96-byte chunk under LINE_CAP.
 constexpr size_t   CHUNK_MAX = 96;
 // An upload with no D/END line for this long is abandoned and its temp removed.
 constexpr uint32_t IDLE_MS   = 10000;
@@ -126,13 +126,13 @@ inline Tokens split(const char* line) {
 }
 
 // --- line framing -------------------------------------------------------------
-// Bytes in, whole lines out. A line is LINE_MAX printable ASCII bytes
+// Bytes in, whole lines out. A line is LINE_CAP printable ASCII bytes
 // (0x20..0x7E) at most; a longer one is discarded whole (OVERLONG), never
 // truncated and run, and a line holding any other byte (line noise, a NUL)
 // is discarded whole (BADBYTE). Blank lines are skipped. Fixed buffer.
 struct LineBuf {
     enum Kind { NONE, LINE, OVERLONG, BADBYTE };
-    char   buf[LINE_MAX + 1] = "";
+    char   buf[LINE_CAP + 1] = "";
     size_t n = 0;
     bool   over = false, bad = false;
     Kind feed(char c) {
@@ -146,7 +146,7 @@ struct LineBuf {
         }
         const unsigned char u = (unsigned char)c;
         if (u < 0x20 || u > 0x7E) bad = true;
-        else if (n < LINE_MAX) buf[n++] = c;
+        else if (n < LINE_CAP) buf[n++] = c;
         else over = true;
         return NONE;
     }
@@ -277,9 +277,11 @@ inline const char* delPolicy(const char* path, const char* active, Path& out) {
 
 inline const char* rmdirPolicy(const char* folder, Path& out) {
     out = Path();
-    if (!folder || strnlen(folder, 32) > 31 || !themeFolderOk(folder)) return NOT_ALLOWED;
-    snprintf(out.folder, sizeof out.folder, "%s", folder);
-    snprintf(out.canon, sizeof out.canon, "/themes/%s", folder);
+    const size_t n = folder ? strnlen(folder, 32) : 32;
+    if (n > 31 || !themeFolderOk(folder)) return NOT_ALLOWED;
+    memcpy(out.folder, folder, n);
+    out.folder[n] = 0;
+    snprintf(out.canon, sizeof out.canon, "/themes/%s", out.folder);
     return nullptr;
 }
 

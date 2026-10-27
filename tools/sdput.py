@@ -30,7 +30,7 @@ import time
 import zlib
 
 CHUNK = 96               # raw bytes per D line (device: sdcmd::CHUNK_MAX)
-LINE_MAX = 200           # device: sdcmd::LINE_MAX
+LINE_CAP = 200           # device: sdcmd::LINE_CAP
 MAX_JSON = 4096          # ui/themepack.h
 MAX_EMBLEM = 9728
 RETRIES = 3              # a failed chunk is resent up to this many times
@@ -94,7 +94,7 @@ def put_steps(path, data):
         steps.append((chunk_line(off, data[off:off + CHUNK]), "OK %d" % off))
     steps.append(("END", "DONE %d %08x" % (len(data), crc)))
     for line, _ in steps:
-        assert len(line) <= LINE_MAX
+        assert len(line) <= LINE_CAP
     return steps
 
 
@@ -122,7 +122,7 @@ def selftest():
     check("crc32(fox) == 414fa339", crc32(b"The quick brown fox jumps over the lazy dog") == 0x414FA339)
     check("crc32('') == 0", crc32(b"") == 0)
     check("hex is lower case, 2 digits a byte", chunk_line(5, b"\x00\xff\x7a") == "D 5 00ff7a")
-    check("longest line fits", len(chunk_line(9727, b"\xab" * CHUNK)) <= LINE_MAX)
+    check("longest line fits", len(chunk_line(9727, b"\xab" * CHUNK)) <= LINE_CAP)
     for src, want in (("Midnight Ember", "midnight-ember"), ("  --My__Pack!! ", "my-pack"),
                       ("", "pack"), ("ÆTHER", "ther"), ("a" * 40, "a" * 31),
                       ("x" * 30 + " y", "x" * 30), ("COSMIC-CLONE", "cosmic-clone")):

@@ -364,14 +364,14 @@ static void testDecoders() {
     const char nul[] = {'R', 'E', 'B', 'O', 'O', 'T', 0, 'x', '\n'};
     check("NUL in a line: BADBYTE", feedAll(nul, sizeof nul) == sdcmd::LineBuf::BADBYTE);
     check("after a bad line the next is clean", feedAll("SDLS\n", 5) == sdcmd::LineBuf::LINE && !strcmp(lb.buf, "SDLS"));
-    std::string l200(sdcmd::LINE_MAX, 'a'); l200 += '\n';
+    std::string l200(sdcmd::LINE_CAP, 'a'); l200 += '\n';
     check("200 chars: a line", feedAll(l200.c_str(), l200.size()) == sdcmd::LineBuf::LINE && strlen(lb.buf) == 200);
-    std::string l201(sdcmd::LINE_MAX + 1, 'a'); l201 += '\n';
+    std::string l201(sdcmd::LINE_CAP + 1, 'a'); l201 += '\n';
     check("201 chars: OVERLONG, discarded whole", feedAll(l201.c_str(), l201.size()) == sdcmd::LineBuf::OVERLONG);
     std::string l5k(5000, 'b'); l5k += '\n';
     check("5000 chars: OVERLONG", feedAll(l5k.c_str(), l5k.size()) == sdcmd::LineBuf::OVERLONG);
     check("then a clean line", feedAll("END\n", 4) == sdcmd::LineBuf::LINE && !strcmp(lb.buf, "END"));
-    check("max D line fits", 2 + 4 + 1 + 2 * sdcmd::CHUNK_MAX <= sdcmd::LINE_MAX);
+    check("max D line fits", 2 + 4 + 1 + 2 * sdcmd::CHUNK_MAX <= sdcmd::LINE_CAP);
 }
 
 // --- command parsing ------------------------------------------------------
