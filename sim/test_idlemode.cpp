@@ -23,14 +23,12 @@ int main() {
 
     printf("mode values and clamping:\n");
     check("default mode is DIM (0)", ui::Settings().idleMode == ui::IDLE_DIM);
-    check("DIM stays DIM",  clampMode(ui::IDLE_DIM)  == ui::IDLE_DIM);
-    check("OFF stays OFF",  clampMode(ui::IDLE_OFF)  == ui::IDLE_OFF);
-    check("ANIM stays ANIM", clampMode(ui::IDLE_ANIM) == ui::IDLE_ANIM);
-    check("unknown value -> DIM", clampMode(3) == ui::IDLE_DIM && clampMode(255) == ui::IDLE_DIM);
     check("next cycles DIM->OFF->ANIM->DIM",
-          nextMode(ui::IDLE_DIM) == ui::IDLE_OFF && nextMode(ui::IDLE_OFF) == ui::IDLE_ANIM &&
-          nextMode(ui::IDLE_ANIM) == ui::IDLE_DIM);
-    check("next of garbage lands on a valid mode", nextMode(200) < ui::IDLE_MODE_N);
+          ui::idlemodeNext(ui::IDLE_DIM) == ui::IDLE_OFF && ui::idlemodeNext(ui::IDLE_OFF) == ui::IDLE_ANIM &&
+          ui::idlemodeNext(ui::IDLE_ANIM) == ui::IDLE_DIM);
+    check("next of garbage lands on a valid mode", ui::idlemodeNext(200) < ui::IDLE_MODE_N);
+    check("plan treats an unknown mode as DIM",
+          plan(9, true, DIMP, BR, DIMP).pwm == DIMP && !plan(9, true, DIMP, BR, DIMP).anim);
     {
         ui::Settings s; s.idleMode = 77;
         ui::clampSettings(s);
@@ -83,7 +81,6 @@ int main() {
             check(l, p.pwm == BR && !p.suspend && !p.anim);
         }
     }
-    check("wake swallows the touch only while dimmed", swallowTouch(true) && !swallowTouch(false));
 
     printf("animation timing and pose:\n");
     check("<= 2 fps: frame period is at least 500 ms", ANIM_FRAME_MS >= 500);
@@ -122,31 +119,81 @@ int main() {
         c.clear(BG);
         bool ok = true, rectSmall = true;
         int maxPx = 0;
-        for (uint32_t f = 0; f < 64; f++) {
+        uint32_t f = 0, prev = NO_FRAME;
+        for (int i = 0; i < 80; i++) {
             static uint16_t before[ui::W * ui::H];
             memcpy(before, c.px, sizeof before);
-            Rect r = drawFrame(c, f, BG, FG);
+            Dirty d = drawFrame(c, f, prev, BG, FG);
+            for (int y = 0; y < ui::H; y++)
+                for (int x = 0; x < ui::W; x++) {
+                    bool in = false;
+                    for (int k = 0; k < d.n; k++)
+                        in |= x >= d.r[k].x && x < d.r[k].x + d.r[k].w && y >= d.r[k].y && y < d.r[k].y + d.r[k].h;
+                    if (before[y * ui::W + x] != c.px[y * ui::W + x] && !in) ok = false;
+                }
+            for (int k = 0; k < d.n; k++) {
+                if (d.r[k].w * d.r[k].h > maxPx) maxPx = d.r[k].w * d.r[k].h;
+                if (d.r[k].w * d.r[k].h > 200) rectSmall = false;
+            }
+            // Only the current pose may be lit: stalls (skipped frames) leave no residue.
+            const Pose pp = pose(f);
             for (int y = 0; y < ui::H; y++)
                 for (int x = 0; x < ui::W; x++)
-                    if (before[y * ui::W + x] != c.px[y * ui::W + x] &&
-                        !(x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h))
+                    if (c.px[y * ui::W + x] != BG &&
+                        (x < pp.cx - MAX_R || x > pp.cx + MAX_R || y < pp.cy - MAX_R || y > pp.cy + MAX_R))
                         ok = false;
-            if (r.w * r.h > maxPx) maxPx = r.w * r.h;
-            if (r.w * r.h > 200) rectSmall = false;
+            prev = f;
+            f += 1 + (i % 5 == 3 ? 9 : i % 3);   // consecutive, small gaps and big jumps
         }
         check("no pixel changes outside the reported rect", ok);
         check("rect is tiny (<= 200 px of 19200)", rectSmall);
         printf("       largest rect %d px = %.2f%% of the screen\n", maxPx, 100.0 * maxPx / (ui::W * ui::H));
         // A blank frame leaves a clean canvas
         c.clear(BG);
-        drawFrame(c, 7, BG, FG);
+        drawFrame(c, 7, NO_FRAME, BG, FG);
         int lit = 0;
         for (int i = 0; i < ui::W * ui::H; i++) lit += c.px[i] != BG;
         check("the blank frame (7) draws nothing", lit == 0);
-        drawFrame(c, 3, BG, FG);   // radius MAX_R
+        drawFrame(c, 3, NO_FRAME, BG, FG);   // radius MAX_R
         lit = 0;
         for (int i = 0; i < ui::W * ui::H; i++) lit += c.px[i] != BG;
         check("peak frame draws something small", lit > 0 && lit < 120);
+    }
+
+    printf("animation enter/exit sequence:\n");
+    {
+        AnimState as;
+        uint32_t now = 1000;
+        Step s = animStep(as, false, now);
+        check("awake: nothing happens", !s.enter && !s.exit && !s.draw && !as.active);
+        s = animStep(as, true, now);
+        check("idle #1 enter: clear + full blit + first frame", s.enter && !s.exit && s.draw && s.frame == 0);
+        now += 100; s = animStep(as, true, now);
+        check("same frame is not redrawn", !s.enter && !s.draw);
+        now += 450; s = animStep(as, true, now);
+        check("next frame drawn after 500 ms, no re-enter", !s.enter && s.draw && s.frame == 1);
+        s = animStep(as, false, now);
+        check("wake #1: exit forces a full repaint", s.exit && !s.enter && !s.draw && !as.active);
+        s = animStep(as, false, now + 10);
+        check("exit is reported once", !s.exit);
+        now += 20000;
+        s = animStep(as, true, now);
+        check("idle #2 enter again clears + full blits", s.enter && s.draw && s.frame == 0);
+        now += 500; s = animStep(as, true, now);
+        check("idle #2 animates", !s.enter && s.draw && s.frame == 1);
+        s = animStep(as, false, now + 1);
+        check("wake #2: exit forces a full repaint", s.exit);
+        // mode switched away from ANIM while dark: animOn goes false
+        s = animStep(as, true, now + 5000);
+        check("idle #3 enter", s.enter);
+        s = animStep(as, false, now + 5100);
+        check("mode changed to DIM/OFF while dark: exit + repaint", s.exit && !as.active);
+        // timeout changed to NEVER while dark (plan() gives anim=false)
+        s = animStep(as, true, now + 9000);
+        check("idle #4 enter", s.enter);
+        Plan p = plan(ui::IDLE_ANIM, true, DIMP, BR, DIMP, /*idleEnabled=*/false);
+        s = animStep(as, p.anim, now + 9100);
+        check("timeout set to NEVER while animating: exit + repaint", s.exit && !as.active);
     }
 
     printf("settings screen: the IDLE row carries the mode:\n");
@@ -193,11 +240,27 @@ int main() {
                       y < ui::SET_Y + (ui::SET_IDLE_ROW + 1) * ui::SET_H))
                     inRow = false;
         check("the change is confined to the IDLE row", inRow);
-        // the longest value must not run into the -/+ buttons
-        ui::State sx; sx.set.idleIdx = 5; sx.set.idleMode = ui::IDLE_ANIM;   // "5M ANIM"
-        static ui::Canvas e; ui::drawAttune(e, sx, nullptr);
-        check("longest value (5M ANIM) fits left of the buttons: 7 chars * 6 px <= 66",
-              7 * 6 <= ui::SET_VAL_W);
+        // The longest value ("5M ANIM") must stay inside the value zone and
+        // clear of the minus button. Pixels that differ from the NEVER render
+        // (shorter, same right edge) are the text's extent.
+        ui::State sx; sx.set.idleIdx = 5; sx.set.idleMode = ui::IDLE_ANIM;
+        ui::State sn; sn.set.idleIdx = 0;
+        static ui::Canvas e, f0;
+        ui::drawAttune(e, sx, nullptr); ui::drawAttune(f0, sn, nullptr);
+        const int y0 = ui::SET_Y + ui::SET_IDLE_ROW * ui::SET_H, y1 = y0 + ui::SET_H;
+        int minX = 999, maxX = -1; bool touchesMinus = false;
+        for (int y = y0; y < y1; y++)
+            for (int x = 0; x < ui::W; x++)
+                if (e.px[y * ui::W + x] != f0.px[y * ui::W + x]) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (x >= ui::SET_MINUS_X - 1) touchesMinus = true;
+                }
+        printf("       value text spans x %d..%d (zone %d..%d, minus at %d)\n",
+               minX, maxX, ui::SET_VAL_X, ui::SET_VAL_X + ui::SET_VAL_W - 1, ui::SET_MINUS_X);
+        check("longest value renders inside the value zone",
+              maxX >= 0 && minX >= ui::SET_VAL_X && maxX < ui::SET_VAL_X + ui::SET_VAL_W);
+        check("longest value does not touch the minus button", !touchesMinus);
     }
 
     printf("relative cost:\n");

@@ -21,8 +21,8 @@ namespace idlemode {
 
 struct Rect { int16_t x, y, w, h; };
 
-inline uint8_t clampMode(uint8_t m) { return m < ui::IDLE_MODE_N ? m : (uint8_t)ui::IDLE_DIM; }
-inline uint8_t nextMode(uint8_t m)  { return ui::idlemodeNext(m); }
+// Mode clamping and cycling live in ui (clampSettings, idlemodeNext): one
+// source of truth. An unknown mode here simply behaves as DIM.
 
 struct Plan {
     uint8_t pwm;       // backlight target
@@ -38,15 +38,11 @@ inline Plan plan(uint8_t mode, bool dimmed, uint8_t pwmNow, uint8_t brightPwm,
                  uint8_t dimPwm, bool idleEnabled = true) {
     Plan p{brightPwm, false, false};
     if (!idleEnabled || !dimmed) return p;
-    mode = clampMode(mode);
     p.pwm     = mode == ui::IDLE_OFF ? (uint8_t)0 : dimPwm;
     p.suspend = pwmNow == p.pwm;
     p.anim    = p.suspend && mode == ui::IDLE_ANIM;
     return p;
 }
-
-// The touch that finds the panel dimmed/dark only wakes it.
-inline bool swallowTouch(bool dimmed) { return dimmed; }
 
 // ---- the animation ------------------------------------------------------
 
@@ -70,14 +66,54 @@ inline Pose pose(uint32_t frame) {
     return Pose{X[spot], Y[spot], R[frame % 8]};
 }
 
-// Draw one frame into the canvas and return the only region that changed.
-inline Rect drawFrame(ui::Canvas& c, uint32_t frame, uint16_t bg, uint16_t fg) {
+constexpr uint32_t NO_FRAME = 0xFFFFFFFFu;
+
+struct Dirty { Rect r[2]; int n; };
+
+inline Rect boxOf(const Pose& p) {
+    return Rect{(int16_t)(p.cx - BOX_HALF), (int16_t)(p.cy - BOX_HALF),
+                (int16_t)(2 * BOX_HALF + 1), (int16_t)(2 * BOX_HALF + 1)};
+}
+
+// Draw one frame into the canvas and return the regions that changed. `prev`
+// is the last frame actually drawn (NO_FRAME if none): if the loop stalled and
+// frames were skipped, its box is erased too, so no residue is left behind.
+inline Dirty drawFrame(ui::Canvas& c, uint32_t frame, uint32_t prev, uint16_t bg, uint16_t fg) {
+    Dirty d{{}, 0};
     const Pose p = pose(frame);
-    const Rect r{(int16_t)(p.cx - BOX_HALF), (int16_t)(p.cy - BOX_HALF),
-                 (int16_t)(2 * BOX_HALF + 1), (int16_t)(2 * BOX_HALF + 1)};
+    if (prev != NO_FRAME) {
+        const Pose q = pose(prev);
+        if (q.cx != p.cx || q.cy != p.cy) {
+            const Rect o = boxOf(q);
+            c.fill(o.x, o.y, o.w, o.h, bg);
+            d.r[d.n++] = o;
+        }
+    }
+    const Rect r = boxOf(p);
     c.fill(r.x, r.y, r.w, r.h, bg);
     if (p.r) c.disc(p.cx, p.cy, p.r, fg);
-    return r;
+    d.r[d.n++] = r;
+    return d;
+}
+
+// Enter/exit state machine, run every loop pass (not only while dark).
+// `animOn` is plan().anim. enter: blank the canvas and blit it whole once.
+// exit: the animation overwrote the canvas, so the next UI frame must be a
+// full repaint (wake, mode changed away from ANIM, timeout set to NEVER...).
+struct AnimState { bool active = false; uint32_t start = 0; uint32_t last = NO_FRAME; };
+struct Step { bool enter, exit, draw; uint32_t frame, prev; };   // prev: last frame drawn before this one
+
+inline Step animStep(AnimState& s, bool animOn, uint32_t nowMs) {
+    Step st{false, false, false, 0, NO_FRAME};
+    if (!animOn) {
+        if (s.active) { s.active = false; st.exit = true; }
+        return st;
+    }
+    if (!s.active) { s.active = true; s.start = nowMs; s.last = NO_FRAME; st.enter = true; }
+    st.frame = animFrame(nowMs - s.start);
+    st.prev = s.last;
+    if (st.frame != s.last) { st.draw = true; s.last = st.frame; }
+    return st;
 }
 
 } // namespace idlemode

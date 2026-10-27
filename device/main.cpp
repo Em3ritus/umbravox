@@ -960,8 +960,16 @@ void loop() {
     // arrived just now, so re-judge with the current value (as before).
     const idlemode::Plan ipNow = idlemode::plan(set.idleMode, dimmed, pwmNow,
                                                 brightPwm, dimPwm, idleS != 0);
-    const bool screenOff = ipNow.suspend;
-    const bool animOn    = ipNow.anim;
+    // The animation state machine runs every pass, dark or not, so every
+    // exit (wake, mode change, timeout NEVER) is seen and forces a full
+    // repaint -- the animation overwrote the canvas.
+    static idlemode::AnimState animState;
+    const bool animOn = ipNow.anim;
+    const idlemode::Step animStep = idlemode::animStep(animState, animOn, millis());
+    if (animStep.exit) animDirtied = true;
+    // An exit that happens while still dark (mode changed to DIM/OFF) draws
+    // one UI frame so the panel is not left showing the animation.
+    const bool screenOff = ipNow.suspend && !animStep.exit;
 
     // Nav consumes the touch before the screen sees it, so a swipe that
     // changes screens does not also land as a tap on the one arriving.
@@ -1150,32 +1158,23 @@ void loop() {
         // polling -- far faster than a finger.
         delay(5);
 
-        // ANIM: a dot breathing at <= 2 fps, one 11x11 blit per frame. The
-        // whole canvas is blanked and blitted once on entry; after that
-        // only the dot's own rectangle is touched.
-        {
-            static bool     animActive = false;
-            static uint32_t animStart  = 0;
-            static uint32_t animLast   = 0xFFFFFFFFu;
-            if (animOn) {
-                if (!animActive) {
-                    animActive = true;
-                    animDirtied = true;
-                    animStart  = millis();
-                    animLast   = 0xFFFFFFFFu;
-                    canvas.clear(pal::VOID);
-                    const ui::Rect all{0, 0, ui::W, ui::H};
-                    blitRect(canvas.px, all);
-                }
-                const uint32_t af = idlemode::animFrame(millis() - animStart);
-                if (af != animLast) {
-                    animLast = af;
-                    const idlemode::Rect r = idlemode::drawFrame(canvas, af, pal::VOID, pal::WITCH_HI);
-                    const ui::Rect ur{r.x, r.y, r.w, r.h};
+        // ANIM: a dot breathing at <= 2 fps, one small blit per frame. On
+        // entry the whole canvas is blanked and blitted once; after that
+        // only the dot's own rectangle(s) are touched. (The enter/exit
+        // decision itself runs every pass, above.)
+        if (animOn) {
+            if (animStep.enter) {
+                canvas.clear(pal::VOID);
+                const ui::Rect all{0, 0, ui::W, ui::H};
+                blitRect(canvas.px, all);
+            }
+            if (animStep.draw) {
+                const idlemode::Dirty d = idlemode::drawFrame(canvas, animStep.frame, animStep.prev,
+                                                              pal::VOID, pal::WITCH_HI);
+                for (int k = 0; k < d.n; k++) {
+                    const ui::Rect ur{d.r[k].x, d.r[k].y, d.r[k].w, d.r[k].h};
                     blitRect(canvas.px, ur);
                 }
-            } else {
-                animActive = false;
             }
         }
 
