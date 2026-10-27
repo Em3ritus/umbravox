@@ -79,6 +79,9 @@ static_assert(applog::ROLL_HARD_APS < INSERT_LIMIT,
               "the forced roll must come before the table refuses inserts");
 uint32_t  maxProbe_ = 0;
 volatile uint32_t nTableDrops = 0;
+volatile uint32_t nLongProbes = 0;   // inserts past PROBE_LIMIT: collision flood?
+static_assert(applog::ROLLOVER_APS <= dedup::crowdLimit(TABLE),
+              "below the rollover no insert may be dropped for a long probe");
 
 // Slots in the order they were first seen, so the codex can show newest
 // first without sorting 512 entries every frame.
@@ -155,11 +158,10 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             const char* name, const ui::Hit& sig, uint32_t ageMs, uint8_t src,
             uint16_t auth);
 
-uint32_t hashMac(const uint8_t* m) {
-    uint32_t h = 2166136261u;                 // FNV-1a
-    for (int i = 0; i < 6; i++) { h ^= m[i]; h *= 16777619u; }
-    return h;
-}
+// Keyed per boot (dedup.h): a cluster of BSSIDs precomputed to share one
+// probe chain does not collide here. Drawn in begin(), once the radio is up.
+uint32_t hashSeed = 0;
+uint32_t hashMac(const uint8_t* m) { return dedup::hashMac(m, hashSeed); }
 
 bool macEq(const uint8_t* a, const uint8_t* b) {
     for (int i = 0; i < 6; i++) if (a[i] != b[i]) return false;
@@ -342,6 +344,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         nUsed++;
         if (is5) nUnique5++; else nUnique24++;
         dedup::noteInsert(maxProbe_, hit);
+        if (dedup::longProbe(hit)) nLongProbes++;
     }
     table_[slot].rssi   = rssi;
     table_[slot].chan   = (uint8_t)chanAt(h);
@@ -484,6 +487,9 @@ void begin() {
     Serial.printf("capture: %d probe slots\n", probes ? PROBE_TABLE : 0);
 
     WiFi.mode(WIFI_MODE_STA);
+    // With the radio on, esp_random() is the hardware RNG. Before any frame
+    // can reach insert() (the promiscuous callback is registered below).
+    hashSeed = esp_random();
     WiFi.disconnect();
     delay(100);
 
@@ -876,7 +882,7 @@ void reset() {
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; }
     nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
-    maxProbe_ = 0; nTableDrops = 0;
+    maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
     nProbes = 0; nProbeFrames = 0;
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
@@ -916,5 +922,6 @@ uint32_t uniques()  { return nUnique24 + nUnique5; }
 uint16_t tableUse() { return (uint16_t)(nUsed > 65535 ? 65535 : nUsed); }
 uint16_t tableCap() { return (uint16_t)(TABLE > 65535 ? 65535 : TABLE); }
 uint32_t tableDrops() { return nTableDrops; }
+uint32_t longProbes() { return nLongProbes; }
 
 } // namespace cap

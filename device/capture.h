@@ -91,5 +91,8 @@ uint16_t tableCap();
 // Frames from new APs dropped because the table was past its insert limit
 // (dedup.h): the backstop behind the rollover, zero in normal running.
 uint32_t tableDrops();
+// Inserts that needed a probe chain past dedup::PROBE_LIMIT while the table
+// was not crowded: under the keyed hash, the sign of a collision flood.
+uint32_t longProbes();
 
 } // namespace cap

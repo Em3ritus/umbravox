@@ -88,6 +88,9 @@ static_assert(applog::ROLL_HARD_BLE < INSERT_LIMIT,
               "the forced roll must come before the table refuses inserts");
 uint32_t maxProbe_ = 0;
 volatile uint32_t nTableDrops = 0;
+volatile uint32_t nLongProbes = 0;
+static_assert(applog::ROLLOVER_BLE <= dedup::crowdLimit(TABLE),
+              "below the rollover no insert may be dropped for a long probe");
 
 // Insertion order, so the codex can list newest first without sorting.
 uint16_t* order_ = nullptr;
@@ -101,11 +104,9 @@ ui::AlertRec alert_;
 volatile uint32_t nAdverts = 0, nUnique = 0;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-uint32_t hashAddr(const uint8_t* a) {
-    uint32_t h = 2166136261u;
-    for (int i = 0; i < 6; i++) { h ^= a[i]; h *= 16777619u; }
-    return h;
-}
+// Keyed per boot, like capture's (dedup.h). Drawn in begin().
+uint32_t hashSeed = 0;
+uint32_t hashAddr(const uint8_t* a) { return dedup::hashMac(a, hashSeed); }
 
 // BLE advertisers are weaker than APs, so the dial scale differs: -40dBm is
 // on top of us, -100 rides the outer ring. Using the WiFi mapping here would
@@ -197,6 +198,7 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
             nUsed++;
             nUnique++;
             dedup::noteInsert(maxProbe_, hit);
+            if (dedup::longProbe(hit)) nLongProbes++;
         }
 
         // Name and position, recorded at the strongest sighting.
@@ -270,6 +272,7 @@ void begin() {
     for (int i = 0; i < TABLE;  i++) used_[i] = false;
     nOrder = 0;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
+    hashSeed = esp_random();      // Wi-Fi is already up: hardware RNG; before the scan
 
     BLEDevice::init("");
     scan = BLEDevice::getScan();
@@ -483,7 +486,7 @@ void reset() {
     for (int i = 0; i < TABLE;  i++) used_[i] = false;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     nUsed = 0; nOrder = 0; nAdverts = 0; nUnique = 0;
-    maxProbe_ = 0; nTableDrops = 0;
+    maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
     alert_ = ui::AlertRec{};
     for (int i = 0; i < TABLE; i++) extra[i] = Extra{};
     nFollowing = 0;
@@ -582,5 +585,6 @@ uint32_t exportRows(Print& out, uint32_t& skipped) {
 uint32_t uniques() { return nUnique; }
 uint32_t adverts() { return nAdverts; }
 uint32_t tableDrops() { return nTableDrops; }
+uint32_t longProbes() { return nLongProbes; }
 
 } // namespace blescan

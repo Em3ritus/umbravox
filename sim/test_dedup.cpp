@@ -119,21 +119,82 @@ int main() {
         check("a known key in a full table is FOUND", f.kind == dedup::FOUND && f.slot == 17);
     }
 
-    printf("probe bound:\n");
+    printf("probe bound (crowded table only):\n");
     {
-        // Every key hashes to slot 0: one cluster that grows past the bound.
+        // Every key hashes to slot 0: one cluster that grows past PROBE_LIMIT.
+        // Below the crowd limit a long chain still inserts (a cluster must not
+        // make a target AP invisible); it is flagged as a long probe.
         static Tbl<2048> t;
         const uint32_t lim = dedup::insertLimit(2048);
-        int inserted = 0;
-        for (uint32_t k = 1; k <= dedup::PROBE_LIMIT + 10; k++)
-            if (t.put(k, 0, lim).kind == dedup::INSERT) inserted++;
-        check("a cluster stops growing at PROBE_LIMIT", inserted == (int)dedup::PROBE_LIMIT);
-        const dedup::Hit h = t.put(77777, 0, lim);
-        check("the next key is dropped as FULL",        h.kind == dedup::FULL);
-        check("after exactly PROBE_LIMIT probes",       h.probes == dedup::PROBE_LIMIT);
-        check("maxProbe never exceeds the bound",       t.maxProbe < dedup::PROBE_LIMIT);
-        const dedup::Hit f = t.find(dedup::PROBE_LIMIT, 0, lim);
+        int inserted = 0, longs = 0;
+        for (uint32_t k = 1; k <= dedup::PROBE_LIMIT + 10; k++) {
+            const dedup::Hit h = t.put(k, 0, lim);
+            if (h.kind == dedup::INSERT) inserted++;
+            if (dedup::longProbe(h)) longs++;
+        }
+        check("below the crowd limit every cluster key inserts", inserted == (int)dedup::PROBE_LIMIT + 10);
+        check("and the keys past PROBE_LIMIT count as long probes", longs == 10);
+        const dedup::Hit f = t.find(dedup::PROBE_LIMIT + 10, 0, lim);
         check("the last key in the cluster is FOUND",   f.kind == dedup::FOUND);
+
+        // Fill the rest with spread keys up to the crowd limit: now the bound applies.
+        for (uint32_t k = 100000; t.nUsed < dedup::crowdLimit(2048) && k < 400000; k++)
+            t.put(k, mix(k), lim);
+        check("table at the crowd limit", t.nUsed == dedup::crowdLimit(2048));
+        const dedup::Hit h = t.put(77777, 0, lim);
+        check("crowded: a key behind the long cluster is dropped as FULL", h.kind == dedup::FULL);
+        check("after exactly PROBE_LIMIT probes",       h.probes == dedup::PROBE_LIMIT);
+    }
+
+    printf("no drop below the crowd limit:\n");
+    {
+        static Tbl<2048> t;
+        const uint32_t lim = dedup::insertLimit(2048);
+        int full = 0;
+        uint32_t k = 1;
+        for (; t.nUsed < dedup::crowdLimit(2048) - 1 && k < 400000; k++)
+            if (t.put(k, (k % 3) ? 0 : mix(k), lim).kind == dedup::FULL) full++;  // 2/3 collide
+        check("no FULL answer while under 75% full, whatever the collisions", full == 0);
+    }
+
+    printf("keyed hash:\n");
+    {
+        // An attacker precomputes MACs that share one home slot under seed A.
+        const uint32_t A = 0x1234ABCDu, B = 0x9E3779B9u, CAP = 2048;
+        static uint8_t cl[700][6];
+        int n = 0;
+        for (uint32_t x = 0; n < 700 && x < 50000000u; x++) {
+            const uint8_t m[6] = {0x02, 0x11, (uint8_t)(x >> 24), (uint8_t)(x >> 16),
+                                  (uint8_t)(x >> 8), (uint8_t)x};
+            if (dedup::hashMac(m, A) % CAP == 0) { memcpy(cl[n], m, 6); n++; }
+        }
+        check("700 colliding MACs found under seed A", n == 700);
+        static int homes[2048];
+        memset(homes, 0, sizeof homes);
+        int worst = 0;
+        for (int i = 0; i < n; i++) {
+            const int hm = (int)(dedup::hashMac(cl[i], B) % CAP);
+            if (++homes[hm] > worst) worst = homes[hm];
+        }
+        printf("       largest shared home under seed B: %d of %d\n", worst, n);
+        check("under seed B fewer than 5% share a home", worst * 100 < n * 5);
+
+        // And the precomputed cluster against a table keyed with A itself: a
+        // target AP is still inserted while the table is mostly empty.
+        static Tbl<2048> t;
+        const uint32_t lim = dedup::insertLimit(CAP);
+        uint32_t longs = 0;
+        for (int i = 0; i < n; i++) {
+            uint32_t key; memcpy(&key, cl[i] + 2, 4);
+            if (dedup::longProbe(t.put(key, dedup::hashMac(cl[i], A), lim))) longs++;
+        }
+        check("the whole cluster is inserted (table 34% full)", t.nUsed == (uint32_t)n);
+        check("the collision indicator counted it", longs == (uint32_t)n - dedup::PROBE_LIMIT);
+        const dedup::Hit tgt = t.put(0xFEEDBEEFu, 3, lim);     // home inside the chain
+        check("a target AP homed inside the cluster is inserted", tgt.kind == dedup::INSERT);
+        const uint8_t one[6] = {1, 2, 3, 4, 5, 6};
+        check("the hash depends on the seed", dedup::hashMac(one, A) != dedup::hashMac(one, B));
+        check("and is stable for one seed",   dedup::hashMac(one, A) == dedup::hashMac(one, A));
     }
 
     printf("evil-twin gate:\n");

@@ -19,6 +19,7 @@
 #include "sdlog.h"
 #include "elog.h"
 #include "enrollwin.h"
+#include "dedup.h"
 #include "perflog.h"
 #include "alertlog.h"
 #include "meshcore.h"
@@ -818,6 +819,18 @@ void loop() {
                         (unsigned long)dw, (unsigned long)db,
                         (unsigned)cap::tableUse(), (unsigned)cap::tableCap());
             seenWifi = dw; seenBle = db;
+        }
+        // A probe chain past dedup::PROBE_LIMIT in an uncrowded table should
+        // not happen under the keyed hash: it suggests BSSIDs chosen to
+        // collide. The devices are still logged; this says someone tried.
+        static elog::Gate longGate;
+        static uint32_t seenLong = 0;
+        const uint32_t lp = cap::longProbes() + blescan::longProbes();
+        if (lp != seenLong && longGate.allow(millis(), 60000)) {
+            elog::event(elog::WARN, "cap", "%lu inserts needed a probe chain over %u slots "
+                        "at low occupancy (possible collision flood)",
+                        (unsigned long)lp, (unsigned)dedup::PROBE_LIMIT);
+            seenLong = lp;
         }
     }
     {
