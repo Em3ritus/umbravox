@@ -1,5 +1,7 @@
 # SD Wardrive Logging Implementation Plan
 
+> Superseded by docs/superpowers/plans/2026-10-27-field-fixes.md for logging behaviour.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Write the platform's already-working WiGLE export to an SD card as a driver-controlled start/stop session, crash-safely, with the host-verifiable parts landing now and the card hardware staged for when a board is available.

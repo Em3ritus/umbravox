@@ -40,7 +40,9 @@ struct RollInfo {
 };
 
 // The routine flush interval. Appends are cheap, so this is shorter than the
-// old 30 s rewrite: a pulled power cable loses at most this much.
+// old 30 s rewrite. A pulled power cable loses the rows not yet flushed plus
+// those still held for a better position (applog HOLD_*: up to 120 s), so up
+// to ~130 s of the newest rows.
 constexpr uint32_t FLUSH_MS = 10000;
 // When a flush stopped at the row cap, the next one comes this soon.
 constexpr uint32_t CATCHUP_MS = 1000;

@@ -36,8 +36,13 @@ switchable themes, animated dials, a summoning-circle aesthetic.
 - **Passive BLE scanning** — advertisers deduplicated by address and parsed by
   hand from the raw advertisement, so it never sends a scan request.
 - **GPS mapping** — NMEA fix and satellite tracking geolocate every finding.
-- **Crash-safe SD logging** — WiGLE-format CSV written atomically, auto-resumed
-  after a reboot, with no half-written file if power is pulled.
+- **SD logging** — WiGLE-format CSV, appended to the session file in small
+  batches. After a power cut the file keeps every whole line written so far;
+  rows not yet flushed, or still held back for a better position (up to about
+  2 minutes), are lost. Session files are named `WD-<date>-<time>.csv`
+  (`WD-NNNN.csv` before the GPS has given a date), always lowercase, and a
+  new file starts at 20,000 APs. A reboot resumes into a new file and never
+  touches the old one. Not yet verified on hardware.
 - **Threat & point-of-interest alerts** — 162 device signatures (surveillance
   cameras, ALPRs, AirTag / Tile / Find My trackers, Remote ID drones,
   Flipper / pentest gear, card-skimmer modules…), each with its own confidence
