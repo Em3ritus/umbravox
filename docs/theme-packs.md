@@ -169,8 +169,11 @@ the card for exactly this clash. Then eject the card properly and reboot the dev
 - **Boot-loop guard.** Before loading a pack the device records its folder and size in
   non-volatile storage and clears the record afterwards. If the board resets while the
   record is set, that pack is added to a list of bad packs and skipped on every later
-  boot, and the failure is logged. Editing the pack (its size changes) or removing the
-  folder gives it another try. A pack therefore cannot trap the device in a reset loop.
+  boot, and the failure is logged. Editing the pack so its size changes gives it another
+  try. Removing the folder does too, but only after the device has completed one boot
+  with the folder absent: a same-size pack put straight back stays on the list. The guard
+  covers loading only. A pack that crashes the loader is skipped on the next boot; a pack
+  that loads fine but faults later, when drawn, is not covered (see Troubleshooting).
 - The Baphomet seal's own sweeps and rite are not in packs; alerts always show.
 
 ## The 13 limitations
@@ -238,6 +241,7 @@ rule is applied to the last path component and `.` is not a valid folder name.
 | Skipped: missing sweeps or colors | `sweeps` or one of the 20 colours is missing or malformed. |
 | Colours look different from the design | RGB565 rounding, or a status or alert-edge colour was replaced for contrast. |
 | The device went back to UMBRAVOX | The saved pack was renamed, removed or skipped. Select it again. |
-| A pack stays skipped after it crashed the loader | Edit it (its size must change) or remove the folder, then reboot. |
+| A pack stays skipped after it crashed the loader | Edit it so its size changes, or remove the folder, boot once with the folder absent, then reinstall and reboot. |
+| The device resets repeatedly after you select a pack | Take the SD card out and boot. Choose another theme (the selection is saved by name), then remove or fix the pack. |
 | Folder not found after copy | The card is not FAT32, or `themes` is not at the card root. |
 | The designer page will not load | The browser is older than the minimums in limitation 10. |
