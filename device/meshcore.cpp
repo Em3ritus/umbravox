@@ -336,7 +336,7 @@ void fill(ui::State& s, uint32_t nowMs) {
         r.found = cap::foundBy((uint8_t)(i + 1));
         const uint32_t tot = nodes_[i].reports + nodes_[i].lost;
         r.lossPct = (uint8_t)(tot ? (nodes_[i].lost * 100 + tot / 2) / tot : 0);
-        r.ageS  = (nowMs - nodes_[i].lastMs) / 1000;
+        r.ageS  = meshlive::ageMs(nowMs, nodes_[i].lastMs) / 1000;   // signed, >= 0
     }
     s.nNodes = (uint8_t)n;
 }

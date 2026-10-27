@@ -61,21 +61,55 @@ int main() {
 
     printf("heap warning levels:\n");
     {
-        // The old rule warned once below 40 KB and re-armed only above 60 KB,
-        // which never happens with BLE on: one line per boot, even at 16 KB.
+        // A genuine one-way decline: each level once, at the lowest crossed.
         HeapWarn h;
-        check("64 KB: nothing",                   h.step(64) == 0);
-        check("39 KB: warn at 40",                h.step(39) == 40);
-        check("35 KB: already said",              h.step(35) == 0);
-        check("23 KB: warn at 24",                h.step(23) == 24);
-        check("15 KB: warn at 16",                h.step(15) == 16);
-        check("15 KB again: quiet",               h.step(15) == 0);
-        check("23 KB (not 8 above 16): no re-arm", h.step(23) == 0 && h.step(15) == 0);
-        check("24 KB re-arms 16",                 h.step(24) == 0 && h.step(15) == 16);
-        check("48 KB re-arms all",                h.step(48) == 0 && h.step(39) == 40);
+        uint32_t t = 0;
+        check("64 KB: nothing",                   h.step(64, t += 5000) == 0);
+        check("39 KB: warn at 40",                h.step(39, t += 5000) == 40);
+        check("35 KB: already said",              h.step(35, t += 5000) == 0);
+        check("23 KB: warn at 24",                h.step(23, t += 5000) == 24);
+        check("15 KB: warn at 16",                h.step(15, t += 5000) == 16);
+        check("15 KB again: quiet",               h.step(15, t += 5000) == 0);
         HeapWarn d;
-        check("a drop straight to 10 KB warns once, at the lowest", d.step(10) == 16);
-        check("and the higher levels are spent",  d.step(30) == 0 && d.step(20) == 0);
+        check("a drop straight to 10 KB warns once, at the lowest", d.step(10, 5000) == 16);
+        check("and the higher levels are spent",  d.step(30, 10000) == 0 && d.step(20, 15000) == 0);
+    }
+    printf("heap warnings under the BLE recycle swing:\n");
+    {
+        // Free heap swings 63 <-> 31 KB as the scan's map fills and is
+        // cleared, sampled every 5 s, for two hours.
+        HeapWarn h;
+        int lines40 = 0, other = 0;
+        uint32_t last40 = 0; bool any40 = false, spaced = true;
+        for (uint32_t t = 5000; t <= 2u * 3600u * 1000u; t += 5000) {
+            const uint32_t lv = h.step(((t / 5000) & 1) ? 31 : 63, t);
+            if (lv == 40) {
+                if (any40 && t - last40 < HeapWarn::GAP_MS) spaced = false;
+                lines40++; last40 = t; any40 = true;
+            } else if (lv) other++;
+        }
+        printf("       lines at 40 KB in 2 h: %d\n", lines40);
+        check("at most one 40 KB line per 10 min",  spaced && lines40 <= 12);
+        check("a single-sample recovery never re-arms (one line)", lines40 == 1);
+        check("no 24/16 KB lines from a 31 KB floor", other == 0);
+    }
+    printf("heap warnings re-arm after a sustained recovery:\n");
+    {
+        HeapWarn h;
+        uint32_t t = 0;
+        check("39 KB: warn",                       h.step(39, t += 5000) == 40);
+        for (int i = 0; i < 11; i++) h.step(50, t += 5000);       // 55 s above 48
+        check("55 s above the re-arm level: not yet re-armed", h.step(39, t += 5000) == 0);
+        for (int i = 0; i < 13; i++) h.step(50, t += 5000);       // 65 s above 48
+        t += HeapWarn::GAP_MS;                                     // and past the gap
+        check("over 60 s above it, 10 min on: warns again", h.step(39, t) == 40);
+        HeapWarn g;
+        uint32_t u = 0;
+        g.step(39, u += 5000);
+        for (int i = 0; i < 14; i++) g.step(50, u += 5000);       // re-armed at 70 s
+        check("re-armed but inside 10 min: held",  g.step(39, u += 5000) == 0);
+        u = 5000 + HeapWarn::GAP_MS;
+        check("still low when the gap opens: warns then", g.step(39, u) == 40);
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

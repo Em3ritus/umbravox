@@ -25,7 +25,9 @@ enum Action : uint8_t {
 };
 
 constexpr uint32_t RECYCLE_MS  = 12000;   // routine recycle
-constexpr uint32_t MAX_RESULTS = 64;      // recycle early past this many results
+// Recycle early past this many results: at up to ~800 B of internal heap per
+// device, 32 is ~25 KB at worst (64 was ~51 KB).
+constexpr uint32_t MAX_RESULTS = 32;
 constexpr uint32_t MIN_GAP_MS  = 1000;    // ...but at most once a second
 constexpr uint32_t RESTART_MS  = 5000;    // a stopped scan is retried this often
 

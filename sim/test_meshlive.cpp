@@ -34,6 +34,11 @@ int main() {
     check("across the millis wrap, 80 s old: expired",
           expired(0x00002000u, 0x00002000u - 80000u, NODE_TIMEOUT_MS));
 
+    printf("node age:\n");
+    check("10 s old reads 10000",               ageMs(20000, 10000) == 10000);
+    check("stamped just after now reads 0, not ~49 days", ageMs(5000, 5003) == 0);
+    check("across the millis wrap",             ageMs(0x00001000u, 0xFFFFF000u) == 0x2000u);
+
     printf("camp hold:\n");
     {
         CampHold h;

@@ -28,6 +28,13 @@ inline bool expired(uint32_t nowMs, uint32_t lastMs, uint32_t timeoutMs) {
     return (int32_t)(nowMs - lastMs) > (int32_t)timeoutMs;
 }
 
+// How long since `lastMs`, for display: signed, clamped at 0, so a report
+// stamped just after the loop read nowMs shows 0 s, not ~49 days.
+inline uint32_t ageMs(uint32_t nowMs, uint32_t lastMs) {
+    const int32_t d = (int32_t)(nowMs - lastMs);
+    return d > 0 ? (uint32_t)d : 0;
+}
+
 struct CampHold {
     bool     held        = false;   // nodes were here, the hold is running
     uint32_t lastNodesMs = 0;       // last time any node was live

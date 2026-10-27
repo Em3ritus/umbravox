@@ -847,12 +847,13 @@ void loop() {
     }
     {
         static uint32_t lastHeapChk = 0;
-        static elog::HeapWarn heapWarn;      // 40 / 24 / 16 KB, re-armed 8 KB up
+        // 40 / 24 / 16 KB; re-armed after 60 s 8 KB up; one line per level per 10 min
+        static elog::HeapWarn heapWarn;
         const uint32_t now = millis();
         if (now - lastHeapChk >= 5000) {
             lastHeapChk = now;
             const uint32_t freeK = ESP.getFreeHeap() >> 10;
-            const uint32_t level = heapWarn.step(freeK);
+            const uint32_t level = heapWarn.step(freeK, now);
             if (level)
                 elog::event(elog::WARN, "heap", "low, %uKB free (under %uKB), largest block %uKB",
                             (unsigned)freeK, (unsigned)level,
@@ -884,8 +885,14 @@ void loop() {
         // And for CAMP_HOLD_MS after the last node goes (meshlive.h): a node
         // that went quiet reports on channel 1, and a sweeping Core is there one
         // dwell in twenty-one, so dropping the camp is what stranded them.
-        const bool want = meshlive::wantCamp(hold, meshcore::count(), collector::active(),
-                                             enroll::active(millis()), millis());
+        const int  nodesNow = meshcore::count();
+        const bool coordNow = collector::active(), enrolNow = enroll::active(millis());
+        const bool want = meshlive::wantCamp(hold, nodesNow, coordNow, enrolNow, millis());
+        // Camping only because of the hold-over: the one case whose end is
+        // worth a diag line (an enrol window closing is not).
+        static bool holdOnly = false;
+        const bool wasHoldOnly = holdOnly;
+        holdOnly = want && hold.held && nodesNow == 0 && !coordNow && !enrolNow;
         if (want != camped) {
             camped = want;
             cap::setCamp(want ? mesh::REPORT_CHAN : 0);
@@ -898,7 +905,8 @@ void loop() {
                        ? "enrol window open -- core holding the report channel"
                        : "nodes gone -- core holding the report channel a while")
                 : "no nodes -- core sweeping again");
-            if (!want)
+            static elog::Gate sweepGate;
+            if (!want && wasHoldOnly && sweepGate.allow(millis(), 60000))
                 elog::event(elog::INFO, "mesh", "no node for %us, core sweeping again",
                             (unsigned)(meshlive::CAMP_HOLD_MS / 1000));
         }

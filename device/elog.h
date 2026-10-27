@@ -61,20 +61,42 @@ struct Gate {
 // Low-heap warnings with hysteresis. The old rule warned once below 40 KB and
 // re-armed only above 60 KB, which never happens with BLE scanning, so each
 // boot logged one line and then nothing, even at 16 KB. Now each level (40,
-// 24, 16 KB) warns once, and re-arms when free heap is REARM_K above it.
-// step() takes free heap in KB and returns the level to warn about (the
-// lowest newly crossed, so a sudden drop is one line), or 0. Pure.
+// 24, 16 KB) warns once, and re-arms only after a SUSTAINED recovery: every
+// sample REARM_K above it for SUSTAIN_MS. A single high sample is not enough
+// -- the BLE scan recycle swings free heap ~31 <-> 63 KB every few seconds,
+// and a one-sample re-arm turned that into a line every 10 s, pushing the
+// boot banners and the other diagnostics out of the 128 KB log. On top of
+// that each level speaks at most once per GAP_MS (a warning that comes due
+// inside the gap is written when it opens, if the heap is still low).
+// step() takes free heap in KB and the time; it returns the level to warn
+// about (the lowest newly crossed, so a sudden drop is one line), or 0. Pure.
 struct HeapWarn {
     static constexpr int      N = 3;
     static constexpr uint32_t LEVEL_K[N] = {40, 24, 16};
-    static constexpr uint32_t REARM_K = 8;
-    bool warned[N] = {false, false, false};
-    uint32_t step(uint32_t freeK) {
+    static constexpr uint32_t REARM_K    = 8;
+    static constexpr uint32_t SUSTAIN_MS = 60000;
+    static constexpr uint32_t GAP_MS     = 600000;    // 10 min per level
+    bool     warned[N]   = {false, false, false};
+    bool     rising[N]   = {false, false, false};     // a run above re-arm is under way
+    uint32_t riseAt[N]   = {0, 0, 0};                 // ...since this sample
+    Gate     gate[N];
+    uint32_t step(uint32_t freeK, uint32_t nowMs) {
         uint32_t hit = 0;
+        int hitI = -1;
         for (int i = 0; i < N; i++) {
-            if (warned[i] && freeK >= LEVEL_K[i] + REARM_K) warned[i] = false;
-            if (!warned[i] && freeK < LEVEL_K[i]) { warned[i] = true; hit = LEVEL_K[i]; }
+            if (freeK >= LEVEL_K[i] + REARM_K) {
+                if (!rising[i]) { rising[i] = true; riseAt[i] = nowMs; }
+                if (warned[i] && nowMs - riseAt[i] >= SUSTAIN_MS) warned[i] = false;
+            } else {
+                rising[i] = false;
+            }
+            if (!warned[i] && freeK < LEVEL_K[i]) { hit = LEVEL_K[i]; hitI = i; }
         }
+        if (hitI < 0) return 0;
+        // The line for the lowest level crossed; the gate may hold it back.
+        if (gate[hitI].fired && nowMs - gate[hitI].lastMs < GAP_MS) return 0;
+        gate[hitI].allow(nowMs, GAP_MS);
+        for (int i = 0; i <= hitI; i++) if (freeK < LEVEL_K[i]) warned[i] = true;
         return hit;
     }
 };

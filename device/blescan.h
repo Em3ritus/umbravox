@@ -51,7 +51,9 @@ void rollover();
 
 uint32_t uniques();
 uint32_t adverts();
+// Adverts from new addresses dropped: the table was past its insert limit.
 uint32_t tableDrops();
-uint32_t longProbes();   // inserts past dedup::PROBE_LIMIT, uncrowded: collision flood?   // adverts from new addresses dropped: table past its insert limit
+// Inserts past dedup::PROBE_LIMIT while uncrowded: a possible collision flood.
+uint32_t longProbes();
 
 } // namespace blescan

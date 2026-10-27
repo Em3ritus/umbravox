@@ -24,6 +24,7 @@ int main() {
     check("long after: recycle",                    shouldRecycle(0, 100000, 0, true, 30) == RECYCLE);
 
     printf("recycle on count:\n");
+    check("the map is kept to 32 results",      MAX_RESULTS == 32);
     check("MAX_RESULTS results: not yet",           shouldRecycle(MAX_RESULTS, 5000, 0, true, 30) == NONE);
     check("one more than MAX_RESULTS: recycle",     shouldRecycle(MAX_RESULTS + 1, 5000, 0, true, 30) == RECYCLE);
     check("but not twice inside MIN_GAP_MS",        shouldRecycle(500, 5000 + MIN_GAP_MS - 1, 5000, true, 30) == NONE);
