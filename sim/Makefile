@@ -22,7 +22,7 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) $(TESTS) *.png
+	rm -f $(BIN) $(TESTS) sdcmd_console *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
@@ -158,8 +158,13 @@ test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
 # The serial SD commands (SDPUT/SDDEL/SDRMDIR/REBOOT): the path policy, the
 # strict decoders and the upload state machine against a fake card. The
 # commands come off a wire anyone can type into: sanitizers, as above.
-test_sdcmd: test_sdcmd.cpp ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h sdput_golden.txt
+test_sdcmd: test_sdcmd.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h sdput_golden.txt
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ test_sdcmd.cpp ../ui/themepack.cpp -lm
+
+# The same Console on stdin/stdout, over the same fake card: the designer's
+# Web Serial client (web/designer/test/usbinstall.test.mjs) is run against it.
+sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ sdcmd_console.cpp ../ui/themepack.cpp -lm
 
 TESTS = test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_idlemode test_perflog test_trig test_contrast test_pack_parity
 
@@ -177,7 +182,7 @@ sdput-check:
 	 python3 -I ../tools/sdput.py transcript packs/cosmic-clone | cmp - sdput_golden.txt && \
 	 echo "sdput-check: selftest passed, sdput_golden.txt matches tools/sdput.py"
 
-test: $(TESTS) emblem-check sdput-check
+test: $(TESTS) sdcmd_console emblem-check sdput-check
 	@rc=0; for t in $(TESTS); do \
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
