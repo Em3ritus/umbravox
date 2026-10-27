@@ -108,7 +108,10 @@ int main(int argc, char** argv) {
     printf("regression guard (built-in COSMIC MUFFIN and BAPH0MAU5):\n");
     {
         static const uint32_t WANT[16] = {
-            0x94DF7B48u, 0xB7FE80B7u, 0xC0E2870Eu, 0x19C55742u,
+            // Scan renders 0..3 re-pinned on integration for the field-fixes
+            // footer ("NO FIX" -> "NO GPS"): the only pixels that moved are
+            // the footer text (rows 108..114, cols 29..45).
+            0x339B2921u, 0x87303AE2u, 0x716879A8u, 0x85BCAA94u,
             0x98443D4Fu, 0x3B0FCDF5u, 0xB8989D41u, 0xA7A853D7u,
             0x3462C731u, 0x5ED8CDD4u, 0x10423CCBu, 0xC65AC96Eu,
             0x63009A05u, 0xD478848Eu, 0x5BA0A744u, 0x1FE8CF87u,
