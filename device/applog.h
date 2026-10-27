@@ -50,18 +50,41 @@ inline bool rolloverDue(uint32_t wifiUniques, uint32_t bleUniques) {
 
 enum Verdict : uint8_t {
     WRITE,   // exportable now
-    WAIT,    // not yet (no position): ask again next flush
+    WAIT,    // not yet (no position, or held): ask again next flush
     NEVER,   // can never be exported (no UTC date at first sight): settle it
 };
+
+// Row hold. A row is written once, so writing it the moment it is first
+// located would freeze its position at the approach edge of range; capture
+// keeps moving the position to the loudest sighting, so wait until the AP has
+// gone quiet (we drove past it) or, for one heard constantly (parked beside
+// it), until it has been known this long. `final` -- STOP, RESET, a rollover
+// -- writes held rows at once. Cost: a power cut also loses rows still held
+// (up to ~20 s of passing APs, up to 120 s of parked ones).
+constexpr uint32_t HOLD_QUIET_MS = 20000;
+constexpr uint32_t HOLD_MAX_MS   = 120000;
+
+// The shared verdict rule. `firstEpoch` is set once, at first sight, so a row
+// without one can never be exported; a position can still arrive later.
+inline Verdict holdVerdict(bool located, uint32_t firstEpoch, uint32_t firstMs,
+                           uint32_t lastMs, uint32_t nowMs, bool final) {
+    if (!firstEpoch) return NEVER;
+    if (!located) return WAIT;
+    if (final) return WRITE;
+    if (nowMs - lastMs >= HOLD_QUIET_MS || nowMs - firstMs >= HOLD_MAX_MS) return WRITE;
+    return WAIT;
+}
 
 // One table of rows, in first-seen order.
 struct Source {
     virtual uint32_t count() = 0;            // rows so far
     virtual uint32_t capacity() = 0;         // most rows there can be
     virtual uint8_t* doneBits() = 0;         // capacity() bits, owned by the source
-    virtual Verdict  verdict(uint32_t i) = 0;
+    // Row i's state at `nowMs`; `final` releases held rows (holdVerdict).
+    virtual Verdict  verdict(uint32_t i, uint32_t nowMs, bool final) = 0;
     // Row i as CSV, newline included. Returns its length, or 0 if the row
-    // turned out not to be exportable after all (it is then retried).
+    // turned out not to be exportable after all (it is then retried). Ignores
+    // the hold: the console dump prints every exportable row.
     virtual int      format(uint32_t i, char* buf, int cap) = 0;
 };
 
@@ -116,9 +139,16 @@ inline uint32_t rowsIn(Source& s) {
 
 // Append up to maxRows new rows from the sources (in order: all of source 0's
 // pending rows, then source 1's) to `name`. `pend` holds maxRows entries.
+//
+// Scan cost: every flush re-checks each not-done row from `low`, so rows that
+// wait (held, or never located) keep the scan start back. Held rows are at
+// most HOLD_MAX_MS old, but a row that is never located pins `low` for the
+// rest of the session: the scan is then O(rows since the oldest such row) per
+// flush, about 1 us each on the device (a locked read of a few fields).
 inline Result appendBatch(const char* name, FileState& f, Sink& sink, const char* header,
                           Source* const* src, Cursor* cur, int nSrc,
-                          uint32_t maxRows, Pending* pend) {
+                          uint32_t maxRows, Pending* pend,
+                          uint32_t nowMs, bool final) {
     Result r;
 
     // 1. Pick the rows. No I/O yet, so a refusal below leaves no trace.
@@ -128,7 +158,7 @@ inline Result appendBatch(const char* name, FileState& f, Sink& sink, const char
         const uint32_t n = rowsIn(S);
         for (uint32_t i = cur[s].low; i < n; i++) {
             if (isDone(S, i)) continue;
-            const Verdict v = S.verdict(i);
+            const Verdict v = S.verdict(i, nowMs, final);
             if (v == NEVER) { markDone(S, i); continue; }   // nothing to write, ever
             if (v == WAIT)  { r.waiting++; continue; }
             if (np == maxRows) { r.more = true; break; }

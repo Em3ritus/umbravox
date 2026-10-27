@@ -30,7 +30,7 @@ struct FakeSrc : applog::Source {
     uint32_t count() override { return (uint32_t)v.size(); }
     uint32_t capacity() override { return cap; }
     uint8_t* doneBits() override { return bits.data(); }
-    applog::Verdict verdict(uint32_t i) override { return v[i]; }
+    applog::Verdict verdict(uint32_t i, uint32_t, bool) override { return v[i]; }
     int format(uint32_t i, char* buf, int n) override {
         formats++;
         if (formatFails) return 0;
@@ -97,7 +97,7 @@ struct Rig {
     applog::Pending pend[applog::BATCH_ROWS];
     Rig() { srcs[0] = &wifi; srcs[1] = &ble; }
     applog::Result batch(uint32_t maxRows = applog::BATCH_ROWS, const char* name = "/A.CSV") {
-        return applog::appendBatch(name, fs, card, HDR, srcs, curs, 2, maxRows, pend);
+        return applog::appendBatch(name, fs, card, HDR, srcs, curs, 2, maxRows, pend, 0, false);
     }
     std::string file(const char* name = "/A.CSV") { return card.files[name]; }
 };
@@ -375,6 +375,81 @@ int main() {
         size_t want = 1;
         for (FakeSrc* s : {&r.wifi, &r.ble}) for (auto x : s->v) if (x != NEVER) want++;
         check("line count = header + rows", lines == want);
+    }
+
+    printf("row hold: located rows wait until the AP goes quiet or ages out:\n");
+    {
+        using applog::holdVerdict;
+        const uint32_t Q = HOLD_QUIET_MS, M = HOLD_MAX_MS;
+        check("HOLD_QUIET_MS is 20 s", Q == 20000);
+        check("HOLD_MAX_MS is 120 s", M == 120000);
+        check("no UTC at first sight: NEVER", holdVerdict(true, 0, 0, 0, 999999, true) == NEVER);
+        check("not located: WAIT, even when final", holdVerdict(false, 7, 0, 0, 999999, true) == WAIT);
+        check("located, still being heard: held", holdVerdict(true, 7, 1000, 5000, 5000 + Q - 1, false) == WAIT);
+        check("quiet for HOLD_QUIET_MS: written", holdVerdict(true, 7, 1000, 5000, 5000 + Q, false) == WRITE);
+        check("parked AP heard constantly: written at HOLD_MAX_MS",
+              holdVerdict(true, 7, 1000, 1000 + M, 1000 + M, false) == WRITE);
+        check("...and not a moment before",
+              holdVerdict(true, 7, 1000, 1000 + M - 1, 1000 + M - 1, false) == WAIT);
+        check("final writes a held row", holdVerdict(true, 7, 1000, 5000, 5001, true) == WRITE);
+        check("millis() wrap is handled",
+              holdVerdict(true, 7, 0xFFFFF000u, 0xFFFFF000u, 0xFFFFF000u + Q, false) == WRITE);
+    }
+
+    printf("a held row is written once, with the loudest position seen by then:\n");
+    {
+        // A source whose rows carry timing and a position that improves while
+        // the AP is still in range -- what capture's best-RSSI rule does.
+        struct HeldSrc : applog::Source {
+            struct R { uint32_t firstMs, lastMs; int lat; };
+            std::vector<R> r; std::vector<uint8_t> bits = std::vector<uint8_t>(64);
+            uint32_t count() override { return (uint32_t)r.size(); }
+            uint32_t capacity() override { return 512; }
+            uint8_t* doneBits() override { return bits.data(); }
+            applog::Verdict verdict(uint32_t i, uint32_t now, bool final) override {
+                return applog::holdVerdict(true, 7, r[i].firstMs, r[i].lastMs, now, final);
+            }
+            int format(uint32_t i, char* b, int n) override {
+                return snprintf(b, (size_t)n, "H%u,lat=%d\n", (unsigned)i, r[i].lat);
+            }
+        } held;
+        FakeCard card;
+        applog::Source* srcs[1] = {&held};
+        applog::Cursor curs[1];
+        applog::FileState fs;
+        applog::Pending pend[applog::BATCH_ROWS];
+        auto batch = [&](uint32_t now, bool final) {
+            return applog::appendBatch("/H.CSV", fs, card, HDR, srcs, curs, 1,
+                                       applog::BATCH_ROWS, pend, now, final);
+        };
+        held.r.push_back({0, 0, 1});            // first located at the edge of range
+        Result x = batch(10000, false);
+        check("still being heard: held", x.ok && x.rows == 0 && x.waiting == 1);
+        held.r[0].lastMs = 15000; held.r[0].lat = 5;  // louder, closer
+        x = batch(30000, false);
+        check("heard 15 s ago: still held", x.rows == 0);
+        x = batch(35000, false);
+        check("quiet for 20 s: written", x.rows == 1);
+        check("with the loudest position, not the first",
+              card.files["/H.CSV"] == std::string(HDR) + "H0,lat=5\n");
+        x = batch(90000, false);
+        check("never again", x.rows == 0 && occurrences(card.files["/H.CSV"], "H0,") == 1);
+
+        held.r.push_back({100000, 100000, 2});  // parked beside it
+        for (uint32_t t = 100000; t < 100000 + HOLD_MAX_MS; t += 10000) {
+            held.r[1].lastMs = t;
+            batch(t, false);
+        }
+        check("parked AP held below the cap", occurrences(card.files["/H.CSV"], "H1,") == 0);
+        held.r[1].lastMs = 100000 + HOLD_MAX_MS;
+        batch(100000 + HOLD_MAX_MS, false);
+        check("written at the 120 s cap", occurrences(card.files["/H.CSV"], "H1,") == 1);
+
+        held.r.push_back({300000, 300000, 3});
+        x = batch(300001, true);
+        check("final (STOP / roll / RESET) writes a held row at once",
+              x.rows == 1 && occurrences(card.files["/H.CSV"], "H2,") == 1);
+        check("held rows pin the cursor only while held", curs[0].low == 3);
     }
 
     printf("rollover decision:\n");

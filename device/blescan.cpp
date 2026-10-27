@@ -471,10 +471,11 @@ struct Row { uint8_t addr[6]; int8_t rssi; Extra e; };
 
 // Same rule as WiFi: no position yet -> retried; no UTC at first sight
 // (firstEpoch is set once) -> never.
-applog::Verdict verdictOf(const Extra& e) {
-    if (!e.firstEpoch) return applog::NEVER;
-    return e.located ? applog::WRITE : applog::WAIT;
+applog::Verdict verdictOf(const Extra& x, uint32_t nowMs, bool final) {
+    return applog::holdVerdict(x.located, x.firstEpoch, x.firstMs, x.lastMs, nowMs, final);
 }
+// Exportable at all (the console dump's rule: no hold).
+bool exportable(const Extra& x) { return x.located && x.firstEpoch; }
 
 int formatRow(const Row& r, char* buf, int cap) {      // bytes pinned in wiglerow.h
     return wiglerow::ble(buf, cap, r.addr, r.e.name, r.e.firstEpoch, r.rssi,
@@ -490,10 +491,10 @@ struct LogSrc : applog::Source {
     }
     uint32_t capacity() override { return TABLE; }
     uint8_t* doneBits() override { return logBits_; }
-    applog::Verdict verdict(uint32_t i) override {
+    applog::Verdict verdict(uint32_t i, uint32_t nowMs, bool final) override {
         applog::Verdict v = applog::WAIT;
         portENTER_CRITICAL(&mux);
-        if (i < nOrder) v = verdictOf(extra[order_[i]]);
+        if (i < nOrder) v = verdictOf(extra[order_[i]], nowMs, final);
         portEXIT_CRITICAL(&mux);
         return v;
     }
@@ -509,7 +510,7 @@ struct LogSrc : applog::Source {
             have = true;
         }
         portEXIT_CRITICAL(&mux);
-        if (!have || verdictOf(r.e) != applog::WRITE) return 0;
+        if (!have || !exportable(r.e)) return 0;
         return formatRow(r, buf, cap);
     }
 } logSrc;

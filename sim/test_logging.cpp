@@ -54,7 +54,13 @@ struct FakeSrc : applog::Source {
     uint32_t count() override { return (uint32_t)v.size(); }
     uint32_t capacity() override { return 32768; }
     uint8_t* doneBits() override { return bits.data(); }
-    applog::Verdict verdict(uint32_t i) override { return v[i]; }
+    // held = rows that follow capture's hold rule (located, still heard).
+    std::vector<bool> heldRow;
+    applog::Verdict verdict(uint32_t i, uint32_t now, bool final) override {
+        if (i < heldRow.size() && heldRow[i])
+            return applog::holdVerdict(true, 7, now, now, now, final);  // heard just now
+        return v[i];
+    }
     int format(uint32_t i, char* buf, int n) override {
         return snprintf(buf, (size_t)n, "%s%05u\n", tag, (unsigned)i);
     }
@@ -79,7 +85,7 @@ static logging::Hooks hooks() {
     return h;
 }
 static void fresh() {
-    files.clear(); wifi.v.clear(); ble.v.clear();
+    files.clear(); wifi.v.clear(); ble.v.clear(); wifi.heldRow.clear(); ble.heldRow.clear();
     cardPresent = true; failWrites = false; maxOnCard = 0;
     clears = rolls = 0; opens = 0;
 }
@@ -346,6 +352,38 @@ int main() {
     wifi.add(1);
     start(20, T0);
     check("the next session logs from position 0", files[fileName()] == header() + row("W", 0));
+
+    printf("held rows (AP still in range) are released by STOP, rollover and RESET:\n");
+    fresh();
+    begin(false, hooks(), 0, T0);
+    start(0, T0);
+    const std::string h1 = fileName();
+    wifi.add(1); wifi.heldRow = {true};
+    tick(FLUSH_MS, T0);
+    check("a routine flush keeps it held", occurrences(files[h1], "\nW") == 0);
+    stop(FLUSH_MS + 1);
+    check("STOP writes it", occurrences(files[h1], row("W", 0)) == 1);
+
+    fresh();
+    begin(false, hooks(), 0, T0);
+    start(0, T0);
+    const std::string h2 = fileName();
+    wifi.add(1); wifi.heldRow = {true};
+    resetTables(UC::clear, 100, T0 + 1);
+    check("RESET writes it to the old file first", occurrences(files[h2], row("W", 0)) == 1);
+    stop(200);
+
+    fresh();
+    begin(false, hooks(), 0, T0);
+    start(0, T0);
+    const std::string h3 = fileName();
+    wifi.add((int)applog::ROLLOVER_APS);
+    wifi.heldRow.assign(applog::ROLLOVER_APS, false);
+    wifi.heldRow[applog::ROLLOVER_APS - 1] = true;      // the last AP is still in range
+    for (uint32_t k = 1; k < 300 && rolls == 0; k++) tick(k * CATCHUP_MS, T0);
+    check("rollover writes it to the old file before the clear",
+          rolls == 1 && occurrences(files[h3], row("W", applog::ROLLOVER_APS - 1)) == 1);
+    stop(400 * CATCHUP_MS);
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;

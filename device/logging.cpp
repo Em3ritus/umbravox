@@ -95,9 +95,11 @@ void newFile(uint32_t nowEpoch) {
 
 // One capped batch. A failure with the card gone drops to NO_CARD; a failure
 // with the card still there is retried at the next interval.
-applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch) {
+// `final` releases rows held for a better position (applog::holdVerdict):
+// STOP, RESET and a due rollover pass it, so nothing held is cleared unwritten.
+applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch, bool final = false) {
     applog::Result r = applog::appendBatch(name, fst, sink, header, srcs, curs, nSrc,
-                                           applog::BATCH_ROWS, pend);
+                                           applog::BATCH_ROWS, pend, nowMs, final || rollWaiting);
     if (r.ok) {
         rows += r.rows;
         skipped = r.waiting;
@@ -117,7 +119,7 @@ applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch) {
 // Up to FINAL_BATCHES, stopping early once drained or failing.
 void drain(uint32_t nowMs, uint32_t nowEpoch) {
     for (int k = 0; k < FINAL_BATCHES && st == ACTIVE; k++) {
-        const applog::Result r = flushOnce(nowMs, nowEpoch);
+        const applog::Result r = flushOnce(nowMs, nowEpoch, true);
         if (!r.ok || !r.more) break;
     }
 }
@@ -211,6 +213,13 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
 }
 
 void tick(uint32_t nowMs, uint32_t nowEpoch) {
+    // Notice a due roll before this tick's flush, so that flush is already
+    // final (releases held rows) and can count as the drain.
+    if (st == ACTIVE && !rollWaiting &&
+        applog::rolloverDue(hk.wifiUniques ? hk.wifiUniques() : 0,
+                            hk.bleUniques ? hk.bleUniques() : 0)) {
+        rollWaiting = true; rollSince = nowMs; nextRollTry = nowMs;
+    }
     Flushed f = NONE;
     if (st == NO_CARD) {
         if (sdlog::present()) {
