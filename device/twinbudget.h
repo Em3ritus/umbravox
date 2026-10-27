@@ -41,12 +41,18 @@ struct Bucket {
     bool     started = false;
 
     // May a pass of `cost` entry visits run now? Spends them if so. Elapsed
-    // time is unsigned (holds across the millis() wrap) and the refill is
-    // 64-bit, so a long quiet spell just fills the bucket.
+    // time is signed: callers on two tasks read millis() a moment apart, so a
+    // time just before lastMs arrives now and then, and as an unsigned
+    // difference it wrapped to ~49 days and refilled the bucket every time.
+    // A backwards time counts as no time and never moves lastMs back. That
+    // holds across the millis() wrap; a gap of more than ~24.8 days between
+    // takes reads as backwards and refills nothing (the bucket then fills
+    // again from that take). The refill is 64-bit, capped at BURST.
     bool take(uint32_t nowMs, uint32_t cost) {
         if (!started) { started = true; lastMs = nowMs; }
-        const uint64_t add = (uint64_t)(nowMs - lastMs) * RATE_PER_MS;
-        lastMs = nowMs;
+        const int32_t dt = (int32_t)(nowMs - lastMs);
+        const uint64_t add = dt > 0 ? (uint64_t)dt * RATE_PER_MS : 0;
+        if (dt > 0) lastMs = nowMs;
         const uint64_t t = (uint64_t)tokens + add;
         tokens = t > BURST ? BURST : (uint32_t)t;
         if (cost > tokens) return false;

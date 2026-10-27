@@ -563,8 +563,11 @@ void tick(uint32_t nowMs) {
     // deferred evil-twin check, on the loop task, as the budget allows.
     portENTER_CRITICAL(&mux);
     {
+        // The budget's clock is read here, under the lock, as the Wi-Fi task
+        // reads it under the lock: not the caller's earlier nowMs.
+        const uint32_t now = millis();
         uint16_t found = 0;
-        const twinbudget::Step st = twinbudget::step(twinJob, twinRing, twinBudget, nowMs,
+        const twinbudget::Step st = twinbudget::step(twinJob, twinRing, twinBudget, now,
             tableGen, nOrder,
             [](uint16_t tgt) {
                 return [tgt](uint32_t q) {

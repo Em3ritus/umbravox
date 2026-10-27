@@ -70,8 +70,37 @@ int main() {
         Bucket c;
         c.take(0, 0);
         for (int g = 0; g < 100 && c.take(0, 20000); g++) {}
-        check("a very long quiet caps at the burst, no overflow",
-              c.take(0xF0000000u, BURST) && !c.take(0xF0000000u, 1));
+        check("a very long quiet (~20 days) caps at the burst, no overflow",
+              c.take(0x70000000u, BURST) && !c.take(0x70000000u, 1));
+    }
+
+    printf("backwards timestamps:\n");
+    {
+        // The loop task and the Wi-Fi task read millis() at different
+        // moments, so a take() can arrive with a time just before lastMs.
+        Bucket b;
+        b.take(10000, 0);
+        for (int g = 0; g < 100 && b.take(10000, 20000); g++) {}
+        const uint32_t tok = b.tokens, last = b.lastMs;
+        check("an older timestamp does not refill",       !b.take(9995, 20000) && b.tokens == tok);
+        check("and does not move lastMs back",            b.lastMs == last);
+        // A long run mixing ordered and slightly-backwards times never pays
+        // out more than the burst plus the rate for the real elapsed time.
+        Bucket m;
+        uint64_t spent = 0;
+        uint32_t t = 50000;
+        for (int i = 0; i < 200000; i++) {
+            const uint32_t at = (i % 3 == 0) ? t - 3 : t;     // every third read is 3 ms stale
+            if (m.take(at, 500)) spent += 500;
+            t += 1;
+        }
+        const uint64_t cap = BURST + (uint64_t)RATE_PER_MS * 200000;
+        printf("       spent %llu of a cap of %llu\n", (unsigned long long)spent, (unsigned long long)cap);
+        check("mixed-order clocks never exceed the budget", spent <= cap);
+        Bucket w;
+        w.take(0xFFFFFFF0u, 0);
+        for (int g = 0; g < 100 && w.take(0xFFFFFFF0u, 20000); g++) {}
+        check("still refills across the millis wrap",     w.take(0xFFFFFFF0u + 1000u, 20000));
     }
 
     printf("chunking:\n");
