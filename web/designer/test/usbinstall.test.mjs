@@ -139,6 +139,8 @@ const refusals = [
   ['two folders', [{ path: 'x/theme.json', data: enc('{}') }, { path: 'y/emblem.bin', data: enc('UVE') }], /one folder/],
   ['a nested path', [{ path: 'x/sub/theme.json', data: enc('{}') }], /theme\.json/],
   ['no files', [], /theme\.json/],
+  ...['__proto__', 'constructor', 'toString', 'hasOwnProperty'].map((k) =>
+    ['a prototype key as a file name (' + k + ')', [{ path: 'x/theme.json', data: enc('{}') }, { path: 'x/' + k, data: enc('p') }], new RegExp(k + ' is not one of them')]),
 ];
 for (const [what, files, re] of refusals) {
   test('refused before anything is sent: ' + what, async () => {
@@ -294,8 +296,8 @@ test('cancelled while the collision question is open: only the listing was sent,
 test('cancelled while a collision question is never answered: returns cancelled, does not hang', async () => {
   const ac = new AbortController();
   const dev = new FakeDevice({ dirs: ['/themes/my-pack'] });
-  setTimeout(() => ac.abort(), 100);
-  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST, signal: ac.signal, decide: () => new Promise(() => {}) });
+  const decide = () => { setTimeout(() => ac.abort(), 50); return new Promise(() => {}); };   // the question stays open
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST, signal: ac.signal, decide });
   assert.equal(r.cancelled, true);
   assert.deepEqual(sentCommands(dev), ['SDLS /themes']);
 });
@@ -323,6 +325,100 @@ test('a device busy with another upload: refused with a reason, nothing sent aft
   assert.equal(r.ok, false);
   assert.match(r.error, /another upload/);
   assert.deepEqual(sentCommands(dev).filter((l) => l !== 'SDLS /themes'), []);
+});
+
+// ------------------------------------------------------------- stale and late lines (review fixes)
+test('stale console output queued before the install is drained, not taken as a reply', async () => {
+  const dev = new FakeDevice();
+  dev.say('ERR upload in progress (ABORT to cancel)');   // left over from before this install
+  dev.say('ERR upload timed out');
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: { ...FAST, settle: 0 } });
+  assert.equal(r.ok, true, r.error);
+});
+
+test('a boot banner seen while draining still makes the install wait for the main loop', async () => {
+  const dev = new FakeDevice({ banner: true });
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: { ...FAST, settle: 0 } });
+  assert.equal(r.ok, true, r.error);
+});
+
+test('an ERR that arrives in place of OK put: the install fails, but ABORT is still sent', async () => {
+  const dev = new FakeDevice();
+  const put = dev.put.bind(dev);
+  dev.put = (t) => { dev.say('ERR upload timed out'); put(t); };   // a stale line, then the real OK put
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /upload timed out/);
+  const cmds = sentCommands(dev);
+  assert.equal(cmds[cmds.length - 1], 'ABORT');
+  assert.equal(dev.up, null, 'no upload left open on the device');
+  assert.equal(r.folderState, 'untouched');
+});
+
+test('a stale ERR just before the real DONE: the DONE (size and CRC match) is honoured', async () => {
+  const dev = new FakeDevice();
+  const fin = dev.finish.bind(dev);
+  dev.finish = () => { dev.say('ERR upload timed out'); fin(); };
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.folderState, 'complete');
+  assert.deepEqual(r.wrote, ['/themes/my-pack/emblem.bin', '/themes/my-pack/theme.json']);
+  assert.deepEqual([...dev.get('/themes/my-pack/theme.json')], [...PACK[0].data]);
+});
+
+test('an ERR then a DONE naming other bytes: unknown, never success', async () => {
+  const dev = new FakeDevice();
+  const fin = dev.finish.bind(dev);
+  dev.finish = () => { dev.say('ERR upload timed out'); fin(); };
+  const reply = dev.reply.bind(dev);
+  dev.reply = (l) => reply(l.startsWith('DONE ') ? l.replace(/[0-9a-f]{8}$/, '00000000') : l);
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });
+  assert.equal(r.ok, false);
+  assert.equal(r.folderState, 'unknown');
+  assert.deepEqual(r.wrote, []);
+});
+
+test('an ERR at END and no DONE within the grace time: the card keeps the old file (untouched)', async () => {
+  const dev = new FakeDevice();
+  dev.finish = () => { dev.drop(); dev.reply('ERR crc mismatch on the received bytes'); };
+  const t0 = Date.now();
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });
+  assert.equal(r.ok, false);
+  assert.equal(r.folderState, 'untouched');
+  assert.match(r.error, /crc mismatch/);
+  assert.ok(Date.now() - t0 >= 400, 'waited for a late DONE');
+});
+
+// ------------------------------------------------------------- device ERR texts on chunks
+test('a non-fatal chunk ERR is retried, then the device text is in the failure', async () => {
+  const dev = new FakeDevice();
+  const chunk = dev.chunk.bind(dev);
+  dev.chunk = (t) => (t[1] === '96' ? dev.reply('ERR bad hex') : chunk(t));
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /ERR bad hex/);
+  assert.doesNotMatch(r.error, /no reply/);
+  assert.equal(sentCommands(dev).filter((l) => l.startsWith('D 96 ')).length, 1 + 3);
+  assert.equal(sentCommands(dev).at(-1), 'ABORT');
+});
+
+test('a fatal chunk ERR (the device abandoned the upload) is not retried', async () => {
+  const dev = new FakeDevice();
+  const chunk = dev.chunk.bind(dev);
+  dev.chunk = (t) => (t[1] === '96' ? (dev.drop(), dev.reply('ERR write failed (card full or removed?)')) : chunk(t));
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /write failed \(card full or removed\?\)/);
+  assert.equal(sentCommands(dev).filter((l) => l.startsWith('D 96 ')).length, 1);
+});
+
+test('line noise on one chunk (ERR non-printable byte in line) is retried and the install completes', async () => {
+  const dev = new FakeDevice();
+  const chunk = dev.chunk.bind(dev);
+  let once = true;
+  dev.chunk = (t) => (t[1] === '96' && once ? (once = false, dev.reply('ERR non-printable byte in line')) : chunk(t));
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });
+  assert.equal(r.ok, true, r.error);
 });
 
 // ------------------------------------------------------------- bounded buffering

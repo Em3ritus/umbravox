@@ -37,7 +37,11 @@ export const TIMEOUTS = {
   end: 8000,      // reply to END (the device re-reads the card)
   abort: 2000,    // reply to ABORT
   total: 110000,  // the whole upload; under the device's own 120 s cap
+  drain: 150,     // at the start, discard old console output until it is this long quiet
+  drainMax: 3000, // ...but for no longer than this (a flooding port)
+  lateDone: 500,  // after an ERR to END, how long a late DONE is still waited for
 };
+export const DRAIN_MAX_LINES = 256;
 
 const enc = new TextEncoder();
 const HEX = '0123456789abcdef';
@@ -141,7 +145,7 @@ export function checkFiles(files) {
   for (const f of files) {
     const parts = String(f.path).split('/');
     const name = parts[1];
-    if (parts.length !== 2 || !(name in CAPS)) return { ok: false, error: SHAPE + '; ' + f.path + ' is not one of them.' };
+    if (parts.length !== 2 || !Object.hasOwn(CAPS, name)) return { ok: false, error: SHAPE + '; ' + f.path + ' is not one of them.' };
     if (seen.has(name)) return { ok: false, error: SHAPE + '; ' + name + ' appears twice.' };
     if (!(f.data instanceof Uint8Array)) return { ok: false, error: name + ' has no bytes.' };
     if (f.data.length === 0) return { ok: false, error: name + ' is empty.' };
@@ -221,7 +225,10 @@ const readerFor = (port) => { if (!readers.has(port)) readers.set(port, new Line
 // --- the conversation -------------------------------------------------------------
 const BANNER = /UMBRAVOX bring-up|^rst:0x|^ets [A-Z][a-z]{2} /;
 const STATUS = /^f[0-9]+ +\[/;               // the main loop's status line: the console is being polled
-const FATAL = /^(no upload|upload timed out|write failed|no card|read-back failed|non-printable)/;
+// The device's replies to a D line that end the upload (sdcmd.h fail(), the
+// idle/total clocks, no upload open). Any other ERR leaves the upload running
+// and may be line noise, so the chunk is resent.
+const FATAL = /^(no upload|upload timed out|write failed|no card|read-back failed)/;
 
 class Session {
   constructor(port, opts) {
@@ -237,8 +244,9 @@ class Session {
     await this.port.write(enc.encode(line + '\n'));
   }
   deadline(ms) { return Math.min(this.now() + ms, this.totalEnd); }
-  // The reply `match` accepts, any ERR reply, or null on timeout. Every other line is ignored.
-  async expect(match, ms, signal = this.signal) {
+  // The reply `match` accepts, any ERR reply (unless errs is false), or null on
+  // timeout. Every other line is ignored.
+  async expect(match, ms, signal = this.signal, errs = true) {
     const end = this.deadline(ms);
     for (;;) {
       const l = await this.reader.next(end, signal);
@@ -247,13 +255,28 @@ class Session {
         return null;
       }
       const r = parseReply(l);
-      if (r && (r.kind === 'err' || match(r))) return r;
+      if (r && ((errs && r.kind === 'err') || match(r))) return r;
     }
   }
   // A board reset by the port opening prints a banner and boots for a few
   // seconds. Listen first; after a banner wait for the main loop's status line.
-  async settle() {
-    let end = this.now() + this.t.settle, booting = false;
+  // Discard whatever the port holds from before this install (a reader kept
+  // from an earlier one, replies to nobody), so no stale line is taken as an
+  // answer: read until quiet, a bounded number of lines and a bounded time.
+  // A boot banner seen meanwhile is remembered for settle().
+  async drain() {
+    const stop = this.now() + this.t.drainMax;
+    let banner = false, booted = false;
+    for (let n = 0; n < DRAIN_MAX_LINES; n++) {
+      const l = await this.reader.next(Math.min(this.now() + this.t.drain, stop), this.signal);
+      if (l === null) break;
+      if (BANNER.test(l)) { banner = true; booted = false; } else if (banner && STATUS.test(l)) booted = true;
+    }
+    return { banner, booted };
+  }
+  async settle(seen = { banner: false, booted: false }) {
+    if (seen.booted) return 'booted';
+    let end = this.now() + (seen.banner ? this.t.boot : this.t.settle), booting = seen.banner;
     for (;;) {
       const l = await this.reader.next(end, this.signal);
       if (l === null) return booting ? 'boot-timeout' : 'quiet';
@@ -336,7 +359,7 @@ export async function installOverSerial(port, files, opts = {}) {
   try {
     if (s.signal && s.signal.aborted) throw new Cancelled();
     progress('connect', null);
-    await s.settle();
+    await s.settle(await s.drain());
     progress('list', null);
     const ls = await s.listThemes();
     if (!ls.ok) throw new Error(ls.error);
@@ -367,16 +390,22 @@ export async function installOverSerial(port, files, opts = {}) {
       inUpload = true;
       let r = await s.expect((x) => x.kind === 'put' && x.path === f.devicePath && x.size === f.data.length, s.t.put);
       if (!r) throw new Error(f.devicePath + ': no reply to SDPUT');
-      if (r.kind === 'err') { inUpload = false; throw new Error(f.devicePath + ': the device refused it: ' + r.reason); }
+      // An ERR here may be a stale line, with the device's OK put still to
+      // come: inUpload stays set, so the ABORT goes out either way.
+      if (r.kind === 'err') throw new Error(f.devicePath + ': the device refused it: ERR ' + r.reason);
       for (const st of steps.slice(1, -1)) {
-        let okd = false;
+        let okd = false, lastErr = null;
         for (let attempt = 0; attempt <= RETRIES && !okd; attempt++) {
           await s.send(st.line);
           r = await s.expect((x) => x.kind === 'ok' && x.offset === st.offset, s.t.chunk);
           if (r && r.kind === 'ok') okd = true;
-          else if (r && FATAL.test(r.reason)) throw new Error(f.devicePath + ': ' + r.reason);
+          else if (r && FATAL.test(r.reason)) throw new Error(f.devicePath + ': chunk at ' + st.offset + ': ERR ' + r.reason);
+          else if (r) lastErr = r.reason;
         }
-        if (!okd) throw new Error(f.devicePath + ': chunk at ' + st.offset + ': no reply after ' + (1 + RETRIES) + ' tries');
+        if (!okd) {
+          throw new Error(f.devicePath + ': chunk at ' + st.offset + ': ' +
+            (lastErr ? 'the device answered "ERR ' + lastErr + '"' : 'no reply') + ' after ' + (1 + RETRIES) + ' tries');
+        }
         sent += st.n;
         progress('upload', f.devicePath);
       }
@@ -384,6 +413,13 @@ export async function installOverSerial(port, files, opts = {}) {
       failedState = 'unknown';          // from here the device may swap the file in
       r = await s.expect((x) => x.kind === 'done', s.t.end);
       if (!r) throw new Error(f.devicePath + ': no reply to END');
+      if (r.kind === 'err') {
+        // The device answers END once. An ERR just before it may be stale
+        // (an unsolicited timeout line), so give a late DONE a moment: a DONE
+        // with this page's size and CRC means the file is on the card.
+        const late = await s.expect((x) => x.kind === 'done', s.t.lateDone, s.signal, false);
+        if (late) r = late;
+      }
       if (r.kind === 'err') {
         inUpload = false;
         failedReason = r.reason;
