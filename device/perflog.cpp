@@ -70,9 +70,9 @@ void tick(uint32_t now, const ui::State& s, bool dark) {
     sn.stackFree = (uint32_t)uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t);
 
     const uint32_t wifi = cap::frames(), adv = blescan::adverts(), reps = meshcore::reportsRx();
-    sn.wifiFrames = wifi - lastWifi;  lastWifi = wifi;
-    sn.bleAdverts = adv  - lastAdv;   lastAdv  = adv;
-    sn.reports    = reps - lastReps;  lastReps = reps;
+    sn.wifiFrames = delta(wifi, lastWifi);     // reset-safe (perflog.h)
+    sn.bleAdverts = delta(adv,  lastAdv);
+    sn.reports    = delta(reps, lastReps);
     sn.wifiUniq = cap::uniques();
     sn.bleUniq  = blescan::uniques();
     sn.tableCap = cap::tableCap();
