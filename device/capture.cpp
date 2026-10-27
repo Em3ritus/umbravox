@@ -11,6 +11,9 @@
 #include <math.h>
 #include <Print.h>
 #include "csv.h"
+#include "applog.h"
+#include "wiglerow.h"
+#include <string.h>
 
 namespace cap {
 namespace {
@@ -25,10 +28,20 @@ int      campIdx = -1;         // >=0: hold this channel index, do not hop
 
 constexpr int N_CHAN = ui::CH24 + ui::CH5;
 // The dedup table lives in PSRAM, which is what makes this number a real
-// one rather than a budget. 8192 slots is ~295KB of the 8MB available, and
-// the table is touched once per packet and never in the draw path, so the
-// extra latency of external RAM costs nothing that matters.
-constexpr int TABLE  = 8192;          // dedup slots, open addressed
+// one rather than a budget. A Node is 92 bytes on the C5, so 32768 slots is
+// ~3MB of the ~7MB free, and the table is touched once per packet and never
+// in the draw path, so the extra latency of external RAM costs nothing that
+// matters.
+//
+// The session rolls over to a new log file and clears this table at
+// applog::ROLLOVER_APS uniques, long before it fills: linear probing degrades
+// sharply near full (an unknown BSSID scans every slot with interrupts off).
+// To change the size, edit TABLE (and ROLLOVER_APS in applog.h); the asserts
+// keep the pair sane.
+constexpr int TABLE  = 32768;         // dedup slots, open addressed
+static_assert(applog::ROLLOVER_APS * 100u <= (uint32_t)TABLE * 65u,
+              "rollover must leave the dedup table <= 65% full");
+static_assert(TABLE <= 65536, "order_ and applog::Pending hold 16-bit slot indices");
 constexpr int RECENT = ui::MAX_CONTACTS;
 
 struct Node {
@@ -58,6 +71,9 @@ uint32_t  nUsed = 0;
 // first without sorting 512 entries every frame.
 uint16_t* order_ = nullptr;
 uint32_t  nOrder = 0;
+
+// The logger's done-bits, one per first-seen position (see applog.h).
+uint8_t*  logBits_ = nullptr;
 
 // The dial's blips. Slot is the MAC's hash, so an AP keeps the same place on
 // the dial for the whole drive -- which is the point: the field should look
@@ -418,20 +434,23 @@ void begin() {
     table_ = (Node*)heap_caps_malloc(sizeof(Node) * TABLE, MALLOC_CAP_SPIRAM);
     used_  = (bool*)heap_caps_malloc(sizeof(bool) * TABLE, MALLOC_CAP_SPIRAM);
     order_ = (uint16_t*)heap_caps_malloc(sizeof(uint16_t) * TABLE, MALLOC_CAP_SPIRAM);
-    const bool inPsram = table_ && used_ && order_;
+    logBits_ = (uint8_t*)heap_caps_calloc((TABLE + 7) / 8, 1, MALLOC_CAP_SPIRAM);
+    const bool inPsram = table_ && used_ && order_ && logBits_;
     if (!inPsram) {
-        free(table_); free(used_); free(order_);
+        free(table_); free(used_); free(order_); free(logBits_);
         table_ = (Node*)calloc(TABLE, sizeof(Node));
         used_  = (bool*)calloc(TABLE, sizeof(bool));
         order_ = (uint16_t*)calloc(TABLE, sizeof(uint16_t));
+        logBits_ = (uint8_t*)calloc((TABLE + 7) / 8, 1);
     }
-    if (!table_ || !used_ || !order_) {
+    if (!table_ || !used_ || !order_ || !logBits_) {
         Serial.println("capture: FATAL -- no room for the dedup table");
         for (;;) delay(1000);
     }
-    Serial.printf("capture: %d dedup slots in %s (%u bytes)\n",
+    Serial.printf("capture: %d dedup slots in %s (%u bytes, node %u B), psram %u free\n",
                   TABLE, inPsram ? "PSRAM" : "internal RAM",
-                  (unsigned)(sizeof(Node) * TABLE));
+                  (unsigned)(sizeof(Node) * TABLE), (unsigned)sizeof(Node),
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     for (int i = 0; i < TABLE; i++) used_[i] = false;
     nOrder = 0;
@@ -593,11 +612,12 @@ void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
     }
 }
 
+// Runs every frame (main sizes the scrollbar from it on every screen). The
+// 5GHz count used to walk the whole table -- ~20k PSRAM misses per frame at
+// rollover size -- but it is exactly nUnique5: a node's band is set once, at
+// insert, alongside that counter, and both are cleared together.
 uint16_t sightCount(bool only5) {
-    if (!only5) return (uint16_t)(nOrder > 65535 ? 65535 : nOrder);
-    uint32_t c = 0;
-    for (uint32_t i = 0; i < nOrder; i++)
-        if (table_[order_[i]].band == ui::BAND_5) c++;
+    const uint32_t c = only5 ? nUnique5 : nOrder;
     return (uint16_t)(c > 65535 ? 65535 : c);
 }
 
@@ -727,29 +747,70 @@ uint32_t deauthPerS() { return deauthRate * 1000 / DEAUTH_WINDOW_MS; }
 // shared with the BLE exporter and only one of them can own it.
 //
 // Printed rather than buffered: thousands of rows will not fit in RAM.
+namespace {
+
+// A row without coordinates is not a wardrive observation, and one without a
+// wall clock files every sighting under 1970. Both are dropped rather than
+// faked. firstEpoch is set once, at first sight, so a row with none never
+// gains one; a position can still arrive with a later, louder sighting.
+applog::Verdict verdictOf(const Node& nd) {
+    if (!nd.firstEpoch) return applog::NEVER;
+    return nd.located ? applog::WRITE : applog::WAIT;
+}
+
+// One WigleWifi-1.6 row, newline included (bytes pinned in wiglerow.h).
+int formatRow(const Node& nd, char* buf, int cap) {
+    char auth[64];
+    ui::authString(nd.auth, auth, sizeof auth);
+    return wiglerow::wifi(buf, cap, nd.mac, nd.ssid, auth, nd.firstEpoch,
+                          nd.chan, nd.rssi, nd.lat7, nd.lon7);
+}
+
+// The table as the logger sees it: rows in first-seen order. Everything that
+// touches table_/order_ takes the same lock the Wi-Fi task inserts under, and
+// a row is copied out before it is formatted, so a sighting landing mid-row
+// cannot tear it.
+struct LogSrc : applog::Source {
+    uint32_t count() override {
+        portENTER_CRITICAL(&mux);
+        const uint32_t n = nOrder;
+        portEXIT_CRITICAL(&mux);
+        return n;
+    }
+    uint32_t capacity() override { return TABLE; }
+    uint8_t* doneBits() override { return logBits_; }
+    applog::Verdict verdict(uint32_t i) override {
+        applog::Verdict v = applog::WAIT;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) v = verdictOf(table_[order_[i]]);
+        portEXIT_CRITICAL(&mux);
+        return v;
+    }
+    int format(uint32_t i, char* buf, int cap) override {
+        Node nd;
+        bool have = false;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) { nd = table_[order_[i]]; have = true; }
+        portEXIT_CRITICAL(&mux);
+        if (!have || verdictOf(nd) != applog::WRITE) return 0;
+        return formatRow(nd, buf, cap);
+    }
+} logSrc;
+
+} // namespace
+
+applog::Source& logSource() { return logSrc; }
+
+// The whole table at once, for the console WIGLE dump. Same rows, same bytes
+// as the SD file (formatRow is shared).
 uint32_t exportRows(Print& out, uint32_t& skipped) {
-    char mac[20], ssid[48], auth[64], la[20], lo[20], when[24];
+    char row[applog::ROW_MAX];
     uint32_t rows = 0;
-
-    for (uint32_t i = 0; i < nOrder; i++) {
-        const Node& nd = table_[order_[i]];
-        // A row without coordinates is not a wardrive observation, and one
-        // without a wall clock files every sighting under 1970. Both are
-        // dropped rather than faked.
-        if (!nd.located || !nd.firstEpoch) { skipped++; continue; }
-
-        csv::mac(mac, nd.mac);
-        csv::quote(nd.ssid, ssid, sizeof ssid);
-        ui::authString(nd.auth, auth, sizeof auth);
-        csv::deg7(la, nd.lat7);
-        csv::deg7(lo, nd.lon7);
-        csv::stampUtc(when, nd.firstEpoch);
-
-        // Full WigleWifi-1.6 row: Frequency after Channel, empty RCOIs and
-        // MfgrId before Type (we read neither off the air).
-        out.printf("%s,%s,%s,%s,%u,%d,%d,%s,%s,0,%u,,,WIFI\n",
-                   mac, ssid, auth, when, (unsigned)nd.chan,
-                   csv::freqMhz(nd.chan), (int)nd.rssi, la, lo, 30u);
+    const uint32_t n = logSrc.count();
+    for (uint32_t i = 0; i < n; i++) {
+        const int len = logSrc.format(i, row, sizeof row);
+        if (len <= 0) { skipped++; continue; }
+        out.write((const uint8_t*)row, (size_t)len);
         rows++;
     }
     return rows;
@@ -793,6 +854,19 @@ void reset() {
     portEXIT_CRITICAL(&mux);
 }
 
+// The rollover clear: the dedup table and the counts that describe it. The
+// dial's blips, the alert, the probe table and the frame counters stay, so
+// the screen carries on as it was. Called from the main loop (logging::tick),
+// the same task and point as RESET COUNTERS, so no draw is mid-way through
+// the table; the lock keeps the Wi-Fi task's inserts out while it empties.
+void rollover() {
+    portENTER_CRITICAL(&mux);
+    memset(used_, 0, sizeof(bool) * TABLE);
+    nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
+    for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
+    portEXIT_CRITICAL(&mux);
+}
+
 bool lastAlert(ui::AlertRec& out) {
     portENTER_CRITICAL(&mux);
     out = alert_;
@@ -807,6 +881,6 @@ uint32_t frames()      { return nFrames; }
 uint32_t localFrames() { return nLocal; }
 uint32_t uniques()  { return nUnique24 + nUnique5; }
 uint16_t tableUse() { return (uint16_t)(nUsed > 65535 ? 65535 : nUsed); }
-uint16_t tableCap() { return TABLE; }
+uint16_t tableCap() { return (uint16_t)(TABLE > 65535 ? 65535 : TABLE); }
 
 } // namespace cap

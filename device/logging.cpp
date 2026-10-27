@@ -3,6 +3,7 @@
 #include "logging.h"
 #include "sdlog.h"
 #include "csv.h"
+#include "wigle.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -10,11 +11,12 @@ namespace logging {
 namespace {
 
 State    st = IDLE;
-Body     body = nullptr;
+Hooks    hk;
 bool     want = false;
 uint32_t startedMs = 0;
 uint32_t nextFlushMs = 0;
 uint32_t rows = 0, skipped = 0;
+uint32_t nRolls = 0;
 // Names sessions when no date is known yet. The in-memory counter restarts at
 // 0 each boot, so begin() seeds it from the card (sdlog::maxIndex scans for
 // existing WD-NNNN.CSV) to advance PAST them -- so a reboot before a GPS fix
@@ -27,32 +29,139 @@ char     prevName[32] = "";  // the last session's file, never reused
 // one diagnostic line, so this file keeps no dependency on elog.
 bool     writeErr = false;
 
+// The append machinery: one cursor per source, the session file's state, and
+// the batch scratch (static: the loop task's stack is only 8 KB).
+applog::Source*   srcs[2];
+applog::Cursor    curs[2];
+int               nSrc = 0;
+applog::FileState fst;
+applog::Pending   pend[applog::BATCH_ROWS];
+char              header[320] = "";
+
+// A rollover that is due but waiting for pending rows to reach the card.
+bool     rollWaiting = false;
+uint32_t rollSince = 0, nextRollTry = 0;
+
 // Anything earlier than this is the RTC's power-on default, not a real date.
 constexpr uint32_t EPOCH_KNOWN = 1577836800u;   // 2020-01-01 00:00:00 UTC
 
-// Absolute path -- SD.open requires the leading '/'.
+// sdlog's append calls as an applog::Sink.
+struct SdSink : applog::Sink {
+    bool open(const char* n, uint32_t& size) override { return sdlog::openAppend(n, size); }
+    bool write(const char* d, uint32_t len) override { return sdlog::writeAppend(d, len); }
+    bool close() override { return sdlog::closeAppend(); }
+    bool truncate(const char* n, uint32_t len) override { return sdlog::truncateTo(n, len); }
+} sink;
+
+struct HeaderSink : ui_wigle::Sink {
+    void put(const char* s) override {
+        strncat(header, s, sizeof header - strlen(header) - 1);
+    }
+};
+
+// Absolute path -- SD.open requires the leading '/'. A name already on the
+// card is never used: appending to it would mix two sessions (and applog
+// refuses it anyway), so fall through to the next free dateless number.
 void makeName(uint32_t nowEpoch) {
     if (nowEpoch >= EPOCH_KNOWN) {
         char ts[24];
         csv::stampUtc(ts, nowEpoch);              // "YYYY-MM-DD HH:MM:SS"
         snprintf(name, sizeof name, "/WD-%.4s%.2s%.2s-%.2s%.2s%.2s.CSV",
                  ts, ts + 5, ts + 8, ts + 11, ts + 14, ts + 17);
-        // Two sessions in the same second would overwrite each other.
-        if (strcmp(name, prevName) != 0) { strcpy(prevName, name); return; }
+        // Two sessions in the same second would share a name.
+        if (strcmp(name, prevName) != 0 && !sdlog::exists(name)) {
+            strcpy(prevName, name);
+            return;
+        }
     }
-    snprintf(name, sizeof name, "/WD-%04u.CSV", (unsigned)(++counter % 10000));
+    for (int tries = 0; tries < 100; tries++) {
+        snprintf(name, sizeof name, "/WD-%04u.CSV", (unsigned)(++counter % 10000));
+        if (!sdlog::exists(name)) break;
+    }
     strcpy(prevName, name);
 }
 
-// Write the whole document. A failure with the card gone drops to NO_CARD;
-// a failure with the card still there is retried at the next interval.
-bool flush() {
-    if (!body) return false;
-    uint32_t r = 0, s = 0;
-    if (sdlog::writeAtomic(name, body, r, s)) { rows = r; skipped = s; return true; }
+void resetCursors() {
+    for (int s = 0; s < nSrc; s++) applog::resetCursor(curs[s], *srcs[s]);
+}
+
+// A fresh file: nothing of it is on the card yet, every row is owed to it.
+void newFile(uint32_t nowEpoch) {
+    makeName(nowEpoch);
+    resetCursors();
+    fst = applog::FileState{};
+    rows = skipped = 0;
+}
+
+// One capped batch. A failure with the card gone drops to NO_CARD; a failure
+// with the card still there is retried at the next interval.
+applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch) {
+    applog::Result r = applog::appendBatch(name, fst, sink, header, srcs, curs, nSrc,
+                                           applog::BATCH_ROWS, pend);
+    if (r.ok) {
+        rows += r.rows;
+        skipped = r.waiting;
+        nextFlushMs = nowMs + (r.more ? CATCHUP_MS : FLUSH_MS);
+        return r;
+    }
+    nextFlushMs = nowMs + FLUSH_MS;
+    if (r.clash) {                        // someone else's file: a new name
+        newFile(nowEpoch);
+        nextFlushMs = nowMs + CATCHUP_MS;
+    }
     if (!sdlog::present()) st = NO_CARD;
-    else writeErr = true;                 // card there but the write failed
-    return false;
+    else if (!r.clash) writeErr = true;   // card there but the write failed
+    return r;
+}
+
+// Up to FINAL_BATCHES, stopping early once drained or failing.
+void drain(uint32_t nowMs, uint32_t nowEpoch) {
+    for (int k = 0; k < FINAL_BATCHES && st == ACTIVE; k++) {
+        const applog::Result r = flushOnce(nowMs, nowEpoch);
+        if (!r.ok || !r.more) break;
+    }
+}
+
+void doRoll(uint32_t nowMs, uint32_t nowEpoch, bool forced) {
+    const uint32_t aps = hk.wifiUniques ? hk.wifiUniques() : 0;
+    const uint32_t ble = hk.bleUniques  ? hk.bleUniques()  : 0;
+    if (hk.clearTables) hk.clearTables();
+    nRolls++;
+    rollWaiting = false;
+    if (st == ACTIVE) {
+        newFile(nowEpoch);
+        if (hk.onRollover) hk.onRollover(aps, ble, name, forced);
+        flushOnce(nowMs, nowEpoch);       // the new file, header first
+    } else {
+        resetCursors();                   // nothing logged; the table restarts
+        if (hk.onRollover) hk.onRollover(aps, ble, "", forced);
+    }
+}
+
+// What a flush this tick did, if any.
+enum Flushed { NONE, FAILED, PARTIAL, DRAINED };
+Flushed outcome(const applog::Result& r) {
+    return !r.ok ? FAILED : r.more ? PARTIAL : DRAINED;
+}
+
+// Runs every tick, so a due rollover is noticed within one loop, not one
+// flush interval. The roll waits until every pending row is on the card; it is
+// forced only when the card has made no progress for ROLL_GRACE_MS (a long but
+// healthy drain keeps resetting the clock).
+void checkRoll(uint32_t nowMs, uint32_t nowEpoch, Flushed f) {
+    const uint32_t w = hk.wifiUniques ? hk.wifiUniques() : 0;
+    const uint32_t b = hk.bleUniques  ? hk.bleUniques()  : 0;
+    if (!applog::rolloverDue(w, b)) { rollWaiting = false; return; }
+    if (st != ACTIVE) { doRoll(nowMs, nowEpoch, false); return; }
+    if (!rollWaiting) { rollWaiting = true; rollSince = nowMs; nextRollTry = nowMs; }
+    if (f == NONE) {
+        if ((int32_t)(nowMs - nextRollTry) < 0) return;
+        nextRollTry = nowMs + CATCHUP_MS;
+        f = outcome(flushOnce(nowMs, nowEpoch));
+    }
+    if (f == DRAINED) { doRoll(nowMs, nowEpoch, false); return; }
+    if (f == PARTIAL) rollSince = nowMs;              // progress: keep waiting
+    if (nowMs - rollSince >= ROLL_GRACE_MS) doRoll(nowMs, nowEpoch, true);
 }
 
 } // namespace
@@ -60,21 +169,20 @@ bool flush() {
 void start(uint32_t nowMs, uint32_t nowEpoch) {
     if (st != IDLE) return;
     want = true;
-    makeName(nowEpoch);
+    newFile(nowEpoch);
     startedMs = nowMs;
     nextFlushMs = nowMs + FLUSH_MS;
-    rows = skipped = 0;
     st = ACTIVE;
-    if (sdlog::present()) flush();    // opens the file; may demote to NO_CARD
+    if (sdlog::present()) flushOnce(nowMs, nowEpoch);   // creates the file; may demote
     else st = NO_CARD;
 }
 
 void stop(uint32_t nowMs) {
-    (void)nowMs;
-    if (st == ACTIVE) flush();
+    if (st == ACTIVE) drain(nowMs, 0);
     want = false;
     st = IDLE;
     name[0] = 0;
+    rollWaiting = false;
 }
 
 void toggle(uint32_t nowMs, uint32_t nowEpoch) {
@@ -82,11 +190,20 @@ void toggle(uint32_t nowMs, uint32_t nowEpoch) {
     else stop(nowMs);
 }
 
-void begin(bool wasActive, Body b, uint32_t nowMs, uint32_t nowEpoch) {
-    body = b;
+void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
+    hk = h;
+    nSrc = 0;
+    if (hk.wifi) srcs[nSrc++] = hk.wifi;
+    if (hk.ble)  srcs[nSrc++] = hk.ble;
+    header[0] = 0;
+    HeaderSink hs;
+    ui_wigle::header(hs);
     st = IDLE;
     want = false;
     name[0] = 0;
+    prevName[0] = 0;
+    rollWaiting = false;
+    resetCursors();
     // Advance the dateless counter past any WD-NNNN.CSV already on the card, so
     // a reboot before a GPS fix cannot overwrite an earlier dateless session.
     counter = sdlog::maxIndex("/WD-", ".CSV");
@@ -94,17 +211,27 @@ void begin(bool wasActive, Body b, uint32_t nowMs, uint32_t nowEpoch) {
 }
 
 void tick(uint32_t nowMs, uint32_t nowEpoch) {
-    (void)nowEpoch;
+    Flushed f = NONE;
     if (st == NO_CARD) {
         if (sdlog::present()) {
             st = ACTIVE;
-            nextFlushMs = nowMs + FLUSH_MS;
-            flush();                  // opens the file; may demote again
+            f = outcome(flushOnce(nowMs, nowEpoch));   // may demote again
         }
     } else if (st == ACTIVE && (int32_t)(nowMs - nextFlushMs) >= 0) {
-        nextFlushMs += FLUSH_MS;
-        if ((int32_t)(nowMs - nextFlushMs) >= 0) nextFlushMs = nowMs + FLUSH_MS;
-        flush();
+        f = outcome(flushOnce(nowMs, nowEpoch));
+    }
+    checkRoll(nowMs, nowEpoch, f);
+}
+
+void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
+    if (st == ACTIVE) drain(nowMs, nowEpoch);   // what was seen reaches the old file
+    if (clear) clear();
+    rollWaiting = false;
+    if (st == ACTIVE) {
+        newFile(nowEpoch);
+        flushOnce(nowMs, nowEpoch);
+    } else {
+        resetCursors();
     }
 }
 
@@ -113,6 +240,7 @@ bool        wantsActive()           { return want; }
 const char* fileName()              { return name; }
 uint32_t    lastRows()              { return rows; }
 uint32_t    lastSkipped()           { return skipped; }
+uint32_t    rollovers()             { return nRolls; }
 uint32_t    sessionSecs(uint32_t nowMs) {
     return st == IDLE ? 0 : (nowMs - startedMs) / 1000;
 }

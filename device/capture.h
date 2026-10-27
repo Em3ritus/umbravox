@@ -8,6 +8,7 @@
 #include "model.h"
 #include "signatures.h"
 class Print;
+namespace applog { struct Source; }
 
 namespace cap {
 
@@ -60,7 +61,15 @@ uint32_t deauthPerS();
 // Emit WiFi rows of a WigleWifi-1.6 CSV. The caller writes the markers and
 // the column header; `skipped` accumulates rows dropped for want of a
 // position or a clock.
+// The WIGLE console dump uses this; the SD log appends through logSource().
 uint32_t exportRows(Print& out, uint32_t& skipped);
+
+// The table's rows, first-seen order, for the append-only logger (applog.h).
+applog::Source& logSource();
+
+// Clear the dedup table and its counts for a log rollover, keeping the dial,
+// alerts and probes. Main loop only (between cap::tick and the draw).
+void rollover();
 
 // How many known APs carry a position. The gap between this and uniques()
 // is what will not upload to WiGLE.

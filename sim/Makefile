@@ -38,7 +38,7 @@ test_phase: test_phase.cpp ../device/phase.h
 test_wigle: test_wigle.cpp ../device/wigle.h
 	$(CXX) $(CXXFLAGS) -o $@ test_wigle.cpp -lm
 
-test_logging: test_logging.cpp ../device/logging.cpp ../device/logging.h ../device/sdlog.h ../device/csv.h
+test_logging: test_logging.cpp ../device/logging.cpp ../device/logging.h ../device/sdlog.h ../device/csv.h ../device/applog.h ../device/wigle.h
 	$(CXX) $(CXXFLAGS) -o $@ test_logging.cpp ../device/logging.cpp -lm
 
 test_csv: test_csv.cpp ../device/csv.h ../ui/gnss.cpp ../ui/gnss.h

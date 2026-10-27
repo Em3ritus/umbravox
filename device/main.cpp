@@ -96,8 +96,40 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
     gfx->endWrite();
 }
 
-// Defined with the console helpers below; setup() hands it to logging.
+// Defined with the console helpers below.
 namespace { static uint32_t writeWigle(Print& out, uint32_t& skipped); }
+
+// What the logger needs from the capture tables (logging.h). The clear runs
+// inside logging::tick, in the main loop between cap::tick and the draw --
+// the same task and point as RESET COUNTERS -- so nothing draws from a table
+// mid-clear.
+namespace logwire {
+uint32_t wifiUniques() { return cap::uniques(); }
+uint32_t bleUniques()  { return blescan::uniques(); }
+void clearTables()     { cap::rollover(); blescan::rollover(); }
+void onRollover(uint32_t aps, uint32_t ble, const char* newName, bool forced) {
+    if (newName[0])
+        elog::event(forced ? elog::WARN : elog::INFO, "log",
+                    "rollover at %u APs (%u BLE), new file %s%s", (unsigned)aps,
+                    (unsigned)ble, newName, forced ? " (card failing: pending rows dropped)" : "");
+    else
+        elog::event(elog::INFO, "log", "rollover at %u APs (%u BLE), not logging",
+                    (unsigned)aps, (unsigned)ble);
+}
+logging::Hooks hooks() {
+    logging::Hooks h;
+    h.wifi = &cap::logSource();
+    h.ble  = &blescan::logSource();
+    h.wifiUniques = wifiUniques;
+    h.bleUniques  = bleUniques;
+    h.clearTables = clearTables;
+    h.onRollover  = onRollover;
+    return h;
+}
+// RESET COUNTERS: the full reset, which logging turns into a rollover to a
+// new file while logging (never a rewrite of the current one).
+void resetAll() { cap::reset(); blescan::reset(); }
+} // namespace logwire
 
 // --- collector tier -------------------------------------------------------
 //
@@ -473,14 +505,12 @@ void setup() {
     meshcore::setCollector(collector::onFrame);   // netId is loaded + logged in loop()
     touch::begin();
     // Card first, then the session machine: it resumes into a fresh file when
-    // the last run ended mid-session. Known limitation (accepted): with no GPS
-    // date yet the filename is the dateless WD-NNNN counter, which is not
-    // persisted, so a reboot before the first fix can reuse a name -- and a
-    // reused dateless name OVERWRITES (destroys) the earlier dateless session's
-    // file. Fix deferred to hardware: scan the card, count past any WD-*.CSV.
+    // the last run ended mid-session -- never the old one, which is left as
+    // the power cut found it. A name already on the card is never reused
+    // (logging counts past WD-NNNN files and skips any existing name).
     sdlog::begin();
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
-    logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
+    logging::begin(prefs::loggingWas(), logwire::hooks(), millis(), ui::Gnss::utcEpoch(millis()));
     Serial.printf("panel up @ %d MHz SPI, GPS on GPIO %d @ %d\n",
                   (int)(SPI_HZ / 1000000), (int)PIN_GPS_RX, GPS_BAUD);
 }
@@ -945,8 +975,7 @@ void loop() {
 
     if (nav.resetRequested) {
         nav.resetRequested = false;
-        cap::reset();
-        blescan::reset();
+        logging::resetTables(logwire::resetAll, millis(), ui::Gnss::utcEpoch(millis()));
         alertlog::clear();
         Serial.println("counters cleared");
     }

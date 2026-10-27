@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+#include <unistd.h>
 
 namespace sdlog {
 namespace {
@@ -35,72 +36,63 @@ bool begin() {
 
 bool present() { return mounted; }
 
-static bool writeAtomicImpl(const char* name,
-                            uint32_t (*body)(Print&, uint32_t&),
-                            uint32_t& rows, uint32_t& skipped);
+// --- the session file: one append open at a time ---------------------------
+namespace {
+File     appF;
+bool     appOk = false;
+uint32_t appT0 = 0, appBytes = 0;
+}
 
-bool writeAtomic(const char* name,
-                 uint32_t (*body)(Print&, uint32_t&),
-                 uint32_t& rows, uint32_t& skipped) {
-    const uint32_t t0 = millis();
-    const bool ok = writeAtomicImpl(name, body, rows, skipped);
-    noteStall(t0);
+bool exists(const char* name) {
+    return mounted && name && name[0] && SD.exists(name);
+}
+
+bool openAppend(const char* name, uint32_t& size) {
+    if (!mounted || !name || !name[0]) return false;
+    if (appF) appF.close();                 // never two at once
+    appT0 = millis();
+    appF = SD.open(name, FILE_APPEND);      // created if missing
+    if (!appF) { noteStall(appT0); return false; }
+    size = (uint32_t)appF.size();           // its length before this append
+    appOk = true;
+    appBytes = 0;
+    return true;
+}
+
+bool writeAppend(const char* data, uint32_t len) {
+    if (!appF || !data) return false;
+    const size_t w = appF.write((const uint8_t*)data, len);
+    if (w != len) appOk = false;
+    appBytes += (uint32_t)w;
+    return w == len;
+}
+
+bool closeAppend() {
+    if (!appF) return false;
+    // flush() is fflush + fsync: the directory entry's size is committed here,
+    // so a power cut before it leaves the file at its previous (whole-line)
+    // length under FatFs semantics.
+    appF.flush();
+    const bool ok = appOk && appF.getWriteError() == 0;
+    appF.close();
+    const uint32_t ms = millis() - appT0;
+    noteStall(appT0);
+    // Acceptance item #7: the per-save stall, now proportional to the batch.
+    Serial.printf("sdlog: append %lu bytes in %lu ms%s\n", (unsigned long)appBytes,
+                  (unsigned long)ms, ok ? "" : " -- FAILED");
     return ok;
 }
 
-static bool writeAtomicImpl(const char* name,
-                            uint32_t (*body)(Print&, uint32_t&),
-                            uint32_t& rows, uint32_t& skipped) {
+bool truncateTo(const char* name, uint32_t len) {
     if (!mounted || !name || !name[0]) return false;
-
-    // name.tmp / name.bak alongside the target. Guard the buffer: a silent
-    // snprintf truncation could make tmp == name and destroy the live file.
-    char tmp[64], bak[64];
-    if (snprintf(tmp, sizeof tmp, "%s.tmp", name) >= (int)sizeof tmp) return false;
-    if (snprintf(bak, sizeof bak, "%s.bak", name) >= (int)sizeof bak) return false;
-
-    // 1. Write the whole document to a temp file. The live file is not touched
-    //    at all until this has run and closed cleanly, so any failure here
-    //    leaves the previous good file exactly as it was.
-    SD.remove(tmp);                       // clear a stale temp from a prior crash
-    File f = SD.open(tmp, FILE_WRITE);
-    if (!f) return false;
-
-    const uint32_t bodyT0 = millis();
-    rows = body(f, skipped);
-    const uint32_t bodyMs = millis() - bodyT0;
-    const uint32_t flushT0 = millis();
-    f.flush();
-    const uint32_t flushMs = millis() - flushT0;
-    // Acceptance item #7: the per-save stall. The whole CSV is rewritten each
-    // save, so write time grows with the file; the flush is the fsync-class
-    // stall that competes with capture on the single core.
-    Serial.printf("sdlog: save %lu rows -- write %lu ms, flush %lu ms\n",
-                  (unsigned long)rows, (unsigned long)bodyMs, (unsigned long)flushMs);
-    // Best-effort write-failure check (full card / I/O error). getWriteError may
-    // be inert on some cores, so also require size()>0 (body always writes the
-    // header). This runs BEFORE the live file is touched, so a caught failure
-    // cannot corrupt it. An undetected truncated-but-closed write is the
-    // inherent-to-FAT residual pinned by the Hardware Acceptance pulled-power test.
-    const bool writeOk = (f.getWriteError() == 0) && (f.size() > 0);
-    f.close();
-    if (!writeOk) { SD.remove(tmp); return false; }
-
-    // 2. Commit. FatFs f_rename fails if the destination exists, so the old file
-    //    must move aside first -- but it is never deleted before the new one is
-    //    safely in place. Move old -> bak, then tmp -> name; restore bak on fail.
-    const bool hadOld = SD.exists(name);
-    if (hadOld) {
-        SD.remove(bak);                                 // clear a stale backup
-        if (!SD.rename(name, bak)) { SD.remove(tmp); return false; }  // old file intact
-    }
-    if (!SD.rename(tmp, name)) {
-        if (hadOld) SD.rename(bak, name);               // restore the old file
-        SD.remove(tmp);
+    // Arduino's File has no truncate; the VFS path does (FatFs f_truncate).
+    char path[72];
+    if (snprintf(path, sizeof path, "%s%s", SD.mountpoint(), name) >= (int)sizeof path)
         return false;
-    }
-    if (hadOld) SD.remove(bak);                         // committed; drop the backup
-    return true;
+    const uint32_t t0 = millis();
+    const bool ok = ::truncate(path, (off_t)len) == 0;
+    noteStall(t0);
+    return ok;
 }
 
 void list(Print& out) {

@@ -8,6 +8,9 @@
 #include <esp_heap_caps.h>
 #include <Print.h>
 #include "csv.h"
+#include "applog.h"
+#include "wiglerow.h"
+#include <string.h>
 #include "gpstrack.h"
 #include "gnss.h"
 #include <math.h>
@@ -20,7 +23,13 @@ uint8_t duty = 30;                                // % of the radio BLE takes
 
 // Also PSRAM-backed. BLE sees far more distinct addresses than WiFi does,
 // because most of them are randomised and rotate every few minutes.
+// When full, a new address is simply not tracked (slot stays -1): no
+// corruption, but every unknown advert then scans all slots under the lock --
+// so the log rolls over at applog::ROLLOVER_BLE, well before that.
 constexpr int TABLE  = 4096;                      // distinct addresses tracked
+static_assert(applog::ROLLOVER_BLE * 100u <= (uint32_t)TABLE * 65u,
+              "BLE rollover must leave the address table <= 65% full");
+static_assert(TABLE <= 65536, "order_ and applog::Pending hold 16-bit slot indices");
 constexpr int RECENT = 16;                        // blips BLE may put on the dial
 
 // Per-device detail, mirroring what capture keeps for access points. BLE
@@ -72,6 +81,7 @@ uint32_t nUsed = 0;
 // Insertion order, so the codex can list newest first without sorting.
 uint16_t* order_ = nullptr;
 uint32_t  nOrder = 0;
+uint8_t*  logBits_ = nullptr;         // the logger's done-bits (applog.h)
 
 struct Blip { uint16_t angle; uint8_t dist; uint32_t lastMs; bool live; };
 Blip recent_[RECENT];
@@ -228,16 +238,18 @@ void begin() {
     used_  = (bool*)heap_caps_malloc(TABLE, MALLOC_CAP_SPIRAM);
     extra  = (Extra*)heap_caps_malloc(sizeof(Extra) * TABLE, MALLOC_CAP_SPIRAM);
     order_ = (uint16_t*)heap_caps_malloc(sizeof(uint16_t) * TABLE, MALLOC_CAP_SPIRAM);
-    const bool inPsram = addrs && rssis && used_ && order_ && extra;
+    logBits_ = (uint8_t*)heap_caps_calloc((TABLE + 7) / 8, 1, MALLOC_CAP_SPIRAM);
+    const bool inPsram = addrs && rssis && used_ && order_ && extra && logBits_;
     if (!inPsram) {
-        free(addrs); free(rssis); free(used_); free(order_); free(extra);
+        free(addrs); free(rssis); free(used_); free(order_); free(extra); free(logBits_);
+        logBits_ = (uint8_t*)calloc((TABLE + 7) / 8, 1);
         addrs  = (uint8_t(*)[6])calloc(TABLE, 6);
         rssis  = (int8_t*)calloc(TABLE, 1);
         used_  = (bool*)calloc(TABLE, 1);
         order_ = (uint16_t*)calloc(TABLE, sizeof(uint16_t));
         extra  = (Extra*)calloc(TABLE, sizeof(Extra));
     }
-    if (!addrs || !rssis || !used_ || !order_ || !extra) {
+    if (!addrs || !rssis || !used_ || !order_ || !extra || !logBits_) {
         Serial.println("blescan: FATAL -- no room for the address table");
         for (;;) delay(1000);
     }
@@ -440,28 +452,81 @@ bool lastAlert(ui::AlertRec& out) {
     return out.threat != ui::TH_NONE;
 }
 
+// The rollover clear: the address table and its counts. The dial's blips and
+// the alert stay. Main loop only (logging::tick), like RESET COUNTERS; the
+// lock keeps the scan callback out while it empties. Extra is re-initialised
+// per slot on insert, so it need not be wiped here.
+void rollover() {
+    portENTER_CRITICAL(&mux);
+    memset(used_, 0, TABLE);
+    nUsed = 0; nOrder = 0; nUnique = 0;
+    nFollowing = 0;
+    portEXIT_CRITICAL(&mux);
+}
+
+namespace {
+
+// A row snapshot, copied out under the lock so a sighting cannot tear it.
+struct Row { uint8_t addr[6]; int8_t rssi; Extra e; };
+
+// Same rule as WiFi: no position yet -> retried; no UTC at first sight
+// (firstEpoch is set once) -> never.
+applog::Verdict verdictOf(const Extra& e) {
+    if (!e.firstEpoch) return applog::NEVER;
+    return e.located ? applog::WRITE : applog::WAIT;
+}
+
+int formatRow(const Row& r, char* buf, int cap) {      // bytes pinned in wiglerow.h
+    return wiglerow::ble(buf, cap, r.addr, r.e.name, r.e.firstEpoch, r.rssi,
+                         r.e.lat7, r.e.lon7);
+}
+
+struct LogSrc : applog::Source {
+    uint32_t count() override {
+        portENTER_CRITICAL(&mux);
+        const uint32_t n = nOrder;
+        portEXIT_CRITICAL(&mux);
+        return n;
+    }
+    uint32_t capacity() override { return TABLE; }
+    uint8_t* doneBits() override { return logBits_; }
+    applog::Verdict verdict(uint32_t i) override {
+        applog::Verdict v = applog::WAIT;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) v = verdictOf(extra[order_[i]]);
+        portEXIT_CRITICAL(&mux);
+        return v;
+    }
+    int format(uint32_t i, char* buf, int cap) override {
+        Row r;
+        bool have = false;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) {
+            const uint16_t slot = order_[i];
+            memcpy(r.addr, addrs[slot], 6);
+            r.rssi = rssis[slot];
+            r.e = extra[slot];
+            have = true;
+        }
+        portEXIT_CRITICAL(&mux);
+        if (!have || verdictOf(r.e) != applog::WRITE) return 0;
+        return formatRow(r, buf, cap);
+    }
+} logSrc;
+
+} // namespace
+
+applog::Source& logSource() { return logSrc; }
+
+// The whole table at once, for the console WIGLE dump; same bytes as the file.
 uint32_t exportRows(Print& out, uint32_t& skipped) {
-    char mac[20], name[48], la[20], lo[20], when[24];
+    char row[applog::ROW_MAX];
     uint32_t rows = 0;
-
-    for (uint32_t i = 0; i < nOrder; i++) {
-        const uint16_t slot = order_[i];
-        const Extra& e = extra[slot];
-        if (!e.located || !e.firstEpoch) { skipped++; continue; }
-
-        csv::mac(mac, addrs[slot]);
-        csv::quote(e.name, name, sizeof name);
-        csv::deg7(la, e.lat7);
-        csv::deg7(lo, e.lon7);
-        csv::stampUtc(when, e.firstEpoch);
-
-        // Type BLE, and "Misc [LE]" in the AuthMode column -- the convention
-        // Bluetooth rows use there, where WiFi puts its cipher suite. Channel
-        // and Frequency are both 0: BLE advertises on three channels and we do
-        // not know which one carried this. Empty RCOIs/MfgrId before Type keep
-        // the row on the full WigleWifi-1.6 column set.
-        out.printf("%s,%s,Misc [LE],%s,0,0,%d,%s,%s,0,%u,,,BLE\n",
-                   mac, name, when, (int)rssis[slot], la, lo, 30u);
+    const uint32_t n = logSrc.count();
+    for (uint32_t i = 0; i < n; i++) {
+        const int len = logSrc.format(i, row, sizeof row);
+        if (len <= 0) { skipped++; continue; }
+        out.write((const uint8_t*)row, (size_t)len);
         rows++;
     }
     return rows;
