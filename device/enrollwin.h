@@ -19,8 +19,9 @@ enum Mode : uint8_t { IDLE, ADOPT, UNENROL };
 constexpr uint32_t ADOPT_MS        = 60000;   // an invite stays open this long
 constexpr uint32_t TX_MS           = 25;      // boards listen ~30-60 ms per cycle
 constexpr uint32_t UNENROL_MIN_MS  = 15000;   // at least this long on air
-// Silence needed after the last board answered. Short because the CYD's own
-// node/coordinator tables already age a board out 20 s after its last frame.
+// Silence needed after the last board answered. Short because boardsHeard
+// already counts only boards heard in the last 20 s (meshlive::BOARD_QUIET_MS;
+// the coordinator table times out at 20 s too).
 constexpr uint32_t UNENROL_QUIET_MS = 8000;
 constexpr uint32_t UNENROL_MAX_MS  = 120000;  // hard cap: give up, and say so
 

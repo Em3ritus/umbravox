@@ -71,7 +71,7 @@ Boot order matters: **start coordinators BEFORE nodes** — a node that binds to
 - UI loss is **mesh-wide / max-cluster**, not yet per-coordinator rows — enough to decide *whether* to add a coordinator, not yet *which* cluster is hottest.
 
 ## Bonus (hardware is out anyway): SD logging leftovers
-- SD wardrive logging acceptance item **#7** (flush-duration measurement): **measured 2026-10-20.** Each save rewrites the whole CSV atomically; on a ~10–11 row / ~1.4 KB file the build took 1–2 ms and the flush (the fsync-class stall that competes with capture on the single core) 16–19 ms — a ~20 ms stall every `FLUSH_MS` (30 s). Write scales ~linearly with rows (~0.1 ms/row); the flush is roughly the card's commit floor, so even a long drive stays a sub-second periodic stall. Instrumented in `sdlog.cpp` (serial line `sdlog: save N rows -- write X ms, flush Y ms`).
+- SD wardrive logging acceptance item **#7** (flush-duration measurement): **measured 2026-10-20** (with the old whole-file logger, since replaced by append-only batches: see the 2026-10-27 field-fixes plan). Each save rewrote the whole CSV atomically; on a ~10–11 row / ~1.4 KB file the build took 1–2 ms and the flush (the fsync-class stall that competes with capture on the single core) 16–19 ms — a ~20 ms stall every `FLUSH_MS` (30 s). Write scales ~linearly with rows (~0.1 ms/row); the flush is roughly the card's commit floor, so even a long drive stays a sub-second periodic stall. Instrumented in `sdlog.cpp` (serial line `sdlog: save N rows -- write X ms, flush Y ms`).
 - A real geolocated wardrive upload still wants a stable outdoor GPS fix (the mesh run above does not).
 
 ## Results — 2026-10-20 overnight run (0/1-coordinator path validated)

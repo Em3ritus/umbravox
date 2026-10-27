@@ -12,6 +12,7 @@
 #include "model.h"
 #include "signatures.h"
 class Print;
+namespace applog { struct Source; }
 
 namespace blescan {
 
@@ -38,9 +39,21 @@ void setDuty(uint8_t pct);
 void reset();
 
 // Emit Bluetooth rows of a WigleWifi-1.6 CSV, after the WiFi ones.
+// (The WIGLE console dump; the SD log appends through logSource().)
 uint32_t exportRows(Print& out, uint32_t& skipped);
+
+// The table's rows, first-seen order, for the append-only logger (applog.h).
+applog::Source& logSource();
+
+// Clear the address table for a log rollover, keeping the dial and alert.
+// Main loop only.
+void rollover();
 
 uint32_t uniques();
 uint32_t adverts();
+// Adverts from new addresses dropped: the table was past its insert limit.
+uint32_t tableDrops();
+// Inserts past dedup::PROBE_LIMIT while uncrowded: a possible collision flood.
+uint32_t longProbes();
 
 } // namespace blescan

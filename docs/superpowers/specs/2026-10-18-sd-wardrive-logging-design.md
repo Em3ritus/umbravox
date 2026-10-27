@@ -1,5 +1,7 @@
 # SD wardrive logging — design
 
+> Superseded by docs/superpowers/plans/2026-10-27-field-fixes.md for logging behaviour.
+
 Design, 2026-10-18.
 
 ## Intent

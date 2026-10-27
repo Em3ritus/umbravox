@@ -41,7 +41,7 @@ test_phase: test_phase.cpp ../device/phase.h
 test_wigle: test_wigle.cpp ../device/wigle.h
 	$(CXX) $(CXXFLAGS) -o $@ test_wigle.cpp -lm
 
-test_logging: test_logging.cpp ../device/logging.cpp ../device/logging.h ../device/sdlog.h ../device/csv.h
+test_logging: test_logging.cpp ../device/logging.cpp ../device/logging.h ../device/sdlog.h ../device/csv.h ../device/applog.h ../device/wigle.h
 	$(CXX) $(CXXFLAGS) -o $@ test_logging.cpp ../device/logging.cpp -lm
 
 test_csv: test_csv.cpp ../device/csv.h ../ui/gnss.cpp ../ui/gnss.h
@@ -88,8 +88,43 @@ test_muffin: test_muffin.cpp $(PAL_DEPS) $(HDR)
 
 test_sweep: test_sweep.cpp ../ui/sweep.cpp $(PAL_DEPS) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_sweep.cpp ../ui/sweep.cpp $(PAL_DEPS) -lm
+
+# The append-only WiGLE logger core: cursors, row cap, retry, exact-once
+# delivery across failed writes, and the rollover rule. Pure; faked card.
+test_applog: test_applog.cpp ../device/applog.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_applog.cpp -lm
+
+test_wiglerow: test_wiglerow.cpp ../device/wiglerow.h ../device/csv.h
+	$(CXX) $(CXXFLAGS) -o $@ test_wiglerow.cpp -lm
+
+# The DOMAIN map projection: bounding-box cull, agreement with the old
+# per-node projection, the refresh cache, and a host timing of both loops.
+test_plotproj: test_plotproj.cpp ../device/plotproj.h
+	$(CXX) $(CXXFLAGS) -o $@ test_plotproj.cpp -lm
+
+# The dedup probe cap::insert and the BLE callback run with interrupts off:
+# bounded, never overwrites a slot when full, gates the evil-twin pass.
+test_dedup: test_dedup.cpp ../device/dedup.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_dedup.cpp -lm
+
+# When blescan stops and restarts the scan to empty the library's result map.
+test_blerecycle: test_blerecycle.cpp ../device/blerecycle.h
+	$(CXX) $(CXXFLAGS) -o $@ test_blerecycle.cpp -lm
+
+# Node expiry (wrap-safe, 75 s) and the Core's camp hold after the last node.
+test_meshlive: test_meshlive.cpp ../device/meshlive.h
+	$(CXX) $(CXXFLAGS) -o $@ test_meshlive.cpp -lm
+
+# The evil-twin pass budget: a token bucket of entry visits, so a beacon flood
+# cannot keep interrupts off for the whole table on every fake SSID.
+test_twinbudget: test_twinbudget.cpp ../device/twinbudget.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_twinbudget.cpp -lm
+
 test_enrollwin: test_enrollwin.cpp ../device/enrollwin.h
 	$(CXX) $(CXXFLAGS) -o $@ test_enrollwin.cpp -lm
+
+test_idlemode: test_idlemode.cpp ../device/idlemode.h ../ui/model.h ../ui/nav.cpp $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_idlemode.cpp $(SRC_NOMAIN) -lm
 
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
@@ -117,7 +152,10 @@ test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
 test_pack_parity: test_pack_parity.cpp packload.h $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_pack_parity.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_perflog test_trig test_contrast test_pack_parity
+test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_footer.cpp $(SRC_NOMAIN) -lm
+
+TESTS = test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_idlemode test_perflog test_trig test_contrast test_pack_parity
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:

@@ -8,6 +8,7 @@
 #include "model.h"
 #include "signatures.h"
 class Print;
+namespace applog { struct Source; }
 
 namespace cap {
 
@@ -60,7 +61,15 @@ uint32_t deauthPerS();
 // Emit WiFi rows of a WigleWifi-1.6 CSV. The caller writes the markers and
 // the column header; `skipped` accumulates rows dropped for want of a
 // position or a clock.
+// The WIGLE console dump uses this; the SD log appends through logSource().
 uint32_t exportRows(Print& out, uint32_t& skipped);
+
+// The table's rows, first-seen order, for the append-only logger (applog.h).
+applog::Source& logSource();
+
+// Clear the dedup table and its counts for a log rollover, keeping the dial,
+// alerts and probes. Main loop only (between cap::tick and the draw).
+void rollover();
 
 // How many known APs carry a position. The gap between this and uniques()
 // is what will not upload to WiGLE.
@@ -79,5 +88,15 @@ uint32_t localFrames(); // only what this radio heard
 uint32_t uniques();     // distinct BSSIDs
 uint16_t tableUse();    // dedup slots used
 uint16_t tableCap();
+// Frames from new APs dropped because the table was past its insert limit
+// (dedup.h): the backstop behind the rollover, zero in normal running.
+uint32_t tableDrops();
+// Inserts that needed a probe chain past dedup::PROBE_LIMIT while the table
+// was not crowded: under the keyed hash, the sign of a collision flood.
+uint32_t longProbes();
+// Evil-twin checks deferred because the visit budget was spent (a beacon
+// flood), checks lost from the full deferral queue, and checks dropped by a
+// rollover before they ran (twinbudget.h).
+void twinStats(uint32_t& deferred, uint32_t& lost, uint32_t& stale);
 
 } // namespace cap

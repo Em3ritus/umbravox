@@ -10,7 +10,7 @@ namespace ui {
 namespace Gnss {
 
 struct Fix {
-    bool     valid = false;   // a GGA with quality > 0
+    bool     valid = false;   // a GGA with quality > 0 has been seen; fresh() is the test
     int32_t  lat7  = 0;       // degrees x 10^7, north positive
     int32_t  lon7  = 0;       // degrees x 10^7, east positive
     uint8_t  used  = 0;       // satellites in the solution
@@ -50,6 +50,7 @@ bool fresh(uint32_t nowMs);
 
 uint32_t good();   // sentences accepted
 uint32_t bad();    // sentences rejected on checksum
+uint32_t qualZero(); // GGAs with quality 0 (no solution): counted, not acted on
 void reset();
 
 } // namespace Gnss

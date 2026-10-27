@@ -8,6 +8,12 @@
 #include <esp_heap_caps.h>
 #include <Print.h>
 #include "csv.h"
+#include "applog.h"
+#include "wiglerow.h"
+#include "dedup.h"
+#include "blerecycle.h"
+#include "elog.h"
+#include <string.h>
 #include "gpstrack.h"
 #include "gnss.h"
 #include <math.h>
@@ -20,7 +26,15 @@ uint8_t duty = 30;                                // % of the radio BLE takes
 
 // Also PSRAM-backed. BLE sees far more distinct addresses than WiFi does,
 // because most of them are randomised and rotate every few minutes.
+// Past its insert limit a new address is simply not tracked (counted in
+// tableDrops()), after a bounded probe (dedup.h) -- and the log rolls over at
+// applog::ROLLOVER_BLE, well before that.
 constexpr int TABLE  = 4096;                      // distinct addresses tracked
+static_assert(applog::ROLLOVER_BLE * 100u <= (uint32_t)TABLE * 65u,
+              "BLE rollover must leave the address table <= 65% full");
+static_assert(TABLE <= 65536, "order_ and applog::Pending hold 16-bit slot indices");
+static_assert(applog::ROLL_HARD_BLE > applog::ROLLOVER_BLE && applog::ROLL_HARD_BLE * 100u <= (uint32_t)TABLE * 85u,
+              "the forced-roll ceiling sits above the rollover, below a full table");
 constexpr int RECENT = 16;                        // blips BLE may put on the dial
 
 // Per-device detail, mirroring what capture keeps for access points. BLE
@@ -68,10 +82,20 @@ int8_t*  rssis = nullptr;
 Extra*   extra = nullptr;
 bool*    used_ = nullptr;
 uint32_t nUsed = 0;
+// The table-full backstop (dedup.h), as in capture.
+constexpr uint32_t INSERT_LIMIT = dedup::insertLimit(TABLE);
+static_assert(applog::ROLL_HARD_BLE < INSERT_LIMIT,
+              "the forced roll must come before the table refuses inserts");
+uint32_t maxProbe_ = 0;
+volatile uint32_t nTableDrops = 0;
+volatile uint32_t nLongProbes = 0;
+static_assert(applog::ROLLOVER_BLE <= dedup::crowdLimit(TABLE),
+              "below the rollover no insert may be dropped for a long probe");
 
 // Insertion order, so the codex can list newest first without sorting.
 uint16_t* order_ = nullptr;
 uint32_t  nOrder = 0;
+uint8_t*  logBits_ = nullptr;         // the logger's done-bits (applog.h)
 
 struct Blip { uint16_t angle; uint8_t dist; uint32_t lastMs; bool live; };
 Blip recent_[RECENT];
@@ -80,11 +104,9 @@ ui::AlertRec alert_;
 volatile uint32_t nAdverts = 0, nUnique = 0;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-uint32_t hashAddr(const uint8_t* a) {
-    uint32_t h = 2166136261u;
-    for (int i = 0; i < 6; i++) { h ^= a[i]; h *= 16777619u; }
-    return h;
-}
+// Keyed per boot, like capture's (dedup.h). Drawn in begin().
+uint32_t hashSeed = 0;
+uint32_t hashAddr(const uint8_t* a) { return dedup::hashMac(a, hashSeed); }
 
 // BLE advertisers are weaker than APs, so the dial scale differs: -40dBm is
 // on top of us, -100 rides the outer ring. Using the WiFi mapping here would
@@ -147,37 +169,36 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
             alert_.atMs = millis();
         }
         const uint32_t h = hashAddr(a);
-        int slot = -1;
-        const int home = (int)(h % TABLE);
-        for (int probe = 0; probe < TABLE; probe++) {
-            const int i = (home + probe) % TABLE;
-            if (!used_[i]) {
-                if (nUsed < TABLE) {
-                    used_[i] = true;
-                    for (int k = 0; k < 6; k++) addrs[i][k] = a[k];
-                    rssis[i] = (int8_t)rssi;
-                    extra[i] = Extra{};
-                    extra[i].bestRssi = -127;
-                    extra[i].firstEpoch = ui::Gnss::utcEpoch(millis());
-                    extra[i].firstMs = millis();
-                    {
-                        int32_t la, lo;
-                        if (gpstrack::at(millis(), 0, la, lo)) {
-                            extra[i].firstLat7 = la;
-                            extra[i].firstLon7 = lo;
-                            extra[i].hasFirst = true;
-                        }
-                    }
-                    order_[nOrder++] = (uint16_t)i;
-                    nUsed++;
-                    nUnique++;
-                    slot = i;
+        // Bounded, and FULL (not tracked, counted) past the insert limit:
+        // the same backstop as capture's table (dedup.h).
+        const dedup::Hit hit = dedup::find(h, TABLE, nUsed, INSERT_LIMIT, maxProbe_,
+            [](uint32_t i) { return used_[i]; },
+            [a](uint32_t i) { return memcmp(addrs[i], a, 6) == 0; });
+        int slot = hit.slot;
+        if (hit.kind == dedup::FULL) nTableDrops++;
+        if (hit.kind == dedup::FOUND) rssis[slot] = (int8_t)rssi;
+        if (hit.kind == dedup::INSERT) {
+            const int i = slot;
+            used_[i] = true;
+            for (int k = 0; k < 6; k++) addrs[i][k] = a[k];
+            rssis[i] = (int8_t)rssi;
+            extra[i] = Extra{};
+            extra[i].bestRssi = -127;
+            extra[i].firstEpoch = ui::Gnss::utcEpoch(millis());
+            extra[i].firstMs = millis();
+            {
+                int32_t la, lo;
+                if (gpstrack::at(millis(), 0, la, lo)) {
+                    extra[i].firstLat7 = la;
+                    extra[i].firstLon7 = lo;
+                    extra[i].hasFirst = true;
                 }
-                break;
             }
-            bool same = true;
-            for (int k = 0; k < 6; k++) if (addrs[i][k] != a[k]) { same = false; break; }
-            if (same) { rssis[i] = (int8_t)rssi; slot = i; break; }
+            order_[nOrder++] = (uint16_t)i;
+            nUsed++;
+            nUnique++;
+            dedup::noteInsert(maxProbe_, hit);
+            if (dedup::longProbe(hit)) nLongProbes++;
         }
 
         // Name and position, recorded at the strongest sighting.
@@ -221,23 +242,27 @@ BLEScan* scan = nullptr;
 } // namespace
 
 void begin() {
-    // Allocate before touching any of it. PSRAM if it is there, internal if
-    // it is not -- the code should still run on a board without it.
+    // Allocate before touching any of it, in PSRAM. The internal-RAM fallback
+    // needs ~300 KB, more than the heap has free once Wi-Fi and BLE are up, so
+    // in practice a board without PSRAM halts with the FATAL serial message
+    // (and capture's table would already have halted it). Not relied on.
     addrs  = (uint8_t(*)[6])heap_caps_malloc(6 * TABLE, MALLOC_CAP_SPIRAM);
     rssis  = (int8_t*)heap_caps_malloc(TABLE, MALLOC_CAP_SPIRAM);
     used_  = (bool*)heap_caps_malloc(TABLE, MALLOC_CAP_SPIRAM);
     extra  = (Extra*)heap_caps_malloc(sizeof(Extra) * TABLE, MALLOC_CAP_SPIRAM);
     order_ = (uint16_t*)heap_caps_malloc(sizeof(uint16_t) * TABLE, MALLOC_CAP_SPIRAM);
-    const bool inPsram = addrs && rssis && used_ && order_ && extra;
+    logBits_ = (uint8_t*)heap_caps_calloc((TABLE + 7) / 8, 1, MALLOC_CAP_SPIRAM);
+    const bool inPsram = addrs && rssis && used_ && order_ && extra && logBits_;
     if (!inPsram) {
-        free(addrs); free(rssis); free(used_); free(order_); free(extra);
+        free(addrs); free(rssis); free(used_); free(order_); free(extra); free(logBits_);
+        logBits_ = (uint8_t*)calloc((TABLE + 7) / 8, 1);
         addrs  = (uint8_t(*)[6])calloc(TABLE, 6);
         rssis  = (int8_t*)calloc(TABLE, 1);
         used_  = (bool*)calloc(TABLE, 1);
         order_ = (uint16_t*)calloc(TABLE, sizeof(uint16_t));
         extra  = (Extra*)calloc(TABLE, sizeof(Extra));
     }
-    if (!addrs || !rssis || !used_ || !order_ || !extra) {
+    if (!addrs || !rssis || !used_ || !order_ || !extra || !logBits_) {
         Serial.println("blescan: FATAL -- no room for the address table");
         for (;;) delay(1000);
     }
@@ -247,6 +272,7 @@ void begin() {
     for (int i = 0; i < TABLE;  i++) used_[i] = false;
     nOrder = 0;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
+    hashSeed = esp_random();      // Wi-Fi is already up: hardware RNG; before the scan
 
     BLEDevice::init("");
     scan = BLEDevice::getScan();
@@ -351,9 +377,41 @@ void fillSights(ui::State& s, int offset) {
     s.nSights = (uint8_t)n;
 }
 
+namespace {
+uint32_t lastCycleMs = 0;     // last stop/start, by the recycle or setDuty
+uint32_t nRestarts = 0;       // scans found stopped and started again
+elog::Gate restartGate;
+
+// Bound the library's result map and keep the scan alive (blerecycle.h).
+// stop() then start(0, nullptr, false) is the sequence setDuty() has always
+// used; is_continue = false is what clears the map. start() runs only after a
+// successful stop(), so the map is never cleared while discovery can still
+// add to it. On this single-core part the NimBLE host task outranks the loop,
+// so it is never part-way through the scan callback when this runs.
+void recycle(uint32_t nowMs) {
+    if (!scan) return;
+    const uint32_t count = (uint32_t)scan->getResults()->getCount();
+    const blerecycle::Action a =
+        blerecycle::shouldRecycle(count, nowMs, lastCycleMs, scan->isScanning(), duty);
+    if (a == blerecycle::NONE) return;
+    lastCycleMs = nowMs;
+    if (!scan->stop()) return;               // try again next time round
+    const bool ok = scan->start(0, nullptr, false);
+    if (a == blerecycle::RESTART) {
+        nRestarts++;
+        if (restartGate.allow(nowMs, 60000))
+            elog::event(elog::WARN, "ble", "scan had stopped, restarted (%s, %lu so far, "
+                        "heap %uKB)", ok ? "ok" : "start failed", (unsigned long)nRestarts,
+                        (unsigned)(ESP.getFreeHeap() >> 10));
+    }
+}
+} // namespace
+
 // Swept on a timer rather than per advert: the distance maths is cheap but
 // not free, and nothing here changes meaningfully inside five seconds.
 void tick(uint32_t nowMs) {
+    recycle(nowMs);
+
     static uint32_t lastScan = 0;
     if (!extra || nowMs - lastScan < FOLLOW_SCAN_MS) return;
     lastScan = nowMs;
@@ -417,6 +475,7 @@ void setDuty(uint8_t pct) {
     if (pct == duty || !scan) return;
     duty = pct;
     scan->stop();
+    lastCycleMs = millis();       // a fresh scan: the recycle clock restarts
     if (duty == 0) return;        // 0 means hand the whole radio to WiFi
     scan->setWindow((uint16_t)(BLE_INTERVAL_MS * duty / 100));
     scan->start(0, nullptr, false);
@@ -427,6 +486,7 @@ void reset() {
     for (int i = 0; i < TABLE;  i++) used_[i] = false;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     nUsed = 0; nOrder = 0; nAdverts = 0; nUnique = 0;
+    maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
     alert_ = ui::AlertRec{};
     for (int i = 0; i < TABLE; i++) extra[i] = Extra{};
     nFollowing = 0;
@@ -440,28 +500,83 @@ bool lastAlert(ui::AlertRec& out) {
     return out.threat != ui::TH_NONE;
 }
 
+// The rollover clear: the address table and its counts. The dial's blips and
+// the alert stay. Main loop only (logging::tick), like RESET COUNTERS; the
+// lock keeps the scan callback out while it empties. Extra is re-initialised
+// per slot on insert, so it need not be wiped here.
+void rollover() {
+    portENTER_CRITICAL(&mux);
+    memset(used_, 0, TABLE);
+    nUsed = 0; nOrder = 0; nUnique = 0;
+    maxProbe_ = 0;
+    nFollowing = 0;
+    portEXIT_CRITICAL(&mux);
+}
+
+namespace {
+
+// A row snapshot, copied out under the lock so a sighting cannot tear it.
+struct Row { uint8_t addr[6]; int8_t rssi; Extra e; };
+
+// Same rule as WiFi: no position yet -> retried; no UTC at first sight
+// (firstEpoch is set once) -> never.
+applog::Verdict verdictOf(const Extra& x, uint32_t nowMs, bool final) {
+    return applog::holdVerdict(x.located, x.firstEpoch, x.firstMs, x.lastMs, nowMs, final);
+}
+// Exportable at all (the console dump's rule: no hold).
+bool exportable(const Extra& x) { return x.located && x.firstEpoch; }
+
+int formatRow(const Row& r, char* buf, int cap) {      // bytes pinned in wiglerow.h
+    return wiglerow::ble(buf, cap, r.addr, r.e.name, r.e.firstEpoch, r.rssi,
+                         r.e.lat7, r.e.lon7);
+}
+
+struct LogSrc : applog::Source {
+    uint32_t count() override {
+        portENTER_CRITICAL(&mux);
+        const uint32_t n = nOrder;
+        portEXIT_CRITICAL(&mux);
+        return n;
+    }
+    uint32_t capacity() override { return TABLE; }
+    uint8_t* doneBits() override { return logBits_; }
+    applog::Verdict verdict(uint32_t i, uint32_t nowMs, bool final) override {
+        applog::Verdict v = applog::WAIT;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) v = verdictOf(extra[order_[i]], nowMs, final);
+        portEXIT_CRITICAL(&mux);
+        return v;
+    }
+    int format(uint32_t i, char* buf, int cap) override {
+        Row r;
+        bool have = false;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) {
+            const uint16_t slot = order_[i];
+            memcpy(r.addr, addrs[slot], 6);
+            r.rssi = rssis[slot];
+            r.e = extra[slot];
+            have = true;
+        }
+        portEXIT_CRITICAL(&mux);
+        if (!have || !exportable(r.e)) return 0;
+        return formatRow(r, buf, cap);
+    }
+} logSrc;
+
+} // namespace
+
+applog::Source& logSource() { return logSrc; }
+
+// The whole table at once, for the console WIGLE dump; same bytes as the file.
 uint32_t exportRows(Print& out, uint32_t& skipped) {
-    char mac[20], name[48], la[20], lo[20], when[24];
+    char row[applog::ROW_MAX];
     uint32_t rows = 0;
-
-    for (uint32_t i = 0; i < nOrder; i++) {
-        const uint16_t slot = order_[i];
-        const Extra& e = extra[slot];
-        if (!e.located || !e.firstEpoch) { skipped++; continue; }
-
-        csv::mac(mac, addrs[slot]);
-        csv::quote(e.name, name, sizeof name);
-        csv::deg7(la, e.lat7);
-        csv::deg7(lo, e.lon7);
-        csv::stampUtc(when, e.firstEpoch);
-
-        // Type BLE, and "Misc [LE]" in the AuthMode column -- the convention
-        // Bluetooth rows use there, where WiFi puts its cipher suite. Channel
-        // and Frequency are both 0: BLE advertises on three channels and we do
-        // not know which one carried this. Empty RCOIs/MfgrId before Type keep
-        // the row on the full WigleWifi-1.6 column set.
-        out.printf("%s,%s,Misc [LE],%s,0,0,%d,%s,%s,0,%u,,,BLE\n",
-                   mac, name, when, (int)rssis[slot], la, lo, 30u);
+    const uint32_t n = logSrc.count();
+    for (uint32_t i = 0; i < n; i++) {
+        const int len = logSrc.format(i, row, sizeof row);
+        if (len <= 0) { skipped++; continue; }
+        out.write((const uint8_t*)row, (size_t)len);
         rows++;
     }
     return rows;
@@ -469,5 +584,7 @@ uint32_t exportRows(Print& out, uint32_t& skipped) {
 
 uint32_t uniques() { return nUnique; }
 uint32_t adverts() { return nAdverts; }
+uint32_t tableDrops() { return nTableDrops; }
+uint32_t longProbes() { return nLongProbes; }
 
 } // namespace blescan

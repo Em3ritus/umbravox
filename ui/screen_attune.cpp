@@ -46,6 +46,7 @@ void rowValue(const Settings& st, int row, char* out) {
             if (!v)            cat(out, "NEVER");
             else if (v < 60) { u2s(out, v);      cat(out, "S"); }
             else             { u2s(out, v / 60); cat(out, "M"); }
+            if (v) cat(out, st.idleMode == IDLE_OFF ? " OFF" : st.idleMode == IDLE_ANIM ? " ANIM" : " DIM");
             break;
         }
         case 1: {
@@ -74,7 +75,7 @@ const char* rowLabel(int row) {
         case 2: return "BLE";
         case 3: return "BANDS";
         case 4: return "BRIGHT";
-        case 5: return "DIM AT";
+        case 5: return "IDLE";
         default: return "RESET";
     }
 }
@@ -137,7 +138,8 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
             // body moves when either does.
             if (s.set.bright != prev.set.bright || s.set.dwellMs != prev.set.dwellMs ||
                 s.set.bleDuty != prev.set.bleDuty || s.set.bands != prev.set.bands ||
-                s.set.alertMin != prev.set.alertMin || s.set.idleIdx != prev.set.idleIdx)
+                s.set.alertMin != prev.set.alertMin || s.set.idleIdx != prev.set.idleIdx ||
+                s.set.idleMode != prev.set.idleMode)
                 d->add(0, BODY_Y, W, BODY_H);
             dirtyChrome(*d, s, prev);
         }

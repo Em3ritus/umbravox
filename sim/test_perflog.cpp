@@ -76,6 +76,29 @@ int main() {
     field(b, col("heap_min"), f, sizeof f);
     check("heap minimum recorded",          !strcmp(f, "60000"));
 
+    printf("counter deltas:\n");
+    {
+        uint32_t last = 1000;
+        check("a normal step is the difference",      delta(1500, last) == 500 && last == 1500);
+        check("no change is zero",                    delta(1500, last) == 0);
+        // RESET COUNTERS zeroes the source: the field log showed 429410830 here.
+        last = 5000;
+        check("a counter reset gives the post-reset count", delta(30, last) == 30);
+        check("and re-bases on it",                   last == 30 && delta(90, last) == 60);
+        last = 5000;
+        check("reset to exactly zero gives zero",     delta(0, last) == 0);
+        // A genuine 2^32 wrap (months at these rates) is still the true step.
+        last = 0xFFFFFF00u;
+        check("a wrap without a reset is the true difference", delta(0x100u, last) == 0x200u);
+        // The row the field log showed: a reset must never print ~429 million.
+        Acc ra; Snap rs; uint32_t lw = 1500, la = 7;
+        rs.wifiFrames = delta(0, lw); rs.bleAdverts = delta(0, la);
+        char rb[300], rf[32];
+        row(rb, sizeof rb, ra, rs, 10002);
+        field(rb, col("ble_aps"), rf, sizeof rf);
+        check("ble_aps after RESET COUNTERS is 0, not 429410830", !strcmp(rf, "0"));
+    }
+
     printf("defensive:\n");
     Acc z; Snap zs; zs.dark = true;                       // a dark interval: no frames at all
     const int nz = row(b, sizeof b, z, zs, 10000);

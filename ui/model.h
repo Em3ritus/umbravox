@@ -88,12 +88,14 @@ struct Settings {
     // Which alert animation plays. Read only by COSMIC MUFFIN, whose four
     // alerts are its own; the other themes keep their single rite.
     uint8_t  alertStyle = 0;  // AlertStyle
-    // Slack byte. dwellMs makes Settings 2-aligned, so alertStyle alone would
-    // leave a padding byte at the end -- and padding is what the host test
-    // must be able to treat as "a field someone forgot to initialise". This
-    // fills it. The NEXT new setting takes this byte (rename it); the
-    // static_assert in sim/test_settings.cpp will tell you to re-check.
-    uint8_t  reserved = 0;
+    // What the screen does when the idle timeout fires: IdleMode below. Only
+    // meaningful while idleIdx != 0. This took the old slack byte: dwellMs
+    // makes Settings 2-aligned, so without a byte here the struct would end in
+    // padding -- and padding is what the host test must be able to treat as
+    // "a field someone forgot to initialise". Settings is therefore full
+    // again; the NEXT new setting must either widen it deliberately (update
+    // the static_assert in sim/test_settings.cpp) or share a byte.
+    uint8_t  idleMode = 0;    // IdleMode
 };
 
 // COSMIC MUFFIN's alert animations, chosen by Settings.alertStyle.
@@ -101,9 +103,43 @@ enum AlertStyle : uint8_t { AL_SUPERNOVA = 0, AL_VORTEX, AL_COMET, AL_LOCKON,
                             ALERT_STYLE_COUNT };
 
 // Seconds of no touch before the backlight drops. 0 means never.
+// What happens at the idle timeout. DIM is the original behaviour and the
+// default; unknown stored values clamp to it.
+enum IdleMode : uint8_t { IDLE_DIM = 0, IDLE_OFF = 1, IDLE_ANIM = 2, IDLE_MODE_N = 3 };
+
 inline constexpr uint16_t IDLE_S[] = {0, 15, 30, 60, 120, 300};
 constexpr int IDLE_N = (int)(sizeof(IDLE_S) / sizeof(IDLE_S[0]));
 
+// The IDLE row's -/+ walk one round-robin list: NEVER, then every timeout
+// with DIM, then with OFF, then with ANIM, and round to NEVER again. Stored
+// as (idleIdx, idleMode); this maps between the two. Position 0 is NEVER
+// whatever mode is stored; 1..15 = 1 + mode * 5 + (idleIdx - 1).
+constexpr int IDLE_COMBINED_N = 1 + (IDLE_N - 1) * IDLE_MODE_N;   // 16
+
+// Unknown values read the way clampSettings would clamp them (mode -> DIM,
+// idleIdx out of range -> 2).
+inline int idleCombinedIndex(uint8_t idleIdx, uint8_t idleMode) {
+    if (idleIdx >= IDLE_N) idleIdx = 2;
+    if (idleIdx == 0) return 0;
+    if (idleMode >= IDLE_MODE_N) idleMode = IDLE_DIM;
+    return 1 + idleMode * (IDLE_N - 1) + (idleIdx - 1);
+}
+
+// Step the row. Reaching NEVER leaves the stored mode alone; leaving NEVER
+// always starts from 15S DIM (+) or 5M ANIM (-).
+inline void idleStep(Settings& s, int dir) {
+    const int c = (idleCombinedIndex(s.idleIdx, s.idleMode) + (dir < 0 ? IDLE_COMBINED_N - 1 : 1))
+                  % IDLE_COMBINED_N;
+    if (c == 0) {
+        s.idleIdx = 0;
+        if (s.idleMode >= IDLE_MODE_N) s.idleMode = IDLE_DIM;
+        return;
+    }
+    s.idleIdx  = (uint8_t)((c - 1) % (IDLE_N - 1) + 1);
+    s.idleMode = (uint8_t)((c - 1) / (IDLE_N - 1));
+}
+
+constexpr int SET_IDLE_ROW = 5;   // the IDLE row: timeout and mode, round-robin on -/+
 constexpr int SET_ROWS = 7;   // six knobs and a reset
 
 // How many RSSI samples a device keeps. One per sighting rather than one
@@ -193,7 +229,6 @@ struct State {
     bool     sdOk = false;
     char     logName[12] = {0};   // 8.3-ish, as it lands on the card
     uint8_t  logState = 0;        // 0 idle, 1 active, 2 no-card
-    uint32_t logSecs = 0;         // elapsed seconds of the active session
 
     // chrome
     uint32_t uptimeS = 0;

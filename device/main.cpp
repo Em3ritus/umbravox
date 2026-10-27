@@ -20,12 +20,15 @@
 #include "elog.h"
 #include "themeload.h"
 #include "enrollwin.h"
+#include "dedup.h"
+#include "meshlive.h"
 #include "perflog.h"
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
 #include "chanplan.h"
 #include "balance.h"
+#include "idlemode.h"
 #include "rehome.h"
 #include "phase.h"
 #include <esp_now.h>
@@ -204,8 +207,51 @@ static void stripTick(uint32_t now) {
 }
 #endif
 
-// Defined with the console helpers below; setup() hands it to logging.
+// Defined with the console helpers below.
 namespace { static uint32_t writeWigle(Print& out, uint32_t& skipped); }
+
+// What the logger needs from the capture tables (logging.h). The clear runs
+// inside logging::tick, in the main loop between cap::tick and the draw --
+// the same task and point as RESET COUNTERS -- so nothing draws from a table
+// mid-clear.
+namespace logwire {
+uint32_t wifiUniques() { return cap::uniques(); }
+uint32_t bleUniques()  { return blescan::uniques(); }
+void clearTables()     { cap::rollover(); blescan::rollover(); }
+void onRollover(const logging::RollInfo& r) {
+    const char* why = r.reset ? "reset" : "rollover";
+    if (!r.newName[0])
+        elog::event(elog::INFO, "log", "%s at %u APs (%u BLE), not logging", why,
+                    (unsigned)r.wifiAps, (unsigned)r.bleAddrs);
+    else if (r.forced)
+        elog::event(elog::WARN, "log", "%s at %u APs (%u BLE), new file %s, forced: "
+                    "%u rows not written", why, (unsigned)r.wifiAps, (unsigned)r.bleAddrs,
+                    r.newName, (unsigned)r.lost);
+    else
+        elog::event(elog::INFO, "log", "%s at %u APs (%u BLE), new file %s", why,
+                    (unsigned)r.wifiAps, (unsigned)r.bleAddrs, r.newName);
+}
+uint32_t clockMs() { return millis(); }
+void onStopLoss(uint32_t lost, bool reset) {
+    elog::event(elog::WARN, "log", "%u rows not written at stop%s", (unsigned)lost,
+                reset ? " (reset pending)" : "");
+}
+logging::Hooks hooks() {
+    logging::Hooks h;
+    h.wifi = &cap::logSource();
+    h.ble  = &blescan::logSource();
+    h.wifiUniques = wifiUniques;
+    h.bleUniques  = bleUniques;
+    h.clearTables = clearTables;
+    h.onRollover  = onRollover;
+    h.clockMs     = clockMs;
+    h.onStopLoss  = onStopLoss;
+    return h;
+}
+// RESET COUNTERS: the full reset, which logging turns into a rollover to a
+// new file while logging (never a rewrite of the current one).
+void resetAll() { cap::reset(); blescan::reset(); }
+} // namespace logwire
 
 // --- collector tier -------------------------------------------------------
 //
@@ -602,6 +648,10 @@ void setup() {
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
 
 #if !defined(WS_C5_35)
+    // 2 KB of RX buffer (~2 s of NMEA at 9600 baud) instead of the default
+    // 256 B (~0.25 s): a loop stall no longer loses sentences. arduino-esp32
+    // 3.x only honours this before begin().
+    gpsPort.setRxBufferSize(2048);
     gpsPort.begin(GPS_BAUD, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
 #endif
     cap::begin();
@@ -617,17 +667,15 @@ void setup() {
     stripTick(millis());
 #endif
     // Card first, then the session machine: it resumes into a fresh file when
-    // the last run ended mid-session. Known limitation (accepted): with no GPS
-    // date yet the filename is the dateless WD-NNNN counter, which is not
-    // persisted, so a reboot before the first fix can reuse a name -- and a
-    // reused dateless name OVERWRITES (destroys) the earlier dateless session's
-    // file. Fix deferred to hardware: scan the card, count past any WD-*.CSV.
+    // the last run ended mid-session -- never the old one, which is left as
+    // the power cut found it. A name already on the card is never reused
+    // (logging counts past WD-NNNN files and skips any existing name).
     sdlog::begin();
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
     // Theme packs: after the card and the log (skips are logged), and before
     // loop()'s first prefs::load(), so a saved pack name finds its pack.
     themeload::scan();
-    logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
+        logging::begin(prefs::loggingWas(), logwire::hooks(), millis(), ui::Gnss::utcEpoch(millis()));
 #if defined(WS_C5_35)
     Serial.printf("panel up @ %d MHz SPI, GPS LC76G on I2C\n",
                   (int)(SPI_HZ / 1000000));
@@ -713,9 +761,13 @@ const uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 enrollwin::State win;                // when to transmit, and for how long (enrollwin.h)
 uint8_t  oldNet = 0;                 // the net we are telling our nodes to leave
 
-// Any board still answering on this net: nodes in the Core's table, or live
-// coordinators. A reset stays up for as long as this is true.
-bool boardsHeard() { return meshcore::count() > 0 || collector::active(); }
+// Any board still answering on this net: nodes heard in the last 20 s, or
+// live coordinators. A reset stays up for as long as this is true. 20 s is the
+// old node-table timeout: the table now keeps a silent node 75 s (meshlive.h),
+// which would hold every reset up to 55 s longer for nothing.
+bool boardsHeard() {
+    return meshcore::heardWithin(millis(), meshlive::BOARD_QUIET_MS) > 0 || collector::active();
+}
 
 // ADOPT: mint a private net if still open, then invite open devices onto it.
 void open(uint32_t nowMs) {
@@ -909,6 +961,9 @@ void loop() {
     static ui::Dirty dirty;
     const uint32_t t0 = millis();
     perflog::loopStart(t0);        // the gap between loops is the stall we want to see
+    static uint32_t prevLoopMs = 0;
+    const uint32_t loopGap = prevLoopMs ? t0 - prevLoopMs : 0;
+    prevLoopMs = t0;
 
 #if !defined(WS_C5_35)
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
@@ -931,25 +986,72 @@ void loop() {
     blescan::tick(millis());
     logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
 
-    // Diagnostics to /diag.log: an SD write failure, once per occurrence, and a
-    // low-heap warning once (re-armed after the heap recovers) so a slow leak
-    // leaves a fingerprint instead of just a silent reboot.
+    // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
+    // low-heap warnings at 40, 24 and 16 KB (each re-armed 8 KB above it) so a
+    // slow leak leaves a fingerprint instead of just a silent reboot.
     if (logging::takeWriteError())
         elog::event(elog::ERR, "sd", "log write failed (card full or I/O error)");
+    if (logging::takeFileRestart())
+        elog::event(elog::WARN, "sd", "log file shorter than written, continuing in %s",
+                    logging::fileName());
+    // The table-full backstop (dedup.h) firing means the rollover did not
+    // keep up. Rare by design, so worth a line -- at most one per 30 s.
+    {
+        static elog::Gate fullGate;
+        static uint32_t seenWifi = 0, seenBle = 0;
+        const uint32_t dw = cap::tableDrops(), db = blescan::tableDrops();
+        if ((dw != seenWifi || db != seenBle) && fullGate.allow(millis(), 30000)) {
+            elog::event(elog::WARN, "cap", "table full: %lu Wi-Fi frames, %lu BLE adverts "
+                        "from new devices dropped (%u/%u slots)",
+                        (unsigned long)dw, (unsigned long)db,
+                        (unsigned)cap::tableUse(), (unsigned)cap::tableCap());
+            seenWifi = dw; seenBle = db;
+        }
+        // A probe chain past dedup::PROBE_LIMIT in an uncrowded table should
+        // not happen under the keyed hash: it suggests BSSIDs chosen to
+        // collide. The devices are still logged; this says someone tried.
+        static elog::Gate longGate;
+        static uint32_t seenLong = 0;
+        const uint32_t lp = cap::longProbes() + blescan::longProbes();
+        if (lp != seenLong && longGate.allow(millis(), 60000)) {
+            elog::event(elog::WARN, "cap", "%lu inserts needed a probe chain over %u slots "
+                        "at low occupancy (possible collision flood)",
+                        (unsigned long)lp, (unsigned)dedup::PROBE_LIMIT);
+            seenLong = lp;
+        }
+        static elog::Gate twinGate;
+        static uint32_t seenTwin = 0, seenLost = 0;
+        uint32_t td, tl, tst;
+        cap::twinStats(td, tl, tst);
+        if ((td != seenTwin || tl != seenLost) && twinGate.allow(millis(), 60000)) {
+            elog::event(elog::WARN, "cap", "evil-twin checks under load: %lu deferred, "
+                        "%lu lost (queue full), %lu dropped by a rollover",
+                        (unsigned long)td, (unsigned long)tl, (unsigned long)tst);
+            seenTwin = td; seenLost = tl;
+        }
+    }
     {
         static uint32_t lastHeapChk = 0;
-        static bool heapWarned = false;
+        // 40 / 24 / 16 KB; re-armed after 60 s 8 KB up; one line per level per 10 min
+        static elog::HeapWarn heapWarn;
         const uint32_t now = millis();
         if (now - lastHeapChk >= 5000) {
             lastHeapChk = now;
             const uint32_t freeK = ESP.getFreeHeap() >> 10;
-            if (freeK < 40 && !heapWarned) {
-                elog::event(elog::WARN, "heap", "low, %uKB free", (unsigned)freeK);
-                heapWarned = true;
-            } else if (freeK > 60) {
-                heapWarned = false;     // recovered: re-arm the one-shot
-            }
+            const uint32_t level = heapWarn.step(freeK, now);
+            if (level)
+                elog::event(elog::WARN, "heap", "low, %uKB free (under %uKB), largest block %uKB",
+                            (unsigned)freeK, (unsigned)level,
+                            (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) >> 10));
         }
+    }
+    // A loop iteration that took over 2 s: the UI, NMEA drain and mesh
+    // assignments all stopped that long. At most one line a minute.
+    {
+        static elog::Gate stallGate;
+        if (loopGap > 2000 && stallGate.allow(millis(), 60000))
+            elog::event(elog::WARN, "loop", "stalled %lu ms, heap %uKB",
+                        (unsigned long)loopGap, (unsigned)(ESP.getFreeHeap() >> 10));
     }
 
     // With nodes in the mesh the Core stops sweeping and holds the report
@@ -958,14 +1060,24 @@ void loop() {
     // costs the Core's own sweep and buys every node's entire catch.
     {
         static bool camped = false;
+        static meshlive::CampHold hold;
         // Camp the report/collection channel either when the CYD runs the mesh
         // itself and has nodes, or when coordinators are live and deliver their
         // batches there. With no coordinator this is exactly today's rule.
         // An open enrol window also parks the Core on the report channel: that is
         // where unassigned boards wait and where coordinators visit, so a
         // broadcast sent while sweeping would only land by luck.
-        const bool want = meshcore::count() > 0 || collector::active()
-                       || enroll::active(millis());
+        // And for CAMP_HOLD_MS after the last node goes (meshlive.h): a node
+        // that went quiet reports on channel 1, and a sweeping Core is there one
+        // dwell in twenty-one, so dropping the camp is what stranded them.
+        const int  nodesNow = meshcore::count();
+        const bool coordNow = collector::active(), enrolNow = enroll::active(millis());
+        const bool want = meshlive::wantCamp(hold, nodesNow, coordNow, enrolNow, millis());
+        // Camping only because of the hold-over: the one case whose end is
+        // worth a diag line (an enrol window closing is not).
+        static bool holdOnly = false;
+        const bool wasHoldOnly = holdOnly;
+        holdOnly = want && hold.held && nodesNow == 0 && !coordNow && !enrolNow;
         if (want != camped) {
             camped = want;
             cap::setCamp(want ? mesh::REPORT_CHAN : 0);
@@ -974,8 +1086,26 @@ void loop() {
                        ? "nodes present -- core holding the report channel"
                    : collector::active()
                        ? "coordinator live -- holding the collection channel"
-                       : "enrol window open -- core holding the report channel")
+                       : enroll::active(millis())
+                       ? "enrol window open -- core holding the report channel"
+                       : "nodes gone -- core holding the report channel a while")
                 : "no nodes -- core sweeping again");
+            static elog::Gate sweepGate;
+            if (!want && wasHoldOnly && sweepGate.allow(millis(), 60000))
+                elog::event(elog::INFO, "mesh", "no node for %us, core sweeping again",
+                            (unsigned)(meshlive::CAMP_HOLD_MS / 1000));
+        }
+        // A node aged out of the table (silent NODE_TIMEOUT_MS): which, and how
+        // long it had been quiet. At most one line per 30 s.
+        static elog::Gate goneGate;
+        static uint32_t seenGone = 0;
+        uint8_t tail[3]; uint32_t ageMs = 0;
+        const uint32_t gone = meshcore::expiredCount(tail, ageMs);
+        if (gone != seenGone && goneGate.allow(millis(), 30000)) {
+            elog::event(elog::INFO, "mesh", "node %02X:%02X:%02X expired after %lus silent "
+                        "(%lu expiries, %d nodes left)", tail[0], tail[1], tail[2],
+                        (unsigned long)(ageMs / 1000), (unsigned long)gone, meshcore::count());
+            seenGone = gone;
         }
     }
 
@@ -1050,6 +1180,7 @@ void loop() {
     static bool     wakeScreen = false;
     static uint8_t  pwmNow = 0;
     static bool     pwmInit = false;
+    static bool     animDirtied = false;   // the animation overwrote the canvas
 
     if (wakeScreen) {
         wakeScreen = false;
@@ -1072,9 +1203,14 @@ void loop() {
 
     // Dim to a fraction of the chosen brightness rather than a fixed level,
     // so someone running at 3% does not get *brighter* when it dims.
-    const uint8_t wantPct = dimmed ? (set.bright > 16 ? set.bright / 8 : 2)
-                                   : set.bright;
-    const uint8_t wantPwm = (uint8_t)((uint32_t)wantPct * 255 / 100);
+    const uint8_t dimPct = set.bright > 16 ? set.bright / 8 : 2;
+    const uint8_t brightPwm = (uint8_t)((uint32_t)set.bright * 255 / 100);
+    const uint8_t dimPwm    = (uint8_t)((uint32_t)dimPct * 255 / 100);
+    // The mode picks the dimmed level (OFF -> 0) and whether the dark panel
+    // runs the animation; DIM reproduces the original numbers exactly.
+    const idlemode::Plan ip = idlemode::plan(set.idleMode, dimmed, pwmNow,
+                                             brightPwm, dimPwm, idleS != 0);
+    const uint8_t wantPwm = ip.pwm;
     if (!pwmInit) { pwmNow = wantPwm; pwmInit = true; }
     if (pwmNow != wantPwm) {
         // Ramp rather than snap: a backlight that steps is startling in the
@@ -1084,7 +1220,20 @@ void loop() {
         else                  pwmNow = (uint8_t)(pwmNow - step < wantPwm ? wantPwm : pwmNow - step);
         setBacklight(pwmNow);
     }
-    const bool screenOff = dimmed && pwmNow == wantPwm;
+    // plan() judged the ramp with last pass's pwmNow; the ramp may have
+    // arrived just now, so re-judge with the current value (as before).
+    const idlemode::Plan ipNow = idlemode::plan(set.idleMode, dimmed, pwmNow,
+                                                brightPwm, dimPwm, idleS != 0);
+    // The animation state machine runs every pass, dark or not, so every
+    // exit (wake, mode change, timeout NEVER) is seen and forces a full
+    // repaint -- the animation overwrote the canvas.
+    static idlemode::AnimState animState;
+    const bool animOn = ipNow.anim;
+    const idlemode::Step animStep = idlemode::animStep(animState, animOn, millis());
+    if (animStep.exit) animDirtied = true;
+    // An exit that happens while still dark (mode changed to DIM/OFF) draws
+    // one UI frame so the panel is not left showing the animation.
+    const bool screenOff = ipNow.suspend && !animStep.exit;
 
     // Nav consumes the touch before the screen sees it, so a swipe that
     // changes screens does not also land as a tap on the one arriving.
@@ -1124,8 +1273,7 @@ void loop() {
 
     if (nav.resetRequested) {
         nav.resetRequested = false;
-        cap::reset();
-        blescan::reset();
+        logging::resetTables(logwire::resetAll, millis(), ui::Gnss::utcEpoch(millis()));
         alertlog::clear();
         Serial.println("counters cleared");
     }
@@ -1251,6 +1399,22 @@ void loop() {
 
     const bool live = ui::Gnss::fresh(millis());
     s.gpsFix = live;
+    // Why a fix was lost, for diag.log: quality-0 GGAs mean the receiver lost
+    // the sky; checksum failures mean sentences were mangled (a stall or the
+    // wiring); neither means GGAs simply stopped arriving. One line per loss,
+    // at most one per 30 s.
+    {
+        static bool wasLive = false;
+        static uint32_t q0At = 0, badAt = 0;
+        static elog::Gate lostGate;
+        if (live && !wasLive) { q0At = ui::Gnss::qualZero(); badAt = ui::Gnss::bad(); }
+        if (!live && wasLive && lostGate.allow(millis(), 30000))
+            elog::event(elog::INFO, "gps", "fix lost: %lu quality-0 GGAs, %lu bad checksums "
+                        "while it was held",
+                        (unsigned long)(ui::Gnss::qualZero() - q0At),
+                        (unsigned long)(ui::Gnss::bad() - badAt));
+        wasLive = live;
+    }
     s.sats   = live ? ui::Gnss::fix().used : 0;
 
     // Feed the position history that dates node reports.
@@ -1274,6 +1438,26 @@ void loop() {
         // polling -- far faster than a finger.
         delay(5);
 
+        // ANIM: a dot breathing at <= 2 fps, one small blit per frame. On
+        // entry the whole canvas is blanked and blitted once; after that
+        // only the dot's own rectangle(s) are touched. (The enter/exit
+        // decision itself runs every pass, above.)
+        if (animOn) {
+            if (animStep.enter) {
+                canvas.clear(pal::VOID);
+                const ui::Rect all{0, 0, ui::W, ui::H};
+                blitRect(canvas.px, all);
+            }
+            if (animStep.draw) {
+                const idlemode::Dirty d = idlemode::drawFrame(canvas, animStep.frame, animStep.prev,
+                                                              pal::VOID, pal::WITCH_HI);
+                for (int k = 0; k < d.n; k++) {
+                    const ui::Rect ur{d.r[k].x, d.r[k].y, d.r[k].w, d.r[k].h};
+                    blitRect(canvas.px, ur);
+                }
+            }
+        }
+
         // Log on a clock, not a frame count: frame counts mean something
         // different on each side of this branch.
         if (millis() - lastLog >= 10000) {
@@ -1289,7 +1473,6 @@ void loop() {
 
     // Publish the logging session for the footer, after any toggle above.
     s.logState = (uint8_t)logging::state();
-    s.logSecs  = logging::sessionSecs(millis());
     memset(s.logName, 0, sizeof s.logName);
     strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
 
@@ -1331,7 +1514,8 @@ void loop() {
     // screens' stale dirty state. A future navigation path that changes the
     // theme or leaves ASPECT without setting `switched` will show leftover
     // pixels from the old theme.
-    if (switched || justWoke || themeChanged) {
+    if (switched || justWoke || themeChanged || animDirtied) {
+        animDirtied = false;
         dirty.clear();
         dirty.add(0, 0, ui::W, ui::H);
         justWoke = false;

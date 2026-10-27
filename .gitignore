@@ -43,6 +43,15 @@ ui/sigil.h.tmp
 # Web flasher build output (built by CI / make-web-flasher.sh)
 web/dist/
 sim/test_contrast
+sim/test_applog
+sim/test_wiglerow
+sim/test_footer
+sim/test_plotproj
+sim/test_idlemode
+sim/test_dedup
+sim/test_blerecycle
+sim/test_meshlive
+sim/test_twinbudget
 
 # JS tooling
 node_modules/

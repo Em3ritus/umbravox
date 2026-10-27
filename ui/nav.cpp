@@ -36,8 +36,7 @@ void adjust(Settings& st, int row, int dir) {
             break;
         }
         case 5: {
-            int v = (int)st.idleIdx + dir;
-            st.idleIdx = (uint8_t)((v + IDLE_N) % IDLE_N);
+            idleStep(st, dir);
             break;
         }
         case 4: {
@@ -249,7 +248,7 @@ void clampSettings(Settings& s) {
     // need not offer RADAR.
     if (!(pal::sweepMask(s.theme) & (1 << s.sweep))) s.sweep = pal::startSweep(s.theme);
     if (s.alertStyle >= ALERT_STYLE_COUNT) s.alertStyle = AL_SUPERNOVA;
-    // `reserved` is deliberately not clamped: it is compared, never read.
+    if (s.idleMode >= IDLE_MODE_N) s.idleMode = IDLE_DIM;
 }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
@@ -258,7 +257,7 @@ bool settingsEqual(const Settings& a, const Settings& b) {
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
            a.labels   == b.labels   && a.alertStyle == b.alertStyle &&
-           a.reserved == b.reserved;
+           a.idleMode == b.idleMode;
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {

@@ -84,6 +84,38 @@ int main() {
     eq("epoch of 2000-01-01", (long)Gnss::toEpoch(2000, 1, 1, 0, 0, 0), 946684800L);
     eq("epoch of 2026-01-01", (long)Gnss::toEpoch(2026, 1, 1, 0, 0, 0), 1767225600L);
 
+    // Debounce (Task 1 report, 4d): one quality-0 GGA used to clear the fix
+    // at once, which is most of the 75 fix losses in the field log. Now a
+    // quality-0 GGA changes nothing; the fix ages out at FRESH_MS after the
+    // last good GGA, the same window a missing GGA already gets.
+    const char* GOOD = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+    const char* Q0   = "$GPGGA,123520,5000.000,N,01000.000,E,0,00,,,M,,M,,*5E";
+    printf("quality-0 debounce:\n");
+    Gnss::reset();
+    Gnss::sentence(GOOD, 1000);
+    Gnss::sentence(Q0, 2000);
+    eq("one q0: still fresh", Gnss::fresh(2500), 1);
+    eq("q0 counted", (long)Gnss::qualZero(), 1);
+    eq("q0 moves no position", Gnss::fix().lat7, 481173000L);
+    Gnss::sentence(GOOD, 3000);
+    eq("good again: fresh", Gnss::fresh(3500), 1);
+    eq("and fresh to +5 s of it", Gnss::fresh(7999), 1);
+
+    Gnss::reset();
+    Gnss::sentence(GOOD, 1000);
+    for (uint32_t t = 2000; t <= 7000; t += 1000) Gnss::sentence(Q0, t);
+    eq("sustained q0: stale by FRESH_MS", Gnss::fresh(7000), 0);
+    eq("six q0 counted", (long)Gnss::qualZero(), 6);
+    eq("position still the last good one", Gnss::fix().lat7, 481173000L);
+
+    Gnss::reset();
+    Gnss::sentence(GOOD, 1000);
+    Gnss::sentence("$GPRMC,123521,V,,,,,,,230326,,,N*53", 1500);
+    eq("RMC status V does not touch the fix", Gnss::fresh(2000), 1);
+    eq("RMC still supplies the date", Gnss::utcEpoch(1500) != 0, 1);
+    Gnss::reset();
+    eq("reset clears the q0 count", (long)Gnss::qualZero(), 0);
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

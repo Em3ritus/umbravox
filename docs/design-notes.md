@@ -45,8 +45,11 @@ cost 2,056 bytes of RAM and 9,132 of flash.
 The board carries 8 MB that the `esp32-c5-devkitc-1` board definition does
 not assume, so it needs `-DBOARD_HAS_PSRAM`. The dedup tables are the natural
 tenant: touched once per packet, never in the draw path, so the extra latency
-of external RAM costs nothing that matters. **8192 WiFi slots and 4096 BLE
-slots**, against 512 each when they lived in internal RAM.
+of external RAM costs nothing that matters. **32768 WiFi slots and 4096 BLE
+slots** (8192 WiFi at the time of the measurements below), against 512 each
+when they lived in internal RAM. The session rolls over to a new log file and
+clears the table at 20,000 APs (2,600 BLE), so the WiFi table stays under
+about 65% full.
 
 Turning it on paid twice over. Moving the tables out freed internal RAM
 (35.8% -> 28.3%, with free heap going 45 KB -> 87 KB), and **the blit dropped
@@ -336,10 +339,10 @@ already reserves it.
 | **Tiles** | WiFi total, 5 GHz subset, BLE. The stripe colour on each tile is the same colour that band's contacts use on the dial, so the tiles double as the dial's key. |
 | **Circle** | Three bounds: the inner field where contacts live, the band the runes walk, and the outer bound. (The radii and the figure belong to the active theme; this table describes UMBRAVOX, and BAPH0MAU5 is covered under ASPECT.) Inscribed inside is a {7/3} heptagram -- seven points, each joined to the one three along. It is drawn deliberately faint: the figure should read as *inscribed*, not lit, because the contacts are the only thing on the dial that is data. |
 | **Runes** | On UMBRAVOX, sixteen marks walking the band, slowly and against the sweep. Those near the beam catch the light and those away from it fall back, so the ring reads as consecrated rather than as a flat border. |
-| **Field** | Radius is RSSI -- the `-90` labels the outer ring. **Angle is not a bearing.** There is no magnetometer, and RSSI alone cannot give direction. The intent is a stable hash of the BSSID, so a given AP always sits in the same spot and you can watch the field move as you drive. |
+| **Field** | Radius is RSSI -- the `-90` labels the outer ring. **Angle is not a bearing.** There is no magnetometer, and RSSI alone cannot give direction. The intent is a stable hash of the BSSID, so a given AP sits in the same spot for the whole drive and you can watch the field move as you drive. (The hash is keyed per boot, so the spot changes from one boot to the next.) |
 | **Sweep** | Cosmetic, but it earns its place: with the radar, a contact's fade is driven by how long since the beam crossed it, which on the device is just `millis()` since last seen. (The candle draws no beam, so nothing is ever just crossed; contacts there are simply present.) Stale contacts decay so the dial does not silt up. |
 | **Spectrum** | 13 bars for 2.4 GHz, 8 for the 5 GHz subset we hop, split by a gap. The parked channel is drawn bright with a tick above it. |
-| **Footer** | GPS fix and satellite count, card status and log file, uptime. |
+| **Footer** | `FIXED` or `NO GPS` on the left; on the right the logging control: `START` (not logging; tap to start), `STOP` (logging; tap to stop) or `NO CARD`, beside a dot that is filled red while logging. No satellite count, uptime or timer. |
 
 There is **no battery gauge**: this board has no battery sensing, and a gauge
 that cannot be measured is a number invented on the device's behalf. The
@@ -359,7 +362,7 @@ circle and no spectrum strip.
 13 ..100 TILES    x2  w56     CIRCLE  x61 w97 h70
                                   field r22 - runes r26 - bound r31
                                 SPECTRUM  x61 w97 h16  (y85)
-103      FOOTER   fix - card/log - uptime
+103      FOOTER   FIXED/NO GPS - START/STOP/NO CARD
 ```
 
 Screen geometry is named constants in `ui/layout.h`; the dial's radii are the
@@ -391,8 +394,9 @@ node sends 1 hello/sec; a SWEEPING core heard 0.04/sec  = 4%
 ```
 
 One in twenty-one dwells, as predicted. So **the Core parks on the report
-channel** whenever a node is present, and resumes sweeping when the last one
-drops. Channel 1 is one of the three that actually carry traffic, so the Core
+channel** whenever a node is present, and resumes sweeping 120 s after the
+last one drops (a node is dropped after 75 s of silence: an idle node sends
+nothing, and sweeping at once used to strand the nodes it had just lost). Channel 1 is one of the three that actually carry traffic, so the Core
 is not idling there -- it becomes its full-time camper while also being
 reachable.
 

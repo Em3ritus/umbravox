@@ -11,6 +11,12 @@
 #include <math.h>
 #include <Print.h>
 #include "csv.h"
+#include "applog.h"
+#include "wiglerow.h"
+#include "plotproj.h"
+#include "dedup.h"
+#include "twinbudget.h"
+#include <string.h>
 
 namespace cap {
 namespace {
@@ -25,10 +31,23 @@ int      campIdx = -1;         // >=0: hold this channel index, do not hop
 
 constexpr int N_CHAN = ui::CH24 + ui::CH5;
 // The dedup table lives in PSRAM, which is what makes this number a real
-// one rather than a budget. 8192 slots is ~295KB of the 8MB available, and
-// the table is touched once per packet and never in the draw path, so the
-// extra latency of external RAM costs nothing that matters.
-constexpr int TABLE  = 8192;          // dedup slots, open addressed
+// one rather than a budget. A Node is 92 bytes on the C5, so 32768 slots is
+// ~3MB of the ~7MB free, and the table is touched once per packet and never
+// in the draw path, so the extra latency of external RAM costs nothing that
+// matters.
+//
+// The session rolls over to a new log file and clears this table at
+// applog::ROLLOVER_APS uniques, long before it fills: linear probing degrades
+// sharply near full. Behind that, dedup.h stops inserts at 15/16 full and
+// bounds every probe, so a full table drops new APs instead of freezing.
+// To change the size, edit TABLE (and ROLLOVER_APS in applog.h); the asserts
+// keep the pair sane.
+constexpr int TABLE  = 32768;         // dedup slots, open addressed
+static_assert(applog::ROLLOVER_APS * 100u <= (uint32_t)TABLE * 65u,
+              "rollover must leave the dedup table <= 65% full");
+static_assert(TABLE <= 65536, "order_ and applog::Pending hold 16-bit slot indices");
+static_assert(applog::ROLL_HARD_APS > applog::ROLLOVER_APS && applog::ROLL_HARD_APS * 100u <= (uint32_t)TABLE * 85u,
+              "the forced-roll ceiling sits above the rollover, below a full table");
 constexpr int RECENT = ui::MAX_CONTACTS;
 
 struct Node {
@@ -53,11 +72,32 @@ struct Node {
 Node*     table_ = nullptr;
 bool*     used_  = nullptr;
 uint32_t  nUsed = 0;
+// The backstop behind the rollover (dedup.h): inserts stop at INSERT_LIMIT,
+// lookups stop after maxProbe_ + 1 probes once they do, and a frame that finds
+// no slot is counted here instead of overwriting another AP's slot.
+constexpr uint32_t INSERT_LIMIT = dedup::insertLimit(TABLE);
+static_assert(applog::ROLL_HARD_APS < INSERT_LIMIT,
+              "the forced roll must come before the table refuses inserts");
+uint32_t  maxProbe_ = 0;
+volatile uint32_t nTableDrops = 0;
+volatile uint32_t nLongProbes = 0;   // inserts past PROBE_LIMIT: collision flood?
+// The evil-twin pass budget, SSID filter and deferred checks (twinbudget.h).
+twinbudget::Bucket     twinBudget;
+twinbudget::SsidFilter twinFilter;          // 4 KB
+twinbudget::DeferRing  twinRing;
+twinbudget::Job        twinJob;             // the loop task's deferred check
+volatile uint32_t nTwinDeferred = 0;
+static_assert(twinbudget::BURST >= (uint32_t)TABLE, "a pass over a full table must be affordable");
+static_assert(applog::ROLLOVER_APS <= dedup::crowdLimit(TABLE),
+              "below the rollover no insert may be dropped for a long probe");
 
 // Slots in the order they were first seen, so the codex can show newest
 // first without sorting 512 entries every frame.
 uint16_t* order_ = nullptr;
 uint32_t  nOrder = 0;
+
+// The logger's done-bits, one per first-seen position (see applog.h).
+uint8_t*  logBits_ = nullptr;
 
 // The dial's blips. Slot is the MAC's hash, so an AP keeps the same place on
 // the dial for the whole drive -- which is the point: the field should look
@@ -66,6 +106,9 @@ struct Blip { uint16_t angle; uint8_t dist, band; uint32_t lastMs; bool live; };
 Blip recent_[RECENT];
 
 volatile uint32_t nFrames = 0, nLocal = 0, nUnique24 = 0, nUnique5 = 0;
+// Bumped whenever the table is cleared, so caches built from it (the map)
+// know to rebuild.
+uint32_t tableGen = 0;
 
 // Devices first discovered by each source, kept as a running count rather
 // than derived on demand: scanning 8192 slots per node per frame to answer
@@ -123,11 +166,10 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             const char* name, const ui::Hit& sig, uint32_t ageMs, uint8_t src,
             uint16_t auth);
 
-uint32_t hashMac(const uint8_t* m) {
-    uint32_t h = 2166136261u;                 // FNV-1a
-    for (int i = 0; i < 6; i++) { h ^= m[i]; h *= 16777619u; }
-    return h;
-}
+// Keyed per boot (dedup.h): a cluster of BSSIDs precomputed to share one
+// probe chain does not collide here. Drawn in begin(), once the radio is up.
+uint32_t hashSeed = 0;
+uint32_t hashMac(const uint8_t* m) { return dedup::hashMac(m, hashSeed); }
 
 bool macEq(const uint8_t* a, const uint8_t* b) {
     for (int i = 0; i < 6; i++) if (a[i] != b[i]) return false;
@@ -254,6 +296,46 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     insert(bssid, rssi, h, band, nameBuf, sig, 0, 0, auth);
 }
 
+// The evil-twin rule, shared by the inline pass and the deferred one: entry
+// `o` advertises the same SSID as the AP at `self` with different security,
+// from different hardware (another OUI). Mux held.
+//
+// Same SSID from a second BSSID is not suspicious by itself: that is what
+// every mesh, extender and enterprise roaming setup looks like. What a
+// legitimate deployment does *not* do is advertise different security on the
+// same name. Plenty of consumer routers put 2.4 and 5GHz on separate BSSIDs
+// and advertise different security on each -- but those share an OUI,
+// because they are one device. A clone runs on someone else's radio. An
+// attacker who spoofs the OUI too will slip past this. That is the trade: a
+// rule that fires on every dual-band router in the street is one you stop
+// reading.
+bool isTwin(const Node& o, const Node* self, const char* name, uint16_t auth,
+            const uint8_t* mac) {
+    if (&o == self || !o.ssid[0] || !o.auth) return false;
+    if (o.auth == auth) return false;
+    for (int k = 0; k < (int)ui::SSID_MAX; k++) {
+        if (o.ssid[k] != name[k]) return false;
+        if (!o.ssid[k]) break;
+    }
+    return !(o.mac[0] == mac[0] && o.mac[1] == mac[1] && o.mac[2] == mac[2]);
+}
+
+// MED, not HIGH: a half-reconfigured AP looks exactly like this. Mux held.
+void flagTwin(int slot, const char* name) {
+    table_[slot].threat = ui::TH_ROGUE;
+    table_[slot].conf   = ui::CONF_MED;
+    table_[slot].why    = "SSID AUTH CLASH";
+    if (alert_.conf <= ui::CONF_MED || (millis() - alert_.atMs) > 6000) {
+        alert_.threat = ui::TH_ROGUE;
+        alert_.conf   = ui::CONF_MED;
+        alert_.why    = "SSID AUTH CLASH";
+        int k = 0;
+        for (; k < ui::ALERT_NAME - 1 && name[k]; k++) alert_.name[k] = name[k];
+        alert_.name[k] = 0;
+        alert_.atMs = millis();
+    }
+}
+
 // The shared path: dedup, count, spectrum and dial, whether the sighting
 // came off our own radio or arrived over the mesh from a node.
 void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
@@ -278,35 +360,39 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     if (h >= 0 && h < N_CHAN && loadCount[h] < 0xFFFF) loadCount[h]++;
 
     const uint32_t hsh = hashMac(bssid);
-    int slot = (int)(hsh % TABLE);
-    bool isNew = true;
-    for (int probe = 0; probe < TABLE; probe++) {
-        const int i = (slot + probe) % TABLE;
-        if (!used_[i]) {
-            if (nUsed < TABLE) {
-                used_[i] = true;
-                for (int k = 0; k < 6; k++) table_[i].mac[k] = bssid[k];
-                table_[i].band = band;
-                table_[i].ssid[0] = 0;
-                table_[i].firstMs = millis();
-                table_[i].firstEpoch = ui::Gnss::utcEpoch(millis());
-                table_[i].threat = ui::TH_NONE;
-                table_[i].conf = ui::CONF_LOW;
-                table_[i].why = "";
-                table_[i].histN = 0;
-                table_[i].located = false;
-                table_[i].bestRssi = -127;
-                table_[i].finder = src;
-                table_[i].auth = 0;
-                if (src < MAX_SRC) foundBy_[src]++;
-                order_[nOrder++] = (uint16_t)i;
-                nUsed++;
-                if (is5) nUnique5++; else nUnique24++;
-            }
-            slot = i;
-            break;
-        }
-        if (macEq(table_[i].mac, bssid)) { slot = i; isNew = false; break; }
+    // Bounded, and FULL rather than an overwrite once the table is past its
+    // insert limit (dedup.h). A dropped frame is counted and changes nothing.
+    const dedup::Hit hit = dedup::find(hsh, TABLE, nUsed, INSERT_LIMIT, maxProbe_,
+        [](uint32_t i) { return used_[i]; },
+        [bssid](uint32_t i) { return macEq(table_[i].mac, bssid); });
+    if (hit.kind == dedup::FULL) {
+        nTableDrops++;
+        portEXIT_CRITICAL(&mux);
+        return;
+    }
+    const int slot = hit.slot;
+    if (hit.kind == dedup::INSERT) {
+        const int i = slot;
+        used_[i] = true;
+        for (int k = 0; k < 6; k++) table_[i].mac[k] = bssid[k];
+        table_[i].band = band;
+        table_[i].ssid[0] = 0;
+        table_[i].firstMs = millis();
+        table_[i].firstEpoch = ui::Gnss::utcEpoch(millis());
+        table_[i].threat = ui::TH_NONE;
+        table_[i].conf = ui::CONF_LOW;
+        table_[i].why = "";
+        table_[i].histN = 0;
+        table_[i].located = false;
+        table_[i].bestRssi = -127;
+        table_[i].finder = src;
+        table_[i].auth = 0;
+        if (src < MAX_SRC) foundBy_[src]++;
+        order_[nOrder++] = (uint16_t)i;
+        nUsed++;
+        if (is5) nUnique5++; else nUnique24++;
+        dedup::noteInsert(maxProbe_, hit);
+        if (dedup::longProbe(hit)) nLongProbes++;
     }
     table_[slot].rssi   = rssi;
     table_[slot].chan   = (uint8_t)chanAt(h);
@@ -325,49 +411,33 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             table_[slot].bestRssi = rssi;
         }
     }
-    // --- evil twin ------------------------------------------------------
+    // --- evil twin (the rule: isTwin above) -----------------------------
     //
-    // Same SSID from a second BSSID is not suspicious by itself: that is
-    // what every mesh, extender and enterprise roaming setup looks like.
-    // What a legitimate deployment does *not* do is advertise different
-    // security on the same name. A disagreement there means one of them is
-    // not what it claims.
-    if (isNew && name && name[0] && auth) {
+    // The pass walks the whole table, so it is gated (twinbudget.h): no walk
+    // when no AP in the table has this SSID (the filter), a walk paid from a
+    // budget of entry visits, and when the budget is spent the check is
+    // queued for the loop task (cap::tick) rather than dropped. The lock is
+    // released every
+    // CHUNK visits so interrupts are never off for the whole walk. That is
+    // safe on this single-core part: every insert() runs on the Wi-Fi task
+    // (promiscuous and ESP-NOW receive callbacks), and the only other writers,
+    // reset()/rollover(), run on loopTask, which cannot preempt it; nothing that
+    // can run in the gap (ISRs, the few higher-priority tasks) touches the
+    // table. The pass only reads other entries. On a dual-core build the lock
+    // is simply held for the whole pass, as before.
+    const twinbudget::Inline tg = twinbudget::gate(
+        dedup::runTwinPass(hit, name, auth), name, hashSeed, twinFilter, twinBudget,
+        millis(), nOrder, twinRing, (uint16_t)slot, tableGen);
+    if (tg == twinbudget::DEFERRED) nTwinDeferred++;
+    if (tg == twinbudget::RUN) {
         for (uint32_t q = 0; q < nOrder; q++) {
-            Node& o = table_[order_[q]];
-            if (&o == &table_[slot] || !o.ssid[0] || !o.auth) continue;
-            if (o.auth == auth) continue;
-            bool sameName = true;
-            for (int k = 0; k < (int)ui::SSID_MAX; k++) {
-                if (o.ssid[k] != name[k]) { sameName = false; break; }
-                if (!o.ssid[k]) break;
+#if CONFIG_FREERTOS_UNICORE
+            if (twinbudget::chunkDue(q)) { portEXIT_CRITICAL(&mux); portENTER_CRITICAL(&mux); }
+#endif
+            if (isTwin(table_[order_[q]], &table_[slot], name, auth, bssid)) {
+                flagTwin(slot, name);
+                break;
             }
-            if (!sameName) continue;
-
-            // Also require different hardware. Plenty of consumer routers
-            // put 2.4 and 5GHz on separate BSSIDs and manage to advertise
-            // different security on each -- but those share an OUI, because
-            // they are one device. A clone runs on someone else's radio.
-            //
-            // An attacker who spoofs the OUI too will slip past this. That
-            // is the trade: a rule that fires on every dual-band router in
-            // the street is one you stop reading.
-            if (o.mac[0] == bssid[0] && o.mac[1] == bssid[1] && o.mac[2] == bssid[2])
-                continue;
-
-            // MED, not HIGH: a half-reconfigured AP looks exactly like this.
-            table_[slot].threat = ui::TH_ROGUE;
-            table_[slot].conf   = ui::CONF_MED;
-            table_[slot].why    = "SSID AUTH CLASH";
-            if (alert_.conf <= ui::CONF_MED || (millis() - alert_.atMs) > 6000) {
-                alert_.threat = ui::TH_ROGUE;
-                alert_.conf   = ui::CONF_MED;
-                alert_.why    = "SSID AUTH CLASH";
-                for (int k = 0; k < ui::ALERT_NAME - 1 && name[k]; k++)
-                    alert_.name[k] = name[k];
-                alert_.atMs = millis();
-            }
-            break;
         }
     }
 
@@ -388,6 +458,9 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         for (; k < (int)ui::SSID_MAX - 1 && name[k]; k++) table_[slot].ssid[k] = name[k];
         table_[slot].ssid[k] = 0;
     }
+    // Now that it has a name and security, other APs can be its twin: the
+    // filter (twinbudget.h) learns the name after this AP's own check above.
+    if (table_[slot].ssid[0] && table_[slot].auth) twinFilter.add(table_[slot].ssid, hashSeed);
 
     Blip& b = recent_[hsh % RECENT];
     b.angle  = (uint16_t)(hsh % 360);
@@ -413,25 +486,29 @@ bool park(int i) {
 } // namespace
 
 void begin() {
-    // PSRAM if it is there, internal if it is not -- the code should still
-    // run on a board without it, just with less room.
+    // PSRAM. The internal-RAM fallback below cannot succeed: the table is
+    // ~3 MB and internal RAM is 320 KB, so without PSRAM the unit halts at
+    // boot with the FATAL serial message. Kept as written, not relied on.
     table_ = (Node*)heap_caps_malloc(sizeof(Node) * TABLE, MALLOC_CAP_SPIRAM);
     used_  = (bool*)heap_caps_malloc(sizeof(bool) * TABLE, MALLOC_CAP_SPIRAM);
     order_ = (uint16_t*)heap_caps_malloc(sizeof(uint16_t) * TABLE, MALLOC_CAP_SPIRAM);
-    const bool inPsram = table_ && used_ && order_;
+    logBits_ = (uint8_t*)heap_caps_calloc((TABLE + 7) / 8, 1, MALLOC_CAP_SPIRAM);
+    const bool inPsram = table_ && used_ && order_ && logBits_;
     if (!inPsram) {
-        free(table_); free(used_); free(order_);
+        free(table_); free(used_); free(order_); free(logBits_);
         table_ = (Node*)calloc(TABLE, sizeof(Node));
         used_  = (bool*)calloc(TABLE, sizeof(bool));
         order_ = (uint16_t*)calloc(TABLE, sizeof(uint16_t));
+        logBits_ = (uint8_t*)calloc((TABLE + 7) / 8, 1);
     }
-    if (!table_ || !used_ || !order_) {
+    if (!table_ || !used_ || !order_ || !logBits_) {
         Serial.println("capture: FATAL -- no room for the dedup table");
         for (;;) delay(1000);
     }
-    Serial.printf("capture: %d dedup slots in %s (%u bytes)\n",
+    Serial.printf("capture: %d dedup slots in %s (%u bytes, node %u B), psram %u free\n",
                   TABLE, inPsram ? "PSRAM" : "internal RAM",
-                  (unsigned)(sizeof(Node) * TABLE));
+                  (unsigned)(sizeof(Node) * TABLE), (unsigned)sizeof(Node),
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     for (int i = 0; i < TABLE; i++) used_[i] = false;
     nOrder = 0;
@@ -445,6 +522,9 @@ void begin() {
     Serial.printf("capture: %d probe slots\n", probes ? PROBE_TABLE : 0);
 
     WiFi.mode(WIFI_MODE_STA);
+    // With the radio on, esp_random() is the hardware RNG. Before any frame
+    // can reach insert() (the promiscuous callback is registered below).
+    hashSeed = esp_random();
     WiFi.disconnect();
     delay(100);
 
@@ -479,6 +559,26 @@ void begin() {
 }
 
 void tick(uint32_t nowMs) {
+    // One bounded chunk (<= CHUNK entries, ~1 ms with the lock held) of a
+    // deferred evil-twin check, on the loop task, as the budget allows.
+    portENTER_CRITICAL(&mux);
+    {
+        // The budget's clock is read here, under the lock, as the Wi-Fi task
+        // reads it under the lock: not the caller's earlier nowMs.
+        const uint32_t now = millis();
+        uint16_t found = 0;
+        const twinbudget::Step st = twinbudget::step(twinJob, twinRing, twinBudget, now,
+            tableGen, nOrder,
+            [](uint16_t tgt) {
+                return [tgt](uint32_t q) {
+                    const Node& t = table_[tgt];
+                    return isTwin(table_[order_[q]], &t, t.ssid, t.auth, t.mac);
+                };
+            }, found);
+        if (st == twinbudget::FOUND) flagTwin(found, table_[found].ssid);
+    }
+    portEXIT_CRITICAL(&mux);
+
     // Deauth rate, evaluated on its own clock rather than per frame.
     if (nowMs - deauthAt >= DEAUTH_WINDOW_MS) {
         deauthAt = nowMs;
@@ -593,11 +693,12 @@ void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
     }
 }
 
+// Runs every frame (main sizes the scrollbar from it on every screen). The
+// 5GHz count used to walk the whole table -- ~20k PSRAM misses per frame at
+// rollover size -- but it is exactly nUnique5: a node's band is set once, at
+// insert, alongside that counter, and both are cleared together.
 uint16_t sightCount(bool only5) {
-    if (!only5) return (uint16_t)(nOrder > 65535 ? 65535 : nOrder);
-    uint32_t c = 0;
-    for (uint32_t i = 0; i < nOrder; i++)
-        if (table_[order_[i]].band == ui::BAND_5) c++;
+    const uint32_t c = only5 ? nUnique5 : nOrder;
     return (uint16_t)(c > 65535 ? 65535 : c);
 }
 
@@ -638,36 +739,44 @@ uint16_t foundBy(uint8_t src) { return src < MAX_SRC ? foundBy_[src] : 0; }
 //
 // Metres per degree of latitude is near enough constant; per degree of
 // longitude it shrinks with the cosine of the latitude, and ignoring that
-// stretches the map east-west by a third at this latitude.
+// stretches the map east-west by a third at this latitude (plotproj.h).
+//
+// At 20,000 located APs the old per-frame pass (two divides and a dozen
+// soft-float ops per node) was estimated at 60-140 ms a frame on the C5. Now
+// an integer bounding box culls before any float work, and the pass runs at
+// most every plotproj::REFRESH_MS; frames in between reuse its result.
+namespace {
+plotproj::Cache plotCache;
+ui::Plot plotsC[ui::MAX_PLOT];
+uint8_t  nPlotsC = 0;
+uint16_t plotTotalC = 0, plotBeyondC = 0;
+}
+
 void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix) {
-    s.nPlots = 0; s.plotTotal = 0; s.plotBeyond = 0;
     s.rangeM = (uint16_t)rangeM;
-    if (!haveFix || rangeM <= 0) return;
-
-    const float latDeg = (float)myLat7 / 1e7f;
-    const float mPerDegLat = 111320.0f;
-    const float mPerDegLon = 111320.0f * cosf(latDeg * 3.14159265f / 180.0f);
-    const float pxPerM = (float)ui::MAP_R / (float)rangeM;
-
-    for (uint32_t i = 0; i < nOrder; i++) {
-        const Node& nd = table_[order_[i]];
-        if (!nd.located) continue;
-        s.plotTotal++;
-
-        const float dE = ((float)(nd.lon7 - myLon7) / 1e7f) * mPerDegLon;
-        const float dN = ((float)(nd.lat7 - myLat7) / 1e7f) * mPerDegLat;
-        const int px = (int)lrintf(dE * pxPerM);
-        const int py = (int)lrintf(-dN * pxPerM);      // north is up
-
-        if (px * px + py * py > ui::MAP_R * ui::MAP_R) { s.plotBeyond++; continue; }
-        if (s.nPlots >= ui::MAX_PLOT) continue;
-
-        ui::Plot& o = s.plots[s.nPlots++];
-        o.dx = (int16_t)px;
-        o.dy = (int16_t)py;
-        o.band = nd.band;
-        o.threat = nd.threat;
+    const uint32_t now = millis();
+    if (plotproj::stale(plotCache, now, rangeM, haveFix, tableGen)) {
+        nPlotsC = 0; plotTotalC = 0; plotBeyondC = 0;
+        if (haveFix && rangeM > 0) {
+            const plotproj::Proj p = plotproj::make(rangeM, myLat7, myLon7, ui::MAP_R);
+            for (uint32_t i = 0; i < nOrder; i++) {
+                const Node& nd = table_[order_[i]];
+                if (!nd.located) continue;
+                plotTotalC++;
+                int px, py;
+                if (!plotproj::project(p, nd.lat7, nd.lon7, px, py)) { plotBeyondC++; continue; }
+                if (nPlotsC >= ui::MAX_PLOT) continue;
+                ui::Plot& o = plotsC[nPlotsC++];
+                o.dx = (int16_t)px;
+                o.dy = (int16_t)py;     // north is up
+                o.band = nd.band;
+                o.threat = nd.threat;
+            }
+        }
+        plotproj::remember(plotCache, now, rangeM, haveFix, tableGen);
     }
+    s.nPlots = nPlotsC; s.plotTotal = plotTotalC; s.plotBeyond = plotBeyondC;
+    for (int i = 0; i < nPlotsC; i++) s.plots[i] = plotsC[i];
 }
 
 // Newest first. `randomised` flags a locally-administered address, which is
@@ -727,29 +836,71 @@ uint32_t deauthPerS() { return deauthRate * 1000 / DEAUTH_WINDOW_MS; }
 // shared with the BLE exporter and only one of them can own it.
 //
 // Printed rather than buffered: thousands of rows will not fit in RAM.
+namespace {
+
+// A row without coordinates is not a wardrive observation, and one without a
+// wall clock files every sighting under 1970. Both are dropped rather than
+// faked. firstEpoch is set once, at first sight, so a row with none never
+// gains one; a position can still arrive with a later, louder sighting.
+applog::Verdict verdictOf(const Node& x, uint32_t nowMs, bool final) {
+    return applog::holdVerdict(x.located, x.firstEpoch, x.firstMs, x.lastMs, nowMs, final);
+}
+// Exportable at all (the console dump's rule: no hold).
+bool exportable(const Node& x) { return x.located && x.firstEpoch; }
+
+// One WigleWifi-1.6 row, newline included (bytes pinned in wiglerow.h).
+int formatRow(const Node& nd, char* buf, int cap) {
+    char auth[64];
+    ui::authString(nd.auth, auth, sizeof auth);
+    return wiglerow::wifi(buf, cap, nd.mac, nd.ssid, auth, nd.firstEpoch,
+                          nd.chan, nd.rssi, nd.lat7, nd.lon7);
+}
+
+// The table as the logger sees it: rows in first-seen order. Everything that
+// touches table_/order_ takes the same lock the Wi-Fi task inserts under, and
+// a row is copied out before it is formatted, so a sighting landing mid-row
+// cannot tear it.
+struct LogSrc : applog::Source {
+    uint32_t count() override {
+        portENTER_CRITICAL(&mux);
+        const uint32_t n = nOrder;
+        portEXIT_CRITICAL(&mux);
+        return n;
+    }
+    uint32_t capacity() override { return TABLE; }
+    uint8_t* doneBits() override { return logBits_; }
+    applog::Verdict verdict(uint32_t i, uint32_t nowMs, bool final) override {
+        applog::Verdict v = applog::WAIT;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) v = verdictOf(table_[order_[i]], nowMs, final);
+        portEXIT_CRITICAL(&mux);
+        return v;
+    }
+    int format(uint32_t i, char* buf, int cap) override {
+        Node nd;
+        bool have = false;
+        portENTER_CRITICAL(&mux);
+        if (i < nOrder) { nd = table_[order_[i]]; have = true; }
+        portEXIT_CRITICAL(&mux);
+        if (!have || !exportable(nd)) return 0;
+        return formatRow(nd, buf, cap);
+    }
+} logSrc;
+
+} // namespace
+
+applog::Source& logSource() { return logSrc; }
+
+// The whole table at once, for the console WIGLE dump. Same rows, same bytes
+// as the SD file (formatRow is shared).
 uint32_t exportRows(Print& out, uint32_t& skipped) {
-    char mac[20], ssid[48], auth[64], la[20], lo[20], when[24];
+    char row[applog::ROW_MAX];
     uint32_t rows = 0;
-
-    for (uint32_t i = 0; i < nOrder; i++) {
-        const Node& nd = table_[order_[i]];
-        // A row without coordinates is not a wardrive observation, and one
-        // without a wall clock files every sighting under 1970. Both are
-        // dropped rather than faked.
-        if (!nd.located || !nd.firstEpoch) { skipped++; continue; }
-
-        csv::mac(mac, nd.mac);
-        csv::quote(nd.ssid, ssid, sizeof ssid);
-        ui::authString(nd.auth, auth, sizeof auth);
-        csv::deg7(la, nd.lat7);
-        csv::deg7(lo, nd.lon7);
-        csv::stampUtc(when, nd.firstEpoch);
-
-        // Full WigleWifi-1.6 row: Frequency after Channel, empty RCOIs and
-        // MfgrId before Type (we read neither off the air).
-        out.printf("%s,%s,%s,%s,%u,%d,%d,%s,%s,0,%u,,,WIFI\n",
-                   mac, ssid, auth, when, (unsigned)nd.chan,
-                   csv::freqMhz(nd.chan), (int)nd.rssi, la, lo, 30u);
+    const uint32_t n = logSrc.count();
+    for (uint32_t i = 0; i < n; i++) {
+        const int len = logSrc.format(i, row, sizeof row);
+        if (len <= 0) { skipped++; continue; }
+        out.write((const uint8_t*)row, (size_t)len);
         rows++;
     }
     return rows;
@@ -786,10 +937,31 @@ void reset() {
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; }
     nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
+    maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
+    twinFilter.clear(); twinRing = twinbudget::DeferRing{}; twinJob.active = false;
+    nTwinDeferred = 0;
     nProbes = 0; nProbeFrames = 0;
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     alert_ = ui::AlertRec{};
+    tableGen++;
+    portEXIT_CRITICAL(&mux);
+}
+
+// The rollover clear: the dedup table and the counts that describe it. The
+// dial's blips, the alert, the probe table and the frame counters stay, so
+// the screen carries on as it was. Called from the main loop (logging::tick),
+// the same task and point as RESET COUNTERS, so no draw is mid-way through
+// the table; the lock keeps the Wi-Fi task's inserts out while it empties.
+void rollover() {
+    portENTER_CRITICAL(&mux);
+    memset(used_, 0, sizeof(bool) * TABLE);
+    nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
+    maxProbe_ = 0;                  // an empty table has no probe chains
+    twinFilter.clear();             // no SSIDs; queued checks die with tableGen
+    twinJob.active = false;
+    for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
+    tableGen++;
     portEXIT_CRITICAL(&mux);
 }
 
@@ -807,6 +979,13 @@ uint32_t frames()      { return nFrames; }
 uint32_t localFrames() { return nLocal; }
 uint32_t uniques()  { return nUnique24 + nUnique5; }
 uint16_t tableUse() { return (uint16_t)(nUsed > 65535 ? 65535 : nUsed); }
-uint16_t tableCap() { return TABLE; }
+uint16_t tableCap() { return (uint16_t)(TABLE > 65535 ? 65535 : TABLE); }
+uint32_t tableDrops() { return nTableDrops; }
+uint32_t longProbes() { return nLongProbes; }
+void twinStats(uint32_t& deferred, uint32_t& lost, uint32_t& stale) {
+    portENTER_CRITICAL(&mux);
+    deferred = nTwinDeferred; lost = twinRing.lost; stale = twinRing.stale;
+    portEXIT_CRITICAL(&mux);
+}
 
 } // namespace cap

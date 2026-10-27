@@ -58,6 +58,21 @@ inline const char* header() {
            "wifi_fps,ble_aps,wifi_n,ble_n,tbl_pct,nodes,rep_s,loss_pct,camp,fix,theme,sweep\n";
 }
 
+// The step of a running counter since the last row, then re-based on `cur`.
+// RESET COUNTERS zeroes the sources (cap/blescan reset()), so a counter that
+// goes backwards gives its post-reset value: plain `cur - last` wrapped to
+// ~2^32 there, which is the 429410830 the field log showed in ble_aps and
+// wifi_fps. A real 2^32 wrap (cur far below last: more than half the range)
+// still gives the true difference. The two cannot be told apart for a jump
+// of over 2^31 in one interval, impossible at these rates. Pure.
+inline uint32_t delta(uint32_t cur, uint32_t& last) {
+    const uint32_t prev = last;
+    last = cur;
+    if (cur >= prev) return cur - prev;
+    if (prev - cur > 0x80000000u) return cur - prev;   // wrapped, mod 2^32
+    return cur;                                         // reset
+}
+
 // One CSV row for the interval, newline terminated. Always NUL-terminates and
 // never writes past `n`; returns the bytes written. Safe for an interval with
 // no frames (a dark screen), a zero-length interval, and an empty table. Pure.
