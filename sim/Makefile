@@ -89,6 +89,11 @@ test_applog: test_applog.cpp ../device/applog.h
 test_wiglerow: test_wiglerow.cpp ../device/wiglerow.h ../device/csv.h
 	$(CXX) $(CXXFLAGS) -o $@ test_wiglerow.cpp -lm
 
+# The DOMAIN map projection: bounding-box cull, agreement with the old
+# per-node projection, the refresh cache, and a host timing of both loops.
+test_plotproj: test_plotproj.cpp ../device/plotproj.h
+	$(CXX) $(CXXFLAGS) -o $@ test_plotproj.cpp -lm
+
 test_enrollwin: test_enrollwin.cpp ../device/enrollwin.h
 	$(CXX) $(CXXFLAGS) -o $@ test_enrollwin.cpp -lm
 
@@ -111,7 +116,7 @@ test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
 test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_footer.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_applog test_wiglerow test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_perflog test_trig
+TESTS = test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_perflog test_trig
 
 test: $(TESTS)
 	@rc=0; for t in $(TESTS); do \

@@ -13,6 +13,7 @@
 #include "csv.h"
 #include "applog.h"
 #include "wiglerow.h"
+#include "plotproj.h"
 #include <string.h>
 
 namespace cap {
@@ -84,6 +85,9 @@ struct Blip { uint16_t angle; uint8_t dist, band; uint32_t lastMs; bool live; };
 Blip recent_[RECENT];
 
 volatile uint32_t nFrames = 0, nLocal = 0, nUnique24 = 0, nUnique5 = 0;
+// Bumped whenever the table is cleared, so caches built from it (the map)
+// know to rebuild.
+uint32_t tableGen = 0;
 
 // Devices first discovered by each source, kept as a running count rather
 // than derived on demand: scanning 8192 slots per node per frame to answer
@@ -660,36 +664,44 @@ uint16_t foundBy(uint8_t src) { return src < MAX_SRC ? foundBy_[src] : 0; }
 //
 // Metres per degree of latitude is near enough constant; per degree of
 // longitude it shrinks with the cosine of the latitude, and ignoring that
-// stretches the map east-west by a third at this latitude.
+// stretches the map east-west by a third at this latitude (plotproj.h).
+//
+// At 20,000 located APs the old per-frame pass (two divides and a dozen
+// soft-float ops per node) was estimated at 60-140 ms a frame on the C5. Now
+// an integer bounding box culls before any float work, and the pass runs at
+// most every plotproj::REFRESH_MS; frames in between reuse its result.
+namespace {
+plotproj::Cache plotCache;
+ui::Plot plotsC[ui::MAX_PLOT];
+uint8_t  nPlotsC = 0;
+uint16_t plotTotalC = 0, plotBeyondC = 0;
+}
+
 void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix) {
-    s.nPlots = 0; s.plotTotal = 0; s.plotBeyond = 0;
     s.rangeM = (uint16_t)rangeM;
-    if (!haveFix || rangeM <= 0) return;
-
-    const float latDeg = (float)myLat7 / 1e7f;
-    const float mPerDegLat = 111320.0f;
-    const float mPerDegLon = 111320.0f * cosf(latDeg * 3.14159265f / 180.0f);
-    const float pxPerM = (float)ui::MAP_R / (float)rangeM;
-
-    for (uint32_t i = 0; i < nOrder; i++) {
-        const Node& nd = table_[order_[i]];
-        if (!nd.located) continue;
-        s.plotTotal++;
-
-        const float dE = ((float)(nd.lon7 - myLon7) / 1e7f) * mPerDegLon;
-        const float dN = ((float)(nd.lat7 - myLat7) / 1e7f) * mPerDegLat;
-        const int px = (int)lrintf(dE * pxPerM);
-        const int py = (int)lrintf(-dN * pxPerM);      // north is up
-
-        if (px * px + py * py > ui::MAP_R * ui::MAP_R) { s.plotBeyond++; continue; }
-        if (s.nPlots >= ui::MAX_PLOT) continue;
-
-        ui::Plot& o = s.plots[s.nPlots++];
-        o.dx = (int16_t)px;
-        o.dy = (int16_t)py;
-        o.band = nd.band;
-        o.threat = nd.threat;
+    const uint32_t now = millis();
+    if (plotproj::stale(plotCache, now, rangeM, haveFix, tableGen)) {
+        nPlotsC = 0; plotTotalC = 0; plotBeyondC = 0;
+        if (haveFix && rangeM > 0) {
+            const plotproj::Proj p = plotproj::make(rangeM, myLat7, myLon7, ui::MAP_R);
+            for (uint32_t i = 0; i < nOrder; i++) {
+                const Node& nd = table_[order_[i]];
+                if (!nd.located) continue;
+                plotTotalC++;
+                int px, py;
+                if (!plotproj::project(p, nd.lat7, nd.lon7, px, py)) { plotBeyondC++; continue; }
+                if (nPlotsC >= ui::MAX_PLOT) continue;
+                ui::Plot& o = plotsC[nPlotsC++];
+                o.dx = (int16_t)px;
+                o.dy = (int16_t)py;     // north is up
+                o.band = nd.band;
+                o.threat = nd.threat;
+            }
+        }
+        plotproj::remember(plotCache, now, rangeM, haveFix, tableGen);
     }
+    s.nPlots = nPlotsC; s.plotTotal = plotTotalC; s.plotBeyond = plotBeyondC;
+    for (int i = 0; i < nPlotsC; i++) s.plots[i] = plotsC[i];
 }
 
 // Newest first. `randomised` flags a locally-administered address, which is
@@ -854,6 +866,7 @@ void reset() {
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     alert_ = ui::AlertRec{};
+    tableGen++;
     portEXIT_CRITICAL(&mux);
 }
 
@@ -867,6 +880,7 @@ void rollover() {
     memset(used_, 0, sizeof(bool) * TABLE);
     nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
+    tableGen++;
     portEXIT_CRITICAL(&mux);
 }
 
