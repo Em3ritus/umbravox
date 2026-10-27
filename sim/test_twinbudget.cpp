@@ -72,6 +72,16 @@ int main() {
         for (int g = 0; g < 100 && c.take(0, 20000); g++) {}
         check("a very long quiet (~20 days) caps at the burst, no overflow",
               c.take(0x70000000u, BURST) && !c.take(0x70000000u, 1));
+        // Over ~24.8 days the signed difference reads as backwards: that must
+        // resync, not stop the bucket refilling until the clock catches up.
+        Bucket d;
+        d.take(0, 0);
+        for (int g = 0; g < 100 && d.take(0, 20000); g++) {}
+        const uint32_t far = 0x90000000u;                 // ~28 days later
+        check("a gap over 24.8 days resyncs and grants the burst",
+              d.take(far, BURST) && d.lastMs == far);
+        check("then drained",                             !d.take(far, 20000));
+        check("and the next second refills at the normal rate", d.take(far + 1000u, 20000));
     }
 
     printf("backwards timestamps:\n");
@@ -84,6 +94,12 @@ int main() {
         const uint32_t tok = b.tokens, last = b.lastMs;
         check("an older timestamp does not refill",       !b.take(9995, 20000) && b.tokens == tok);
         check("and does not move lastMs back",            b.lastMs == last);
+        check("1 s of skew is still jitter",              !b.take(10000 - 1000, 20000) && b.lastMs == last);
+        Bucket r;
+        r.take(10000, 0);
+        for (int g = 0; g < 100 && r.take(10000, 20000); g++) {}
+        check("more than 1 s behind: lastMs resyncs",     (r.take(7000, 0), r.lastMs == 7000));
+        check("and pays out again within a second",       r.take(7600, 20000));
         // A long run mixing ordered and slightly-backwards times never pays
         // out more than the burst plus the rate for the real elapsed time.
         Bucket m;

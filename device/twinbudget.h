@@ -34,6 +34,7 @@ namespace twinbudget {
 constexpr uint32_t RATE_PER_MS = 40;       // entry visits earned per millisecond
 constexpr uint32_t BURST       = 65536;    // ...banked at most (two full tables)
 constexpr uint32_t CHUNK       = 1024;     // visits per stretch with interrupts off
+constexpr int32_t  SKEW_MAX_MS = 1000;     // backward jitter between the two tasks' clocks
 
 struct Bucket {
     uint32_t tokens  = BURST;
@@ -44,15 +45,18 @@ struct Bucket {
     // time is signed: callers on two tasks read millis() a moment apart, so a
     // time just before lastMs arrives now and then, and as an unsigned
     // difference it wrapped to ~49 days and refilled the bucket every time.
-    // A backwards time counts as no time and never moves lastMs back. That
-    // holds across the millis() wrap; a gap of more than ~24.8 days between
-    // takes reads as backwards and refills nothing (the bucket then fills
-    // again from that take). The refill is 64-bit, capped at BURST.
+    // Up to SKEW_MAX_MS back is that jitter: no time, and lastMs is not moved
+    // back. Further back cannot be skew (millis() is monotonic and the two
+    // tasks are milliseconds apart): it is a forward gap of more than ~24.8
+    // days read as signed, so the bucket resyncs to now and fills, as any
+    // long quiet does -- it must never wait for the clock to catch up. That
+    // holds across the millis() wrap. The refill is 64-bit, capped at BURST.
     bool take(uint32_t nowMs, uint32_t cost) {
         if (!started) { started = true; lastMs = nowMs; }
         const int32_t dt = (int32_t)(nowMs - lastMs);
-        const uint64_t add = dt > 0 ? (uint64_t)dt * RATE_PER_MS : 0;
-        if (dt > 0) lastMs = nowMs;
+        uint64_t add = 0;
+        if (dt > 0)                 { add = (uint64_t)dt * RATE_PER_MS; lastMs = nowMs; }
+        else if (dt < -SKEW_MAX_MS) { add = BURST; lastMs = nowMs; }
         const uint64_t t = (uint64_t)tokens + add;
         tokens = t > BURST ? BURST : (uint32_t)t;
         if (cost > tokens) return false;
