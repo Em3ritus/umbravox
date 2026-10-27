@@ -40,6 +40,8 @@ constexpr uint32_t IDLE_MS   = 10000;
 // "/themes/" + 31 + "/" + "theme.json" + ".tmp" + NUL = 55.
 constexpr size_t   PATH_CAP  = 64;
 constexpr size_t   REPLY_CAP = 112;
+// A diag-log note: the path, a reason and the frame around them, untruncated.
+constexpr size_t   NOTE_CAP  = PATH_CAP + 128;
 
 // --- CRC-32 (IEEE 802.3, reflected 0xEDB88320), as zlib.crc32 -------------
 // Incremental: crc32(crc32(0, a), b) == crc32(0, a + b). A nibble table:
@@ -366,7 +368,7 @@ public:
         up_ = false;
         io_.tmpClose();
         io_.remove(tmp_);
-        char m[REPLY_CAP];
+        char m[NOTE_CAP];
         snprintf(m, sizeof m, "put %s abandoned (%s), card unchanged", target_, why);
         io_.note(true, m);
     }
@@ -485,7 +487,7 @@ private:
             return;
         }
         if (hadOld) io_.remove(old_);
-        char m[REPLY_CAP];
+        char m[NOTE_CAP];
         snprintf(m, sizeof m, "put %s %u bytes", target_, (unsigned)size_);
         io_.note(false, m);
         out(reply, cap, "DONE %u %08x", (unsigned)size_, (unsigned)crc_);
@@ -493,7 +495,7 @@ private:
 
     // A failure after the temp was closed (abort() no longer applies).
     void bad(char* reply, size_t cap, const char* why) {
-        char m[REPLY_CAP];
+        char m[NOTE_CAP];
         snprintf(m, sizeof m, "put %s failed (%s), card unchanged", target_, why);
         io_.note(true, m);
         out(reply, cap, "ERR %s", why);
@@ -510,7 +512,7 @@ private:
         if (!io_.present()) { out(reply, cap, "ERR no card"); return; }
         if (!io_.exists(p.canon) || io_.isDir(p.canon)) { out(reply, cap, "ERR no such file"); return; }
         if (!io_.remove(p.canon)) { out(reply, cap, "ERR remove failed"); return; }
-        char m[REPLY_CAP];
+        char m[NOTE_CAP];
         snprintf(m, sizeof m, "del %s", p.canon);
         io_.note(false, m);
         out(reply, cap, "OK");
@@ -527,7 +529,7 @@ private:
         if (!io_.present()) { out(reply, cap, "ERR no card"); return; }
         if (!io_.isDir(p.canon)) { out(reply, cap, "ERR no such folder"); return; }
         if (!io_.rmdir(p.canon)) { out(reply, cap, "ERR folder not empty"); return; }
-        char m[REPLY_CAP];
+        char m[NOTE_CAP];
         snprintf(m, sizeof m, "rmdir %s", p.canon);
         io_.note(false, m);
         out(reply, cap, "OK");

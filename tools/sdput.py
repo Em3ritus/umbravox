@@ -278,7 +278,11 @@ def main(argv):
             return 1
         if name != os.path.basename(os.path.normpath(args[0])):
             print("note: installing as /themes/%s (the designer's folder rule)" % name)
-    link = Link(port, verbose=v)
+    try:
+        link = Link(port, verbose=v)
+    except OSError as e:          # serial.SerialException is an OSError
+        print("cannot open %s: %s" % (port, e), file=sys.stderr)
+        return 1
     try:
         if cmd == "put":
             for path, data in files:
