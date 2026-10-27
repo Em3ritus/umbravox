@@ -11,6 +11,8 @@
 #include "applog.h"
 #include "wiglerow.h"
 #include "dedup.h"
+#include "blerecycle.h"
+#include "elog.h"
 #include <string.h>
 #include "gpstrack.h"
 #include "gnss.h"
@@ -372,9 +374,41 @@ void fillSights(ui::State& s, int offset) {
     s.nSights = (uint8_t)n;
 }
 
+namespace {
+uint32_t lastCycleMs = 0;     // last stop/start, by the recycle or setDuty
+uint32_t nRestarts = 0;       // scans found stopped and started again
+elog::Gate restartGate;
+
+// Bound the library's result map and keep the scan alive (blerecycle.h).
+// stop() then start(0, nullptr, false) is the sequence setDuty() has always
+// used; is_continue = false is what clears the map. start() runs only after a
+// successful stop(), so the map is never cleared while discovery can still
+// add to it. On this single-core part the NimBLE host task outranks the loop,
+// so it is never part-way through the scan callback when this runs.
+void recycle(uint32_t nowMs) {
+    if (!scan) return;
+    const uint32_t count = (uint32_t)scan->getResults()->getCount();
+    const blerecycle::Action a =
+        blerecycle::shouldRecycle(count, nowMs, lastCycleMs, scan->isScanning(), duty);
+    if (a == blerecycle::NONE) return;
+    lastCycleMs = nowMs;
+    if (!scan->stop()) return;               // try again next time round
+    const bool ok = scan->start(0, nullptr, false);
+    if (a == blerecycle::RESTART) {
+        nRestarts++;
+        if (restartGate.allow(nowMs, 60000))
+            elog::event(elog::WARN, "ble", "scan had stopped, restarted (%s, %lu so far, "
+                        "heap %uKB)", ok ? "ok" : "start failed", (unsigned long)nRestarts,
+                        (unsigned)(ESP.getFreeHeap() >> 10));
+    }
+}
+} // namespace
+
 // Swept on a timer rather than per advert: the distance maths is cheap but
 // not free, and nothing here changes meaningfully inside five seconds.
 void tick(uint32_t nowMs) {
+    recycle(nowMs);
+
     static uint32_t lastScan = 0;
     if (!extra || nowMs - lastScan < FOLLOW_SCAN_MS) return;
     lastScan = nowMs;
@@ -438,6 +472,7 @@ void setDuty(uint8_t pct) {
     if (pct == duty || !scan) return;
     duty = pct;
     scan->stop();
+    lastCycleMs = millis();       // a fresh scan: the recycle clock restarts
     if (duty == 0) return;        // 0 means hand the whole radio to WiFi
     scan->setWindow((uint16_t)(BLE_INTERVAL_MS * duty / 100));
     scan->start(0, nullptr, false);
