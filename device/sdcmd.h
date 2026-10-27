@@ -18,8 +18,9 @@
 // <size> is decimal, <crc32> exactly 8 hex digits (zlib / IEEE 802.3 CRC-32,
 // replies in lower case), <hex> 2..192 hex digits (1..96 bytes). Commands
 // match exactly: one space between tokens, no leading or trailing space, and
-// the exact upper-case word. A timed-out upload prints one unsolicited
-// "ERR upload timed out" line. Other console output (log lines) may appear
+// the exact upper-case word. An upload is abandoned 10 s after its last
+// ACCEPTED chunk (refused lines do not count) or 120 s after its SDPUT,
+// whichever comes first, with one unsolicited "ERR upload timed out" line. Other console output (log lines) may appear
 // between replies; a host must ignore lines that are not replies.
 #pragma once
 #include <stdint.h>
@@ -37,6 +38,9 @@ constexpr size_t   LINE_CAP  = 200;
 constexpr size_t   CHUNK_MAX = 96;
 // An upload with no D/END line for this long is abandoned and its temp removed.
 constexpr uint32_t IDLE_MS   = 10000;
+// ...and any upload is abandoned this long after its SDPUT, however busy the
+// host keeps it: an upload locks out every other console command.
+constexpr uint32_t TOTAL_MS  = 120000;
 // "/themes/" + 31 + "/" + "theme.json" + ".tmp" + NUL = 55.
 constexpr size_t   PATH_CAP  = 64;
 constexpr size_t   REPLY_CAP = 112;
@@ -342,8 +346,7 @@ public:
                 out(reply, cap, "OK aborted");
                 return HANDLED;
             }
-            lastMs_ = nowMs;
-            if (isD) chunk(t, reply, cap);
+            if (isD) { if (chunk(t, reply, cap)) lastMs_ = nowMs; }
             else if (t.count != 1) out(reply, cap, "ERR usage: END");
             else finish(reply, cap);
             return HANDLED;
@@ -356,8 +359,10 @@ public:
 
     // Every loop. True (and a reply line to print) when an upload timed out.
     bool tick(uint32_t nowMs, char* reply, size_t cap) {
-        if (!up_ || nowMs - lastMs_ < IDLE_MS) return false;
-        abort("timed out, no data for 10 s");
+        if (!up_) return false;
+        if (nowMs - startMs_ >= TOTAL_MS) abort("took over 120 s");
+        else if (nowMs - lastMs_ >= IDLE_MS) abort("timed out, no accepted chunk for 10 s");
+        else return false;
         out(reply, cap, "ERR upload timed out");
         return true;
     }
@@ -368,6 +373,7 @@ public:
         up_ = false;
         io_.tmpClose();
         io_.remove(tmp_);
+        dropNewDir();
         char m[NOTE_CAP];
         snprintf(m, sizeof m, "put %s abandoned (%s), card unchanged", target_, why);
         io_.note(true, m);
@@ -376,8 +382,19 @@ public:
 private:
     Io&      io_;
     bool     up_ = false;
-    uint32_t size_ = 0, crc_ = 0, written_ = 0, run_ = 0, lastMs_ = 0;
+    uint32_t size_ = 0, crc_ = 0, written_ = 0, run_ = 0, lastMs_ = 0, startMs_ = 0;
     char     target_[PATH_CAP] = "", tmp_[PATH_CAP + 4] = "", old_[PATH_CAP + 4] = "";
+    // The pack folder, and whether THIS upload created it. A failed upload
+    // removes a folder it created if it is empty (FAT refuses otherwise), so
+    // a host looping SDPUT+ABORT cannot fill /themes with empty folders that
+    // push real packs out of the loader's 32-folder scan.
+    char     dir_[PATH_CAP] = "";
+    bool     newDir_ = false;
+
+    void dropNewDir() {
+        if (newDir_ && io_.isDir(dir_)) io_.rmdir(dir_);
+        newDir_ = false;
+    }
 
     static bool firstIs(const char* line, const char* w) {
         const size_t n = strlen(w);
@@ -409,18 +426,32 @@ private:
         Path p;
         if (const char* why = putPolicy(path, size, p)) { out(reply, cap, "ERR %s", why); return; }
         if (!io_.present()) { out(reply, cap, "ERR no card"); return; }
-        char dir[PATH_CAP];
-        snprintf(dir, sizeof dir, "/themes/%s", p.folder);
-        if (!ensureDir("/themes") || !ensureDir(dir)) { out(reply, cap, "ERR cannot create %s", dir); return; }
+        snprintf(dir_, sizeof dir_, "/themes/%s", p.folder);
+        newDir_ = false;
+        if (!ensureDir("/themes")) { out(reply, cap, "ERR cannot create /themes"); return; }
+        const bool hadDir = io_.isDir(dir_);
+        if (!ensureDir(dir_)) { out(reply, cap, "ERR cannot create %s", dir_); return; }
+        newDir_ = !hadDir;
         snprintf(target_, sizeof target_, "%s", p.canon);
         snprintf(tmp_, sizeof tmp_, "%s.tmp", p.canon);
         snprintf(old_, sizeof old_, "%s.old", p.canon);
+        // Power-cut recovery: a cut between "target -> .old" and "temp ->
+        // target" (or a swap whose restore failed) leaves no target and the
+        // previous file as .old. Put it back before anything else, so an
+        // upload that then fails still leaves the old file where it was.
+        if (!io_.exists(target_) && io_.exists(old_) && !io_.isDir(old_)) {
+            if (!io_.rename(old_, target_)) { out(reply, cap, "ERR cannot restore %s", old_); return; }
+            char m[NOTE_CAP];
+            snprintf(m, sizeof m, "recovered %s from .old (an interrupted swap)", target_);
+            io_.note(false, m);
+        }
         if (io_.exists(tmp_) && (io_.isDir(tmp_) || !io_.remove(tmp_))) {
+            dropNewDir();
             out(reply, cap, "ERR cannot clear %s", tmp_); return;
         }
-        if (!io_.tmpOpen(tmp_)) { io_.remove(tmp_); out(reply, cap, "ERR cannot create %s", tmp_); return; }
+        if (!io_.tmpOpen(tmp_)) { io_.remove(tmp_); dropNewDir(); out(reply, cap, "ERR cannot create %s", tmp_); return; }
         up_ = true;
-        size_ = size; crc_ = crc; written_ = 0; run_ = 0; lastMs_ = nowMs;
+        size_ = size; crc_ = crc; written_ = 0; run_ = 0; lastMs_ = nowMs; startMs_ = nowMs;
         out(reply, cap, "OK put %s %u", target_, (unsigned)size_);
     }
 
@@ -430,30 +461,32 @@ private:
         return io_.mkdir(d) && io_.isDir(d);
     }
 
-    void chunk(const Tokens& t, char* reply, size_t cap) {
+    // True when the chunk was accepted (OK): only that refreshes the idle clock.
+    bool chunk(const Tokens& t, char* reply, size_t cap) {
         uint32_t off = 0;
         uint8_t data[CHUNK_MAX];
-        if (t.count != 3 || !parseDec(t.p[1], t.n[1], off)) { out(reply, cap, "ERR usage: D <offset> <hex>"); return; }
+        if (t.count != 3 || !parseDec(t.p[1], t.n[1], off)) { out(reply, cap, "ERR usage: D <offset> <hex>"); return false; }
         const long n = hexDecode(t.p[2], t.n[2], data, sizeof data);
-        if (n <= 0) { out(reply, cap, "ERR bad hex"); return; }
-        if ((uint64_t)off + (uint64_t)n > size_) { out(reply, cap, "ERR past declared size %u", (unsigned)size_); return; }
-        if (off > written_) { out(reply, cap, "ERR gap, expected offset %u", (unsigned)written_); return; }
-        if (!io_.present()) { fail(reply, cap, "no card"); return; }
+        if (n <= 0) { out(reply, cap, "ERR bad hex"); return false; }
+        if ((uint64_t)off + (uint64_t)n > size_) { out(reply, cap, "ERR past declared size %u", (unsigned)size_); return false; }
+        if (off > written_) { out(reply, cap, "ERR gap, expected offset %u", (unsigned)written_); return false; }
+        if (!io_.present()) { fail(reply, cap, "no card"); return false; }
         // A repeat of bytes already written (the host's retry after a lost
         // OK) is accepted only if it matches what is on the card.
         size_t same = written_ - off < (uint32_t)n ? (size_t)(written_ - off) : (size_t)n;
         if (same) {
             uint8_t have[CHUNK_MAX];
-            if (io_.tmpRead(off, have, same) != (long)same) { fail(reply, cap, "read-back failed"); return; }
-            if (memcmp(have, data, same)) { out(reply, cap, "ERR chunk at %u differs from bytes written", (unsigned)off); return; }
+            if (io_.tmpRead(off, have, same) != (long)same) { fail(reply, cap, "read-back failed"); return false; }
+            if (memcmp(have, data, same)) { out(reply, cap, "ERR chunk at %u differs from bytes written", (unsigned)off); return false; }
         }
         if ((size_t)n > same) {
             const size_t k = (size_t)n - same;
-            if (!io_.tmpAppend(data + same, k)) { fail(reply, cap, "write failed (card full or removed?)"); return; }
+            if (!io_.tmpAppend(data + same, k)) { fail(reply, cap, "write failed (card full or removed?)"); return false; }
             run_ = crc32(run_, data + same, k);
             written_ += (uint32_t)k;
         }
         out(reply, cap, "OK %u", (unsigned)off);
+        return true;
     }
 
     void finish(char* reply, size_t cap) {
@@ -481,11 +514,20 @@ private:
             if (!io_.rename(target_, old_)) { io_.remove(tmp_); bad(reply, cap, "rename failed"); return; }
         }
         if (!io_.rename(tmp_, target_)) {
-            if (hadOld) io_.rename(old_, target_);
+            const bool restored = !hadOld || io_.rename(old_, target_);
             io_.remove(tmp_);
-            bad(reply, cap, "rename failed");
+            if (restored) { bad(reply, cap, "rename failed"); return; }
+            // The old file is safe but under another name; the next SDPUT of
+            // this file renames it back first (see put()).
+            char why[PATH_CAP + 48];
+            snprintf(why, sizeof why, "rename failed, old file left as %s", old_);
+            char m[NOTE_CAP + PATH_CAP];
+            snprintf(m, sizeof m, "put %s failed (%s)", target_, why);
+            io_.note(true, m);
+            out(reply, cap, "ERR %s", why);
             return;
         }
+        newDir_ = false;                               // installed: the folder stays
         if (hadOld) io_.remove(old_);
         char m[NOTE_CAP];
         snprintf(m, sizeof m, "put %s %u bytes", target_, (unsigned)size_);
@@ -495,6 +537,7 @@ private:
 
     // A failure after the temp was closed (abort() no longer applies).
     void bad(char* reply, size_t cap, const char* why) {
+        dropNewDir();
         char m[NOTE_CAP];
         snprintf(m, sizeof m, "put %s failed (%s), card unchanged", target_, why);
         io_.note(true, m);

@@ -170,12 +170,36 @@ tested on a real unit.
 
 `put` uploads `emblem.bin` (if the folder has one) and then `theme.json` into
 `/themes/<name>/`, where `<name>` is the folder's name made safe the way the
-designer makes it (lower case, runs of other characters become `-`). Each file
-goes to `<file>.tmp` first; the device checks the size and the CRC-32 by reading
-the card back, and only then replaces the old file. A failed, interrupted or
-timed-out upload (10 s without data) leaves the old file as it was and removes
-the temp. A pack still needs a **reboot** to load: `sdput.py PORT reboot` (it
-writes the logging session's pending rows first; logging resumes into a new file).
+designer makes it (lower case, runs of other characters become `-`). The tool reads
+only regular files that really sit in that folder: a `theme.json` or `emblem.bin`
+that is a symlink (even to another file in the pack), a FIFO, a device or a
+directory is refused, so a booby-trapped pack zip cannot make it upload some other
+file from your computer. The folder you name may itself be a symlink; it is
+followed, and the pack is named after the folder as you typed it.
+
+Each file goes to `<file>.tmp` first. The device checks the size and the CRC-32 by
+reading the card back, and only then swaps it in: the old file is renamed to
+`<file>.old`, the temp to `<file>`, and the `.old` is deleted. A pack still needs a
+**reboot** to load: `sdput.py PORT reboot` (it writes the logging session's pending
+rows first; logging resumes into a new file).
+
+What is left on the card when something goes wrong:
+
+- **The host stops, sends bad data, or Ctrl-C is pressed** (the tool sends `ABORT`),
+  or no accepted chunk arrives for **10 s**, or the upload is still running **120 s**
+  after it began: the temp is removed and the old file is untouched. If the upload
+  had created the pack folder and it is still empty, the folder is removed too.
+- **The power is cut during the upload**: the old file is untouched, and a
+  `<file>.tmp` is left behind. The loader ignores it; the next upload of that file
+  replaces it, or delete it with `del`.
+- **The power is cut during the swap at the end** (a window of two renames), or
+  both the swap and its undo fail: the old file may be left as `<file>.old` with no
+  `<file>`, so that pack is skipped at boot (or shown without its emblem). The next
+  `put` of that pack renames `.old` back before it starts, so the old file returns
+  even if that upload fails too; you can also `del` the leftover.
+- **Replacing a pack** sends `emblem.bin` before `theme.json`. If the second file
+  fails, the card has the new emblem with the old `theme.json`. That is cosmetic
+  (the old theme with the new picture); run `put` again.
 
 What the serial commands may touch, and nothing else:
 
@@ -191,6 +215,13 @@ Each change is written to `/diag.log` (`INFO sd: put /themes/x/theme.json 758 by
 it does not reset the board; if your board still resets when the port opens, run
 `stty -F /dev/ttyUSB0 -hupcl` once first. The protocol is described at the top of
 `device/sdcmd.h`.
+
+Known limitation, for any future tool that drives this port from a web page (Web
+Serial): `SDDEL` and `REBOOT` act without a confirmation on the device. Anything
+that can write to the port can delete pack files and old logs or restart the unit.
+A browser path must either leave those two commands out or get an on-device
+confirmation added first. Nothing of the kind is built now; `tools/sdput.py`, run
+by you on your own computer, is the only client.
 
 ## How the device treats a pack
 

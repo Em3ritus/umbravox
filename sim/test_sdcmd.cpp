@@ -38,6 +38,7 @@ struct FakeSd : sdcmd::Io {
     bool card = true;
     int  failWriteAfter = -1;     // appends allowed before every append fails
     bool failRename = false, failMkdir = false, failOpen = false, failClose = false;
+    std::set<std::string> failRenameOf;   // renames FROM these paths fail
     size_t capacity = 1u << 20;   // bytes on the card (a full card fails short)
     std::string tmpKey;
     bool tmpOpenNow = false;
@@ -71,7 +72,7 @@ struct FakeSd : sdcmd::Io {
     }
     bool rename(const char* from, const char* to) override {
         const std::string a = key(from), b = key(to);
-        if (!card || failRename || !files.count(a) || files.count(b) || dirs.count(b)) return false;
+        if (!card || failRename || failRenameOf.count(a) || !files.count(a) || files.count(b) || dirs.count(b)) return false;
         files[b] = files[a];
         files.erase(a);
         return true;
@@ -641,6 +642,151 @@ static void testUpload() {
     }
 }
 
+
+// --- fix round 1: swap failure, .old recovery, idle/total clocks, phantom folders ---
+static void testFixRound1() {
+    printf("swap failure and .old recovery:\n");
+    {
+        Rig r;
+        const auto old = bytes(40, 4), d = bytes(100, 5);
+        r.sd.mkdir("/themes"); r.sd.mkdir("/themes/x");
+        r.sd.put("/themes/x/theme.json", old);
+        r.sdput("/themes/x/theme.json", d);
+        r.chunk(0, d, 0, 96); r.chunk(96, d, 96, 4);
+        // target -> .old works, temp -> target fails, and the restore fails too
+        r.sd.failRenameOf = {"/themes/x/theme.json.tmp", "/themes/x/theme.json.old"};
+        const std::string e = r.send("END");
+        check("double rename failure: ERR names the .old", e.rfind("ERR", 0) == 0 &&
+              e.find("old file left as /themes/x/theme.json.old") != std::string::npos);
+        check("...the diag line says so, not 'card unchanged'",
+              !r.sd.notes.empty() && r.sd.notes.back().find("old file left as /themes/x/theme.json.old") != std::string::npos &&
+              r.sd.notes.back().find("card unchanged") == std::string::npos);
+        check("...the old bytes are in .old, no target, no temp",
+              r.sd.get("/themes/x/theme.json.old") == old && !r.sd.has("/themes/x/theme.json") &&
+              !r.sd.has("/themes/x/theme.json.tmp"));
+        r.sd.failRenameOf.clear();
+        check("next SDPUT of that file: OK", r.sdput("/themes/x/theme.json", d).rfind("OK put", 0) == 0);
+        check("...restored .old to the target before starting",
+              r.sd.get("/themes/x/theme.json") == old && !r.sd.has("/themes/x/theme.json.old"));
+        check("...a recovery INFO line", r.sd.notes.back().find("recovered") != std::string::npos);
+        check("...ABORT then leaves the restored old file", r.send("ABORT") == "OK aborted" &&
+              r.sd.get("/themes/x/theme.json") == old);
+    }
+    {
+        Rig r;   // a power cut between target -> .old and temp -> target
+        const auto old = bytes(30, 1), d = bytes(50, 2);
+        r.sd.mkdir("/themes"); r.sd.mkdir("/themes/x");
+        r.sd.put("/themes/x/emblem.bin.old", old);
+        r.sd.put("/themes/x/emblem.bin.tmp", d);
+        check("power-cut leftovers: SDPUT restores .old, clears .tmp",
+              r.sdput("/themes/x/emblem.bin", d).rfind("OK put", 0) == 0 &&
+              r.sd.get("/themes/x/emblem.bin") == old && !r.sd.has("/themes/x/emblem.bin.old"));
+        check("...and the upload then replaces it", r.chunk(0, d, 0, 50) == "OK 0" && r.send("END") == doneFor(d) &&
+              r.sd.get("/themes/x/emblem.bin") == d);
+    }
+    {
+        Rig r;   // target present AND a stale .old: the target wins, .old goes at the swap
+        const auto cur = bytes(30, 1), stale = bytes(20, 9), d = bytes(40, 3);
+        r.sd.mkdir("/themes"); r.sd.mkdir("/themes/x");
+        r.sd.put("/themes/x/theme.json", cur);
+        r.sd.put("/themes/x/theme.json.old", stale);
+        r.sdput("/themes/x/theme.json", d);
+        check("target present: not overwritten by a stale .old", r.sd.get("/themes/x/theme.json") == cur);
+        check("...upload completes, stale .old gone", r.chunk(0, d, 0, 40) == "OK 0" && r.send("END") == doneFor(d) &&
+              r.sd.get("/themes/x/theme.json") == d && !r.sd.has("/themes/x/theme.json.old"));
+    }
+    {
+        Rig r;
+        r.sd.mkdir("/themes"); r.sd.mkdir("/themes/x");
+        r.sd.put("/themes/x/theme.json.old", bytes(20, 9));
+        r.sd.failRenameOf = {"/themes/x/theme.json.old"};
+        check("recovery rename fails: ERR, no upload", r.sdput("/themes/x/theme.json", bytes(10, 1)).rfind("ERR", 0) == 0 &&
+              !r.con.uploading() && r.sd.has("/themes/x/theme.json.old"));
+    }
+
+    printf("idle clock and total cap:\n");
+    {
+        Rig r;
+        const auto d = bytes(300, 3);
+        char rep[sdcmd::REPLY_CAP];
+        r.sdput("/themes/x/theme.json", d);
+        r.now += 9000;
+        check("malformed D: ERR", r.send("D 0 zz").rfind("ERR", 0) == 0);
+        check("gap D: ERR", r.chunk(192, d, 192, 96).rfind("ERR gap", 0) == 0);
+        check("other command: ERR in progress", r.send("SDLS").rfind("ERR upload in progress", 0) == 0);
+        check("END usage error: ERR", r.send("END x").rfind("ERR", 0) == 0);
+        r.now += 1000;
+        check("refused lines do not refresh the idle clock", r.con.tick(r.now, rep, sizeof rep) && !r.con.uploading());
+    }
+    {
+        Rig r;
+        const auto d = bytes(300, 3);
+        char rep[sdcmd::REPLY_CAP];
+        r.sdput("/themes/x/theme.json", d);
+        r.chunk(0, d, 0, 96);
+        bool alive = true;
+        // A host repeating an accepted (duplicate) chunk every 5 s forever.
+        for (uint32_t t = 5000; t < sdcmd::TOTAL_MS; t += 5000) {
+            r.now = 1000 + t;
+            if (r.chunk(0, d, 0, 96) != "OK 0" || r.con.tick(r.now, rep, sizeof rep)) { alive = false; break; }
+        }
+        check("accepted chunks keep it alive below the cap", alive && r.con.uploading());
+        r.now = 1000 + sdcmd::TOTAL_MS - 1;
+        check("119.999 s: still running", !r.con.tick(r.now, rep, sizeof rep));
+        r.now = 1000 + sdcmd::TOTAL_MS;
+        check("120 s total: aborted with a line", r.con.tick(r.now, rep, sizeof rep) && !strncmp(rep, "ERR", 3) &&
+              !r.con.uploading() && !r.sd.has("/themes/x/theme.json.tmp"));
+        check("total cap is 120 s", sdcmd::TOTAL_MS == 120000);
+    }
+
+    printf("phantom folders:\n");
+    {
+        Rig r;
+        char rep[sdcmd::REPLY_CAP];
+        r.sdput("/themes/new1/theme.json", bytes(10, 1));
+        check("ABORT removes the folder this upload created",
+              r.send("ABORT") == "OK aborted" && !r.sd.isDir("/themes/new1") && r.sd.isDir("/themes"));
+        r.sdput("/themes/new2/theme.json", bytes(10, 1));
+        r.now += sdcmd::IDLE_MS;
+        check("timeout removes it", r.con.tick(r.now, rep, sizeof rep) && !r.sd.isDir("/themes/new2"));
+        r.sdput("/themes/new3/theme.json", bytes(10, 1));
+        r.sdput("/themes/new4/theme.json", bytes(10, 1));
+        check("a replacing SDPUT removes the old upload's new folder",
+              !r.sd.isDir("/themes/new3") && r.sd.isDir("/themes/new4"));
+        r.send("ABORT");
+        char l[96];
+        snprintf(l, sizeof l, "SDPUT /themes/new5/theme.json 10 %08x", 0x12345678u);
+        r.send(l);
+        const auto d = bytes(10, 1);
+        r.chunk(0, d, 0, 10);
+        check("CRC failure removes it", r.send("END").rfind("ERR crc", 0) == 0 && !r.sd.isDir("/themes/new5"));
+        r.sdput("/themes/new6/theme.json", d);
+        r.sd.failWriteAfter = 0;
+        check("write failure removes it", r.chunk(0, d, 0, 10).rfind("ERR write", 0) == 0 && !r.sd.isDir("/themes/new6"));
+        r.sd.failWriteAfter = -1;
+        r.sdput("/themes/new7/theme.json", d);
+        r.send("REBOOT");
+        check("REBOOT mid-upload removes it", !r.sd.isDir("/themes/new7"));
+        int loops = 0;
+        for (int i = 0; i < 50; i++) { r.sdput(("/themes/p" + std::to_string(i) + "/emblem.bin").c_str(), d); r.send("ABORT"); loops++; }
+        check("50 x SDPUT+ABORT leave no folders", r.sd.dirs.size() == 2);   // "/" and "/themes"
+    }
+    {
+        Rig r;
+        r.sd.mkdir("/themes"); r.sd.mkdir("/themes/keep");
+        r.sdput("/themes/keep/theme.json", bytes(10, 1));
+        r.send("ABORT");
+        check("an existing (empty) folder is never removed", r.sd.isDir("/themes/keep"));
+        const auto e = bytes(20, 2), j = bytes(10, 3);
+        check("pack: emblem uploads into a new folder", r.upload("/themes/pk/emblem.bin", e) == doneFor(e));
+        r.sdput("/themes/pk/theme.json", j);
+        r.send("ABORT");
+        check("a later failed theme.json keeps the folder and its emblem",
+              r.sd.isDir("/themes/pk") && r.sd.get("/themes/pk/emblem.bin") == e);
+        check("success keeps a new folder", r.upload("/themes/ok/theme.json", j) == doneFor(j) && r.sd.isDir("/themes/ok"));
+    }
+}
+
 static void testDelete() {
     printf("delete / rmdir:\n");
     Rig r;
@@ -722,6 +868,7 @@ int main() {
     testCommands();
     testUpload();
     testDelete();
+    testFixRound1();
     testGolden();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
