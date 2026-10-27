@@ -190,6 +190,16 @@ card and see what is worth tuning:
 python3 -I tools/perf_report.py perf.0.csv perf.csv     # oldest first
 ```
 
+### The USB console
+
+At 115200 baud the CYD answers `TEST`, `WIGLE`, `SDLS [dir]`, `SDCAT <file>`,
+`DIAG`, `PERF`, `GPS`, `GPSFIX`, `ENROLL`, `NETRESET` and `NETSET <id>`, and, to
+install theme packs without removing the card, `SDPUT`, `SDDEL <path>`,
+`SDRMDIR <folder>` and `REBOOT`. Use `tools/sdput.py` for those rather than typing
+them (see [Installing over USB](docs/theme-packs.md#installing-over-usb-without-removing-the-card)).
+They work on the wired console only, can write nothing but pack files and delete
+nothing but pack files and old session logs, and are not yet verified on hardware.
+
 ## Project layout
 
 ```

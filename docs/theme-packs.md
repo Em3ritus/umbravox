@@ -151,6 +151,47 @@ the card for exactly this clash. Then eject the card properly and reboot the dev
 5. Eject the card properly from your computer (not just unplug it), put it in the
    CYD and reboot. Open ASPECT and step the THEME row past the built-ins.
 
+### Installing over USB without removing the card
+
+The CYD can also take a pack over its **USB cable**, through the same serial
+console as `DIAG` (CH340, 115200 baud). This is a **wired-console feature only**:
+nothing is sent over Wi-Fi, BLE or ESP-NOW, and it adds no network access. It is
+**not yet verified on hardware**; treat it as experimental until it has been
+tested on a real unit.
+
+```sh
+# from the repository, with the CYD on /dev/ttyUSB0
+~/.platformio/penv/bin/python tools/sdput.py /dev/ttyUSB0 put midnight-ember/
+~/.platformio/penv/bin/python tools/sdput.py /dev/ttyUSB0 reboot      # packs load at boot
+~/.platformio/penv/bin/python tools/sdput.py /dev/ttyUSB0 ls /themes/midnight-ember
+~/.platformio/penv/bin/python tools/sdput.py /dev/ttyUSB0 del /themes/midnight-ember/emblem.bin
+~/.platformio/penv/bin/python tools/sdput.py /dev/ttyUSB0 rmdir midnight-ember   # only when empty
+```
+
+`put` uploads `emblem.bin` (if the folder has one) and then `theme.json` into
+`/themes/<name>/`, where `<name>` is the folder's name made safe the way the
+designer makes it (lower case, runs of other characters become `-`). Each file
+goes to `<file>.tmp` first; the device checks the size and the CRC-32 by reading
+the card back, and only then replaces the old file. A failed, interrupted or
+timed-out upload (10 s without data) leaves the old file as it was and removes
+the temp. A pack still needs a **reboot** to load: `sdput.py PORT reboot` (it
+writes the logging session's pending rows first; logging resumes into a new file).
+
+What the serial commands may touch, and nothing else:
+
+- write: `/themes/<folder>/theme.json` (at most 4,096 bytes) and
+  `/themes/<folder>/emblem.bin` (at most 9,728 bytes); `<folder>` follows the
+  folder-name rule above and cannot be a DOS device name (`CON`, `NUL`, `COM1`...).
+- delete: those two files (and a `.tmp` or `.old` an interrupted upload left), an
+  empty pack folder, and old session logs `/WD-*.csv`, **never the one being
+  logged now**. Never `diag.log`, `perf.csv` or anything else.
+
+Each change is written to `/diag.log` (`INFO sd: put /themes/x/theme.json 758 bytes`,
+`INFO sd: del /WD-0003.csv`). The tool opens the port with DTR and RTS held low so
+it does not reset the board; if your board still resets when the port opens, run
+`stty -F /dev/ttyUSB0 -hupcl` once first. The protocol is described at the top of
+`device/sdcmd.h`.
+
 ## How the device treats a pack
 
 - Packs are read once, at **boot**, after the card mounts. After adding, changing or
