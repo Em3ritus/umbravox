@@ -81,9 +81,12 @@ static_assert(applog::ROLL_HARD_APS < INSERT_LIMIT,
 uint32_t  maxProbe_ = 0;
 volatile uint32_t nTableDrops = 0;
 volatile uint32_t nLongProbes = 0;   // inserts past PROBE_LIMIT: collision flood?
-// The evil-twin pass budget (twinbudget.h) and the passes it skipped.
-twinbudget::Bucket twinBudget;
-volatile uint32_t nTwinSkips = 0;
+// The evil-twin pass budget, SSID filter and deferred checks (twinbudget.h).
+twinbudget::Bucket     twinBudget;
+twinbudget::SsidFilter twinFilter;          // 4 KB
+twinbudget::DeferRing  twinRing;
+twinbudget::Job        twinJob;             // the loop task's deferred check
+volatile uint32_t nTwinDeferred = 0;
 static_assert(twinbudget::BURST >= (uint32_t)TABLE, "a pass over a full table must be affordable");
 static_assert(applog::ROLLOVER_APS <= dedup::crowdLimit(TABLE),
               "below the rollover no insert may be dropped for a long probe");
@@ -293,6 +296,46 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     insert(bssid, rssi, h, band, nameBuf, sig, 0, 0, auth);
 }
 
+// The evil-twin rule, shared by the inline pass and the deferred one: entry
+// `o` advertises the same SSID as the AP at `self` with different security,
+// from different hardware (another OUI). Mux held.
+//
+// Same SSID from a second BSSID is not suspicious by itself: that is what
+// every mesh, extender and enterprise roaming setup looks like. What a
+// legitimate deployment does *not* do is advertise different security on the
+// same name. Plenty of consumer routers put 2.4 and 5GHz on separate BSSIDs
+// and advertise different security on each -- but those share an OUI,
+// because they are one device. A clone runs on someone else's radio. An
+// attacker who spoofs the OUI too will slip past this. That is the trade: a
+// rule that fires on every dual-band router in the street is one you stop
+// reading.
+bool isTwin(const Node& o, const Node* self, const char* name, uint16_t auth,
+            const uint8_t* mac) {
+    if (&o == self || !o.ssid[0] || !o.auth) return false;
+    if (o.auth == auth) return false;
+    for (int k = 0; k < (int)ui::SSID_MAX; k++) {
+        if (o.ssid[k] != name[k]) return false;
+        if (!o.ssid[k]) break;
+    }
+    return !(o.mac[0] == mac[0] && o.mac[1] == mac[1] && o.mac[2] == mac[2]);
+}
+
+// MED, not HIGH: a half-reconfigured AP looks exactly like this. Mux held.
+void flagTwin(int slot, const char* name) {
+    table_[slot].threat = ui::TH_ROGUE;
+    table_[slot].conf   = ui::CONF_MED;
+    table_[slot].why    = "SSID AUTH CLASH";
+    if (alert_.conf <= ui::CONF_MED || (millis() - alert_.atMs) > 6000) {
+        alert_.threat = ui::TH_ROGUE;
+        alert_.conf   = ui::CONF_MED;
+        alert_.why    = "SSID AUTH CLASH";
+        int k = 0;
+        for (; k < ui::ALERT_NAME - 1 && name[k]; k++) alert_.name[k] = name[k];
+        alert_.name[k] = 0;
+        alert_.atMs = millis();
+    }
+}
+
 // The shared path: dedup, count, spectrum and dial, whether the sighting
 // came off our own radio or arrived over the mesh from a node.
 void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
@@ -368,17 +411,13 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             table_[slot].bestRssi = rssi;
         }
     }
-    // --- evil twin ------------------------------------------------------
+    // --- evil twin (the rule: isTwin above) -----------------------------
     //
-    // Same SSID from a second BSSID is not suspicious by itself: that is
-    // what every mesh, extender and enterprise roaming setup looks like.
-    // What a legitimate deployment does *not* do is advertise different
-    // security on the same name. A disagreement there means one of them is
-    // not what it claims.
-    //
-    // The pass walks the whole table, so it draws from a budget of entry
-    // visits (twinbudget.h): under a beacon flood it is skipped and counted
-    // rather than run for every fake SSID. And the lock is released every
+    // The pass walks the whole table, so it is gated (twinbudget.h): no walk
+    // when no AP in the table has this SSID (the filter), a walk paid from a
+    // budget of entry visits, and when the budget is spent the check is
+    // queued for the loop task (cap::tick) rather than dropped. The lock is
+    // released every
     // CHUNK visits so interrupts are never off for the whole walk. That is
     // safe on this single-core part: every insert() runs on the Wi-Fi task
     // (promiscuous and ESP-NOW receive callbacks), and the only other writers,
@@ -386,47 +425,19 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     // can run in the gap (ISRs, the few higher-priority tasks) touches the
     // table. The pass only reads other entries. On a dual-core build the lock
     // is simply held for the whole pass, as before.
-    bool twin = dedup::runTwinPass(hit, name, auth);
-    if (twin && !twinBudget.take(millis(), nOrder)) { nTwinSkips++; twin = false; }
-    if (twin) {
+    const twinbudget::Inline tg = twinbudget::gate(
+        dedup::runTwinPass(hit, name, auth), name, hashSeed, twinFilter, twinBudget,
+        millis(), nOrder, twinRing, (uint16_t)slot, tableGen);
+    if (tg == twinbudget::DEFERRED) nTwinDeferred++;
+    if (tg == twinbudget::RUN) {
         for (uint32_t q = 0; q < nOrder; q++) {
 #if CONFIG_FREERTOS_UNICORE
             if (twinbudget::chunkDue(q)) { portEXIT_CRITICAL(&mux); portENTER_CRITICAL(&mux); }
 #endif
-            Node& o = table_[order_[q]];
-            if (&o == &table_[slot] || !o.ssid[0] || !o.auth) continue;
-            if (o.auth == auth) continue;
-            bool sameName = true;
-            for (int k = 0; k < (int)ui::SSID_MAX; k++) {
-                if (o.ssid[k] != name[k]) { sameName = false; break; }
-                if (!o.ssid[k]) break;
+            if (isTwin(table_[order_[q]], &table_[slot], name, auth, bssid)) {
+                flagTwin(slot, name);
+                break;
             }
-            if (!sameName) continue;
-
-            // Also require different hardware. Plenty of consumer routers
-            // put 2.4 and 5GHz on separate BSSIDs and manage to advertise
-            // different security on each -- but those share an OUI, because
-            // they are one device. A clone runs on someone else's radio.
-            //
-            // An attacker who spoofs the OUI too will slip past this. That
-            // is the trade: a rule that fires on every dual-band router in
-            // the street is one you stop reading.
-            if (o.mac[0] == bssid[0] && o.mac[1] == bssid[1] && o.mac[2] == bssid[2])
-                continue;
-
-            // MED, not HIGH: a half-reconfigured AP looks exactly like this.
-            table_[slot].threat = ui::TH_ROGUE;
-            table_[slot].conf   = ui::CONF_MED;
-            table_[slot].why    = "SSID AUTH CLASH";
-            if (alert_.conf <= ui::CONF_MED || (millis() - alert_.atMs) > 6000) {
-                alert_.threat = ui::TH_ROGUE;
-                alert_.conf   = ui::CONF_MED;
-                alert_.why    = "SSID AUTH CLASH";
-                for (int k = 0; k < ui::ALERT_NAME - 1 && name[k]; k++)
-                    alert_.name[k] = name[k];
-                alert_.atMs = millis();
-            }
-            break;
         }
     }
 
@@ -447,6 +458,9 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         for (; k < (int)ui::SSID_MAX - 1 && name[k]; k++) table_[slot].ssid[k] = name[k];
         table_[slot].ssid[k] = 0;
     }
+    // Now that it has a name and security, other APs can be its twin: the
+    // filter (twinbudget.h) learns the name after this AP's own check above.
+    if (table_[slot].ssid[0] && table_[slot].auth) twinFilter.add(table_[slot].ssid, hashSeed);
 
     Blip& b = recent_[hsh % RECENT];
     b.angle  = (uint16_t)(hsh % 360);
@@ -545,6 +559,23 @@ void begin() {
 }
 
 void tick(uint32_t nowMs) {
+    // One bounded chunk (<= CHUNK entries, ~1 ms with the lock held) of a
+    // deferred evil-twin check, on the loop task, as the budget allows.
+    portENTER_CRITICAL(&mux);
+    {
+        uint16_t found = 0;
+        const twinbudget::Step st = twinbudget::step(twinJob, twinRing, twinBudget, nowMs,
+            tableGen, nOrder,
+            [](uint16_t tgt) {
+                return [tgt](uint32_t q) {
+                    const Node& t = table_[tgt];
+                    return isTwin(table_[order_[q]], &t, t.ssid, t.auth, t.mac);
+                };
+            }, found);
+        if (st == twinbudget::FOUND) flagTwin(found, table_[found].ssid);
+    }
+    portEXIT_CRITICAL(&mux);
+
     // Deauth rate, evaluated on its own clock rather than per frame.
     if (nowMs - deauthAt >= DEAUTH_WINDOW_MS) {
         deauthAt = nowMs;
@@ -904,6 +935,8 @@ void reset() {
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; }
     nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
+    twinFilter.clear(); twinRing = twinbudget::DeferRing{}; twinJob.active = false;
+    nTwinDeferred = 0;
     nProbes = 0; nProbeFrames = 0;
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
@@ -922,6 +955,8 @@ void rollover() {
     memset(used_, 0, sizeof(bool) * TABLE);
     nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0;                  // an empty table has no probe chains
+    twinFilter.clear();             // no SSIDs; queued checks die with tableGen
+    twinJob.active = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     tableGen++;
     portEXIT_CRITICAL(&mux);
@@ -944,6 +979,10 @@ uint16_t tableUse() { return (uint16_t)(nUsed > 65535 ? 65535 : nUsed); }
 uint16_t tableCap() { return (uint16_t)(TABLE > 65535 ? 65535 : TABLE); }
 uint32_t tableDrops() { return nTableDrops; }
 uint32_t longProbes() { return nLongProbes; }
-uint32_t twinSkips()  { return nTwinSkips; }
+void twinStats(uint32_t& deferred, uint32_t& lost, uint32_t& stale) {
+    portENTER_CRITICAL(&mux);
+    deferred = nTwinDeferred; lost = twinRing.lost; stale = twinRing.stale;
+    portEXIT_CRITICAL(&mux);
+}
 
 } // namespace cap

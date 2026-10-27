@@ -94,7 +94,9 @@ uint32_t tableDrops();
 // Inserts that needed a probe chain past dedup::PROBE_LIMIT while the table
 // was not crowded: under the keyed hash, the sign of a collision flood.
 uint32_t longProbes();
-// Evil-twin passes skipped because the visit budget was spent (a beacon flood).
-uint32_t twinSkips();
+// Evil-twin checks deferred because the visit budget was spent (a beacon
+// flood), checks lost from the full deferral queue, and checks dropped by a
+// rollover before they ran (twinbudget.h).
+void twinStats(uint32_t& deferred, uint32_t& lost, uint32_t& stale);
 
 } // namespace cap

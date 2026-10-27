@@ -845,12 +845,14 @@ void loop() {
             seenLong = lp;
         }
         static elog::Gate twinGate;
-        static uint32_t seenTwin = 0;
-        const uint32_t ts = cap::twinSkips();
-        if (ts != seenTwin && twinGate.allow(millis(), 60000)) {
-            elog::event(elog::WARN, "cap", "evil-twin scan skipped %lu times under load",
-                        (unsigned long)ts);
-            seenTwin = ts;
+        static uint32_t seenTwin = 0, seenLost = 0;
+        uint32_t td, tl, tst;
+        cap::twinStats(td, tl, tst);
+        if ((td != seenTwin || tl != seenLost) && twinGate.allow(millis(), 60000)) {
+            elog::event(elog::WARN, "cap", "evil-twin checks under load: %lu deferred, "
+                        "%lu lost (queue full), %lu dropped by a rollover",
+                        (unsigned long)td, (unsigned long)tl, (unsigned long)tst);
+            seenTwin = td; seenLost = tl;
         }
     }
     {
