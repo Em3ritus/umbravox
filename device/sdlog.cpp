@@ -6,6 +6,10 @@
 
 namespace sdlog {
 namespace {
+// The element count of an ARRAY; does not compile on a pointer (see
+// themepack::capOf), so no buffer capacity here can become sizeof(char*).
+template <class T, size_t N>
+constexpr size_t capOf(const T (&)[N]) { return N; }
 bool mounted = false;
 uint32_t stallMax = 0;                         // longest write since takeMaxStallMs()
 inline void noteStall(uint32_t t0) {
@@ -58,8 +62,8 @@ static bool writeAtomicImpl(const char* name,
     // name.tmp / name.bak alongside the target. Guard the buffer: a silent
     // snprintf truncation could make tmp == name and destroy the live file.
     char tmp[64], bak[64];
-    if (snprintf(tmp, sizeof tmp, "%s.tmp", name) >= (int)sizeof tmp) return false;
-    if (snprintf(bak, sizeof bak, "%s.bak", name) >= (int)sizeof bak) return false;
+    if (snprintf(tmp, capOf(tmp), "%s.tmp", name) >= (int)capOf(tmp)) return false;
+    if (snprintf(bak, capOf(bak), "%s.bak", name) >= (int)capOf(bak)) return false;
 
     // 1. Write the whole document to a temp file. The live file is not touched
     //    at all until this has run and closed cleanly, so any failure here
@@ -122,7 +126,7 @@ bool dump(Print& out, const char* name) {
     if (!f) return false;
     uint8_t buf[256];
     while (f.available()) {
-        const int k = f.read(buf, sizeof buf);
+        const int k = f.read(buf, capOf(buf));
         if (k <= 0) break;
         out.write(buf, (size_t)k);
     }
@@ -153,6 +157,40 @@ uint32_t maxIndex(const char* prefix, const char* suffix) {
     }
     root.close();
     return hi;
+}
+
+bool listDir(const char* path, void (*cb)(const char* name, bool isDir, void* ctx), void* ctx) {
+    if (!mounted || !path || path[0] != '/' || !cb) return false;
+    File dir = SD.open(path, FILE_READ);
+    if (!dir) return false;
+    if (!dir.isDirectory()) { dir.close(); return false; }
+    for (uint32_t seen = 0; seen < LIST_MAX; seen++) {
+        File f = dir.openNextFile();
+        if (!f) break;
+        // name() is the bare basename on this core; strip any path anyway.
+        const char* nm = f.name();
+        if (!nm) nm = "";
+        for (const char* p = nm; *p; p++) if (*p == '/') nm = p + 1;
+        cb(nm, f.isDirectory(), ctx);
+        f.close();
+    }
+    dir.close();
+    return true;
+}
+
+uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap) {
+    if (!mounted || !path || path[0] != '/' || !buf || cap == 0) return 0;
+    File f = SD.open(path, FILE_READ);
+    if (!f) return 0;
+    if (f.isDirectory()) { f.close(); return 0; }
+    uint32_t got = 0;
+    while (got < cap) {                 // each pass makes progress or stops
+        const size_t k = f.read(buf + got, cap - got);
+        if (k == 0 || k > cap - got) break;
+        got += (uint32_t)k;
+    }
+    f.close();
+    return got;
 }
 
 uint32_t sizeOf(const char* name) {

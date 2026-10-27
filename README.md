@@ -60,6 +60,16 @@ switchable themes, animated dials, a summoning-circle aesthetic.
   whichever theme's colours are active, so every theme can use every sweep
   (the gaze needs the seal's eyes, so it stays with BAPH0MAU5).
 
+## Theme packs
+
+You can give UMBRAVOX your own look without a toolchain. A theme pack is a small
+data-only folder on the SD card (`/themes/<name>/theme.json`, plus an optional
+`emblem.bin`) that sets the colours, the centrepiece picture, the sweeps and the
+alert rite. The [theme designer](https://em3ritus.github.io/umbravox/designer/)
+builds one with a live preview and can write it to the card; the reference,
+including every limit, is [docs/theme-packs.md](docs/theme-packs.md). Packs cannot run
+code or touch the radios.
+
 ## Hardware
 
 Primary target is the **RockBase NM-CYD-C5** — a "Cheap Yellow Display" for the C5:

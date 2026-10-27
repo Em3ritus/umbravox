@@ -86,7 +86,8 @@ void adjustAspect(Settings& st, int row, int dir) {
     }
     if (row == 0) {
         const int v = (int)st.theme + dir;
-        st.theme = (uint8_t)((v + pal::TH_COUNT) % pal::TH_COUNT);
+        const int n = pal::themeCount();        // built-ins, then packs
+        st.theme = (uint8_t)((v + n) % n);
         clampSettings(st);          // the new theme may not offer this sweep
         return;
     }
@@ -239,12 +240,14 @@ void clampSettings(Settings& s) {
     if (s.bleDuty > 100) s.bleDuty = 100;
     if (s.bands > 2)     s.bands = 0;
     if (s.idleIdx >= IDLE_N) s.idleIdx = 2;
-    if (s.theme >= pal::TH_COUNT) s.theme = pal::TH_UMBRAVOX;
+    if (s.theme >= pal::themeCount()) s.theme = pal::TH_UMBRAVOX;
     if (s.labels > 1)             s.labels = 0;
     if (s.sweep >= SW_COUNT)      s.sweep = SW_RADAR;
     // A sweep the active theme does not offer is not a preference to be
-    // preserved; it is a sweep that would draw nothing meaningful.
-    if (!(pal::sweepMask(s.theme) & (1 << s.sweep))) s.sweep = SW_RADAR;
+    // preserved; it is a sweep that would draw nothing meaningful. It falls
+    // back to the theme's own start (RADAR for the built-ins), because a pack
+    // need not offer RADAR.
+    if (!(pal::sweepMask(s.theme) & (1 << s.sweep))) s.sweep = pal::startSweep(s.theme);
     if (s.alertStyle >= ALERT_STYLE_COUNT) s.alertStyle = AL_SUPERNOVA;
     // `reserved` is deliberately not clamped: it is compared, never read.
 }

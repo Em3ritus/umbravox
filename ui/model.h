@@ -262,6 +262,12 @@ struct State {
     bool     touchDown = false;
 
     uint32_t frame = 0;           // animation clock; drives the sweep
+
+    // Theme pack folders on the SD card that were skipped at boot (bad file,
+    // clash, over the limit, or a reset while loading one). ASPECT shows the
+    // count so a failure is visible without a computer; the reasons are in
+    // /diag.log. Saturates at 255.
+    uint8_t  packsSkipped = 0;
 };
 
 } // namespace ui

@@ -1,5 +1,9 @@
 #include "palette.h"
 #include "layout.h"
+#include "model.h"
+#include "muffinseal.h"
+#include "themepack.h"
+#include <string.h>
 
 namespace ui {
 int DIAL_Y, DIAL_H, DIAL_CX, DIAL_CY;
@@ -25,6 +29,8 @@ namespace {
 // block of assignments can.
 struct Row {
     const char* name;
+    const char* header;              // the scan masthead
+    Centrepiece centre;
     uint16_t sweeps;                 // bitmask over Sweep (>8 sweeps, so 16-bit)
     int16_t dialY, dialH, dialCx, dialCy;
     int16_t rField, rRunes, rBound, rStar;
@@ -40,7 +46,7 @@ struct Row {
 };
 
 constexpr Row THEMES[TH_COUNT] = {
-    {   "UMBRAVOX",
+    {   "UMBRAVOX", "UMBRAVOX", CP_HEPTAGRAM,
         0b11111111101,               // every sweep but the gaze (incl. cosmic)
         13, 70, 109, 48,   22, 26, 31, 20,   85, 16,
         rgb(0x07,0x04,0x0E), rgb(0x13,0x0B,0x22), rgb(0x18,0x0F,0x2C),
@@ -57,7 +63,7 @@ constexpr Row THEMES[TH_COUNT] = {
         rgb(0xD0,0x2B,0xB4), rgb(0x6F,0xD3,0xF5), rgb(0x4A,0xDE,0x80),
         rgb(0xF5,0x9E,0x0B), rgb(0xEF,0x44,0x44),
     },
-    {   "BAPH0MAU5",
+    {   "BAPH0MAU5", "CVLT OF BAPH0MAU5", CP_SEAL,
         0b11111111111,               // all sweeps, cosmic + gaze
         13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
         rgb(0x06,0x03,0x0C), rgb(0x13,0x09,0x21), rgb(0x1D,0x11,0x33),
@@ -71,7 +77,7 @@ constexpr Row THEMES[TH_COUNT] = {
         rgb(0x3B,0xFF,0x6E), rgb(0xF2,0xEE,0xFF), rgb(0x9B,0x62,0xF0),
         rgb(0xF5,0x9E,0x0B), rgb(0xD4,0x24,0x20),
     },
-    {   "COSMIC MUFFIN",
+    {   "COSMIC MUFFIN", "COSMIC MVFFIN", CP_EMBLEM,
         0b11111111101,               // every sweep but the gaze -- no eyes (0x7FD)
         13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
         rgb(0x09,0x07,0x1C), rgb(0x16,0x10,0x3A), rgb(0x1E,0x16,0x46),
@@ -87,8 +93,24 @@ constexpr Row THEMES[TH_COUNT] = {
     },
 };
 
+// Theme packs, appended after the built-ins at ids TH_COUNT + slot. Static
+// storage: a pack Row's name and header point into PACKS, so they live as long
+// as the program. Zero-initialised and filled only by addPack, at boot.
+themepack::Pack           PACKS[themepack::MAX_PACKS];
+Row                       PACK_ROWS[themepack::MAX_PACKS];
+const themepack::Emblem*  PACK_EMBLEM[themepack::MAX_PACKS];
+int                       nPacks = 0;
+
+// The slot for a pack theme id, or -1 for a built-in or an id past the packs.
+inline int slotOf(uint8_t id) {
+    const int s = (int)id - (int)TH_COUNT;
+    return (s >= 0 && s < nPacks) ? s : -1;
+}
+
 inline const Row& row(uint8_t id) {
-    return THEMES[id < TH_COUNT ? id : (uint8_t)TH_UMBRAVOX];
+    if (id < TH_COUNT) return THEMES[id];
+    const int s = slotOf(id);
+    return s >= 0 ? PACK_ROWS[s] : THEMES[TH_UMBRAVOX];
 }
 
 } // namespace
@@ -131,5 +153,103 @@ const DefaultTheme _defaultTheme;
 
 const char* themeName(uint8_t id) { return row(id).name; }
 uint16_t    sweepMask(uint8_t id) { return row(id).sweeps; }
+
+// --- theme packs ----------------------------------------------------------
+
+int themeCount() { return TH_COUNT + nPacks; }
+
+int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
+    if (nPacks >= themepack::MAX_PACKS) return -1;
+    const int slot = nPacks;
+    themepack::Pack& p = PACKS[slot];
+    p = in;
+
+    // The parser already guarantees all of this; the table does not rely on
+    // it, because a caller that hand-builds a Pack (the sim, a test) skips it.
+    p.name[themepack::MAX_NAME] = 0;
+    p.author[themepack::MAX_AUTHOR] = 0;
+    p.header[themepack::MAX_HEADER] = 0;
+    if (!p.header[0]) {                     // default the masthead to the name
+        memcpy(p.header, p.name, themepack::MAX_HEADER);
+        p.header[themepack::MAX_HEADER] = 0;
+    }
+    if (p.dial != themepack::DIAL_LARGE) p.dial = themepack::DIAL_COMPACT;
+    if (p.centre != themepack::CENTRE_EMBLEM) p.centre = themepack::CENTRE_HEPTAGRAM;
+    if ((unsigned)p.rite > (unsigned)themepack::RITE_LOCKON) p.rite = themepack::RITE_WARD;
+    // The starting sweep must be one the pack offers, or clampSettings could
+    // fall back to a sweep that is itself withdrawn.
+    p.sweeps &= (uint16_t)((1u << ui::SW_COUNT) - 1);
+    if (!p.sweeps) p.sweeps = (uint16_t)(1u << ui::SW_RADAR);
+    if (p.sweep >= ui::SW_COUNT || !(p.sweeps & (1u << p.sweep))) {
+        p.sweep = 0;
+        while (!(p.sweeps & (1u << p.sweep))) p.sweep++;
+    }
+    // amber/red are status-only: a pack cannot make them vanish.
+    themepack::sanitizeStatus(p);
+
+    using namespace themepack;
+    Row r = THEMES[p.dial == DIAL_LARGE ? TH_COSMICMUFFIN : TH_UMBRAVOX];   // geometry
+    r.name = p.name;
+    r.header = p.header;
+    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : CP_HEPTAGRAM;
+    r.sweeps = p.sweeps;
+    const uint16_t* c = p.color;
+    r.void_ = c[R_VOID];   r.panel = c[R_PANEL];     r.grid = c[R_GRID];
+    r.edge = c[R_EDGE];    r.edgeLit = c[R_EDGELIT];
+    r.dim = c[R_DIM];      r.text = c[R_TEXT];       r.bright = c[R_BRIGHT];
+    r.witch = c[R_WITCH];  r.witchHi = c[R_WITCHHI]; r.bone = c[R_BONE];
+    r.sweep = c[R_SWEEP];  r.sweepHi = c[R_SWEEPHI];
+    r.live = c[R_LIVE];    r.liveHi = c[R_LIVEHI];
+    // The same ramp UMBRAVOX uses: the theme's own darkest to brightest.
+    r.ramp[0] = c[R_VOID]; r.ramp[1] = c[R_EDGE]; r.ramp[2] = c[R_DIM]; r.ramp[3] = c[R_BRIGHT];
+    r.magenta = c[R_MAGENTA]; r.ice = c[R_ICE];      r.green = c[R_GREEN];
+    r.amber = c[R_AMBER];  r.red = c[R_RED];
+    PACK_ROWS[slot] = r;
+    PACK_EMBLEM[slot] = e;
+    nPacks++;
+    return TH_COUNT + slot;
+}
+
+// Host tools and tests only; the device never calls it (see palette.h).
+void clearPacks() {
+    memset(PACKS, 0, sizeof PACKS);
+    memset(PACK_ROWS, 0, sizeof PACK_ROWS);
+    for (int s = 0; s < themepack::MAX_PACKS; s++) PACK_EMBLEM[s] = nullptr;
+    nPacks = 0;
+}
+
+int findPack(const char* name) {
+    if (!name || !name[0]) return -1;
+    for (int s = 0; s < nPacks; s++)
+        if (!strcmp(PACKS[s].name, name)) return TH_COUNT + s;
+    return -1;
+}
+
+uint8_t resolveSaved(const char* name, uint8_t savedId) {
+    if (name && name[0]) {
+        const int id = findPack(name);
+        return id >= 0 ? (uint8_t)id : (uint8_t)TH_UMBRAVOX;
+    }
+    return savedId < TH_COUNT ? savedId : (uint8_t)TH_UMBRAVOX;
+}
+
+Centrepiece centrepiece(uint8_t id) { return row(id).centre; }
+const char* header(uint8_t id)      { return row(id).header; }
+
+const themepack::Emblem* emblem(uint8_t id) {
+    if (id == TH_COSMICMUFFIN) return &ui::muffinEmblem();
+    const int s = slotOf(id);
+    return s >= 0 ? PACK_EMBLEM[s] : nullptr;
+}
+
+uint8_t startSweep(uint8_t id) {
+    const int s = slotOf(id);
+    return s >= 0 ? PACKS[s].sweep : (uint8_t)ui::SW_RADAR;
+}
+
+uint8_t packRite(uint8_t id) {
+    const int s = slotOf(id);
+    return (uint8_t)(s >= 0 ? PACKS[s].rite : themepack::RITE_WARD);
+}
 
 } // namespace pal

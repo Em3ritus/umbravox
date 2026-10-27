@@ -88,7 +88,7 @@ A folder `/themes/<folder>/` on the card:
 |---|---|---|
 | `theme.json` | yes | the theme's settings, below |
 | `emblem.bin` | if `centrepiece` is `emblem` | the centrepiece picture, device format |
-| `preview.png` | no | for the designer and (later) the gallery; the device ignores it |
+| `preview.png` | no | the device ignores it; the designer does not write one (a pack is `theme.json` plus the optional `emblem.bin`) |
 
 ### `theme.json`
 
@@ -109,7 +109,7 @@ A folder `/themes/<folder>/` on the card:
 
 - `format`: integer; this document defines `1`. A pack with a higher number is skipped
   with a clear reason. Unknown keys are ignored (so later projects can add some).
-- `name`: 1–20 characters, A–Z 0–9 space `- .`; also the key the choice is saved by.
+- `name`: 1–20 characters, A–Z 0–9 space `- .`; also the key the choice is saved by. `name`, `header` and `author` cannot contain a double quote or a backslash (the parser reads no string escapes).
 - `author`: 0–24 printable ASCII; informational.
 - `header`: 1–18 characters from the font (uppercase, digits, space and punctuation in
   ASCII 32..95); shown in the scan-screen header. Lowercase is folded to capitals.
@@ -148,7 +148,7 @@ just an emblem and one drawing routine serves both.
 |---|---|
 | packs the device loads | 8: the first 8 by folder name; the rest are ignored and logged |
 | folder name | letters, digits, `-` `_`, 1-31 characters; anything else is skipped |
-| `name` | unique among packs and not a built-in's name (`UMBRAVOX`, `CVLT OF BAPH0MAU5`, `COSMIC MUFFIN`) |
+| `name` | unique among packs and not a built-in's name (`UMBRAVOX`, `BAPH0MAU5`, `CVLT OF BAPH0MAU5`, `COSMIC MUFFIN`: every name a built-in displays) |
 | `theme.json` | ≤ 4 KB |
 | `emblem.bin` | ≤ 96×96, ≤ 16 colours, ≤ 9.5 KB |
 | whole pack | ≤ 64 KB |
@@ -158,8 +158,8 @@ just an emblem and one drawing routine serves both.
 
 - **Scan.** At boot, after the card mounts, read `/themes/*`. Parse each `theme.json`
   into a runtime theme row (the compiled table stays `constexpr`; packs fill a small
-  RAM table appended after it). The emblem pixels are loaded only for the *selected*
-  pack (into PSRAM) and released when another theme is selected.
+  RAM table appended after it). All admitted emblems (at most 8 x 9.5 KB) are kept resident in
+  PSRAM at boot: it avoids a load callback inside the shared UI code.
 - **Pick.** The THEME row on ASPECT steps built-ins then packs; `adjustAspect` and
   `clampSettings` use a dynamic theme count. Sweeps offered follow the pack's list; a
   chosen sweep the theme does not offer resets to RADAR as today.
@@ -177,8 +177,10 @@ just an emblem and one drawing routine serves both.
 - **Sweep fallback.** A chosen sweep the theme does not offer resets to the pack's own
   starting `sweep` (not RADAR, which a pack need not offer).
 - **Show failures.** A skipped pack is logged in `/diag.log` with the reason. ASPECT
-  shows a short "N SKIPPED -- SEE DIAG LOG" line when any pack was skipped, so a
-  failure is visible without a computer.
+  shows the skipped count when any pack was skipped, so a failure is visible without a
+  computer. As shipped the text is split around the dial preview: `N SKIPPED` to its
+  left and `DIAG LOG` to its right (no full-width strip exists without shrinking the
+  preview); the reason is in `/diag.log`.
 - **Reload.** Packs are read at boot only; a new or changed pack needs a reboot.
 - **Ordering and clashes.** Folders are read in sorted name order so the same 8 always
   win. A folder name outside `[A-Za-z0-9_-]{1,31}` (including `.`/`..` and anything with
@@ -239,11 +241,13 @@ meets it** and in a single reference page:
 1. A new or changed pack needs a **reboot** to appear; the card is read at boot.
 2. At most **8 packs** are loaded (the first 8 by folder name). Folder names are
    letters, digits, `-` and `_` only, and a theme name must be unique and cannot be a
-   built-in's name; otherwise that pack is skipped.
+   built-in's name (`UMBRAVOX`, `BAPH0MAU5`, `CVLT OF BAPH0MAU5`, `COSMIC MUFFIN`);
+   otherwise that pack is skipped. Only the first 32 folders by name are examined.
 3. The centrepiece is **≤ 96×96 and ≤ 16 colours**; photos are reduced and will look
    posterised. Expect pixel-art, not photographs.
 4. Header text is **uppercase only** (lowercase shows as capitals), limited to
-   letters, digits, space and common punctuation, **18 characters** max.
+   letters, digits, space and common punctuation, **18 characters** max. Name, header
+   and author cannot contain a double quote or a backslash.
 5. Colours are **RGB565**: fine differences between near colours disappear. The
    designer previews the clamped result.
 6. **Presets only** for layout: two dial sizes. No custom screen layout, fonts or
@@ -258,7 +262,8 @@ meets it** and in a single reference page:
     zip download and copy the folder to the card by hand.
 11. The SD card must be **FAT32** (as for logging).
 12. A pack that fails to load is **skipped**, not partially applied; the reason is in
-    `/diag.log` and a count is shown on ASPECT.
+    `/diag.log` and the count is shown on ASPECT (`N SKIPPED` and `DIAG LOG`, split
+    around the dial preview).
 13. Packs are checked for **format, not taste or origin**: nothing here signs, vets or
     moderates a pack. Only install packs from people you trust (moderation is project 2).
 

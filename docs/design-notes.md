@@ -242,6 +242,63 @@ flicker together, a few percent at a time. Contacts are simply there to be seen
 rather than found. If it looks almost still next to the others, that is the
 design, not a stalled animation.
 
+### Theme packs
+
+Reference for users: [theme-packs.md](theme-packs.md). The design reasons:
+
+**Data only.** A pack is `theme.json` plus an optional `emblem.bin`. The parser
+(`ui/themepack.cpp`) is allocation-free and bounded: it reads no string escapes (so
+name, header and author cannot hold a quote or backslash), rejects duplicate keys,
+ignores unknown ones, and has a host test with a mutation fuzz loop under ASan.
+`format` and the ignored unknown keys are the only forward-compatibility provision;
+there are no scripting hooks.
+
+**Pack rows.** Packs fill a small RAM table appended after the `constexpr` built-in
+rows; the theme count is dynamic in stepping and clamping. The selection is saved by
+name, not by index, so adding or removing other packs cannot change what is selected.
+A pack's four shading-ramp colours are fixed (`void, edge, dim, bright`); only the
+seal reads the ramp.
+
+**Motif and emblem drawing.** The muffin is just an emblem: one routine draws the
+indexed-colour picture for the built-in muffin and for packs. Every alert rite draws
+the active theme's motif where it needs a picture of the theme: the emblem blit (with
+the rite's brightness lift) for an `emblem` theme, a heptagram stroke in the rite's
+colour for a `heptagram` theme. That makes every centrepiece/alert pair defined. The
+Baphomet seal and the Gaze and Summon rites are withheld from packs.
+
+**Contrast rule.** Contrast is enforced where a colour is used as an alert edge, not
+by rewriting palette roles. When `drawAlert` picks the confidence edge, it checks the
+colour against `void` and `panel`; below 3:1 (`MIN_EDGE_CONTRAST_X10` = 30) a fixed
+safe colour (constants, not derived from the pack) is drawn instead. The status roles
+`amber` and `red` are replaced outright when they fail, with a log line. The pack still
+loads. Built-in themes pass, so their renders are byte-identical. Themes choose how an
+alert looks, never whether it shows.
+
+**Boot-loop guard.** Before a pack is parsed the loader records `folder:size` in NVS
+("loading") and clears it afterwards. At boot a surviving record is folded into a
+persistent bad-pack list, and any listed folder at that size is skipped and logged. One
+in-flight record is not enough: with two crashing packs the board would alternate
+between them forever, so every crashed pack goes into the list. Entries are pruned when
+the folder is gone or its size changed, so an edited pack gets another try. The list is
+capped at the 32 examined folders.
+
+**All admitted emblems stay resident.** The first design loaded an emblem only for the
+selected pack. The shipped one keeps every admitted emblem (at most 8 x 9.5 KB = 76 KB)
+in PSRAM from boot, because PSRAM has about 7 MB free, and it avoids a load callback
+inside the shared UI code. `pal::addPack` stores the emblem pointer once, so those
+buffers must stay alive.
+
+**Skipped packs on ASPECT.** The count is drawn as `N SKIPPED` left of the dial preview
+and `DIAG LOG` right of it. No full-width strip exists without shrinking the preview
+radius to about 16.
+
+**The preview is the real code.** The designer's preview is the device's own `ui/`
+drawing code compiled to WebAssembly (`web/designer/wasm/bridge.cpp` plus the
+simulator's source list, built by `tools/build-designer-wasm.sh` with the emscripten
+version pinned in `tools/emsdk-version.txt`). A separate re-implementation would drift,
+so a test compares its output with the simulator's for the same theme and frame. The
+page and its tests are in `web/designer/`; Pages builds and publishes it.
+
 ### ATTUNE
 
 ![attune](docs/attune.png)

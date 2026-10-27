@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "name": "UMBRAVOX CLONE",
+  "author": "umbravox",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "heptagram",
+  "sweeps": ["radar", "pulse", "star", "candle", "galaxy", "orbit", "starfall", "pulsar", "comet", "aurora"],
+  "sweep": "radar",
+  "alert": "ward",
+  "colors": {
+    "void": "#07040E", "panel": "#130B22", "grid": "#180F2C",
+    "edge": "#2E1F52", "edgeLit": "#563697",
+    "dim": "#6B4F9E", "text": "#C2ABE4", "bright": "#F2E8FF",
+    "witch": "#9D7BFF", "witchHi": "#D6C2FF", "bone": "#C9B897",
+    "sweep": "#9D7BFF", "sweepHi": "#D6C2FF",
+    "live": "#D6C2FF", "liveHi": "#F2E8FF",
+    "magenta": "#D02BB4", "ice": "#6FD3F5", "green": "#4ADE80",
+    "amber": "#F59E0B", "red": "#EF4444"
+  }
+}

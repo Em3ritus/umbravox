@@ -1,0 +1,664 @@
+// Bounded recursive-descent parser for theme.json. See themepack.h.
+#include "themepack.h"
+#include "model.h"
+#include "contrast.h"
+#include <string.h>
+#include <stdio.h>
+
+namespace themepack {
+namespace {
+
+constexpr int MAX_DEPTH = 4;
+
+struct P {
+    const char* s;
+    size_t n;
+    size_t i;
+    const char* err;
+};
+
+bool fail(P& p, const char* why) {
+    if (!p.err) p.err = why;
+    return false;
+}
+
+void ws(P& p) {
+    while (p.i < p.n && (p.s[p.i] == ' ' || p.s[p.i] == '\t' ||
+                         p.s[p.i] == '\n' || p.s[p.i] == '\r'))
+        p.i++;
+}
+
+bool eat(P& p, char c) {
+    ws(p);
+    if (p.i < p.n && p.s[p.i] == c) { p.i++; return true; }
+    return false;
+}
+
+// A string with no escapes and no control bytes. Writes up to cap chars into
+// buf (when non-null); a longer string is an error only when `strict`, else
+// it is consumed and truncated by returning len > cap via *len.
+bool str(P& p, char* buf, size_t cap, size_t* len) {
+    ws(p);
+    if (p.i >= p.n || p.s[p.i] != '"') return fail(p, "expected string");
+    p.i++;
+    size_t k = 0;
+    while (p.i < p.n) {
+        unsigned char c = (unsigned char)p.s[p.i];
+        if (c == '"') { p.i++; if (len) *len = k; if (buf && k <= cap) buf[k] = 0; return true; }
+        if (c == '\\') return fail(p, "string escapes not supported");
+        if (c < 32 || c > 126) return fail(p, "bad character in string");
+        if (buf && k < cap) buf[k] = (char)c;
+        k++;
+        p.i++;
+    }
+    return fail(p, "unterminated string");
+}
+
+bool skipValue(P& p, int depth);
+
+bool skipContainer(P& p, int depth, char open, char close) {
+    if (depth >= MAX_DEPTH) return fail(p, "nested too deep");
+    p.i++;  // the opener
+    (void)open;
+    if (eat(p, close)) return true;
+    for (;;) {
+        if (open == '{') {
+            if (!str(p, nullptr, 0, nullptr)) return false;
+            if (!eat(p, ':')) return fail(p, "expected ':'");
+        }
+        if (!skipValue(p, depth + 1)) return false;
+        if (eat(p, ',')) continue;
+        if (eat(p, close)) return true;
+        return fail(p, "expected ',' or end");
+    }
+}
+
+bool skipValue(P& p, int depth) {
+    ws(p);
+    if (p.i >= p.n) return fail(p, "unexpected end");
+    char c = p.s[p.i];
+    if (c == '"') return str(p, nullptr, 0, nullptr);
+    if (c == '{') return skipContainer(p, depth, '{', '}');
+    if (c == '[') return skipContainer(p, depth, '[', ']');
+    if (c == '-' || (c >= '0' && c <= '9')) {
+        while (p.i < p.n && (p.s[p.i] == '-' || p.s[p.i] == '+' || p.s[p.i] == '.' ||
+                             p.s[p.i] == 'e' || p.s[p.i] == 'E' ||
+                             (p.s[p.i] >= '0' && p.s[p.i] <= '9')))
+            p.i++;
+        return true;
+    }
+    static const char* const lits[] = {"true", "false", "null"};
+    for (const char* l : lits) {
+        size_t m = strlen(l);
+        if (p.n - p.i >= m && memcmp(p.s + p.i, l, m) == 0) { p.i += m; return true; }
+    }
+    return fail(p, "bad value");
+}
+
+bool integer(P& p, long& v) {
+    ws(p);
+    size_t st = p.i;
+    v = 0;
+    while (p.i < p.n && p.s[p.i] >= '0' && p.s[p.i] <= '9') {
+        if (v < 1000000) v = v * 10 + (p.s[p.i] - '0');
+        p.i++;
+    }
+    if (p.i == st) return fail(p, "expected integer");
+    return true;
+}
+
+uint16_t rgb565(unsigned r, unsigned g, unsigned b) {
+    return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+int hexv(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+bool colour(P& p, uint16_t& out) {
+    char b[8];
+    size_t len = 0;
+    if (!str(p, b, 7, &len)) return false;
+    if (len != 7 || b[0] != '#') return fail(p, "colour must be #RRGGBB");
+    unsigned v[6];
+    for (int k = 0; k < 6; k++) {
+        int h = hexv(b[1 + k]);
+        if (h < 0) return fail(p, "bad hex digit in colour");
+        v[k] = (unsigned)h;
+    }
+    out = rgb565(v[0] << 4 | v[1], v[2] << 4 | v[3], v[4] << 4 | v[5]);
+    return true;
+}
+
+const char* const ROLE_KEYS[N_COLORS] = {
+    "void", "panel", "grid", "edge", "edgeLit", "dim", "text", "bright",
+    "witch", "witchHi", "bone", "sweep", "sweepHi", "live", "liveHi",
+    "magenta", "ice", "green", "amber", "red"};
+
+struct SweepName { const char* n; ui::Sweep id; };
+const SweepName SWEEPS[] = {
+    {"radar", ui::SW_RADAR},   {"pulse", ui::SW_PULSE},   {"star", ui::SW_STAR},
+    {"candle", ui::SW_CANDLE}, {"galaxy", ui::SW_GALAXY}, {"orbit", ui::SW_ORBIT},
+    {"starfall", ui::SW_STARFALL}, {"pulsar", ui::SW_PULSAR},
+    {"comet", ui::SW_COMET},   {"aurora", ui::SW_AURORA}};
+
+bool sweepId(const char* s, uint8_t& id) {
+    for (const SweepName& e : SWEEPS)
+        if (strcmp(s, e.n) == 0) { id = (uint8_t)e.id; return true; }
+    return false;
+}
+
+bool colors(P& p, Pack& out, int depth) {
+    if (depth >= MAX_DEPTH) return fail(p, "nested too deep");
+    if (!eat(p, '{')) return fail(p, "colors must be an object");
+    bool seen[N_COLORS] = {};
+    if (!eat(p, '}')) {
+        for (;;) {
+            char k[16];
+            size_t kl = 0;
+            if (!str(p, k, 15, &kl)) return false;
+            if (!eat(p, ':')) return fail(p, "expected ':'");
+            int role = -1;
+            if (kl <= 15)
+                for (int r = 0; r < N_COLORS; r++)
+                    if (strcmp(k, ROLE_KEYS[r]) == 0) { role = r; break; }
+            if (role >= 0) {
+                if (seen[role]) return fail(p, "duplicate colour");
+                seen[role] = true;
+                if (!colour(p, out.color[role])) return false;
+            } else if (!skipValue(p, depth + 1)) {
+                return false;
+            }
+            if (eat(p, ',')) continue;
+            if (eat(p, '}')) break;
+            return fail(p, "expected ',' or '}'");
+        }
+    }
+    for (int r = 0; r < N_COLORS; r++)
+        if (!seen[r]) return fail(p, "missing colour");
+    return true;
+}
+
+bool sweepList(P& p, Pack& out) {
+    if (!eat(p, '[')) return fail(p, "sweeps must be an array");
+    out.sweeps = 0;
+    if (eat(p, ']')) return true;
+    for (;;) {
+        char b[12];
+        size_t len = 0;
+        if (!str(p, b, 11, &len)) return false;
+        uint8_t id;
+        if (len > 11 || !sweepId(b, id)) return fail(p, "unknown or unavailable sweep");
+        out.sweeps |= (uint16_t)(1u << id);
+        if (eat(p, ',')) continue;
+        if (eat(p, ']')) return true;
+        return fail(p, "expected ',' or ']'");
+    }
+}
+
+bool parseObject(P& p, Pack& out) {
+    enum { K_FORMAT, K_NAME, K_AUTHOR, K_HEADER, K_DIAL, K_CENTRE, K_SWEEPS,
+           K_SWEEP, K_ALERT, K_COLORS, K_N };
+    static const char* const keys[K_N] = {"format", "name", "author", "header", "dial",
+        "centrepiece", "sweeps", "sweep", "alert", "colors"};
+    bool seen[K_N] = {};
+    char sweepName[12] = {};
+    bool haveSweepName = false;
+
+    memset(&out, 0, sizeof out);
+    out.dial = DIAL_COMPACT;
+    out.centre = CENTRE_HEPTAGRAM;
+    out.rite = RITE_WARD;
+
+    if (!eat(p, '{')) return fail(p, "not a JSON object");
+    if (!eat(p, '}')) {
+        for (;;) {
+            char k[16];
+            size_t kl = 0;
+            if (!str(p, k, 15, &kl)) return false;
+            if (!eat(p, ':')) return fail(p, "expected ':'");
+            int key = -1;
+            if (kl <= 15)
+                for (int j = 0; j < K_N; j++)
+                    if (strcmp(k, keys[j]) == 0) { key = j; break; }
+            if (key >= 0) {
+                if (seen[key]) return fail(p, "duplicate key");
+                seen[key] = true;
+            }
+            char tmp[32];
+            size_t tl = 0;
+            switch (key) {
+            case K_FORMAT: {
+                long v;
+                if (!integer(p, v)) return false;
+                if (v > FORMAT) return fail(p, "pack format is newer than this firmware");
+                if (v < FORMAT) return fail(p, "bad pack format");
+                break;
+            }
+            case K_NAME:
+                if (!str(p, out.name, MAX_NAME, &tl)) return false;
+                if (tl < 1 || tl > (size_t)MAX_NAME) return fail(p, "name must be 1-20 chars");
+                for (size_t j = 0; j < tl; j++) {
+                    char c = out.name[j];
+                    if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' ||
+                          c == '-' || c == '.'))
+                        return fail(p, "name has a character outside A-Z 0-9 space - .");
+                }
+                break;
+            case K_AUTHOR:
+                if (!str(p, out.author, MAX_AUTHOR, &tl)) return false;
+                if (tl > (size_t)MAX_AUTHOR) return fail(p, "author longer than 24");
+                break;
+            case K_HEADER:
+                if (!str(p, out.header, MAX_HEADER, &tl)) return false;
+                if (tl < 1 || tl > (size_t)MAX_HEADER) return fail(p, "header must be 1-18 chars");
+                for (size_t j = 0; j < tl; j++) {
+                    char& c = out.header[j];
+                    if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+                    if (c < 32 || c > 95) return fail(p, "header has a character the font lacks");
+                }
+                break;
+            case K_DIAL:
+                if (!str(p, tmp, 31, &tl)) return false;
+                if (tl <= 31 && strcmp(tmp, "compact") == 0) out.dial = DIAL_COMPACT;
+                else if (tl <= 31 && strcmp(tmp, "large") == 0) out.dial = DIAL_LARGE;
+                else return fail(p, "dial must be compact or large");
+                break;
+            case K_CENTRE:
+                if (!str(p, tmp, 31, &tl)) return false;
+                if (tl <= 31 && strcmp(tmp, "emblem") == 0) out.centre = CENTRE_EMBLEM;
+                else if (tl <= 31 && strcmp(tmp, "heptagram") == 0) out.centre = CENTRE_HEPTAGRAM;
+                else return fail(p, "centrepiece must be emblem or heptagram");
+                break;
+            case K_SWEEPS:
+                if (!sweepList(p, out)) return false;
+                break;
+            case K_SWEEP:
+                if (!str(p, sweepName, 11, &tl)) return false;
+                if (tl > 11) return fail(p, "unknown or unavailable sweep");
+                haveSweepName = true;
+                break;
+            case K_ALERT:
+                if (!str(p, tmp, 31, &tl)) return false;
+                if (tl <= 31 && strcmp(tmp, "ward") == 0) out.rite = RITE_WARD;
+                else if (tl <= 31 && strcmp(tmp, "supernova") == 0) out.rite = RITE_SUPERNOVA;
+                else if (tl <= 31 && strcmp(tmp, "vortex") == 0) out.rite = RITE_VORTEX;
+                else if (tl <= 31 && strcmp(tmp, "comet") == 0) out.rite = RITE_COMET;
+                else if (tl <= 31 && strcmp(tmp, "lockon") == 0) out.rite = RITE_LOCKON;
+                else return fail(p, "unknown or unavailable alert");
+                break;
+            case K_COLORS:
+                if (!colors(p, out, 1)) return false;
+                break;
+            default:
+                if (!skipValue(p, 1)) return false;
+            }
+            if (eat(p, ',')) continue;
+            if (eat(p, '}')) break;
+            return fail(p, "expected ',' or '}'");
+        }
+    }
+    if (!seen[K_FORMAT]) return fail(p, "missing format");
+    if (!seen[K_NAME]) return fail(p, "missing name");
+    if (!seen[K_SWEEPS]) return fail(p, "missing sweeps");
+    if (!seen[K_COLORS]) return fail(p, "missing colors");
+    if (out.sweeps == 0) return fail(p, "sweeps is empty");
+    if (!seen[K_HEADER]) {
+        // Default the header to the name (already within the font and 20 chars).
+        size_t l = strlen(out.name);
+        if (l > (size_t)MAX_HEADER) l = MAX_HEADER;
+        memcpy(out.header, out.name, l);
+        out.header[l] = 0;
+    }
+    if (haveSweepName) {
+        uint8_t id;
+        if (!sweepId(sweepName, id)) return fail(p, "unknown or unavailable sweep");
+        out.sweep = id;
+        if (!(out.sweeps & (1u << id))) return fail(p, "sweep is not in sweeps");
+    } else {
+        for (int id = 0; id < 16; id++)
+            if (out.sweeps & (1u << id)) { out.sweep = (uint8_t)id; break; }
+    }
+    return true;
+}
+
+}  // namespace
+
+bool parse(const char* json, size_t n, Pack& out, char* why, size_t whyCap) {
+    P p{json, n, 0, nullptr};
+    bool ok = false;
+    if (!json || n == 0) fail(p, "empty file");
+    else if (n > MAX_JSON) fail(p, "theme.json too large");
+    else if (parseObject(p, out)) {
+        ws(p);
+        if (p.i != p.n) fail(p, "trailing data after JSON");
+        else ok = true;
+    }
+    if (!ok && !p.err) p.err = "invalid theme.json";
+    if (why && whyCap) {
+        if (ok) why[0] = 0;
+        else {
+            strncpy(why, p.err, whyCap - 1);
+            why[whyCap - 1] = 0;
+        }
+    }
+    return ok;
+}
+
+namespace {
+
+// Returns nullptr when valid, else the reason. Fills `out` (including px) only
+// once every check has passed.
+const char* emblemCheck(const uint8_t* d, size_t n, Emblem& out) {
+    if (!d || n < 8) return "emblem truncated";
+    if (n > MAX_EMBLEM) return "emblem too large";
+    if (d[0] != 'U' || d[1] != 'V' || d[2] != 'E') return "emblem bad magic";
+    if (d[3] != 1) return "unsupported emblem version";
+    uint32_t w = d[4], h = d[5], nc = d[6];
+    if (w < 1 || w > (uint32_t)MAX_EMBLEM_DIM || h < 1 || h > (uint32_t)MAX_EMBLEM_DIM)
+        return "emblem size must be 1-96";
+    if (nc < 2 || nc > (uint32_t)MAX_EMBLEM_COLORS) return "emblem colours must be 2-16";
+    if (d[7] != 0) return "emblem reserved byte must be 0";
+    // Operands are all <= 96*96 and 16, so this cannot overflow 32 bits.
+    uint32_t total = 8 + nc * 2 + w * h;
+    if (n < total) return "emblem truncated";
+    if (n > total) return "emblem has trailing data";
+    const uint8_t* px = d + 8 + nc * 2;
+    for (uint32_t i = 0; i < w * h; i++)
+        if (px[i] >= nc) return "emblem index outside palette";
+    out.w = (uint8_t)w;
+    out.h = (uint8_t)h;
+    out.ncol = (uint8_t)nc;
+    for (uint32_t i = 0; i < nc; i++)
+        out.pal[i] = (uint16_t)(d[8 + 2 * i] | (d[9 + 2 * i] << 8));
+    for (uint32_t i = nc; i < (uint32_t)MAX_EMBLEM_COLORS; i++) out.pal[i] = 0;
+    out.px = px;
+    return nullptr;
+}
+
+}  // namespace
+
+bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t whyCap) {
+    out.px = nullptr;
+    const char* err = emblemCheck(data, n, out);
+    if (err) out.px = nullptr;
+    if (why && whyCap) {
+        if (!err) why[0] = 0;
+        else {
+            strncpy(why, err, whyCap - 1);
+            why[whyCap - 1] = 0;
+        }
+    }
+    return err == nullptr;
+}
+
+bool sanitizeStatus(Pack& p) {
+    bool changed = false;
+    const uint16_t bg1 = p.color[R_VOID], bg2 = p.color[R_PANEL];
+    const struct { Role role; uint16_t safe; } status[] = {
+        {R_AMBER, ui::SAFE_MED}, {R_RED, ui::SAFE_HIGH}};
+    for (const auto& st : status) {
+        const uint16_t c = p.color[st.role];
+        if (ui::safeEdge(c, st.safe, bg1, bg2) != c) { p.color[st.role] = st.safe; changed = true; }
+    }
+    return changed;
+}
+
+bool folderNameOk(const char* folder) {
+    if (!folder) return false;
+    size_t n = 0;
+    for (; folder[n]; n++) {
+        const char c = folder[n];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '_' || c == '-';
+        if (!ok || n >= 31) return false;
+    }
+    return n >= 1;
+}
+
+Admit admit(const char* folder, const Pack& p, const char* const* takenNames, int nTaken) {
+    if (!folderNameOk(folder)) return ADMIT_BAD_FOLDER;
+    static const char* const reserved[] = {"UMBRAVOX", "BAPH0MAU5", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"};
+    for (const char* r : reserved)
+        if (strncmp(p.name, r, sizeof p.name) == 0) return ADMIT_RESERVED;
+    if (takenNames)
+        for (int i = 0; i < nTaken; i++)
+            if (takenNames[i] && strncmp(p.name, takenNames[i], sizeof p.name) == 0)
+                return ADMIT_DUPLICATE;
+    if (nTaken >= MAX_PACKS) return ADMIT_FULL;
+    return ADMIT_OK;
+}
+
+const char* admitWhy(Admit a) {
+    switch (a) {
+    case ADMIT_OK:         return "admitted";
+    case ADMIT_BAD_FOLDER: return "bad folder name (use A-Z a-z 0-9 _ -, 1-31 chars)";
+    case ADMIT_RESERVED:   return "name is reserved for a built-in theme";
+    case ADMIT_DUPLICATE:  return "name already used by another pack";
+    case ADMIT_FULL:       return "too many packs (max 8), ignored";
+    }
+    return "unknown admission result";
+}
+
+void sortNames(char (*names)[32], int n) {
+    if (!names || n < 2) return;
+    // Insertion sort: stable, and n is at most a directory's worth of names.
+    for (int i = 1; i < n; i++) {
+        char tmp[32];
+        memcpy(tmp, names[i], 32);
+        int j = i - 1;
+        while (j >= 0 && strncmp(names[j], tmp, 32) > 0) {
+            memcpy(names[j + 1], names[j], 32);
+            j--;
+        }
+        memcpy(names[j + 1], tmp, 32);
+    }
+}
+
+int keepName(char (*names)[32], int n, int cap, const char* name) {
+    if (!names || !name || cap <= 0 || n < 0) return n < 0 ? 0 : n;
+    size_t len = 0;
+    while (len < 32 && name[len]) len++;
+    if (len >= 32) return n;                       // would not fit with its NUL
+    int slot = n;
+    if (n >= cap) {
+        n = cap;
+        slot = 0;                                  // the largest held
+        for (int i = 1; i < cap; i++)
+            if (strncmp(names[i], names[slot], 32) > 0) slot = i;
+        if (strncmp(name, names[slot], 32) >= 0) return n;
+    }
+    memset(names[slot], 0, 32);
+    memcpy(names[slot], name, len);
+    return slot == n ? n + 1 : n;
+}
+
+void formatLoading(char* out, size_t cap, const char* folder, uint32_t totalSize) {
+    if (!out || cap == 0) return;
+    size_t o = 0;
+    for (; folder && folder[o] && o + 1 < cap; o++) out[o] = folder[o];
+    if (o + 1 < cap) out[o++] = ':';
+    char digits[10];
+    int nd = 0;
+    do { digits[nd++] = (char)('0' + totalSize % 10); totalSize /= 10; } while (totalSize);
+    while (nd && o + 1 < cap) out[o++] = digits[--nd];
+    out[o] = 0;
+}
+
+namespace {
+// "<folderNameOk>:<1-10 digits>", exactly what formatLoading writes.
+bool recordOk(const char* r, size_t len) {
+    if (len == 0 || len >= BAD_REC) return false;
+    size_t colon = 0;
+    while (colon < len && r[colon] != ':') colon++;
+    if (colon == 0 || colon >= len || colon > 31) return false;
+    char folder[32];
+    memcpy(folder, r, colon);
+    folder[colon] = 0;
+    if (!folderNameOk(folder)) return false;
+    const size_t nd = len - colon - 1;
+    if (nd < 1 || nd > 10) return false;
+    for (size_t i = colon + 1; i < len; i++)
+        if (r[i] < '0' || r[i] > '9') return false;
+    return true;
+}
+
+bool badHas(const BadList& l, const char* rec) {
+    for (int i = 0; i < l.n; i++)
+        if (strncmp(l.rec[i], rec, BAD_REC) == 0) return true;
+    return false;
+}
+
+// Add len bytes of r (already checked) unless held or full.
+bool badAddN(BadList& l, const char* r, size_t len) {
+    if (!recordOk(r, len) || l.n >= BAD_MAX) return false;
+    char tmp[BAD_REC];
+    memcpy(tmp, r, len);
+    tmp[len] = 0;
+    if (badHas(l, tmp)) return false;
+    memcpy(l.rec[l.n++], tmp, len + 1);
+    return true;
+}
+} // namespace
+
+int badParse(const char* s, size_t n, BadList& out) {
+    out.n = 0;
+    if (!s) return 0;
+    size_t i = 0;
+    while (i < n && s[i]) {
+        const size_t start = i;
+        while (i < n && s[i] && s[i] != ',') i++;
+        badAddN(out, s + start, i - start);   // malformed or surplus: dropped
+        if (i < n && s[i] == ',') i++;
+    }
+    return out.n;
+}
+
+size_t badFormat(const BadList& l, char* out, size_t cap) {
+    if (!out || cap == 0) return 0;
+    size_t o = 0;
+    for (int i = 0; i < l.n && i < BAD_MAX; i++) {
+        const size_t len = strnlen(l.rec[i], BAD_REC - 1);
+        const size_t need = len + (o ? 1 : 0);
+        if (o + need + 1 > cap) break;          // whole records only
+        if (o) out[o++] = ',';
+        memcpy(out + o, l.rec[i], len);
+        o += len;
+    }
+    out[o] = 0;
+    return o;
+}
+
+bool badAdd(BadList& l, const char* rec) {
+    if (!rec) return false;
+    return badAddN(l, rec, strnlen(rec, BAD_REC));
+}
+
+void badPrune(BadList& l, const char (*names)[32], const uint32_t* sizes, int nNames) {
+    int k = 0;
+    for (int i = 0; i < l.n; i++) {
+        bool live = false;
+        for (int j = 0; names && sizes && j < nNames && !live; j++)
+            live = skipAfterCrash(l.rec[i], names[j], sizes[j]);
+        if (live) {
+            if (k != i) memcpy(l.rec[k], l.rec[i], BAD_REC);
+            k++;
+        }
+    }
+    l.n = k;
+}
+
+bool badMatch(const BadList& l, const char* folder, uint32_t size) {
+    for (int i = 0; i < l.n; i++)
+        if (skipAfterCrash(l.rec[i], folder, size)) return true;
+    return false;
+}
+
+bool badBoot(const char* stored, size_t storedLen, const char* loading,
+             const char (*names)[32], const uint32_t* sizes, int nNames,
+             BadList& out, char* newStored, size_t cap) {
+    badParse(stored, storedLen, out);
+    // Prune first, so the in-flight record always has a slot: every entry
+    // left names a distinct listed folder that was skipped, and the one that
+    // was loading was not skipped, so it is not among them.
+    badPrune(out, names, sizes, nNames);
+    if (loading) badAdd(out, loading);
+    badPrune(out, names, sizes, nNames);      // a stale in-flight record goes
+    const size_t len = badFormat(out, newStored, cap);
+    // Rewrite only if the stored bytes differ from the new form.
+    size_t sl = 0;
+    while (stored && sl < storedLen && stored[sl]) sl++;
+    return !(sl == len && (len == 0 || memcmp(stored, newStored, len) == 0));
+}
+
+bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize) {
+    if (!record || !folderNameOk(folder)) return false;
+    char want[48];  // 31 + ':' + 10 digits + NUL = 43
+    formatLoading(want, sizeof want, folder, totalSize);
+    return strncmp(record, want, sizeof want) == 0 && strlen(record) < sizeof want;
+}
+
+// ---- guard NVS steps ---------------------------------------------------------
+
+size_t guardReadResult(size_t got, char* buf, size_t cap, bool& junk) {
+    junk = false;
+    if (!buf || cap == 0) return 0;
+    if (got == 0) { buf[0] = 0; junk = true; return 0; }
+    buf[cap - 1] = 0;
+    return strnlen(buf, cap);
+}
+
+namespace {
+void curSet(GuardCur& cur, const char* v) {
+    size_t i = 0;
+    for (; v && v[i] && i + 1 < capOf(cur.v); i++) cur.v[i] = v[i];
+    cur.v[i] = 0;
+}
+} // namespace
+
+GuardBootResult guardBoot(const GuardKv& kv, const char (*names)[32], const uint32_t* sizes,
+                          int nNames, BadList& bad, GuardScratch& s, GuardCur& cur) {
+    GuardBootResult r = {};
+    char loading[BAD_REC];
+    const size_t sl = guardRead(kv, GUARD_KEY_BAD, s.stored, r.listJunk);
+    guardRead(kv, GUARD_KEY_LOADING, loading, r.loadingJunk);
+    curSet(cur, loading);                       // what "loading" holds now
+    if (r.loadingJunk) curSet(cur, "?");        // something, not a record: clear it
+    memcpy(r.folded, loading, capOf(r.folded));
+
+    const bool changed = badBoot(s.stored, sl, loading, names, sizes, nNames, bad,
+                                 s.fresh, capOf(s.fresh));
+    if (changed || r.listJunk) {
+        const bool ok = s.fresh[0]
+            ? kv.putString(kv.ctx, GUARD_KEY_BAD, s.fresh) == strnlen(s.fresh, capOf(s.fresh))
+            : kv.remove(kv.ctx, GUARD_KEY_BAD);
+        r.listWriteFailed = !ok;
+        // A crash we could not save: keep "loading" and read nothing, or the
+        // next folder's record would overwrite the only trace of it.
+        if (!ok && loading[0]) { r.ok = false; return r; }
+    }
+    if (cur.v[0]) {
+        if (kv.remove(kv.ctx, GUARD_KEY_LOADING)) cur.v[0] = 0;
+        else r.loadingClearFailed = true;
+    }
+    r.ok = true;
+    return r;
+}
+
+bool guardSet(const GuardKv& kv, GuardCur& cur, const char* rec) {
+    if (!rec || !rec[0]) return false;
+    if (strncmp(cur.v, rec, capOf(cur.v)) == 0) return true;
+    if (kv.putString(kv.ctx, GUARD_KEY_LOADING, rec) != strnlen(rec, capOf(cur.v))) return false;
+    curSet(cur, rec);
+    return true;
+}
+
+void guardClear(const GuardKv& kv, GuardCur& cur) {
+    if (!cur.v[0]) return;
+    if (kv.remove(kv.ctx, GUARD_KEY_LOADING)) cur.v[0] = 0;
+}
+
+}  // namespace themepack

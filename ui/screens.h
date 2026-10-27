@@ -1,6 +1,7 @@
 #pragma once
 #include "canvas.h"
 #include "model.h"
+#include <stddef.h>
 
 namespace ui {
 
@@ -55,6 +56,10 @@ const char* sweepName(uint8_t id);
 // The alert a theme plays: COSMIC MUFFIN's chosen style, or the other themes'
 // one fixed rite.
 const char* alertName(uint8_t theme, uint8_t style);
+// The THEME row's text for a theme: its name, cut to ASP_NAME_MAX characters
+// (and to cap - 1) so a long pack name never runs into the label. COSMIC
+// MUFFIN is shown as COSMIC. Always NUL-terminates when cap > 0.
+void themeRowName(uint8_t theme, char* out, size_t cap);
 // The alert card over the dial panel; draws nothing when no alert is active.
 void drawAlert(Canvas& c, const State& s);
 

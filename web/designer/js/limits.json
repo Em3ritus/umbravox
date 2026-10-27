@@ -1,0 +1,96 @@
+{
+  "MAX_PACKS": 8,
+  "MAX_NAME": 20,
+  "MAX_HEADER": 18,
+  "MAX_AUTHOR": 24,
+  "MAX_JSON": 4096,
+  "MAX_EMBLEM": 9728,
+  "MAX_PACK": 65536,
+  "MAX_EMBLEM_DIM": 96,
+  "MAX_EMBLEM_COLORS": 16,
+  "MAX_FOLDERS_EXAMINED": 32,
+  "MIN_EDGE_CONTRAST_X10": 30,
+  "reservedNames": ["UMBRAVOX", "BAPH0MAU5", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"],
+  "folderName": {
+    "pattern": "^[A-Za-z0-9_-]{1,31}$",
+    "text": "A folder name is 1-31 letters, digits, - or _. Anything else is skipped."
+  },
+  "foldersExaminedNote": "Only the first 32 folders under /themes (by name) are examined at all; of those, at most 8 packs load.",
+  "nameChars": "A-Z 0-9 space - .",
+  "sweepNames": ["radar", "pulse", "star", "candle", "galaxy", "orbit", "starfall", "pulsar", "comet", "aurora"],
+  "alertNames": ["ward", "supernova", "vortex", "comet", "lockon"],
+  "dialNames": ["compact", "large"],
+  "centrepieceNames": ["heptagram", "emblem"],
+  "limitations": {
+    "reboot": {
+      "id": "reboot",
+      "text": "A new or changed pack needs a reboot to appear. The device reads the SD card at boot only.",
+      "where": ["install", "docs"]
+    },
+    "packs": {
+      "id": "packs",
+      "text": "At most 8 packs load, chosen as the first 8 by folder name, and only the first 32 folders (by name) are examined at all. Folder names are letters, digits, - and _ only. A theme name must be unique and cannot be UMBRAVOX, BAPH0MAU5, CVLT OF BAPH0MAU5 or COSMIC MUFFIN; otherwise that pack is skipped.",
+      "where": ["install", "docs"]
+    },
+    "centrepiece": {
+      "id": "centrepiece",
+      "text": "The centrepiece picture is at most 96x96 pixels and 16 colours. Photos are reduced and will look posterised; expect pixel art, not photographs.",
+      "where": ["design", "docs"]
+    },
+    "header": {
+      "id": "header",
+      "text": "Header text is uppercase only (lowercase is shown as capitals), limited to letters, digits, space and common punctuation, and 18 characters at most.",
+      "where": ["design", "docs"]
+    },
+    "characters": {
+      "id": "characters",
+      "text": "The name, header and author cannot contain a double quote or a backslash. The device does not read escapes, so a pack with either would be skipped.",
+      "where": ["design", "docs"]
+    },
+    "rgb565": {
+      "id": "rgb565",
+      "text": "Colours are stored as RGB565, so fine differences between near colours disappear. The designer previews the colours the panel will really show.",
+      "where": ["design", "docs"]
+    },
+    "presets": {
+      "id": "presets",
+      "text": "Layout comes from presets only: two dial sizes. There is no custom screen layout, font or animation yet.",
+      "where": ["design", "docs"]
+    },
+    "builtins": {
+      "id": "builtins",
+      "text": "Sweeps and alerts come from the built-in set. Gaze and the Summon rite are not available to packs; they belong to the Baphomet seal.",
+      "where": ["design", "docs"]
+    },
+    "alerts": {
+      "id": "alerts",
+      "text": "A theme cannot hide or disable alerts. Status and alert-edge colours that are too close to the background are replaced with safe defaults.",
+      "where": ["design", "docs"]
+    },
+    "byname": {
+      "id": "byname",
+      "text": "The selected theme is saved by name. Renaming a pack makes the device fall back to UMBRAVOX until you select it again.",
+      "where": ["design", "docs"]
+    },
+    "browser": {
+      "id": "browser",
+      "text": "Installing straight from the page needs desktop Chrome, Edge or Opera. Other browsers use the zip download; copy the folder to the card by hand.",
+      "where": ["install", "docs"]
+    },
+    "fat32": {
+      "id": "fat32",
+      "text": "The SD card must be FAT32, the same as for logging.",
+      "where": ["install", "docs"]
+    },
+    "skipped": {
+      "id": "skipped",
+      "text": "A pack that fails to load is skipped, never partly applied. The ASPECT screen shows the skipped count as N SKIPPED and DIAG LOG split around the preview, and the reason is in /diag.log.",
+      "where": ["device", "docs"]
+    },
+    "trust": {
+      "id": "trust",
+      "text": "Packs are checked for format, not for taste or origin: nothing here signs, vets or moderates a pack. Only install packs from people you trust.",
+      "where": ["install", "docs"]
+    }
+  }
+}

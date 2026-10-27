@@ -1,7 +1,9 @@
 name: Deploy web flasher
 
 # Builds the three firmwares, merges each into a single browser-flashable image,
-# and publishes the ESP Web Tools flasher (web/) to GitHub Pages. Enable Pages
+# builds and tests the theme designer (web/designer, with its WebAssembly
+# preview), and publishes the ESP Web Tools flasher (web/) and the designer to
+# GitHub Pages. Enable Pages
 # in the repo settings with "Source: GitHub Actions" for this to deploy.
 on:
   push:
@@ -12,13 +14,17 @@ on:
       - "ui/**"
       - "platformio.ini"
       - "tools/make-web-flasher.sh"
+      - "sim/Makefile"
+      - "tools/assemble-designer.sh"
+      - "tools/build-designer-wasm.sh"
+      - "tools/emsdk-version.txt"
+      - "docs/theme-packs.md"
+      - "package.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -28,6 +34,8 @@ jobs:
   build:
     name: Build and assemble
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,7 +43,19 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+      - name: Read the pinned emscripten version
+        id: emsdk
+        run: echo "version=$(tr -d '[:space:]' < tools/emsdk-version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Install emscripten
+        uses: mymindstorm/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021 # v14
+        with:
+          version: ${{ steps.emsdk.outputs.version }}
+          actions-cache-folder: emsdk-cache
+      - name: Build the designer's WebAssembly preview
+        run: bash tools/build-designer-wasm.sh
+      - name: Designer tests
+        run: npm test
       - name: Cache PlatformIO
         uses: actions/cache@v4
         with:
@@ -54,6 +74,9 @@ jobs:
     name: Deploy to Pages
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}

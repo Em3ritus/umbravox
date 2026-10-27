@@ -6,6 +6,7 @@
 #include "../ui/palette.h"
 #include "../ui/nav.h"
 #include "../ui/signatures.h"
+#include "packload.h"
 #include <stdio.h>
 #include <string.h>
 #include <initializer_list>
@@ -29,10 +30,18 @@ constexpr float FAST_PATH_RAD = 200.0f;      // newlib's limit is ~201
 int main() {
     using namespace ui;
     static Canvas c;
+    // The two fixture packs (sim/packs; the test runs from sim/) join the
+    // themes audited below: a pack runs the same scan, sweeps and rites.
+    for (const char* f : {"packs/umbravox-clone", "packs/cosmic-clone"}) {
+        char why[96];
+        char w[160];
+        snprintf(w, sizeof w, "fixture %s loads", f);
+        check(w, packload::load(f, why, sizeof why) >= 0);
+    }
     // Frame counters from "a minute in" to "a week of uptime" (frame = ms/16).
     const uint32_t frames[] = {4000u, 60000u, 1000000u, 37800000u};
 
-    for (int theme = 0; theme < pal::TH_COUNT; theme++) {
+    for (int theme = 0; theme < pal::themeCount(); theme++) {
         pal::setTheme((uint8_t)theme);
         float worst = 0; int worstSweep = -1;
         for (int sweep = 0; sweep < SW_COUNT; sweep++) {
@@ -55,7 +64,7 @@ int main() {
     }
 
     // The alert rites animate off the alert's age (ms, up to 65 s) and the frame.
-    for (int theme = 0; theme < pal::TH_COUNT; theme++) {
+    for (int theme = 0; theme < pal::themeCount(); theme++) {
         pal::setTheme((uint8_t)theme);
         float worst = 0; int worstStyle = -1;
         for (int style = 0; style < ALERT_STYLE_COUNT; style++) {

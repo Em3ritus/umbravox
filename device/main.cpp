@@ -18,6 +18,7 @@
 #include "logging.h"
 #include "sdlog.h"
 #include "elog.h"
+#include "themeload.h"
 #include "enrollwin.h"
 #include "perflog.h"
 #include "alertlog.h"
@@ -623,6 +624,9 @@ void setup() {
     // file. Fix deferred to hardware: scan the card, count past any WD-*.CSV.
     sdlog::begin();
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
+    // Theme packs: after the card and the log (skips are logged), and before
+    // loop()'s first prefs::load(), so a saved pack name finds its pack.
+    themeload::scan();
     logging::begin(prefs::loggingWas(), writeWigle, millis(), ui::Gnss::utcEpoch(millis()));
 #if defined(WS_C5_35)
     Serial.printf("panel up @ %d MHz SPI, GPS LC76G on I2C\n",
@@ -993,6 +997,7 @@ void loop() {
     // demoState(), which had been setting it.
     s.frame = millis() / 16;
     s.sdOk    = sdlog::present();
+    s.packsSkipped = themeload::skipped();
     cap::fill(s, millis());
     blescan::fill(s, millis());
     meshcore::fill(s, millis());

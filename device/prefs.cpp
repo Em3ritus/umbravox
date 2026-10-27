@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "nav.h"
+#include "palette.h"
+#include "themepack.h"
 
 namespace prefs {
 namespace {
@@ -29,6 +31,10 @@ void write(const ui::Settings& s) {
     // load(), or the save timer never settles and hammers flash. Anyone who
     // takes the `reserved` byte for a new setting must add it to both.
     nvs.putUChar("theme",   s.theme);
+    // A pack is saved by NAME as well: its id is only its slot in this boot's
+    // load order, which adding or removing another pack shifts. Cleared (an
+    // empty string, which load() reads as "no pack") for a built-in.
+    nvs.putString("pack", s.theme >= pal::TH_COUNT ? pal::themeName(s.theme) : "");
     nvs.putUChar("sweep",   s.sweep);
     nvs.putUChar("labels",  s.labels);
     nvs.putUChar("alertsty", s.alertStyle);
@@ -66,6 +72,15 @@ bool load(ui::Settings& s) {
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
     in.theme    = nvs.getUChar("theme",    s.theme);
+    // The saved pack name, if any, decides the theme (see write()). Absent or
+    // too long for any real pack name reads back as "" -- no pack. Resolved
+    // BEFORE clamping, so a stale pack id is never trusted on its own.
+    char pack[themepack::MAX_NAME + 1] = {};
+    if (nvs.isKey("pack")) nvs.getString("pack", pack, sizeof pack);
+    pack[sizeof pack - 1] = 0;
+    in.theme    = pal::resolveSaved(pack, in.theme);
+    if (pack[0] && in.theme == pal::TH_UMBRAVOX)
+        Serial.printf("prefs: saved theme pack \"%s\" not loaded, using UMBRAVOX\n", pack);
     in.sweep    = nvs.getUChar("sweep",    s.sweep);
     in.labels   = nvs.getUChar("labels",   s.labels);
     in.alertStyle = nvs.getUChar("alertsty", s.alertStyle);
@@ -77,9 +92,9 @@ bool load(ui::Settings& s) {
     stored = in;
     lastSeen = in;
 
-    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u, theme %u, sweep %u\n",
+    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u, theme %u (%s), sweep %u\n",
                   in.bright, in.dwellMs, in.bleDuty, in.bands, in.alertMin,
-                  in.theme, in.sweep);
+                  in.theme, pal::themeName(in.theme), in.sweep);
     return true;
 }
 

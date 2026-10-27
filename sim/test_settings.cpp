@@ -6,6 +6,7 @@
 // timer from ever firing, which is a bug this project has already had once.
 #include "../ui/nav.h"
 #include "../ui/palette.h"
+#include "../ui/themepack.h"
 #include <stdio.h>
 #include <string.h>
 #include <new>
@@ -17,8 +18,33 @@ static void check(const char* what, bool ok) {
     if (!ok) fails++;
 }
 
+// A hand-built pack (no parser needed): status colours that pass the contrast
+// check, and the caller's sweep offering and starting sweep.
+static themepack::Pack mkPack(const char* name, uint16_t sweeps, uint8_t sweep) {
+    themepack::Pack p;
+    memset(&p, 0, sizeof p);
+    snprintf(p.name, sizeof p.name, "%s", name);
+    snprintf(p.header, sizeof p.header, "%s", name);
+    p.dial = themepack::DIAL_COMPACT;
+    p.centre = themepack::CENTRE_HEPTAGRAM;
+    p.sweeps = sweeps;
+    p.sweep = sweep;
+    for (int i = 0; i < themepack::N_COLORS; i++) p.color[i] = (uint16_t)(0x2104 * (i + 1));
+    p.color[themepack::R_VOID] = 0x0000;
+    p.color[themepack::R_AMBER] = 0xFFE0;
+    p.color[themepack::R_RED] = 0xF800;
+    return p;
+}
+
 int main() {
     using namespace ui;
+
+    // Two packs, so every theme loop below reaches past the built-ins: one
+    // that offers every sweep, and one that omits RADAR and starts on STAR.
+    const int fullId = pal::addPack(mkPack("FULL", 0x07FF, SW_RADAR), nullptr);
+    const int noRadarId = pal::addPack(
+        mkPack("NORADAR", (uint16_t)((1u << SW_STAR) | (1u << SW_PULSE)), SW_STAR), nullptr);
+    check("packs loaded for the loops", fullId == 3 && noRadarId == 4 && pal::themeCount() == 5);
 
     // Adding a field to Settings must not quietly widen what this test treats
     // as padding. A byte the constructor never writes is indistinguishable
@@ -65,7 +91,7 @@ int main() {
         check("no padding, no uninitialised field", padBytes == 0);
 
         int missed = 0;
-        for (int th = 0; th < pal::TH_COUNT; th++) {
+        for (int th = 0; th < pal::themeCount(); th++) {
             Settings base;
             base.theme = (uint8_t)th;
             clampSettings(base);
@@ -137,6 +163,38 @@ int main() {
         s.sweep = SW_STAR;
         clampSettings(s);
         check("star is kept on umbravox", s.sweep == SW_STAR);
+    }
+
+    printf("pack themes clamp against the loaded table:\n");
+    {
+        Settings s;
+        s.theme = (uint8_t)fullId;
+        s.sweep = SW_GAZE;
+        clampSettings(s);
+        check("a loaded pack id is kept", s.theme == fullId && s.sweep == SW_GAZE);
+
+        s = Settings();
+        s.theme = (uint8_t)(pal::themeCount() - 1);
+        clampSettings(s);
+        check("the last pack id is kept", s.theme == pal::themeCount() - 1);
+
+        s = Settings();
+        s.theme = (uint8_t)pal::themeCount();       // one past the last pack
+        clampSettings(s);
+        check("an id past the packs snaps to UMBRAVOX", s.theme == pal::TH_UMBRAVOX);
+
+        s = Settings();
+        s.theme = (uint8_t)noRadarId;               // default sweep is RADAR
+        clampSettings(s);
+        check("a pack without radar falls back to its own start sweep", s.sweep == SW_STAR);
+
+        s.sweep = SW_GAZE;                          // withdrawn by this pack
+        clampSettings(s);
+        check("a withdrawn sweep falls back to the pack's start", s.sweep == SW_STAR);
+
+        s.sweep = SW_PULSE;                         // offered: kept
+        clampSettings(s);
+        check("an offered sweep is kept on the pack", s.sweep == SW_PULSE);
     }
 
     printf("the mask matches the enum:\n");

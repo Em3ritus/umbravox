@@ -4,7 +4,7 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
-SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp
+SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp
 # Every ui header, found rather than listed. The hand-written list silently
 # omitted nav.h, layout.h, signatures.h and wifi_auth.h, so editing any of
 # them left umbravox stale -- and a stale binary makes `regress` pass while
@@ -27,7 +27,10 @@ clean:
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
 # being built is a test that stops failing, and nobody notices.
-UI_CORE = ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/palette.cpp
+# palette.cpp reaches themepack.cpp (sanitizeStatus) and muffinseal.cpp
+# (muffinEmblem), which reaches motif.cpp (drawEmblem), so any rule linking it links those too.
+PAL_DEPS = ../ui/palette.cpp ../ui/themepack.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/canvas.cpp ../ui/font5x7.cpp
+UI_CORE = ../ui/runes.cpp $(PAL_DEPS)
 
 test_chanplan: test_chanplan.cpp ../device/chanplan.h ../device/mesh.h ../ui/model.h
 	$(CXX) $(CXXFLAGS) -I../ui -o $@ test_chanplan.cpp -lm
@@ -67,20 +70,24 @@ test_rehome: test_rehome.cpp ../device/rehome.h
 test_ble_ad: test_ble_ad.cpp ../device/ble_ad.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_ble_ad.cpp -lm
 
+# theme.json is read off an SD card anyone can write to: sanitizers, as above.
+test_themepack: test_themepack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/model.h ../ui/palette.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
+
 test_elog: test_elog.cpp ../device/elog.h
 	$(CXX) $(CXXFLAGS) -o $@ test_elog.cpp -lm
 
 test_perflog: test_perflog.cpp ../device/perflog.h
 	$(CXX) $(CXXFLAGS) -o $@ test_perflog.cpp -lm
 
-test_palette: test_palette.cpp ../ui/palette.cpp ../ui/palette.h ../ui/layout.h
-	$(CXX) $(CXXFLAGS) -o $@ test_palette.cpp ../ui/palette.cpp -lm
+test_palette: test_palette.cpp $(PAL_DEPS) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_palette.cpp $(PAL_DEPS) -lm
 
-test_muffin: test_muffin.cpp ../ui/muffinseal.cpp ../ui/muffinseal.h ../ui/muffin.h ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp
-	$(CXX) $(CXXFLAGS) -o $@ test_muffin.cpp ../ui/muffinseal.cpp ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp -lm
+test_muffin: test_muffin.cpp $(PAL_DEPS) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_muffin.cpp $(PAL_DEPS) -lm
 
-test_sweep: test_sweep.cpp ../ui/sweep.cpp ../ui/sweep.h ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp
-	$(CXX) $(CXXFLAGS) -o $@ test_sweep.cpp ../ui/sweep.cpp ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/palette.cpp -lm
+test_sweep: test_sweep.cpp ../ui/sweep.cpp $(PAL_DEPS) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_sweep.cpp ../ui/sweep.cpp $(PAL_DEPS) -lm
 test_enrollwin: test_enrollwin.cpp ../device/enrollwin.h
 	$(CXX) $(CXXFLAGS) -o $@ test_enrollwin.cpp -lm
 
@@ -92,17 +99,33 @@ SRC_NOMAIN = $(filter-out main_sim.cpp,$(SRC))
 test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_settings.cpp $(SRC_NOMAIN) -lm
 
+test_motif: test_motif.cpp $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_motif.cpp $(SRC_NOMAIN) -lm
+
 test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
 
 # Every trig call is routed through an auditing shim (trig_audit.h) so the test
 # can assert none is ever handed an argument beyond the FPU-less fast path.
+test_contrast: test_contrast.cpp $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_contrast.cpp $(SRC_NOMAIN) -lm
+
 test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -include trig_audit.h -o $@ test_trig.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_elog test_palette test_muffin test_sweep test_enrollwin test_perflog test_trig
+# Links the host pack loader; PACKS_DIR is relative to sim/, where make runs it.
+test_pack_parity: test_pack_parity.cpp packload.h $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ test_pack_parity.cpp $(SRC_NOMAIN) -lm
 
-test: $(TESTS)
+TESTS = test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_perflog test_trig test_contrast test_pack_parity
+
+# The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
+emblem-check:
+	@python3 -I ../tools/muffin_to_emblem.py ../ui/muffin.h $(CURDIR)/.emblem.tmp >/dev/null && \
+	 cmp $(CURDIR)/.emblem.tmp packs/cosmic-clone/emblem.bin && echo "emblem-check: emblem.bin matches ui/muffin.h"; \
+	 rc=$$?; rm -f $(CURDIR)/.emblem.tmp; exit $$rc
+
+test: $(TESTS) emblem-check
 	@rc=0; for t in $(TESTS); do \
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
@@ -127,4 +150,4 @@ regress: $(BIN)
 	 cd "$$d" && md5sum -c --quiet $(MANIFEST); \
 	 echo "regress: UMBRAVOX unchanged"
 
-.PHONY: run sheet clean test regress
+.PHONY: run sheet clean test regress emblem-check

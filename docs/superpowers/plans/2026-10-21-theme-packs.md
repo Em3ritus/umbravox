@@ -14,7 +14,7 @@
 
 - Pack format `1`; unknown keys ignored; `format > 1` skipped with a reason.
 - Limits: 8 packs (first 8 by folder name); `theme.json` ≤ 4 KB; `emblem.bin` ≤ 96×96, ≤ 16 colours, ≤ 9.5 KB (9728 B); whole pack ≤ 64 KB; `name`/`header`/`author` ≤ 20/18/24 chars; folder name `[A-Za-z0-9_-]{1,31}`.
-- `name`: chars `A-Z 0-9 space - .`, unique, not `UMBRAVOX` / `CVLT OF BAPH0MAU5` / `COSMIC MUFFIN`. `header`: font chars only (ASCII 32..95, lowercase folded).
+- `name`: chars `A-Z 0-9 space - .`, unique, not `UMBRAVOX` / `BAPH0MAU5` / `CVLT OF BAPH0MAU5` / `COSMIC MUFFIN` (every name a built-in displays; ruled during Task 6). `header`: font chars only (ASCII 32..95, lowercase folded).
 - 20 colour roles, `#RRGGBB` → RGB565: `void panel grid edge edgeLit dim text bright witch witchHi bone sweep sweepHi live liveHi magenta ice green amber red`. Pack ramp = `void, edge, dim, bright`.
 - Sweeps offered: `radar pulse star candle galaxy orbit starfall pulsar comet aurora` (no `gaze`). Alerts: `ward supernova vortex comet lockon` (no `summon`). Centrepiece: `emblem` | `heptagram`. Dial: `compact` | `large`.
 - Alert edge contrast minimum about 3 : 1 against `void` and `panel`, enforced where the edge is drawn with fixed safe colours; `amber`/`red` replaced with UMBRAVOX's values when they fail. Chrome is never rewritten.
@@ -125,7 +125,7 @@
 **Interfaces:**
 - Produces: `bool folderNameOk(const char*)`; the boot-loop guard's decision as pure functions: `void formatLoading(char* out, size_t cap, const char* folder, uint32_t totalSize)` (writes `<folder>:<size>`) and `bool skipAfterCrash(const char* record, const char* folder, uint32_t totalSize)` (true only when `record` names this folder **and** this size); `enum Admit{ADMIT_OK,ADMIT_BAD_FOLDER,ADMIT_RESERVED,ADMIT_DUPLICATE,ADMIT_FULL}`; `Admit admit(const char* folder, const Pack& p, const char* const* takenNames, int nTaken)`; `void sortNames(char (*names)[32], int n)` (byte-wise ascending, so the same 8 always win); `const char* admitWhy(Admit)`.
 
-- [ ] **Step 1: Write failing tests:** folder names `ok_1-A`, 31 chars ok, 32 chars / empty / `.` / `..` / `a/b` / `a b` / `é` rejected; names `UMBRAVOX`, `CVLT OF BAPH0MAU5`, `COSMIC MUFFIN` reserved; a second pack with an earlier pack's name rejected; the 9th admitted pack returns `ADMIT_FULL`; `sortNames` order is stable and byte-wise; `skipAfterCrash`: record `foo:1234` skips `foo` at size 1234, not at size 1235 (the pack changed), not `bar`, an empty or malformed record (`foo`, `:`, `foo:abc`, a record longer than the buffer) skips nothing, and `formatLoading` truncates safely.
+- [ ] **Step 1: Write failing tests:** folder names `ok_1-A`, 31 chars ok, 32 chars / empty / `.` / `..` / `a/b` / `a b` / `é` rejected; names `UMBRAVOX`, `BAPH0MAU5`, `CVLT OF BAPH0MAU5`, `COSMIC MUFFIN` reserved; a second pack with an earlier pack's name rejected; the 9th admitted pack returns `ADMIT_FULL`; `sortNames` order is stable and byte-wise; `skipAfterCrash`: record `foo:1234` skips `foo` at size 1234, not at size 1235 (the pack changed), not `bar`, an empty or malformed record (`foo`, `:`, `foo:abc`, a record longer than the buffer) skips nothing, and `formatLoading` truncates safely.
 - [ ] **Step 2: Run, verify fail.** **Step 3: Implement.** **Step 4: Run tests.**
 - [ ] **Step 5: Commit** (`feat: pack admission and ordering rules`).
 
@@ -139,7 +139,7 @@
 - Consumes: `themepack::{parse,parseEmblem,admit,sortNames}`, `pal::addPack`.
 - Produces: `sdlog::listDir(const char* path, void (*cb)(const char* name, bool isDir, void* ctx), void* ctx)` and `uint32_t sdlog::readFile(const char* path, uint8_t* buf, uint32_t cap)` (bytes read, 0 on failure, never more than `cap`); `themeload::scan()` (call once in `setup()` after `sdlog::begin()` and `elog::begin()`) and `uint8_t themeload::skipped()`. Skip reasons go to `elog` (`WARN theme: <folder>: <why>`). Emblem pixels for every admitted pack are held in PSRAM (≤ 8 × 9.5 KB).
 - Boot-loop guard: before parsing a folder write NVS `"loading"` = `formatLoading(folder, size)`; clear after; at the start of `scan()` read the record and skip any folder for which `skipAfterCrash(record, folder, size)` is true (the record is kept until that folder's size changes) with `WARN theme: <folder>: skipped, a reset happened while loading it`.
-- `State::packsSkipped` is set from `themeload::skipped()`; `drawAspect` shows `N SKIPPED - SEE DIAG LOG` (all-caps font) when non-zero; the THEME row shows a pack's name.
+- `State::packsSkipped` is set from `themeload::skipped()`; `drawAspect` shows `N SKIPPED` left and `DIAG LOG` right of the dial preview (all-caps font) when non-zero; the THEME row shows a pack's name.
 
 - [ ] **Step 1: Write failing test** (host, `test_nav`): with `packsSkipped=2` the ASPECT screen draws pixels in the new line's rect; with 0 it does not; the THEME row text for a pack id is the pack name.
 - [ ] **Step 2: Run, verify fail.**
@@ -212,10 +212,10 @@
 **Files:** Create `docs/theme-packs.md`; Modify `.github/workflows/pages.yml`, `tools/make-web-flasher.sh` (or a sibling script) to build and copy `web/designer`, `README.md`, `docs/design-notes.md`, `web/designer/test/limits.test.mjs` (remove the skip)
 
 - [ ] **Step 1: Write `docs/theme-packs.md`:** the format, the limits table, how to make and install a pack, **all 13 limitations stated plainly** (reboot, 8 packs, emblem size/colours, uppercase header, RGB565, presets only, built-in sweeps/alerts and which two are withheld, alerts cannot be hidden, saved by name, install browser support, FAT32, skipped packs, format-not-taste). Numbers must match `limits.json`.
-- [ ] **Step 2: Remove the `skip`** from the docs assertion in `limits.test.mjs`; run `node --test web/designer/test` → pass.
-- [ ] **Step 3: Pages workflow:** install emscripten in CI (e.g. `mymindstorm/setup-emsdk`, pinned version), run the wasm build, `node --test`, copy `web/designer` into `web/dist/designer`. Locally validate the workflow YAML and run the build script; the CI run itself is verified after push.
+- [ ] **Step 2: Remove the `skip`** from the docs assertion in `limits.test.mjs`; run `npm test` → pass.
+- [ ] **Step 3: Pages workflow:** install emscripten in CI (e.g. `mymindstorm/setup-emsdk`, pinned version), run the wasm build, `npm test`, copy `web/designer` into `web/dist/designer`. Locally validate the workflow YAML and run the build script; the CI run itself is verified after push.
 - [ ] **Step 4: README:** one short section and link to `docs/theme-packs.md`; `design-notes.md`: pack format, motif, contrast rule, boot-loop guard.
-- [ ] **Step 5: Run everything:** `make -C sim test`, `make -C sim regress`, `node --test web/designer/test`, `pio run` for the three envs.
+- [ ] **Step 5: Run everything:** `make -C sim test`, `make -C sim regress`, `npm test`, `pio run` for the three envs.
 - [ ] **Step 6: Commit** (`docs: theme pack reference, README, Pages build for the designer`).
 
 ---

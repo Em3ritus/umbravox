@@ -25,8 +25,11 @@ sim/test_phase
 sim/test_cluster
 sim/test_rehome
 sim/test_ble_ad
+sim/test_themepack
 sim/test_elog
 sim/test_muffin
+sim/test_pack_parity
+sim/test_motif
 sim/test_palette
 sim/test_sweep
 sim/test_enrollwin
@@ -39,3 +42,12 @@ ui/sigil.h.tmp
 
 # Web flasher build output (built by CI / make-web-flasher.sh)
 web/dist/
+sim/test_contrast
+
+# JS tooling
+node_modules/
+
+# Designer WebAssembly preview: build outputs of tools/build-designer-wasm.sh
+web/designer/wasm/uv_preview.js
+web/designer/wasm/uv_preview.wasm
+web/designer/wasm/build/
