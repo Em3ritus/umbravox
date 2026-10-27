@@ -20,6 +20,7 @@
 #include "elog.h"
 #include "enrollwin.h"
 #include "dedup.h"
+#include "meshlive.h"
 #include "perflog.h"
 #include "alertlog.h"
 #include "meshcore.h"
@@ -604,9 +605,13 @@ const uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 enrollwin::State win;                // when to transmit, and for how long (enrollwin.h)
 uint8_t  oldNet = 0;                 // the net we are telling our nodes to leave
 
-// Any board still answering on this net: nodes in the Core's table, or live
-// coordinators. A reset stays up for as long as this is true.
-bool boardsHeard() { return meshcore::count() > 0 || collector::active(); }
+// Any board still answering on this net: nodes heard in the last 20 s, or
+// live coordinators. A reset stays up for as long as this is true. 20 s is the
+// old node-table timeout: the table now keeps a silent node 75 s (meshlive.h),
+// which would hold every reset up to 55 s longer for nothing.
+bool boardsHeard() {
+    return meshcore::heardWithin(millis(), meshlive::BOARD_QUIET_MS) > 0 || collector::active();
+}
 
 // ADOPT: mint a private net if still open, then invite open devices onto it.
 void open(uint32_t nowMs) {
@@ -855,14 +860,18 @@ void loop() {
     // costs the Core's own sweep and buys every node's entire catch.
     {
         static bool camped = false;
+        static meshlive::CampHold hold;
         // Camp the report/collection channel either when the CYD runs the mesh
         // itself and has nodes, or when coordinators are live and deliver their
         // batches there. With no coordinator this is exactly today's rule.
         // An open enrol window also parks the Core on the report channel: that is
         // where unassigned boards wait and where coordinators visit, so a
         // broadcast sent while sweeping would only land by luck.
-        const bool want = meshcore::count() > 0 || collector::active()
-                       || enroll::active(millis());
+        // And for CAMP_HOLD_MS after the last node goes (meshlive.h): a node
+        // that went quiet reports on channel 1, and a sweeping Core is there one
+        // dwell in twenty-one, so dropping the camp is what stranded them.
+        const bool want = meshlive::wantCamp(hold, meshcore::count(), collector::active(),
+                                             enroll::active(millis()), millis());
         if (want != camped) {
             camped = want;
             cap::setCamp(want ? mesh::REPORT_CHAN : 0);
@@ -871,8 +880,25 @@ void loop() {
                        ? "nodes present -- core holding the report channel"
                    : collector::active()
                        ? "coordinator live -- holding the collection channel"
-                       : "enrol window open -- core holding the report channel")
+                       : enroll::active(millis())
+                       ? "enrol window open -- core holding the report channel"
+                       : "nodes gone -- core holding the report channel a while")
                 : "no nodes -- core sweeping again");
+            if (!want)
+                elog::event(elog::INFO, "mesh", "no node for %us, core sweeping again",
+                            (unsigned)(meshlive::CAMP_HOLD_MS / 1000));
+        }
+        // A node aged out of the table (silent NODE_TIMEOUT_MS): which, and how
+        // long it had been quiet. At most one line per 30 s.
+        static elog::Gate goneGate;
+        static uint32_t seenGone = 0;
+        uint8_t tail[3]; uint32_t ageMs = 0;
+        const uint32_t gone = meshcore::expiredCount(tail, ageMs);
+        if (gone != seenGone && goneGate.allow(millis(), 30000)) {
+            elog::event(elog::INFO, "mesh", "node %02X:%02X:%02X expired after %lus silent "
+                        "(%lu expiries, %d nodes left)", tail[0], tail[1], tail[2],
+                        (unsigned long)(ageMs / 1000), (unsigned long)gone, meshcore::count());
+            seenGone = gone;
         }
     }
 

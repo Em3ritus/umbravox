@@ -63,6 +63,10 @@ void setCollector(FrameHook hook);
 void fill(ui::State& s, uint32_t nowMs);
 
 int  count();                      // nodes heard from recently
+// Nodes heard within the last `ms` (a stricter "recently" than count()).
+int  heardWithin(uint32_t nowMs, uint32_t ms);
+// Nodes expired since boot, with the MAC tail and silence of the latest one.
+uint32_t expiredCount(uint8_t tail[3], uint32_t& ageMs);
 const NodeRec* node(int i);
 uint8_t  lossPct();      // across all live nodes
 // Receive-path accounting: how many frames the callback saw, and how many

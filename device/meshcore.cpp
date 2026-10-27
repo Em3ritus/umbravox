@@ -9,15 +9,21 @@
 #include "capture.h"
 #include "chanplan.h"
 #include "phase.h"
+#include "meshlive.h"
 
 namespace meshcore {
 namespace {
 
 // A node that has said nothing for this long is gone -- out of range, flat
-// battery, or unplugged. Its channels go back in the pool.
-constexpr uint32_t NODE_TIMEOUT_MS = 20000;
+// battery, or unplugged. Its channels go back in the pool. 75 s, not 20 s: an
+// idle node sends nothing at all (meshlive.h).
+using meshlive::NODE_TIMEOUT_MS;
 
 NodeRec nodes_[MAX_NODES];
+// Expiries, for diag.log (main.cpp logs them; meshcore has no SD).
+uint32_t nExpired = 0;
+uint8_t  lastGone[3];
+uint32_t lastGoneAgeMs = 0;
 volatile uint32_t nHello = 0, nReport = 0;
 // Where received frames go. The radio ACKs far more than the application
 // handles, so the loss is on this side of the aerial and these say which
@@ -266,8 +272,12 @@ void assignAll(uint32_t nowMs) {
 void tick(uint32_t nowMs) {
     portENTER_CRITICAL(&mux);
     for (int i = 0; i < MAX_NODES; i++)
-        if (nodes_[i].live && (nowMs - nodes_[i].lastMs) > NODE_TIMEOUT_MS)
+        if (nodes_[i].live && meshlive::expired(nowMs, nodes_[i].lastMs, NODE_TIMEOUT_MS)) {
             nodes_[i].live = false;
+            nExpired++;
+            memcpy(lastGone, nodes_[i].mac + 3, 3);
+            lastGoneAgeMs = nowMs - nodes_[i].lastMs;
+        }
     portEXIT_CRITICAL(&mux);
 
     // Re-send assignments periodically rather than once: a node that was
@@ -284,6 +294,26 @@ void setAssigning(bool on) { assigning_ = on; }
 int count() {
     int n = 0;
     for (int i = 0; i < MAX_NODES; i++) if (nodes_[i].live) n++;
+    return n;
+}
+
+// Nodes heard within `ms`: the "still answering" test for an enrol reset,
+// which must not wait out the whole (longer) table timeout.
+int heardWithin(uint32_t nowMs, uint32_t ms) {
+    int n = 0;
+    portENTER_CRITICAL(&mux);
+    for (int i = 0; i < MAX_NODES; i++)
+        if (nodes_[i].live && !meshlive::expired(nowMs, nodes_[i].lastMs, ms)) n++;
+    portEXIT_CRITICAL(&mux);
+    return n;
+}
+
+uint32_t expiredCount(uint8_t tail[3], uint32_t& ageMs) {
+    portENTER_CRITICAL(&mux);
+    const uint32_t n = nExpired;
+    memcpy(tail, lastGone, 3);
+    ageMs = lastGoneAgeMs;
+    portEXIT_CRITICAL(&mux);
     return n;
 }
 

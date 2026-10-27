@@ -46,3 +46,4 @@ sim/test_plotproj
 sim/test_idlemode
 sim/test_dedup
 sim/test_blerecycle
+sim/test_meshlive
