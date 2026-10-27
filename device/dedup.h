@@ -14,9 +14,12 @@
 //    probes, the answer is FULL: the caller counts the frame and touches no
 //    slot.
 //  - Every key sits at most `maxProbe` slots from its home (the longest probe
-//    any insert has needed). Nothing is deleted except by clearing the whole
-//    table, so once inserts are refused a lookup can stop after maxProbe + 1
-//    probes: O(cluster), not O(table).
+//    any insert has needed; the caller resets it to 0 whenever it clears the
+//    table). Nothing is deleted except by clearing the whole table, so a miss
+//    after maxProbe + 1 probes is conclusive: once inserts are refused a
+//    lookup stops there, O(cluster) not O(table), and no search for the key
+//    ever stops short of it (a crowded insert's PROBE_LIMIT bounds only the
+//    search for a free slot).
 //  - The evil-twin pass runs only for a key that was actually inserted.
 //
 // This is a backstop. The session rolls over (applog::ROLLOVER_APS, forced at
@@ -98,10 +101,15 @@ template <class Used, class Same>
 inline Hit find(uint32_t hash, uint32_t cap, uint32_t nUsed, uint32_t limit,
                 uint32_t maxProbe, Used used, Same same) {
     const bool canInsert = nUsed < limit && nUsed < cap;
-    // Uncrowded: probe to the next free slot (one exists, nUsed < cap).
-    // Crowded: PROBE_LIMIT. Inserts refused: no key sits past maxProbe.
-    uint32_t bound = !canInsert ? maxProbe + 1
-                   : nUsed < crowdLimit(cap) ? cap : PROBE_LIMIT;
+    const bool crowded   = nUsed >= crowdLimit(cap);
+    // How far to look for the key itself: never short of maxProbe + 1, the
+    // deepest any stored key sits (a key inserted deep while the table was
+    // sparse must still be FOUND once it is crowded). How far to look for a
+    // free slot: anywhere while uncrowded, within PROBE_LIMIT when crowded,
+    // nowhere once inserts are refused.
+    uint32_t bound = maxProbe + 1;
+    if (canInsert && !crowded) bound = cap;
+    else if (canInsert && bound < PROBE_LIMIT) bound = PROBE_LIMIT;
     if (bound > cap) bound = cap;
     const uint32_t home = hash % cap;
     for (uint32_t d = 0; d < bound; d++) {
@@ -110,7 +118,7 @@ inline Hit find(uint32_t hash, uint32_t cap, uint32_t nUsed, uint32_t limit,
         if (!used(i)) {
             // An empty slot ends every probe chain: the key is not stored
             // beyond it, because nothing is ever deleted on its own.
-            if (canInsert) return Hit{INSERT, (int)i, d + 1};
+            if (canInsert && (!crowded || d < PROBE_LIMIT)) return Hit{INSERT, (int)i, d + 1};
             return Hit{FULL, -1, d + 1};
         }
         if (same(i)) return Hit{FOUND, (int)i, d + 1};

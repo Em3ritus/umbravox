@@ -143,7 +143,37 @@ int main() {
         check("table at the crowd limit", t.nUsed == dedup::crowdLimit(2048));
         const dedup::Hit h = t.put(77777, 0, lim);
         check("crowded: a key behind the long cluster is dropped as FULL", h.kind == dedup::FULL);
-        check("after exactly PROBE_LIMIT probes",       h.probes == dedup::PROBE_LIMIT);
+        check("after at most max(PROBE_LIMIT, maxProbe + 1) probes",
+              h.probes <= (t.maxProbe + 1 > dedup::PROBE_LIMIT ? t.maxProbe + 1 : dedup::PROBE_LIMIT));
+    }
+
+    printf("deep known keys stay FOUND once crowded:\n");
+    {
+        // 600 keys share home 0 while the table is sparse, so the last ones
+        // sit deeper than PROBE_LIMIT. Then the table crosses the crowd limit.
+        static Tbl<2048> t;
+        const uint32_t lim = dedup::insertLimit(2048);
+        for (uint32_t k = 1; k <= 600; k++) t.put(k, 0, lim);
+        check("maxProbe is the true deepest chain (599)", t.maxProbe == 599);
+        for (uint32_t k = 100000; t.nUsed < dedup::crowdLimit(2048) + 10 && k < 400000; k++)
+            t.put(k, mix(k), lim);
+        check("table past the crowd limit", t.nUsed >= dedup::crowdLimit(2048));
+        const dedup::Hit deep = t.find(600, 0, lim);
+        check("a key at depth 599 > PROBE_LIMIT is still FOUND", deep.kind == dedup::FOUND && deep.probes == 600);
+        Tbl<2048>* before = new Tbl<2048>(t);
+        const dedup::Hit h = t.put(888888, 0, lim);    // never seen, homed in the cluster
+        check("a never-seen key behind it is dropped (FULL)", h.kind == dedup::FULL);
+        check("after no more than max(PROBE_LIMIT, maxProbe + 1) probes",
+              h.probes <= (dedup::PROBE_LIMIT > t.maxProbe + 1 ? dedup::PROBE_LIMIT : t.maxProbe + 1));
+        check("and the drop changed nothing", !memcmp(before->used, t.used, sizeof t.used) &&
+              !memcmp(before->key, t.key, sizeof t.key));
+        delete before;
+        // Inserts refused (at the insert limit): lookups still reach depth 599.
+        for (uint32_t k = 500000; t.nUsed < lim && k < 900000; k++) t.put(k, mix(k), lim);
+        const dedup::Hit d2 = t.find(600, 0, lim);
+        check("at the insert limit the deep key is still FOUND", d2.kind == dedup::FOUND);
+        const dedup::Hit nx = t.find(999999, 0, lim);
+        check("a never-seen key there stops at maxProbe + 1", nx.kind == dedup::FULL && nx.probes <= t.maxProbe + 1);
     }
 
     printf("no drop below the crowd limit:\n");
