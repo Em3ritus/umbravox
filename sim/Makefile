@@ -155,7 +155,13 @@ test_pack_parity: test_pack_parity.cpp packload.h $(SRC_NOMAIN) $(HDR)
 test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_footer.cpp $(SRC_NOMAIN) -lm
 
-TESTS = test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_idlemode test_perflog test_trig test_contrast test_pack_parity
+# The serial SD commands (SDPUT/SDDEL/SDRMDIR/REBOOT): the path policy, the
+# strict decoders and the upload state machine against a fake card. The
+# commands come off a wire anyone can type into: sanitizers, as above.
+test_sdcmd: test_sdcmd.cpp ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h sdput_golden.txt
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ test_sdcmd.cpp ../ui/themepack.cpp -lm
+
+TESTS = test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_idlemode test_perflog test_trig test_contrast test_pack_parity
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -163,7 +169,15 @@ emblem-check:
 	 cmp $(CURDIR)/.emblem.tmp packs/cosmic-clone/emblem.bin && echo "emblem-check: emblem.bin matches ui/muffin.h"; \
 	 rc=$$?; rm -f $(CURDIR)/.emblem.tmp; exit $$rc
 
-test: $(TESTS) emblem-check
+# tools/sdput.py's own checks (CRC-32, hex, folder names), and the golden
+# transcript test_sdcmd replays must be exactly what the tool sends today:
+# the host encoder and the device decoder are compared byte for byte.
+sdput-check:
+	@python3 -I ../tools/sdput.py selftest >/dev/null && \
+	 python3 -I ../tools/sdput.py transcript packs/cosmic-clone | cmp - sdput_golden.txt && \
+	 echo "sdput-check: selftest passed, sdput_golden.txt matches tools/sdput.py"
+
+test: $(TESTS) emblem-check sdput-check
 	@rc=0; for t in $(TESTS); do \
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
@@ -188,4 +202,4 @@ regress: $(BIN)
 	 cd "$$d" && md5sum -c --quiet $(MANIFEST); \
 	 echo "regress: UMBRAVOX unchanged"
 
-.PHONY: run sheet clean test regress emblem-check
+.PHONY: run sheet clean test regress emblem-check sdput-check

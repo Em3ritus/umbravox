@@ -60,3 +60,4 @@ node_modules/
 web/designer/wasm/uv_preview.js
 web/designer/wasm/uv_preview.wasm
 web/designer/wasm/build/
+sim/test_sdcmd
