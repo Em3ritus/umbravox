@@ -207,6 +207,9 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
                     n.resetRequested = true;
                 continue;
             }
+            if (r == SET_IDLE_ROW && st.idleIdx != 0 &&
+                hit(x, y, SET_VAL_X, y0, SET_VAL_W, SET_H))
+                st.idleMode = idlemodeNext(st.idleMode);
             if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H)) adjust(st, r, -1);
             if (hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H)) adjust(st, r, +1);
         }
@@ -246,7 +249,7 @@ void clampSettings(Settings& s) {
     // preserved; it is a sweep that would draw nothing meaningful.
     if (!(pal::sweepMask(s.theme) & (1 << s.sweep))) s.sweep = SW_RADAR;
     if (s.alertStyle >= ALERT_STYLE_COUNT) s.alertStyle = AL_SUPERNOVA;
-    // `reserved` is deliberately not clamped: it is compared, never read.
+    if (s.idleMode >= IDLE_MODE_N) s.idleMode = IDLE_DIM;
 }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
@@ -255,7 +258,7 @@ bool settingsEqual(const Settings& a, const Settings& b) {
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
            a.labels   == b.labels   && a.alertStyle == b.alertStyle &&
-           a.reserved == b.reserved;
+           a.idleMode == b.idleMode;
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {

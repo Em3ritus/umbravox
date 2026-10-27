@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
     uint8_t sweepId = ui::SW_RADAR;
     uint8_t labelsId = 0;
     uint8_t netIdSim = 0;
+    uint8_t idleModeSim = 0;           // --idlemode 0 DIM, 1 OFF, 2 ANIM
     int alertSim = -1;                 // --alert: force an alert of this style
     const char* which = "scan";
 
@@ -49,6 +50,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--sweep") && i + 1 < argc) sweepId = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--labels") && i + 1 < argc) labelsId = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--netid") && i + 1 < argc) netIdSim = (uint8_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--idlemode") && i + 1 < argc) idleModeSim = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--alert") && i + 1 < argc) alertSim = atoi(argv[++i]);
     }
 
@@ -64,6 +66,7 @@ int main(int argc, char** argv) {
         s.set.sweep = sweepId;
         s.set.theme = themeId;   // the screens branch on the setting, not the palette
         s.set.labels = labelsId; // 0 on-brand names, 1 plain
+        s.set.idleMode = idleModeSim;
         s.netId = netIdSim;      // preview the MESH screen's enrolled state
         if (alertSim >= 0) {
             // Hold an alert up so each style can be rendered at any point in its

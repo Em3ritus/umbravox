@@ -63,6 +63,10 @@ constexpr int GRIM_W = 50, GRIM_H = 26, GRIM_GAP = 4;
 // 100. Eight would not fit, which is the ceiling on this screen.
 constexpr int SET_Y     = 14;
 constexpr int SET_H     = 12;
+// The IDLE row carries two controls: -/+ step the timeout, and a tap on its
+// value (left of the buttons) cycles what happens then: DIM, OFF or ANIM.
+// An eighth row would not fit, so the mode shares the row.
+constexpr int SET_VAL_X = 44, SET_VAL_W = 66;
 constexpr int SET_MINUS_X = 114, SET_PLUS_X = 136, SET_BTN_W = 18, SET_BTN_H = 10;
 
 // MESH screen network-control row: the net id, then ENROLL and RESET buttons.

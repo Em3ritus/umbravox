@@ -88,12 +88,14 @@ struct Settings {
     // Which alert animation plays. Read only by COSMIC MUFFIN, whose four
     // alerts are its own; the other themes keep their single rite.
     uint8_t  alertStyle = 0;  // AlertStyle
-    // Slack byte. dwellMs makes Settings 2-aligned, so alertStyle alone would
-    // leave a padding byte at the end -- and padding is what the host test
-    // must be able to treat as "a field someone forgot to initialise". This
-    // fills it. The NEXT new setting takes this byte (rename it); the
-    // static_assert in sim/test_settings.cpp will tell you to re-check.
-    uint8_t  reserved = 0;
+    // What the screen does when the idle timeout fires: IdleMode below. Only
+    // meaningful while idleIdx != 0. This took the old slack byte: dwellMs
+    // makes Settings 2-aligned, so without a byte here the struct would end in
+    // padding -- and padding is what the host test must be able to treat as
+    // "a field someone forgot to initialise". Settings is therefore full
+    // again; the NEXT new setting must either widen it deliberately (update
+    // the static_assert in sim/test_settings.cpp) or share a byte.
+    uint8_t  idleMode = 0;    // IdleMode
 };
 
 // COSMIC MUFFIN's alert animations, chosen by Settings.alertStyle.
@@ -101,9 +103,18 @@ enum AlertStyle : uint8_t { AL_SUPERNOVA = 0, AL_VORTEX, AL_COMET, AL_LOCKON,
                             ALERT_STYLE_COUNT };
 
 // Seconds of no touch before the backlight drops. 0 means never.
+// What happens at the idle timeout. DIM is the original behaviour and the
+// default; unknown stored values clamp to it.
+enum IdleMode : uint8_t { IDLE_DIM = 0, IDLE_OFF = 1, IDLE_ANIM = 2, IDLE_MODE_N = 3 };
+
+inline constexpr uint8_t idlemodeNext(uint8_t m) {
+    return (uint8_t)((m < IDLE_MODE_N ? m + 1 : 1) % IDLE_MODE_N);
+}
+
 inline constexpr uint16_t IDLE_S[] = {0, 15, 30, 60, 120, 300};
 constexpr int IDLE_N = (int)(sizeof(IDLE_S) / sizeof(IDLE_S[0]));
 
+constexpr int SET_IDLE_ROW = 5;   // the IDLE row: timeout, and mode on a tap of its value
 constexpr int SET_ROWS = 7;   // six knobs and a reset
 
 // How many RSSI samples a device keeps. One per sighting rather than one
