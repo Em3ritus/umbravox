@@ -212,8 +212,8 @@
 **Files:** Create `docs/theme-packs.md`; Modify `.github/workflows/pages.yml`, `tools/make-web-flasher.sh` (or a sibling script) to build and copy `web/designer`, `README.md`, `docs/design-notes.md`, `web/designer/test/limits.test.mjs` (remove the skip)
 
 - [ ] **Step 1: Write `docs/theme-packs.md`:** the format, the limits table, how to make and install a pack, **all 13 limitations stated plainly** (reboot, 8 packs, emblem size/colours, uppercase header, RGB565, presets only, built-in sweeps/alerts and which two are withheld, alerts cannot be hidden, saved by name, install browser support, FAT32, skipped packs, format-not-taste). Numbers must match `limits.json`.
-- [ ] **Step 2: Remove the `skip`** from the docs assertion in `limits.test.mjs`; run `node --test web/designer/test` → pass.
-- [ ] **Step 3: Pages workflow:** install emscripten in CI (e.g. `mymindstorm/setup-emsdk`, pinned version), run the wasm build, `node --test`, copy `web/designer` into `web/dist/designer`. Locally validate the workflow YAML and run the build script; the CI run itself is verified after push.
+- [ ] **Step 2: Remove the `skip`** from the docs assertion in `limits.test.mjs`; run `npm test` → pass.
+- [ ] **Step 3: Pages workflow:** install emscripten in CI (e.g. `mymindstorm/setup-emsdk`, pinned version), run the wasm build, `npm test`, copy `web/designer` into `web/dist/designer`. Locally validate the workflow YAML and run the build script; the CI run itself is verified after push.
 - [ ] **Step 4: README:** one short section and link to `docs/theme-packs.md`; `design-notes.md`: pack format, motif, contrast rule, boot-loop guard.
 - [ ] **Step 5: Run everything:** `make -C sim test`, `make -C sim regress`, `npm test`, `pio run` for the three envs.
 - [ ] **Step 6: Commit** (`docs: theme pack reference, README, Pages build for the designer`).

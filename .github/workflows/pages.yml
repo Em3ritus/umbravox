@@ -14,6 +14,7 @@ on:
       - "ui/**"
       - "platformio.ini"
       - "tools/make-web-flasher.sh"
+      - "sim/Makefile"
       - "tools/assemble-designer.sh"
       - "tools/build-designer-wasm.sh"
       - "tools/emsdk-version.txt"
@@ -42,7 +43,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Read the pinned emscripten version
         id: emsdk
         run: echo "version=$(tr -d '[:space:]' < tools/emsdk-version.txt)" >> "$GITHUB_OUTPUT"

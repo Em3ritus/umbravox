@@ -179,3 +179,12 @@ test('openPackFiles applies the same rules to data it was handed', () => {
   const r = openPackFiles([{ name: 'a/theme.json', data: d }, { name: 'b/theme.json', data: d }]);
   assert.equal(r.ok, false); assert.match(r.error, /more than one/i);
 });
+
+test('a theme.json with no sweeps key warns that the device requires it; the exported pack still lists all sweeps', () => {
+  const r = parseThemeJson('{"format":1,"name":"X","colors":{"void":"#000000"}}');
+  assert.equal(r.ok, true);
+  assert.ok(r.warnings.some((w) => /no sweeps listed/.test(w) && /device requires/.test(w) && /all sweeps were offered/.test(w)));
+  assert.deepEqual(r.theme.sweeps, limits.sweepNames);
+  const r2 = parseThemeJson('{"format":1,"name":"X","sweeps":["radar"],"colors":{}}');
+  assert.ok(!r2.warnings.some((w) => /no sweeps listed/.test(w)));
+});

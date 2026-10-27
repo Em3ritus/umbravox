@@ -93,7 +93,8 @@ A little-endian binary picture in indexed colour:
 | width x height | one palette index per pixel, row by row |
 
 Width and height are at most 96, `ncol` is 2 to 16, and the file is at most 9.5 KB
-(9,728 bytes). The designer makes this file from any PNG: it crops, shrinks and
+(9,728 bytes). The file must be exactly the size the header declares (trailing data is
+rejected), and every pixel index must be lower than `ncol`. The designer makes this file from any PNG: it crops, shrinks and
 reduces the picture to 16 colours.
 
 ## Limits
@@ -104,7 +105,7 @@ These numbers are the same ones the device and the designer use
 | what | limit |
 |---|---|
 | packs the device loads | 8 (the first 8 by folder name) |
-| folders examined under `/themes` | 32 (the first 32 by name); a folder name beyond that is never looked at |
+| folders examined under `/themes` | 32 (the first 32 by name); further folders are not read, but are logged to `/diag.log` and counted as skipped. Folders with invalid names are also logged and counted. |
 | folder name | 1-31 letters, digits, `-` or `_`; anything else is skipped |
 | `name` | 20 characters, unique, not one of the four reserved names |
 | `header` | 18 characters |
@@ -159,6 +160,7 @@ the card for exactly this clash. Then eject the card properly and reboot the dev
   partly applied.
 - Packs appear in the THEME picker on ASPECT after the built-ins. The choice is saved
   by name, so adding or removing other packs does not change what is selected.
+- If the non-volatile storage (NVS) is unavailable, no packs load, because the boot-loop guard cannot be kept; this is logged.
 - If the saved pack is missing or invalid at boot, the device falls back to UMBRAVOX.
 - Every admitted emblem is held in memory for the session (at most 8 packs, 76 KB of
   emblem data), so switching themes does not read the card.
@@ -205,9 +207,12 @@ the card for exactly this clash. Then eject the card properly and reboot the dev
 13. **Format, not taste.** Packs are checked for format, not for taste or origin: nothing
     here signs, vets or moderates a pack. Only install packs from people you trust.
 
-The on-device behaviour in this page (loading, picking, persisting, the skipped line,
-the boot-loop guard) is covered by host tests and the simulator. A pass on a real SD
-card has not been recorded yet; treat card-side behaviour as unverified until it is.
+What is tested and what is not. The pure rules are host-tested: the theme.json and
+emblem.bin parsers, pack admission, the boot-loop guard's decisions, the ASPECT drawing
+and the contrast rule. The SD card scan (`device/themeload.cpp`) and its NVS plumbing are
+only build-checked: they compile for the device, but they have not been run on a real
+card, and the hardware pass is still pending. Treat card-side behaviour as unverified
+until that pass is recorded.
 
 ## Check a pack on your computer
 

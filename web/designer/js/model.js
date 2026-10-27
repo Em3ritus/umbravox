@@ -143,7 +143,8 @@ export function parseThemeJson(text) {
     alert: pick(j.alert, limits.alertNames, 'ward', 'alert'),
   };
   let sweeps = limits.sweepNames.slice();
-  if (j.sweeps !== undefined) {
+  if (j.sweeps === undefined) warnings.push('no sweeps listed; the device requires this key; all sweeps were offered.');
+  else {
     if (!Array.isArray(j.sweeps)) warnings.push('sweeps is not a list; offering all of them.');
     else {
       const bad = j.sweeps.filter((s) => !limits.sweepNames.includes(s));
