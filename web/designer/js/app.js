@@ -498,7 +498,7 @@ if (usbSupported()) {
     if (usb.port && e.target === usb.port) { if (usb.ac) usb.ac.abort(); usbDisconnect('the CYD was unplugged'); }
   });
 }
-$('btn-usb-cancel').addEventListener('click', () => { if (usb.ac) usb.ac.abort(); });
+$('btn-usb-cancel').addEventListener('click', () => { if (usb.ac) usb.ac.abort(); $('usb-collide').hidden = true; });
 $('btn-usb-send').addEventListener('click', async () => {
   if (!usb.link || usb.busy || !state.lastPack) return;
   usb.busy = true; usb.ac = new AbortController(); usbButtons();

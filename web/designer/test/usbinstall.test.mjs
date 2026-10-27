@@ -291,6 +291,15 @@ test('cancelled while the collision question is open: only the listing was sent,
   assert.deepEqual(sentCommands(dev), ['SDLS /themes']);
 });
 
+test('cancelled while a collision question is never answered: returns cancelled, does not hang', async () => {
+  const ac = new AbortController();
+  const dev = new FakeDevice({ dirs: ['/themes/my-pack'] });
+  setTimeout(() => ac.abort(), 100);
+  const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST, signal: ac.signal, decide: () => new Promise(() => {}) });
+  assert.equal(r.cancelled, true);
+  assert.deepEqual(sentCommands(dev), ['SDLS /themes']);
+});
+
 test('a board still booting swallows the first probe: the listing is retried', async () => {
   const dev = new FakeDevice({ banner: true, bootSwallow: 1 });
   const r = await installOverSerial(dev.port(), PACK, { timeouts: FAST });

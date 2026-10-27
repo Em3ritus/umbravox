@@ -344,7 +344,13 @@ export async function installOverSerial(port, files, opts = {}) {
     res.plan = plan;
     if (plan.collision) {
       if (typeof opts.decide !== 'function') throw new Error('/themes/' + plan.collision.folder + ' is already on the card, and nothing was asked about replacing it.');
-      const choice = await opts.decide(plan);
+      // The question may still be open when the user cancels: the signal wins.
+      const choice = await new Promise((resolve, reject) => {
+        const onAbort = () => reject(new Cancelled());
+        if (s.signal) s.signal.addEventListener('abort', onAbort, { once: true });
+        Promise.resolve().then(() => opts.decide(plan)).then(resolve, reject)
+          .finally(() => { if (s.signal) s.signal.removeEventListener('abort', onAbort); });
+      });
       if (s.signal && s.signal.aborted) throw new Cancelled();
       if (choice === 'alternative' && plan.alternative) {
         const re = checkFiles(retargetFiles(files, plan.alternative));
