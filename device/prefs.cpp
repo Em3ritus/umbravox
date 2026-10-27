@@ -25,15 +25,14 @@ void write(const ui::Settings& s) {
     nvs.putUChar("bands",   s.bands);
     nvs.putUChar("alertmin", s.alertMin);
     nvs.putUChar("idle",    s.idleIdx);
+    nvs.putUChar("idlemode", s.idleMode);
     // Every field settingsEqual compares must also be stored here and read in
     // load(), or the save timer never settles and hammers flash. Anyone who
-    // takes the `reserved` byte for a new setting must add it to both.
+    // takes a spare byte for a new setting must add it to both.
     nvs.putUChar("theme",   s.theme);
     nvs.putUChar("sweep",   s.sweep);
     nvs.putUChar("labels",  s.labels);
     nvs.putUChar("alertsty", s.alertStyle);
-    // `reserved` is never written by anything, so it is always its default
-    // and needs no slot; take it for a new setting and it needs one here.
     stored = s;
     lastSeen = s;
 }
@@ -65,6 +64,7 @@ bool load(ui::Settings& s) {
     in.bands   = nvs.getUChar("bands",   s.bands);
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
+    in.idleMode = nvs.getUChar("idlemode", s.idleMode);   // absent on older stores -> DIM
     in.theme    = nvs.getUChar("theme",    s.theme);
     in.sweep    = nvs.getUChar("sweep",    s.sweep);
     in.labels   = nvs.getUChar("labels",   s.labels);

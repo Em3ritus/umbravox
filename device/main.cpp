@@ -25,6 +25,7 @@
 #include "mesh.h"
 #include "chanplan.h"
 #include "balance.h"
+#include "idlemode.h"
 #include "rehome.h"
 #include "phase.h"
 #include <esp_now.h>
@@ -918,6 +919,7 @@ void loop() {
     static bool     wakeScreen = false;
     static uint8_t  pwmNow = 0;
     static bool     pwmInit = false;
+    static bool     animDirtied = false;   // the animation overwrote the canvas
 
     if (wakeScreen) {
         wakeScreen = false;
@@ -937,9 +939,14 @@ void loop() {
 
     // Dim to a fraction of the chosen brightness rather than a fixed level,
     // so someone running at 3% does not get *brighter* when it dims.
-    const uint8_t wantPct = dimmed ? (set.bright > 16 ? set.bright / 8 : 2)
-                                   : set.bright;
-    const uint8_t wantPwm = (uint8_t)((uint32_t)wantPct * 255 / 100);
+    const uint8_t dimPct = set.bright > 16 ? set.bright / 8 : 2;
+    const uint8_t brightPwm = (uint8_t)((uint32_t)set.bright * 255 / 100);
+    const uint8_t dimPwm    = (uint8_t)((uint32_t)dimPct * 255 / 100);
+    // The mode picks the dimmed level (OFF -> 0) and whether the dark panel
+    // runs the animation; DIM reproduces the original numbers exactly.
+    const idlemode::Plan ip = idlemode::plan(set.idleMode, dimmed, pwmNow,
+                                             brightPwm, dimPwm, idleS != 0);
+    const uint8_t wantPwm = ip.pwm;
     if (!pwmInit) { pwmNow = wantPwm; pwmInit = true; }
     if (pwmNow != wantPwm) {
         // Ramp rather than snap: a backlight that steps is startling in the
@@ -949,7 +956,12 @@ void loop() {
         else                  pwmNow = (uint8_t)(pwmNow - step < wantPwm ? wantPwm : pwmNow - step);
         ledcWrite(PIN_BL, pwmNow);
     }
-    const bool screenOff = dimmed && pwmNow == wantPwm;
+    // plan() judged the ramp with last pass's pwmNow; the ramp may have
+    // arrived just now, so re-judge with the current value (as before).
+    const idlemode::Plan ipNow = idlemode::plan(set.idleMode, dimmed, pwmNow,
+                                                brightPwm, dimPwm, idleS != 0);
+    const bool screenOff = ipNow.suspend;
+    const bool animOn    = ipNow.anim;
 
     // Nav consumes the touch before the screen sees it, so a swipe that
     // changes screens does not also land as a tap on the one arriving.
@@ -1138,6 +1150,35 @@ void loop() {
         // polling -- far faster than a finger.
         delay(5);
 
+        // ANIM: a dot breathing at <= 2 fps, one 11x11 blit per frame. The
+        // whole canvas is blanked and blitted once on entry; after that
+        // only the dot's own rectangle is touched.
+        {
+            static bool     animActive = false;
+            static uint32_t animStart  = 0;
+            static uint32_t animLast   = 0xFFFFFFFFu;
+            if (animOn) {
+                if (!animActive) {
+                    animActive = true;
+                    animDirtied = true;
+                    animStart  = millis();
+                    animLast   = 0xFFFFFFFFu;
+                    canvas.clear(pal::VOID);
+                    const ui::Rect all{0, 0, ui::W, ui::H};
+                    blitRect(canvas.px, all);
+                }
+                const uint32_t af = idlemode::animFrame(millis() - animStart);
+                if (af != animLast) {
+                    animLast = af;
+                    const idlemode::Rect r = idlemode::drawFrame(canvas, af, pal::VOID, pal::WITCH_HI);
+                    const ui::Rect ur{r.x, r.y, r.w, r.h};
+                    blitRect(canvas.px, ur);
+                }
+            } else {
+                animActive = false;
+            }
+        }
+
         // Log on a clock, not a frame count: frame counts mean something
         // different on each side of this branch.
         if (millis() - lastLog >= 10000) {
@@ -1194,7 +1235,8 @@ void loop() {
     // screens' stale dirty state. A future navigation path that changes the
     // theme or leaves ASPECT without setting `switched` will show leftover
     // pixels from the old theme.
-    if (switched || justWoke || themeChanged) {
+    if (switched || justWoke || themeChanged || animDirtied) {
+        animDirtied = false;
         dirty.clear();
         dirty.add(0, 0, ui::W, ui::H);
         justWoke = false;
