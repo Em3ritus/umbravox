@@ -401,6 +401,16 @@ int main() {
         check("final writes a held row", holdVerdict(true, 7, 1000, 5000, 5001, true) == WRITE);
         check("millis() wrap is handled",
               holdVerdict(true, 7, 0xFFFFF000u, 0xFFFFF000u, 0xFFFFF000u + Q, false) == WRITE);
+        // A sighting landing during the scan has lastMs/firstMs after `now`.
+        check("heard 5 ms after now: still in range, held",
+              holdVerdict(true, 7, 1000, 50005, 50000, false) == WAIT);
+        check("first seen after now: held", holdVerdict(true, 7, 50003, 50003, 50000, false) == WAIT);
+        check("...even across a millis() wrap",
+              holdVerdict(true, 7, 0xFFFFFFF0u, 3u, 0xFFFFFFFEu, false) == WAIT);
+        check("forward wrap still releases at the quiet time",
+              holdVerdict(true, 7, 0xFFFFFFF0u, 0xFFFFFFF0u, 0xFFFFFFF0u + Q + 5, false) == WRITE);
+        check("final still releases a row heard after now",
+              holdVerdict(true, 7, 50003, 50005, 50000, true) == WRITE);
     }
 
     printf("a held row is written once, with the loudest position seen by then:\n");

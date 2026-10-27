@@ -81,7 +81,11 @@ inline Verdict holdVerdict(bool located, uint32_t firstEpoch, uint32_t firstMs,
     if (!firstEpoch) return NEVER;
     if (!located) return WAIT;
     if (final) return WRITE;
-    if (nowMs - lastMs >= HOLD_QUIET_MS || nowMs - firstMs >= HOLD_MAX_MS) return WRITE;
+    // Signed: a sighting that lands while the flush is scanning has lastMs (or
+    // firstMs) after nowMs. Unsigned, that difference wraps to ~4e9 and reads
+    // as "quiet"; signed it is negative, i.e. still being heard.
+    if ((int32_t)(nowMs - lastMs) >= (int32_t)HOLD_QUIET_MS ||
+        (int32_t)(nowMs - firstMs) >= (int32_t)HOLD_MAX_MS) return WRITE;
     return WAIT;
 }
 
