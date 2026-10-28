@@ -27,7 +27,7 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) $(TESTS) sdcmd_console *.png
+	rm -f $(BIN) $(TESTS) sdcmd_console bench_draw *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
@@ -237,4 +237,12 @@ regress: $(BIN)
 	 cd "$$d" && md5sum -c --quiet $(MANIFEST); \
 	 echo "regress: UMBRAVOX unchanged (landscape and portrait)"
 
-.PHONY: run sheet clean test regress emblem-check sdput-check
+# Draw-time benchmark (not part of `test`): host us/frame for the landscape
+# scan screen under each theme. Run before and after touching ui/canvas.*.
+bench_draw: bench.cpp packload.h $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -o $@ bench.cpp $(SRC_NOMAIN) -lm
+
+bench: bench_draw
+	@./bench_draw 2000
+
+.PHONY: bench run sheet clean test regress emblem-check sdput-check

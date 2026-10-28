@@ -65,3 +65,7 @@ web/designer/wasm/build/
 sim/test_sdcmd
 sim/sdcmd_console
 sim/.emblem.tmp
+sim/test_canvas
+sim/test_portrait
+sim/test_touchmap
+sim/bench_draw
