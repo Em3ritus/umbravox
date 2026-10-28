@@ -4,6 +4,8 @@
 #include "screens.h"
 #include "palette.h"
 #include "files.h"
+#include "portrait.h"
+#include "portrait_layout.h"
 
 namespace ui {
 namespace {
@@ -99,8 +101,118 @@ void adjustAspect(Settings& st, int row, int dir) {
     }
 }
 
+// LANDSCAPE <-> PORTRAIT, round robin over two values; LANDSCAPE stays put
+// on a board that cannot show portrait.
+void flipOrient(Settings& st) {
+    if (!portraitAllowed()) { st.orient = ORIENT_LANDSCAPE; return; }
+    st.orient = st.orient == ORIENT_PORTRAIT ? ORIENT_LANDSCAPE : ORIENT_PORTRAIT;
+}
+
+// Open `scr` from where we are, remembering the way back for a placeholder.
+bool go(Nav& n, uint8_t scr) {
+    n.backTo = n.screen;
+    n.screen = scr;
+    n.scroll = 0;
+    n.dragAccum = 0;
+    return true;
+}
+
+// Portrait taps: the same meanings as landscape's, at portrait positions
+// (ui/portrait_layout.h). A screen without a portrait layout is a
+// placeholder whose only controls are BACK (the button and the header chip).
+bool onTapPortrait(Nav& n, Settings& st, int x, int y) {
+    const bool back = hit(x, y, 0, 0, pl::BACK_W, pl::HDR_H);
+
+    if (n.screen == SCR_SCAN) {
+        for (int i = 0; i < 3; i++) {
+            int tx, ty, tw, th;
+            pl::tileRect(i, tx, ty, tw, th);
+            if (!hit(x, y, tx, ty, tw, th)) continue;
+            n.filter = (i == 0) ? F_WIFI : (i == 1) ? F_5G : F_BLE;
+            return go(n, SCR_CODEX);
+        }
+        if (hit(x, y, pl::DIAL_X, pl::DIAL_Y, pl::DIAL_W, pl::dialH())) return go(n, SCR_DOMAIN);
+        if (SPEC_H > 0 && hit(x, y, pl::DIAL_X, pl::specY(), pl::DIAL_W, SPEC_H)) return go(n, SCR_MESH);
+        if (hit(x, y, pl::LOG_X, pl::LOG_Y, pl::LOG_W, pl::LOG_H)) {
+            n.logToggleRequested = true;
+            return false;
+        }
+        if (back) return go(n, SCR_GRIMOIRE);
+        return false;
+    }
+
+    if (!portraitCore(n.screen)) {
+        if (back || hit(x, y, pl::PH_BACK_X, pl::PH_BACK_Y, pl::PH_BACK_W, pl::PH_BACK_H)) {
+            const uint8_t to = (n.backTo == SCR_GRIMOIRE) ? SCR_GRIMOIRE : SCR_SCAN;
+            n.screen = to;
+            n.backTo = SCR_SCAN;
+            n.scroll = 0;
+            n.dragAccum = 0;
+            return true;
+        }
+        return false;
+    }
+
+    if (back) {
+        if (n.screen == SCR_FILES) filesLeave(n);
+        else { n.screen = SCR_SCAN; n.scroll = 0; }
+        n.dragAccum = 0;
+        return true;
+    }
+
+    if (n.screen == SCR_FILES) return filesTapPortrait(n, x, y);
+
+    if (n.screen == SCR_GRIMOIRE) {
+        int lx, ly, lw, lh;
+        pl::grimCell(GRIMOIRE_N, lx, ly, lw, lh);
+        if (hit(x, y, lx, ly, lw, lh)) {
+            st.labels = st.labels ? 0 : 1;
+            return true;
+        }
+        for (int i = 0; i < GRIMOIRE_N; i++) {
+            int gx, gy, gw, gh;
+            pl::grimCell(i, gx, gy, gw, gh);
+            if (hit(x, y, gx, gy, gw, gh)) return go(n, GRIMOIRE[i].screen);
+        }
+        return false;
+    }
+
+    if (n.screen == SCR_ATTUNE) {
+        if (n.setPage >= SET_PAGES) n.setPage = 0;
+        for (int r = 0; r < SET_ROWS; r++) {
+            const int y0 = pl::setRowY(r) + 1;
+            const bool minus = hit(x, y, pl::SET_MINUS_X, y0, pl::SET_BTN_W, pl::SET_BTN_H);
+            const bool plus  = hit(x, y, pl::SET_PLUS_X,  y0, pl::SET_BTN_W, pl::SET_BTN_H);
+            if (r == SET_ROWS - 1) {
+                if (hit(x, y, pl::SET_PAGE_X, y0, pl::SET_PAGE_W, pl::SET_BTN_H)) {
+                    n.setPage = (uint8_t)((n.setPage + 1) % SET_PAGES);
+                    return true;
+                }
+                if (hit(x, y, pl::SET_WIDE_X, y0, pl::SET_WIDE_W, pl::SET_BTN_H)) n.resetRequested = true;
+                continue;
+            }
+            if (n.setPage == 1) {
+                if (r == SET_FILES_ROW) {
+                    if (hit(x, y, pl::SET_WIDE_X, y0, pl::SET_WIDE_W, pl::SET_BTN_H)) {
+                        filesEnter(n);
+                        return true;
+                    }
+                    continue;
+                }
+                if (r == SET_ORIENT_ROW && (minus || plus)) flipOrient(st);
+                if (r == SET_AUTOLOG_ROW && (minus || plus)) st.autoLog = st.autoLog ? 0 : 1;
+                continue;
+            }
+            if (minus) adjust(st, r, -1);
+            if (plus)  adjust(st, r, +1);
+        }
+    }
+    return false;
+}
+
 // Returns true if the tap changed the screen.
 bool onTap(Nav& n, Settings& st, int x, int y) {
+    if (st.orient == ORIENT_PORTRAIT) return onTapPortrait(n, st, x, y);
     if (n.screen == SCR_SCAN) {
         // The three tiles are the navigation. Each opens the codex filtered
         // to whatever that tile counts, which is the obvious meaning of
@@ -229,6 +341,14 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
                     }
                     continue;
                 }
+                // ORIENT, like AUTO LOG: two values, - and + both flip it.
+                // A board without portrait draws no buttons and takes none.
+                if (r == SET_ORIENT_ROW) {
+                    if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H) ||
+                        hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H))
+                        flipOrient(st);
+                    continue;
+                }
                 // AUTO LOG has two values, so - and + both flip it.
                 if (r != SET_AUTOLOG_ROW) continue;
                 if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H) ||
@@ -310,9 +430,13 @@ bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {
             return false;
         }
 
-        const bool scrollable = (n.screen == SCR_CODEX || n.screen == SCR_OMENS ||
+        // In portrait only FILES has a list; the placeholders draw none.
+        const bool portrait = st.orient == ORIENT_PORTRAIT;
+        const bool scrollable = portrait ? (n.screen == SCR_FILES && !n.fileConfirm)
+                              : (n.screen == SCR_CODEX || n.screen == SCR_OMENS ||
                                  n.screen == SCR_ECHOES ||
                                  (n.screen == SCR_FILES && !n.fileConfirm));
+        const int rowPx = portrait ? pl::FILE_ROW_H : ROW_PX;
         if (!n.dragging && scrollable && n.maxScroll > 0 &&
             iabs(y - n.startY) > DRAG_START) {
             n.dragging = true;
@@ -322,8 +446,8 @@ bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {
             // Dragging down moves further down the list -- the finger pushes
             // the viewport, not the content.
             n.dragAccum += (y - n.lastY);
-            while (n.dragAccum >= ROW_PX)  { n.scroll++; n.dragAccum -= ROW_PX; }
-            while (n.dragAccum <= -ROW_PX) { n.scroll--; n.dragAccum += ROW_PX; }
+            while (n.dragAccum >= rowPx)  { n.scroll++; n.dragAccum -= rowPx; }
+            while (n.dragAccum <= -rowPx) { n.scroll--; n.dragAccum += rowPx; }
             if (n.scroll < 0)            { n.scroll = 0;            n.dragAccum = 0; }
             if (n.scroll > n.maxScroll)  { n.scroll = n.maxScroll;  n.dragAccum = 0; }
         }

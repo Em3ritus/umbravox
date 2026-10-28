@@ -31,6 +31,9 @@ struct Nav {
     uint16_t selected = 0;      // which codex row the detail screen is showing
     uint8_t  rangeIdx = 1;      // territory map scale
     uint8_t  setPage = 0;       // settings page (0-based, < SET_PAGES); back to 0 on leaving
+    // Portrait: where a placeholder screen's BACK goes -- the screen it was
+    // opened from (SCAN or GRIMOIRE; anything else reads as SCAN).
+    uint8_t  backTo = SCR_SCAN;
 
     // The caller's clock, for the FILES confirm's timing. filesTick() sets it
     // (call it before navTouch each poll); nav itself never reads a clock.

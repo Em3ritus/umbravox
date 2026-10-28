@@ -16,4 +16,8 @@ namespace ui {
 // which only costs a few full blits (a screen switch forces one anyway).
 State& prevState(uint8_t scr);
 
+// Every slot back to a default State: an orientation switch makes what each
+// screen last drew meaningless (ui/draw.h orientationChanged).
+void resetPrevStates();
+
 } // namespace ui

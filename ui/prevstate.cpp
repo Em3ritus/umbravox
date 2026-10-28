@@ -32,4 +32,8 @@ State& prevState(uint8_t scr) {
 #endif
 }
 
+void resetPrevStates() {
+    for (int i = 0; i < SCR_COUNT; i++) prevState((uint8_t)i) = State();
+}
+
 } // namespace ui

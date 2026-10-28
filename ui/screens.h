@@ -107,6 +107,13 @@ void drawMesh(Canvas& c, const State& s, Dirty* d = nullptr);
 
 // ATTUNE -- the settings knobs.
 void drawAttune(Canvas& c, const State& s, Dirty* d = nullptr);
+// A page-1 row's label and value text (out holds >= 16), shared with the
+// portrait ATTUNE so the two cannot disagree about what a knob reads.
+const char* attuneRowLabel(int row);
+void attuneRowValue(const Settings& st, int row, char* out);
+// The ORIENT row's value: LANDSCAPE, PORTRAIT, or LANDSCAPE ONLY on a board
+// without portrait (ui::portraitAllowed()).
+const char* orientValue(const Settings& st);
 
 // FILES -- the session logs on the card (ui/files.h has the interaction).
 void drawFiles(Canvas& c, const State& s, Dirty* d = nullptr);

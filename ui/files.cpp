@@ -2,6 +2,7 @@
 // own (filesTick hands it the caller's), no card (nav raises requests).
 #include "files.h"
 #include "layout.h"
+#include "portrait_layout.h"
 #include <string.h>
 
 namespace ui {
@@ -100,31 +101,57 @@ int16_t filesMaxScroll(const Nav& n) {
     return (int16_t)(n.filesN > FILE_VIS ? n.filesN - FILE_VIS : 0);
 }
 
-bool filesTap(Nav& n, int x, int y) {
+namespace {
+
+// The controls' rectangles: landscape's (ui/layout.h) or portrait's
+// (ui/portrait_layout.h). One state machine, two geometries.
+struct Geo {
+    int yesX, yesY, yesW, yesH;
+    int delX, barY, delW, barH;
+    int rowX, rowY, rowW, rowH;
+};
+
+bool tapIn(Nav& n, int x, int y, const Geo& g) {
     if (n.fileConfirm) {
         // Inside the arm time a tap means nothing: a bounce of DELETE must
         // neither confirm nor cancel.
         if (n.nowMs - n.fileConfirmAt < CONFIRM_ARM_MS) return false;
         cancelConfirm(n);
-        if (!hit(x, y, FILE_YES_X, FILE_YES_Y, FILE_YES_W, FILE_YES_H)) return false;   // NO
+        if (!hit(x, y, g.yesX, g.yesY, g.yesW, g.yesH)) return false;   // NO
         if (n.fileSel < 0 || n.fileSel >= n.filesN || n.fileSel == n.filesActive) return false;
         n.fileDeleteRequested = true;
         n.fileDeleteIdx = n.fileSel;
         return false;
     }
-    if (hit(x, y, FILE_DEL_X, FILE_BAR_Y, FILE_DEL_W, FILE_BAR_H)) {
+    if (hit(x, y, g.delX, g.barY, g.delW, g.barH)) {
         if (n.fileSel >= 0 && n.fileSel < n.filesN && n.fileSel != n.filesActive) {
             n.fileConfirm = true;
             n.fileConfirmAt = n.nowMs;
         }
         return false;
     }
-    if (hit(x, y, FILE_ROW_X, FILE_ROW_Y, FILE_ROW_W, FILE_VIS * FILE_ROW_H)) {
-        const int idx = n.scroll + (y - FILE_ROW_Y) / FILE_ROW_H;
+    if (hit(x, y, g.rowX, g.rowY, g.rowW, FILE_VIS * g.rowH)) {
+        const int idx = n.scroll + (y - g.rowY) / g.rowH;
         if (idx >= n.filesN) return false;
         n.fileSel = (int8_t)(n.fileSel == idx ? -1 : idx);
     }
     return false;
+}
+
+} // namespace
+
+bool filesTap(Nav& n, int x, int y) {
+    static const Geo L = {FILE_YES_X, FILE_YES_Y, FILE_YES_W, FILE_YES_H,
+                          FILE_DEL_X, FILE_BAR_Y, FILE_DEL_W, FILE_BAR_H,
+                          FILE_ROW_X, FILE_ROW_Y, FILE_ROW_W, FILE_ROW_H};
+    return tapIn(n, x, y, L);
+}
+
+bool filesTapPortrait(Nav& n, int x, int y) {
+    static const Geo P = {pl::FILE_YES_X, pl::FILE_YES_Y, pl::FILE_YES_W, pl::FILE_YES_H,
+                          pl::FILE_DEL_X, pl::FILE_BAR_Y, pl::FILE_DEL_W, pl::FILE_BAR_H,
+                          pl::FILE_ROW_X, pl::FILE_ROW_Y, pl::FILE_ROW_W, pl::FILE_ROW_H};
+    return tapIn(n, x, y, P);
 }
 
 void filesRescanned(Nav& n, const FileList& L, const char* prevSel) {

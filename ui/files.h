@@ -43,6 +43,8 @@ void filesLeave(Nav& n);
 // the whole screen must be repainted (never, today: the body's own dirty
 // tracking covers every change here).
 bool filesTap(Nav& n, int x, int y);
+// The same, at the portrait screen's positions (ui/portrait_layout.h).
+bool filesTapPortrait(Nav& n, int x, int y);
 
 // The deepest the list can scroll: the caller sets nav.maxScroll from it.
 int16_t filesMaxScroll(const Nav& n);

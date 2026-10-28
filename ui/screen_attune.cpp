@@ -90,6 +90,14 @@ void button(Canvas& c, int x, int y, const char* glyph, bool live) {
 
 } // namespace
 
+void attuneRowValue(const Settings& st, int row, char* out) { rowValue(st, row, out); }
+const char* attuneRowLabel(int row) { return rowLabel(row); }
+
+const char* orientValue(const Settings& st) {
+    if (!portraitAllowed()) return "LANDSCAPE ONLY";
+    return st.orient == ORIENT_PORTRAIT ? "PORTRAIT" : "LANDSCAPE";
+}
+
 void drawAttune(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
     drawHeader(c, s, screenName(SCR_ATTUNE, s.set.labels));
@@ -123,7 +131,7 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
         }
 
         if (page == 1) {
-            // Page 2: AUTO LOG, FILES, then rows left free for what comes next.
+            // Page 2: AUTO LOG, FILES, ORIENT, then rows left free for what comes next.
             if (r == SET_FILES_ROW) {
                 c.text(6, y + 2, screenName(SCR_FILES, s.set.labels), pal::DIM);
                 const int bx = SET_MINUS_X;
@@ -131,6 +139,24 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
                 c.fill(bx, y + 1, bw, SET_BTN_H, Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
                 c.rect(bx, y + 1, bw, SET_BTN_H, pal::EDGE_LIT);
                 c.textCenter(bx + bw / 2, y + 3, "OPEN", pal::WITCH_HI);
+                continue;
+            }
+            if (r == SET_ORIENT_ROW) {
+                // The IDLE row's style: two values, so - and + both flip it.
+                // A board that cannot show portrait says so and offers no
+                // buttons, rather than buttons that do nothing.
+                c.text(6, y + 2, "ORIENT", pal::DIM);
+                if (!portraitAllowed()) {
+                    c.textRight(154, y + 2, orientValue(s.set), pal::DIM);
+                    continue;
+                }
+                c.textRight(SET_MINUS_X - 4, y + 2, orientValue(s.set), pal::BRIGHT);
+                button(c, SET_MINUS_X, y + 1, "-", true);
+                button(c, SET_PLUS_X,  y + 1, "+", true);
+                continue;
+            }
+            if (r == SET_ORIENT_ROW + 1 && !portraitAllowed()) {
+                c.textRight(154, y + 2, "ON THIS BOARD", pal::DIM);
                 continue;
             }
             if (r != SET_AUTOLOG_ROW) continue;
@@ -170,7 +196,7 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
                 s.set.bleDuty != prev.set.bleDuty || s.set.bands != prev.set.bands ||
                 s.set.alertMin != prev.set.alertMin || s.set.idleIdx != prev.set.idleIdx ||
                 s.set.idleMode != prev.set.idleMode || s.set.autoLog != prev.set.autoLog ||
-                s.setPage != prev.setPage)
+                s.set.orient != prev.set.orient || s.setPage != prev.setPage)
                 d->add(0, BODY_Y, W, BODY_H);
             dirtyChrome(*d, s, prev);
         }

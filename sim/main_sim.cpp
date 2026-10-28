@@ -18,9 +18,15 @@
 //                                       FILES: N logs (default 5), scroll, selection,
 //                                       REC row, the delete card; --nocard, --result 1|2,
 //                                       --partial (walk bounded)
+//   ./umbravox out.png --orient portrait  the tall 120x160 canvas (240x320 at
+//                                       --scale 2, exactly the NM-CYD-C5 in
+//                                       portrait); composes with everything above
+//   ./umbravox out.png --screen attune --setpage 2 --landscape-only
+//                                       ATTUNE as on a board without portrait
 //   ./umbravox --check-pack path/to/folder     print OK <name> or the reason;
 //                                       exit 0 / 1; writes no PNG
 #include "../ui/screens.h"
+#include "../ui/draw.h"
 #include "../ui/demo.h"
 #include "../ui/nav.h"
 #include "../ui/files.h"
@@ -56,6 +62,7 @@ int main(int argc, char** argv) {
     uint8_t autoLogSim = 0;            // --autolog 0 OFF, 1 ON
     int filesSim = 5, fileSelSim = -1, fileActSim = -1, fileScrollSim = 0, fileResultSim = 0;
     bool fileConfirmSim = false, noCardSim = false, partialSim = false;
+    uint8_t orientSim = ui::ORIENT_LANDSCAPE;   // --orient portrait|landscape
     const char* which = "scan";
     const char* packDir = nullptr;
     const char* checkDir = nullptr;
@@ -83,6 +90,13 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--nocard")) noCardSim = true;
         else if (!strcmp(argv[i], "--partial")) partialSim = true;
         else if (!strcmp(argv[i], "--pack") && i + 1 < argc) packDir = argv[++i];
+        else if (!strcmp(argv[i], "--landscape-only")) ui::setPortraitAllowed(false);
+        else if (!strcmp(argv[i], "--orient") && i + 1 < argc) {
+            const char* o = argv[++i];
+            if (!strcmp(o, "portrait")) orientSim = ui::ORIENT_PORTRAIT;
+            else if (!strcmp(o, "landscape")) orientSim = ui::ORIENT_LANDSCAPE;
+            else { fprintf(stderr, "umbravox: --orient portrait|landscape, not %s\n", o); return 1; }
+        }
         else if (!strcmp(argv[i], "--check-pack") && i + 1 < argc) checkDir = argv[++i];
     }
 
@@ -117,6 +131,7 @@ int main(int argc, char** argv) {
         s.netId = netIdSim;      // preview the MESH screen's enrolled state
         if (nodesSim >= 0) s.nNodes = (uint8_t)(nodesSim > 255 ? 255 : nodesSim);
         s.set.autoLog = autoLogSim;
+        s.set.orient = orientSim;
         s.setPage = (uint8_t)(setPageSim >= 1 && setPageSim <= ui::SET_PAGES ? setPageSim - 1 : 0);
         if (alertSim >= 0) {
             // Hold an alert up so each style can be rendered at any point in its
@@ -174,27 +189,19 @@ int main(int argc, char** argv) {
                  : omens ? ui::SCR_OMENS : domain ? ui::SCR_DOMAIN
                  : meshs ? ui::SCR_MESH : codex ? ui::SCR_CODEX : ui::SCR_SCAN;
         s.filter = ui::F_WIFI;
-        if (files)       ui::drawFiles(c, s);
-        else if (aspect) ui::drawAspect(c, s);
-        else if (attune) ui::drawAttune(c, s);
-        else if (meshs)  ui::drawMesh(c, s);
-        else if (domain) ui::drawDomain(c, s);
-        else if (omens)  ui::drawOmens(c, s);
-        else if (echoes) ui::drawEchoes(c, s);
-        else if (grim)   ui::drawGrimoire(c, s);
-        else if (detail) ui::drawDetail(c, s);
-        else if (codex)  ui::drawCodex(c, s);
-        else             ui::drawScan(c, s);
+        // The device's own dispatcher: landscape screens as they always were,
+        // or their portrait counterparts (and the placeholders).
+        ui::drawScreen(c, s, nullptr);
 
         char path[512];
         if (sheet > 0) outName(path, sizeof(path), out, i);
         else snprintf(path, sizeof(path), "%s", out);
 
-        if (!png::write(path, c.px, ui::W, ui::H, scale)) {
+        if (!png::write(path, c.px, c.w, c.h, scale)) {
             fprintf(stderr, "umbravox: cannot write %s\n", path);
             return 1;
         }
-        printf("%s  %dx%d  frame %u\n", path, ui::W * scale, ui::H * scale, f);
+        printf("%s  %dx%d  frame %u\n", path, c.w * scale, c.h * scale, f);
     }
     return 0;
 }
