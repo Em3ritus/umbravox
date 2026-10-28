@@ -32,8 +32,12 @@ State& prevState(uint8_t scr) {
 #endif
 }
 
+// In place, never through a State temporary: `slot = State()` builds 2.3 KB
+// on the caller's stack, and the caller is loop() (already holding its own
+// State) -- on the first pass after a boot into a saved PORTRAIT, too. State
+// is trivially destructible, so re-constructing over the old value is fine.
 void resetPrevStates() {
-    for (int i = 0; i < SCR_COUNT; i++) prevState((uint8_t)i) = State();
+    for (int i = 0; i < SCR_COUNT; i++) new (&prevState((uint8_t)i)) State();
 }
 
 } // namespace ui
