@@ -31,6 +31,8 @@
 #include "balance.h"
 #include "idlemode.h"
 #include "autolog.h"
+#include "filescan.h"
+#include "files.h"
 #include "rehome.h"
 #include "phase.h"
 #include <esp_now.h>
@@ -1012,6 +1014,68 @@ bool pollConsole() {
 // Fills `s` from the test sequence if one is running. Deliberately ignores
 // the ALERT floor -- the point is to see the card, including the LOW one the
 // floor would normally hide.
+// --- FILES: the session logs on the card (ui/files.h, device/filescan.h) ---
+//
+// The list is rebuilt only when the screen opens, after a delete, and when
+// the logging session's file changes while it is up -- never per frame. One
+// walk of the root, on this (the loop) task, in one go: at most
+// filescan::MAX_ENTRIES (512) entries or filescan::BUDGET_MS (1 s) of wall
+// clock, then one FatFs free-space query. Worst case: the 1 s walk plus the
+// first free-space query after boot, which on a card whose FSInfo is not
+// trusted reads the whole FAT once (seconds on a 32 GB card; cached after).
+// Capture keeps running in the Wi-Fi/BLE callbacks meanwhile; the GPS UART
+// buffer holds 2 s; logging's next flush is simply late. The walk is recorded
+// by sdlog's stall meter (perf.csv). Nothing here transmits.
+namespace files {
+ui::FileList list;
+char activeSeen[40] = "";      // logging::fileName() at the last scan
+
+struct Ctx { filescan::Walk w; };
+bool onEntry(const char* name, bool isDir, uint32_t size, void* c) {
+    return filescan::visit(((Ctx*)c)->w, name, isDir, size, millis());
+}
+
+void scan(ui::Nav& nav) {
+    char prev[ui::FILE_NAME_MAX] = "";
+    if (nav.fileSel >= 0 && nav.fileSel < list.n) strcpy(prev, list.rows[nav.fileSel].name);
+    const uint32_t t0 = millis();
+    static Ctx ctx;
+    filescan::begin(ctx.w, list, t0);
+    if (!sdlog::present() ||
+        !sdlog::listDirSized("/", onEntry, &ctx, filescan::MAX_ENTRIES + 1)) {
+        list = ui::FileList();               // card absent or pulled: NO CARD
+    } else {
+        list.space = sdlog::space(list.usedKB, list.totalKB);
+    }
+    snprintf(activeSeen, sizeof activeSeen, "%s", logging::fileName());
+    ui::filesRescanned(nav, list, prev);
+    ui::filesSetActive(nav, filescan::activeIndex(list, logging::fileName()));
+    Serial.printf("files: %u logs listed (%u on card%s) in %lu ms\n", (unsigned)list.n,
+                  (unsigned)list.found, list.partial ? ", walk bounded" : "",
+                  (unsigned long)(millis() - t0));
+}
+
+// Delete list row `idx`, re-checking the policy on its NAME against the live
+// session -- the index came from the UI and is not trusted for that.
+bool remove(int idx) {
+    if (idx < 0 || idx >= list.n) return false;
+    char path[ui::FILE_NAME_MAX + 1];
+    if (!filescan::pathOf(list.rows[idx].name, path, sizeof path)) return false;
+    if (const char* why = filescan::deleteCheck(path, logging::fileName())) {
+        elog::event(elog::WARN, "files", "refused to delete %s from the screen: %s", path, why);
+        return false;
+    }
+    const uint32_t size = list.rows[idx].size;
+    if (!sdlog::removeFile(path)) {
+        elog::event(elog::WARN, "files", "delete %s from the screen failed", path);
+        return false;
+    }
+    elog::event(elog::INFO, "files", "deleted %s (%lu bytes) from the screen", path,
+                (unsigned long)size);
+    return true;
+}
+} // namespace files
+
 bool testAlert(ui::State& s, uint32_t nowMs) {
     if (testStep < 0) return false;
     if (nowMs - testAt >= TEST_STEP_MS) {
@@ -1310,11 +1374,14 @@ void loop() {
 
     // Nav consumes the touch before the screen sees it, so a swipe that
     // changes screens does not also land as a tap on the one arriving.
-    const uint16_t rows = nav.screen == ui::SCR_ECHOES ? cap::echoCount()
+    ui::filesTick(nav, millis());          // the FILES confirm's clock, before navTouch
+    const uint16_t rows = nav.screen == ui::SCR_FILES ? nav.filesN
+                        : nav.screen == ui::SCR_ECHOES ? cap::echoCount()
                         : nav.screen == ui::SCR_OMENS ? alertlog::count()
                         : nav.filter == ui::F_BLE ? blescan::sightCount()
                         : cap::sightCount(nav.filter == ui::F_5G);
-    const int visible = nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
+    const int visible = nav.screen == ui::SCR_FILES  ? ui::FILE_VIS
+                      : nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
                       : nav.screen == ui::SCR_ECHOES ? ui::MAX_ECHO_ROWS : ui::ROWS;
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
     const bool switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
@@ -1340,6 +1407,26 @@ void loop() {
         // start another this boot (until the setting is turned OFF and ON).
         if (wasWanted && !logging::wantsActive()) autolog::noteManualStop(autoLatch);
         nav.logToggleRequested = false;
+    }
+
+    // FILES: scan on opening; delete what YES asked for (re-checked by name);
+    // rescan when the session's file changes under the screen.
+    if (nav.screen == ui::SCR_FILES) {
+        if (nav.filesScanRequested) {
+            nav.filesScanRequested = false;
+            files::scan(nav);
+        }
+        if (nav.fileDeleteRequested) {
+            nav.fileDeleteRequested = false;
+            const bool ok = files::remove(nav.fileDeleteIdx);
+            nav.fileDeleteIdx = -1;
+            files::scan(nav);
+            ui::filesResult(nav, ok, millis());
+        }
+        if (strcmp(files::activeSeen, logging::fileName()) != 0) files::scan(nav);
+        ui::filesSetActive(nav, filescan::activeIndex(files::list, logging::fileName()));
+    } else {
+        nav.filesScanRequested = nav.fileDeleteRequested = false;
     }
 
     if (nav.enrollRequested) {
@@ -1480,6 +1567,8 @@ void loop() {
             }
             s.nTrack = (uint8_t)n;
         }
+    } else if (nav.screen == ui::SCR_FILES) {
+        ui::filesPublish(s, nav, files::list);
     } else if (nav.screen == ui::SCR_DETAIL) {
         if (nav.filter == ui::F_BLE) blescan::fillDetail(s, nav.selected, millis());
         else cap::fillDetail(s, nav.selected, nav.filter == ui::F_5G, millis());
@@ -1601,6 +1690,7 @@ void loop() {
     else if (nav.screen == ui::SCR_MESH)   ui::drawMesh(canvas, s, &dirty);
     else if (nav.screen == ui::SCR_ATTUNE) ui::drawAttune(canvas, s, &dirty);
     else if (nav.screen == ui::SCR_ASPECT) ui::drawAspect(canvas, s, &dirty);
+    else if (nav.screen == ui::SCR_FILES)  ui::drawFiles(canvas, s, &dirty);
     else                                   ui::drawScan(canvas, s, &dirty);
 
     // A screen change invalidates every region the outgoing screen reported.
@@ -1648,7 +1738,8 @@ void loop() {
              : nav.screen == ui::SCR_DOMAIN ? "domn "
              : nav.screen == ui::SCR_MESH   ? "mesh "
              : nav.screen == ui::SCR_ATTUNE ? "tune "
-            : nav.screen == ui::SCR_ASPECT ? "aspct" : "scan ",
+            : nav.screen == ui::SCR_ASPECT ? "aspct"
+             : nav.screen == ui::SCR_FILES  ? "files" : "scan ",
              (unsigned)(tDraw - t0), (unsigned)(tBlit - tDraw),
              (unsigned)cap::uniques(), (unsigned)cap::tableCap(),
              (unsigned)s.nets24, (unsigned)s.nets5,

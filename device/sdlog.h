@@ -72,6 +72,17 @@ constexpr uint32_t LIST_MAX = 256;
 bool     listDir(const char* path, void (*cb)(const char* name, bool isDir, void* ctx), void* ctx);
 uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap);
 
+// The FILES screen's walk (device/filescan.h): like listDir, but cb also gets
+// the size from the entry already open (no second open per file, which on
+// FAT re-searches the directory) and returns false to stop; at most
+// `maxEntries`. Recorded as a stall. false with no card or no `path`.
+bool listDirSized(const char* path, bool (*cb)(const char* name, bool isDir, uint32_t size, void* ctx),
+                  void* ctx, uint32_t maxEntries);
+// Card space in KiB. false with no card or if FatFs cannot say. The first
+// call after mount may scan the whole FAT when the card's FSInfo free count
+// is not trusted (seconds on a large card); FatFs caches it after that.
+bool space(uint32_t& usedKB, uint32_t& totalKB);
+
 // The longest a write held up the loop (ms) since this was last called, across
 // the session appends (openAppend..closeAppend) and append. Reading it clears it; perflog logs it so the cost of
 // the SD card itself is visible next to the frame times it competes with.

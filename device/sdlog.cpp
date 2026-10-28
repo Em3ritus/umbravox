@@ -177,6 +177,42 @@ bool listDir(const char* path, void (*cb)(const char* name, bool isDir, void* ct
     return true;
 }
 
+bool listDirSized(const char* path, bool (*cb)(const char* name, bool isDir, uint32_t size, void* ctx),
+                  void* ctx, uint32_t maxEntries) {
+    if (!mounted || !path || path[0] != '/' || !cb) return false;
+    const uint32_t t0 = millis();
+    File dir = SD.open(path, FILE_READ);
+    if (!dir) { noteStall(t0); return false; }
+    if (!dir.isDirectory()) { dir.close(); noteStall(t0); return false; }
+    for (uint32_t seen = 0; seen < maxEntries; seen++) {
+        File f = dir.openNextFile();
+        if (!f) break;
+        const char* nm = f.name();
+        if (!nm) nm = "";
+        for (const char* p = nm; *p; p++) if (*p == '/') nm = p + 1;
+        const bool d = f.isDirectory();
+        const uint32_t sz = d ? 0 : (uint32_t)f.size();
+        const bool more = cb(nm, d, sz, ctx);
+        f.close();
+        if (!more) break;
+    }
+    dir.close();
+    noteStall(t0);
+    return true;
+}
+
+bool space(uint32_t& usedKB, uint32_t& totalKB) {
+    usedKB = totalKB = 0;
+    if (!mounted) return false;
+    const uint32_t t0 = millis();
+    const uint64_t total = SD.totalBytes(), used = SD.usedBytes();
+    noteStall(t0);
+    if (!total) return false;
+    totalKB = (uint32_t)(total >> 10);
+    usedKB  = (uint32_t)(used >> 10);
+    return true;
+}
+
 uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap) {
     if (!mounted || !path || path[0] != '/' || !buf || cap == 0) return 0;
     File f = SD.open(path, FILE_READ);
