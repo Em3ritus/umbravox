@@ -341,9 +341,9 @@ Settings **are persisted**: `device/prefs.cpp` keeps each one under its own NVS 
 and saves a few seconds after the last change, so a reboot comes back as it was left.
 An absent key (a fresh board, or one flashed over older firmware) reads as the default.
 
-`docs/attune.png` is a hand-made capture with no script or make target behind it, and
-is now **stale** (it predates the IDLE row and the pager). Re-render it with
-`sim/umbravox docs/attune.png --screen attune --scale 4` when convenient.
+`docs/attune.png` shows page 1 and is rendered by the simulator (no separate script):
+`sim/umbravox docs/attune.png --screen attune --scale 4`. Re-render it whenever the
+settings screen changes. Page 2 (AUTO LOG, SCROLLS, ORIENT) is not pictured here.
 
 ### FILES
 
