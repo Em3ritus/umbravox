@@ -112,14 +112,16 @@ These numbers are the same ones the device and the designer use
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
-| whole pack | at most 64 KB (65,536 bytes) |
+| whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
 
 ## Make a pack in the designer
 
-1. Open <https://em3ritus.github.io/umbravox/designer/>. It needs a recent browser:
-   Chrome or Edge 123+, Safari 17.2+ or Firefox 138+ (the page loads its code as
-   modules that import JSON). The page shows a message if yours is too old.
+1. Open <https://em3ritus.github.io/umbravox/designer/>. It needs a recent browser.
+   It uses features available from Chrome or Edge 123, Safari 17.2 and Firefox 138
+   (the page loads its code as modules that import JSON). Those minimums come from
+   the feature tables, not from testing each browser. The page shows a message if
+   yours is too old.
 2. Start from a template (UMBRAVOX, BAPH0MAU5 or COSMIC MUFFIN), a blank theme,
    or open an existing `theme.json`. The BAPH0MAU5 template is a heptagram in the
    seal's colours, because the seal bitmap is not available to packs.
@@ -148,7 +150,7 @@ the card for exactly this clash. Then eject the card properly and reboot the dev
 The Install page's second route, **Install over USB**, sends the pack down the CYD's
 USB cable using Web Serial, speaking the same protocol as `tools/sdput.py` (below).
 It is shown only where the browser has Web Serial: desktop Chrome or Edge (Web
-Serial arrived in version 89; the designer needs 123 or later anyway). Firefox and
+Serial arrived in version 89; the designer uses features available from Chrome 123 anyway). Firefox and
 Safari do not have it; the page says so and points to the card route or the zip.
 
 1. Close any serial monitor (Arduino IDE, PlatformIO, `screen`): only one program can
@@ -293,6 +295,10 @@ can delete or reboot.
 
 ## The 17 limitations
 
+These are the 17 numbered items below. `web/designer/js/limits.json` has 18 entries,
+because the characters rule (no `"` or `\` in name, header or author) is its own entry
+there but is folded into item 4 here, and the USB route entries appear in both.
+
 1. **Reboot.** A new or changed pack needs a reboot to appear. The device reads the SD
    card at boot only.
 2. **Eight packs.** At most 8 packs load, chosen as the first 8 by folder name, and only
@@ -317,7 +323,8 @@ can delete or reboot.
    device fall back to UMBRAVOX until you select it again.
 10. **Browser support.** Installing straight from the page needs desktop Chrome, Edge or
     Opera. Other browsers use the zip download; copy the folder to the card by hand.
-    The designer itself needs Chrome or Edge 123+, Safari 17.2+ or Firefox 138+.
+    The designer itself uses features available from Chrome or Edge 123, Safari 17.2 and
+    Firefox 138 (taken from feature tables, not measured on each browser).
 11. **FAT32.** The SD card must be FAT32, the same as for logging.
 12. **Skipped packs.** A pack that fails to load is skipped, never partly applied. The
     ASPECT screen shows the skipped count as `N SKIPPED` and `DIAG LOG`, split around the
@@ -325,7 +332,7 @@ can delete or reboot.
 13. **Format, not taste.** Packs are checked for format, not for taste or origin: nothing
     here signs, vets or moderates a pack. Only install packs from people you trust.
 14. **USB route: browsers.** Installing over USB needs desktop Chrome or Edge (Web
-    Serial, from version 89; this page needs 123 or later anyway). Firefox and Safari
+    Serial, from version 89; this page uses features available from 123 anyway). Firefox and Safari
     cannot; use the SD card route or the zip there.
 15. **USB route: reset on connect.** Connecting over USB may reset the board. It
     restarts in a few seconds, and the page waits for it to finish booting before it

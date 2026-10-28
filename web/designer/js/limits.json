@@ -94,7 +94,7 @@
     },
     "usbbrowser": {
       "id": "usbbrowser",
-      "text": "Installing over USB needs desktop Chrome or Edge (Web Serial, from version 89; this page needs 123 or later anyway). Firefox and Safari cannot; use the SD card route or the zip there.",
+      "text": "Installing over USB needs desktop Chrome or Edge (Web Serial, from version 89; this page uses features available from 123 anyway). Firefox and Safari cannot; use the SD card route or the zip there.",
       "where": ["install", "docs"]
     },
     "usbreset": {
