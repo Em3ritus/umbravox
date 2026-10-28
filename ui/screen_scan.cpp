@@ -222,17 +222,21 @@ void drawFooter(Canvas& c, const State& s) {
     const bool rec    = (s.logState == 1);
     const bool nocard = (s.logState == 2) || (s.logState == 0 && !s.sdOk);
     const int  rx = LOG_X, ry = FOOT_Y + 2, rw = LOG_W, rh = H - FOOT_Y - 3;
-    c.rect(rx, ry, rw, rh, (rec || nocard) ? pal::RED : pal::EDGE_LIT);
+    // On FILES the control is inert (a tap there does nothing), so it is
+    // drawn DIM: it still says what logging is doing, but not that it is live.
+    const bool inert = s.screen == SCR_FILES;
+    const uint16_t red = inert ? pal::DIM : pal::RED;
+    c.rect(rx, ry, rw, rh, inert ? pal::EDGE : (rec || nocard) ? pal::RED : pal::EDGE_LIT);
     const int dx = rx + 5, dy = ty + 3;
-    if (rec) c.disc(dx, dy, 2, pal::RED);
-    else     c.circle(dx, dy, 2, nocard ? pal::RED : pal::WITCH_HI);
+    if (rec) c.disc(dx, dy, 2, red);
+    else     c.circle(dx, dy, 2, nocard ? red : inert ? pal::DIM : pal::WITCH_HI);
 
     if (nocard) {
-        c.text(rx + 12, ty, "NO CARD", pal::RED);
+        c.text(rx + 12, ty, "NO CARD", red);
     } else if (rec) {
-        c.text(rx + 12, ty, "STOP", pal::BRIGHT);
+        c.text(rx + 12, ty, "STOP", inert ? pal::DIM : pal::BRIGHT);
     } else {
-        c.text(rx + 12, ty, "START", pal::WITCH_HI);
+        c.text(rx + 12, ty, "START", inert ? pal::DIM : pal::WITCH_HI);
     }
 }
 

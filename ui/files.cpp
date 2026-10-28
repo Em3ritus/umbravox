@@ -175,6 +175,53 @@ void fileLabel(const char* name, char* out, int cap) {
     out[i] = 0;
 }
 
+void fileLabelLong(const char* name, char* out, int cap) {
+    if (cap <= 0) return;
+    char tmp[FILE_NAME_MAX + 8];
+    fileLabel(name, tmp, sizeof tmp);
+    const char* n = name[0] == '/' ? name + 1 : name;
+    // A dated label is 16 characters; its seconds are the name's 17th..18th.
+    if (strlen(tmp) == 16 && tmp[13] == ':' && strlen(n) == 22) {
+        tmp[16] = ':'; tmp[17] = n[16]; tmp[18] = n[17]; tmp[19] = 0;
+    }
+    int i = 0;
+    for (; i < cap - 1 && tmp[i]; i++) out[i] = tmp[i];
+    out[i] = 0;
+}
+
+void filesSpaceText(const State& s, bool used, char* out) {
+    out[0] = 0;
+    if (!s.fileCard) return;
+    int i = 0;
+    if (!s.fileSpace) {
+        out[i++] = '-'; out[i++] = '-';
+    } else {
+        if (s.fileSpaceApprox) out[i++] = '~';
+        const uint32_t kb = used ? s.cardUsedKB
+                          : (s.cardTotalKB > s.cardUsedKB ? s.cardTotalKB - s.cardUsedKB : 0);
+        fmtKB(kb, out + i);
+        i = (int)strlen(out);
+    }
+    const char* w = used ? " USED" : " FREE";
+    while (*w) out[i++] = *w++;
+    out[i] = 0;
+}
+
+void filesCountText(const State& s, char* out) {
+    int i = 0;
+    if (s.filePartial) {
+        const char* m = "LIST INCOMPLETE";
+        while (*m) out[i++] = *m++;
+        out[i] = 0;
+        return;
+    }
+    putU(out, i, s.fileTotal);
+    if (s.fileFound > s.fileTotal) { out[i++] = '/'; putU(out, i, s.fileFound); }
+    const char* w = (s.fileTotal == 1 && s.fileFound <= 1) ? " LOG" : " LOGS";
+    while (*w) out[i++] = *w++;
+    out[i] = 0;
+}
+
 void fmtBytes(uint32_t b, char* out) { fmtUnits(b, out); }
 void fmtKB(uint32_t kb, char* out) {
     if (kb == 0) { out[0] = '0'; out[1] = 'K'; out[2] = 0; return; }
@@ -194,6 +241,7 @@ void filesPublish(State& s, const Nav& n, const FileList& L) {
     s.fileCard    = L.card;
     s.filePartial = L.partial;
     s.fileSpace   = L.space;
+    s.fileSpaceApprox = L.space && L.spaceApprox;
     s.cardUsedKB  = L.usedKB;
     s.cardTotalKB = L.totalKB;
     int sc = n.scroll;

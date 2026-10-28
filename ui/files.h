@@ -63,6 +63,15 @@ void filesResult(Nav& n, bool ok, uint32_t nowMs);
 // The row's text: "2026-01-27 15:30" from WD-20260127-153012.csv, else the
 // name without ".csv" ("WD-0012"). Always NUL-terminates when cap > 0.
 void fileLabel(const char* name, char* out, int cap);
+// The confirm card's line: the same, to the second ("2026-01-27 15:30:12"),
+// so two logs started in the same minute can be told apart.
+void fileLabelLong(const char* name, char* out, int cap);
+// "27G FREE" / "3.1G USED" (used = true), "~" first when estimated, "--"
+// before the card space is known, "" with no card. out holds >= 16.
+void filesSpaceText(const State& s, bool used, char* out);
+// The count line: "5 LOGS", "1 LOG", "64/80 LOGS", or "LIST INCOMPLETE" when
+// the walk stopped at its bound (the newest logs may be the missing ones).
+void filesCountText(const State& s, char* out);
 // "512B", "1.2K", "34K", "980K", "1.2M", "12M", "1.9G", "28G", "1.1T":
 // at most 4 characters plus NUL. kb is a size in KiB (the card), b in bytes.
 void fmtBytes(uint32_t b, char* out);

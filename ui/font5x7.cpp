@@ -75,6 +75,11 @@ uint8_t row(char ch, int r) {
     if (r < 0 || r >= H) return 0;
     unsigned c = (unsigned char)ch;
     if (c >= 'a' && c <= 'z') c -= 32;   // fold to caps
+    // '~' (approximate: FILES' card space) is the one glyph outside 32..95.
+    if (c == '~') {
+        static const uint8_t TILDE[H] = {0, 0, 0b01000, 0b10101, 0b00010, 0, 0};
+        return TILDE[r];
+    }
     if (c < 32 || c > 95) return 0;
     return GLYPHS[c - 32][r];
 }

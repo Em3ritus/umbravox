@@ -8,6 +8,7 @@
 #include "../ui/palette.h"
 #include "../ui/screens.h"
 #include "../ui/canvas.h"
+#include "../ui/font5x7.h"
 #include "../device/filescan.h"
 #include <stdio.h>
 #include <string.h>
@@ -91,6 +92,11 @@ static bool sameOutside(const Canvas& a, const Canvas& b, int rx, int ry, int rw
 static bool differs(const Canvas& a, const Canvas& b, int x0, int y0, int w, int h) {
     return !sameRegion(a, b, x0, y0, w, h);
 }
+
+static int gRemoved = 0;
+static bool fEx(const char* p) { return strcmp(p, "/WD-0404.csv") != 0; }
+static bool fDir(const char* p) { return !strcmp(p, "/WD-0007.csv"); }
+static bool fRm(const char* p) { gRemoved++; return strcmp(p, "/WD-0500.csv") != 0; }
 
 int main() {
     pal::setTheme(pal::TH_UMBRAVOX);
@@ -537,6 +543,154 @@ int main() {
         check("walk: stops at the time budget, partial", a1 && !a2 && L.partial && L.n == 1);
         filescan::begin(w, L, 0xFFFFFF00u);
         check("walk: budget is wrap-safe", filescan::visit(w, "WD-0001.csv", false, 1, 0x10u));
+    }
+
+
+    // ---- fix round 1 --------------------------------------------------------------------
+    // Card space: queried once at boot, refreshed after a delete only while
+    // refreshes are cheap; "--" until known, "~" once it is an estimate.
+    {
+        filescan::SpaceCache c;
+        FileList L;
+        filescan::spaceInto(c, L);
+        check("space: unknown before the boot query", !L.space && !L.spaceApprox);
+        check("space: no refresh before the boot query", !filescan::spaceWantRefresh(c));
+        filescan::spaceBoot(c, false, 0, 0, 20);
+        filescan::spaceInto(c, L);
+        check("space: a failed boot query stays unknown, never refreshed",
+              !L.space && !filescan::spaceWantRefresh(c));
+        c = filescan::SpaceCache();
+        filescan::spaceBoot(c, true, 3000000, 31000000, 4200);   // a slow FAT scan at boot
+        filescan::spaceInto(c, L);
+        check("space: boot query known and exact even when slow", L.space && !L.spaceApprox &&
+              L.usedKB == 3000000 && L.totalKB == 31000000);
+        check("space: a slow BOOT query does not stop refreshes (FatFs caches it)", filescan::spaceWantRefresh(c));
+        filescan::spaceRefreshed(c, true, 2999000, 31000000, 12);
+        filescan::spaceInto(c, L);
+        check("space: a fast refresh updates and stays exact", L.usedKB == 2999000 && !L.spaceApprox &&
+              filescan::spaceWantRefresh(c));
+        filescan::spaceRefreshed(c, true, 2998000, 31000000, filescan::SPACE_SLOW_MS);
+        check("space: a refresh of exactly 500 ms is still fine", filescan::spaceWantRefresh(c));
+        filescan::spaceRefreshed(c, true, 2997000, 31000000, filescan::SPACE_SLOW_MS + 1);
+        filescan::spaceInto(c, L);
+        check("space: a refresh over 500 ms stops refreshing, numbers marked ~",
+              !filescan::spaceWantRefresh(c) && L.space && L.spaceApprox && L.usedKB == 2997000);
+        filescan::spaceDeleted(c, 10 * 1024 + 1);
+        filescan::spaceInto(c, L);
+        check("space: without refresh a delete is estimated (used - 11 KiB)", L.usedKB == 2997000 - 11 && L.spaceApprox);
+        filescan::spaceDeleted(c, 0xFFFFFFFFu);
+        filescan::spaceInto(c, L);
+        check("space: the estimate never goes below 0", L.usedKB == 0);
+        filescan::SpaceCache f;
+        filescan::spaceBoot(f, true, 100, 1000, 5);
+        filescan::spaceRefreshed(f, false, 0, 0, 5);
+        filescan::spaceInto(f, L);
+        check("space: a failed refresh keeps the cache, marks ~, stops refreshing",
+              L.space && L.spaceApprox && L.usedKB == 100 && !filescan::spaceWantRefresh(f));
+
+        State st;
+        st.fileCard = true;
+        char b[20];
+        filesSpaceText(st, false, b);
+        check("space text: -- until known", !strcmp(b, "-- FREE"));
+        filesSpaceText(st, true, b);
+        check("space text: -- USED until known", !strcmp(b, "-- USED"));
+        st.fileSpace = true; st.cardUsedKB = 3250585; st.cardTotalKB = 31166976;
+        filesSpaceText(st, false, b);
+        check("space text: free exact", !strcmp(b, "27G FREE"));
+        st.fileSpaceApprox = true;
+        filesSpaceText(st, true, b);
+        check("space text: ~ when estimated", !strcmp(b, "~3.1G USED"));
+        st.fileCard = false;
+        filesSpaceText(st, true, b);
+        check("space text: nothing with no card", b[0] == 0);
+        char tl[2] = {'~', 0};
+        check("font: '~' has a glyph", Font::row(tl[0], 1) != 0 || Font::row(tl[0], 2) != 0 || Font::row(tl[0], 3) != 0);
+    }
+    // In-place reset: no 1.8 KB temporary on the loop stack, and every field zero.
+    {
+        FileList L = makeList(64);
+        L.partial = L.space = L.spaceApprox = true; L.usedKB = 5; L.totalKB = 9; L.found = 99;
+        filescan::reset(L);
+        bool zero = L.n == 0 && L.found == 0 && !L.card && !L.partial && !L.space && !L.spaceApprox &&
+                    L.usedKB == 0 && L.totalKB == 0;
+        for (int i = 0; i < MAX_FILE_ROWS && zero; i++) zero = L.rows[i].name[0] == 0 && L.rows[i].size == 0;
+        check("reset() zeroes the list in place", zero);
+        filescan::Walk w;
+        L = makeList(3);
+        filescan::begin(w, L, 0);
+        check("begin() empties the list and marks the card reached", L.n == 0 && L.card && !L.rows[0].name[0]);
+    }
+    // Removal goes through SDDEL's sequence: policy, exists, not a directory, remove.
+    {
+        gRemoved = 0;
+        const filescan::RemoveIo io{fEx, fDir, fRm};
+        check("remove: a plain log", filescan::removeLog("/WD-0001.csv", "", io) == filescan::RM_OK && gRemoved == 1);
+        check("remove: never the active session", filescan::removeLog("/WD-0002.csv", "/WD-0002.csv", io) == filescan::RM_REFUSED);
+        check("remove: never a non-log", filescan::removeLog("/diag.log", "", io) == filescan::RM_REFUSED);
+        check("remove: missing file", filescan::removeLog("/WD-0404.csv", "", io) == filescan::RM_MISSING);
+        check("remove: a directory with a log's name is never removed",
+              filescan::removeLog("/WD-0007.csv", "", io) == filescan::RM_DIR);
+        check("remove: the card refused", filescan::removeLog("/WD-0500.csv", "", io) == filescan::RM_FAILED);
+        check("remove: only the plain log and the refused one reached remove()", gRemoved == 2);
+    }
+    // The footer's log control is inert on FILES: drawn DIM, and a tap there
+    // neither toggles logging nor does anything else.
+    {
+        static Canvas fa, fb, ref;
+        State st; st.sdOk = true; st.logState = 0;
+        st.screen = SCR_FILES; drawFooter(fa, st);
+        st.screen = SCR_ATTUNE; drawFooter(fb, st);
+        const int ty = FOOT_Y + 5, tx = LOG_X + 12;
+        ref.clear(pal::PANEL);
+        ref.text(tx, ty, "START", pal::DIM);
+        check("footer on FILES: START drawn DIM", sameRegion(fa, ref, tx, ty, 30, 7));
+        check("footer elsewhere unchanged (not DIM)", !sameRegion(fb, ref, tx, ty, 30, 7));
+        FileList L = makeList(5);
+        Nav n = openWith(5, L);
+        tap(n, LOG_X + LOG_W / 2, LOG_Y + LOG_H / 2, 2000);
+        check("tap on the footer control on FILES: no log toggle, still FILES",
+              !n.logToggleRequested && n.screen == SCR_FILES && n.fileSel == -1);
+    }
+    // A bounded walk says so in words.
+    {
+        State st; st.fileCard = true; st.fileTotal = 64; st.fileFound = 80;
+        char b[24];
+        filesCountText(st, b);
+        check("count: 64/80 LOGS", !strcmp(b, "64/80 LOGS"));
+        st.filePartial = true;
+        filesCountText(st, b);
+        check("count: a bounded walk reads LIST INCOMPLETE", !strcmp(b, "LIST INCOMPLETE"));
+        st.filePartial = false; st.fileTotal = 1; st.fileFound = 1;
+        filesCountText(st, b);
+        check("count: 1 LOG", !strcmp(b, "1 LOG"));
+        st.fileTotal = 0; st.fileFound = 0;
+        filesCountText(st, b);
+        check("count: 0 LOGS", !strcmp(b, "0 LOGS"));
+    }
+    // The confirm names the log to the second; row labels never reach REC.
+    {
+        char b[FILE_NAME_MAX + 4];
+        fileLabelLong("WD-20260127-153012.csv", b, sizeof b);
+        check("confirm label: seconds shown", !strcmp(b, "2026-01-27 15:30:12"));
+        fileLabelLong("WD-0012.CSV", b, sizeof b);
+        check("confirm label: dateless is the name", !strcmp(b, "WD-0012"));
+        check("row label fits before REC", FILE_ROW_X + 2 + FILE_LABEL_MAX * Font::ADV <= FILE_REC_X);
+
+        static Canvas ra, rb;
+        FileList L = makeList(1);
+        strcpy(L.rows[0].name, "WD-1-2-3-4-5-6-7-8.csv");   // an 18-character label
+        FileList S = makeList(1);
+        strcpy(S.rows[0].name, "WD-1.csv");
+        Nav n = openWith(1, L);
+        State a, b2;
+        a.screen = b2.screen = SCR_FILES;
+        filesPublish(a, n, L);
+        filesPublish(b2, n, S);
+        drawFiles(ra, a);
+        drawFiles(rb, b2);
+        check("a long dateless label stops short of the REC column",
+              sameRegion(ra, rb, FILE_REC_X - 2, FILE_ROW_Y, 22, FILE_ROW_H - 1));
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

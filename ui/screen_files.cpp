@@ -12,15 +12,6 @@
 namespace ui {
 namespace {
 
-void u2s(char* out, uint32_t v) {
-    char t[12];
-    int n = 0;
-    do { t[n++] = (char)('0' + v % 10); v /= 10; } while (v);
-    int i = 0;
-    while (n) out[i++] = t[--n];
-    out[i] = 0;
-}
-
 void cat(char* out, const char* s) {
     int i = (int)strlen(out);
     while (*s) out[i++] = *s++;
@@ -50,10 +41,10 @@ void drawRows(Canvas& c, const State& s) {
         } else if (i) {
             c.hline(FILE_ROW_X + 2, y - 1, FILE_ROW_W - 4, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
         }
-        char lab[FILE_NAME_MAX];
+        char lab[FILE_LABEL_MAX + 1];       // cut so it never reaches REC
         fileLabel(s.fileRows[i].name, lab, sizeof lab);
         c.text(FILE_ROW_X + 2, y + 2, lab, sel ? pal::BRIGHT : pal::TEXT);
-        if (act) c.text(FILE_ROW_X + 101, y + 2, "REC", pal::RED);
+        if (act) c.text(FILE_REC_X, y + 2, "REC", pal::RED);
         char sz[8];
         fmtBytes(s.fileRows[i].size, sz);
         c.textRight(FILE_ROW_X + FILE_ROW_W - 2, y + 2, sz, pal::DIM);
@@ -95,8 +86,8 @@ void drawConfirm(Canvas& c, const State& s) {
     c.rect(FILE_CARD_X, FILE_CARD_Y, FILE_CARD_W, FILE_CARD_H, pal::RED);
     const int cx = FILE_CARD_X + FILE_CARD_W / 2;
     c.textCenter(cx, FILE_CARD_Y + 4, "DELETE THIS LOG?", pal::RED);
-    char lab[FILE_NAME_MAX];
-    fileLabel(s.fileSelName, lab, sizeof lab);
+    char lab[FILE_NAME_MAX + 4];
+    fileLabelLong(s.fileSelName, lab, sizeof lab);     // to the second
     c.textCenter(cx, FILE_CARD_Y + 15, lab, pal::BRIGHT);
     char sz[8], line[24] = "";
     fmtBytes(s.fileSelSize, sz);
@@ -116,36 +107,23 @@ void drawFiles(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
     drawHeader(c, s, screenName(SCR_FILES, s.set.labels));
     // Free space, between the title and the band badge.
-    if (s.fileCard && s.fileSpace) {
-        char f[16];
-        fmtKB(s.cardTotalKB > s.cardUsedKB ? s.cardTotalKB - s.cardUsedKB : 0, f);
-        cat(f, " FREE");
-        c.textRight(137, 2, f, pal::GREEN);
+    if (s.fileCard) {
+        char f[20];
+        filesSpaceText(s, false, f);
+        c.textRight(137, 2, f, s.fileSpace ? pal::GREEN : pal::DIM);
     }
 
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
 
     if (s.fileCard) {
-        char cnt[20] = "";
-        if (s.fileFound > s.fileTotal || s.filePartial) {
-            u2s(cnt, s.fileTotal);
-            cat(cnt, "/");
-            char t[8];
-            u2s(t, s.fileFound);
-            cat(cnt, t);
-            if (s.filePartial) cat(cnt, "+");
-        } else {
-            u2s(cnt, s.fileTotal);
-        }
-        cat(cnt, s.fileTotal == 1 && !s.filePartial && s.fileFound <= 1 ? " LOG" : " LOGS");
-        c.text(5, FILE_INFO_Y, cnt, pal::DIM);
-        if (s.fileSpace) {
-            char u[16];
-            fmtKB(s.cardUsedKB, u);
-            cat(u, " USED");
-            c.textRight(154, FILE_INFO_Y, u, pal::DIM);
-        }
+        // A bounded walk may have missed the newest logs: say so in words.
+        char cnt[24];
+        filesCountText(s, cnt);
+        c.text(5, FILE_INFO_Y, cnt, s.filePartial ? pal::AMBER : pal::DIM);
+        char u[20];
+        filesSpaceText(s, true, u);
+        c.textRight(154, FILE_INFO_Y, u, pal::DIM);
     }
     c.hline(3, FILE_ROW_Y - 2, 154, pal::EDGE);
 
@@ -170,14 +148,15 @@ void drawFiles(Canvas& c, const State& s, Dirty* d) {
                         s.fileConfirm != prev.fileConfirm || s.fileResult != prev.fileResult ||
                         s.fileCard != prev.fileCard || s.filePartial != prev.filePartial ||
                         s.fileSpace != prev.fileSpace || s.cardUsedKB != prev.cardUsedKB ||
-                        s.fileSelSize != prev.fileSelSize ||
+                        s.fileSpaceApprox != prev.fileSpaceApprox || s.fileSelSize != prev.fileSelSize ||
                         memcmp(s.fileSelName, prev.fileSelName, sizeof s.fileSelName) != 0;
             for (int i = 0; !body && i < s.nFileRows; i++)
                 body = s.fileRows[i].size != prev.fileRows[i].size ||
                        memcmp(s.fileRows[i].name, prev.fileRows[i].name, FILE_NAME_MAX) != 0;
             if (body) d->add(0, BODY_Y, W, BODY_H);
             if (s.cardTotalKB != prev.cardTotalKB || s.cardUsedKB != prev.cardUsedKB ||
-                s.fileSpace != prev.fileSpace || s.fileCard != prev.fileCard)
+                s.fileSpace != prev.fileSpace || s.fileCard != prev.fileCard ||
+                s.fileSpaceApprox != prev.fileSpaceApprox)
                 d->add(0, 0, W, HDR_H);
             dirtyChrome(*d, s, prev);
         }

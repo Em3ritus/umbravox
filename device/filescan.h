@@ -108,6 +108,11 @@ inline void insert(ui::FileList& L, const char* name, uint32_t size) {
     if (L.n < ui::MAX_FILE_ROWS) L.n++;
 }
 
+// Empty the list in place (no FileList temporary: it is 1.8 KB and the loop
+// task's stack is 8 KB). All-zero is exactly the default-constructed list.
+static_assert(__is_trivially_copyable(ui::FileList), "reset() zeroes FileList bytewise");
+inline void reset(ui::FileList& L) { memset(static_cast<void*>(&L), 0, sizeof L); }
+
 struct Walk {
     ui::FileList* L = nullptr;
     uint32_t t0 = 0;
@@ -116,7 +121,7 @@ struct Walk {
 
 // Start a walk: the list is emptied and marked as reached.
 inline void begin(Walk& w, ui::FileList& L, uint32_t nowMs) {
-    L = ui::FileList();
+    reset(L);
     L.card = true;
     w.L = &L;
     w.t0 = nowMs;
@@ -140,6 +145,60 @@ inline bool visit(Walk& w, const char* name, bool isDir, uint32_t size, uint32_t
     if (w.L->found < 0xFFFF) w.L->found++;
     insert(*w.L, name, size);
     return true;
+}
+
+// Card space, cached. FatFs's free count (f_getfree) may scan the whole FAT
+// the first time, so it is asked once at boot and then only after a delete,
+// and only while those refreshes stay cheap.
+constexpr uint32_t SPACE_SLOW_MS = 500;
+struct SpaceCache {
+    bool known = false, approx = false, slow = false;
+    uint32_t usedKB = 0, totalKB = 0;
+};
+// The boot query. A slow one is the FAT scan FatFs then caches, so it does
+// not stop the refreshes; a failed one leaves the space unknown ("--").
+inline void spaceBoot(SpaceCache& c, bool ok, uint32_t usedKB, uint32_t totalKB, uint32_t ms) {
+    (void)ms;
+    c = SpaceCache();
+    if (!ok) return;
+    c.known = true;
+    c.usedKB = usedKB;
+    c.totalKB = totalKB;
+}
+// After a delete: ask the card again only while that has stayed cheap.
+inline bool spaceWantRefresh(const SpaceCache& c) { return c.known && !c.slow; }
+// A refresh over SPACE_SLOW_MS (or a failed one) stops refreshing for this
+// boot; from then on the numbers are estimates, shown with '~'.
+inline void spaceRefreshed(SpaceCache& c, bool ok, uint32_t usedKB, uint32_t totalKB, uint32_t ms) {
+    if (ok) { c.usedKB = usedKB; c.totalKB = totalKB; }
+    if (!ok || ms > SPACE_SLOW_MS) { c.slow = true; c.approx = true; }
+}
+// A delete without a refresh: take the file's size (rounded up to KiB) off.
+inline void spaceDeleted(SpaceCache& c, uint32_t bytes) {
+    if (!c.known) return;
+    const uint32_t kb = bytes / 1024 + (bytes % 1024 ? 1 : 0);
+    c.usedKB = c.usedKB > kb ? c.usedKB - kb : 0;
+    c.approx = true;
+}
+inline void spaceInto(const SpaceCache& c, ui::FileList& L) {
+    L.space = c.known;
+    L.spaceApprox = c.known && c.approx;
+    L.usedKB = c.known ? c.usedKB : 0;
+    L.totalKB = c.known ? c.totalKB : 0;
+}
+
+// Deleting: SDDEL's sequence (sdcmd Console::del) on the card's primitives.
+struct RemoveIo {
+    bool (*exists)(const char* path);
+    bool (*isDir)(const char* path);
+    bool (*remove)(const char* path);
+};
+enum RemoveResult : uint8_t { RM_OK, RM_REFUSED, RM_MISSING, RM_DIR, RM_FAILED };
+inline RemoveResult removeLog(const char* path, const char* active, const RemoveIo& io) {
+    if (deleteCheck(path, active)) return RM_REFUSED;
+    if (!io.exists(path)) return RM_MISSING;
+    if (io.isDir(path)) return RM_DIR;          // never remove a directory
+    return io.remove(path) ? RM_OK : RM_FAILED;
 }
 
 // The list index of the logging session's file, -1 if it is not listed.

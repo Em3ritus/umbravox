@@ -107,6 +107,10 @@ constexpr int FILE_ROW_Y  = 24, FILE_ROW_H = 12; // FILE_VIS rows: 24..83
 constexpr int FILE_ROW_X  = 3,  FILE_ROW_W = 150; // the scrollbar is right of it
 constexpr int FILE_BAR_Y  = 87, FILE_BAR_H = 12;  // the action bar
 constexpr int FILE_DEL_X  = 104, FILE_DEL_W = 52; // DELETE, bottom right
+// Row text: the label (cut to FILE_LABEL_MAX characters so it never reaches
+// the REC column), REC, then the size right-aligned.
+constexpr int FILE_REC_X = FILE_ROW_X + 101;
+constexpr int FILE_LABEL_MAX = 16;              // "2026-01-27 15:30"
 // The confirmation card covers the rows and the bar. NO is the default: the
 // larger target, where the finger that tapped DELETE already is; YES is small
 // and far from it, so neither a bounce nor a lazy second tap can say yes.

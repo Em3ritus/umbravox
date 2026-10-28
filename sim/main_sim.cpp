@@ -16,7 +16,8 @@
 //   ./umbravox out.png --screen attune --setpage 2 --autolog 1   settings page 2
 //   ./umbravox out.png --screen files --files 64 --scroll 59 --selected 61 --active 62 --confirm
 //                                       FILES: N logs (default 5), scroll, selection,
-//                                       REC row, the delete card; --nocard, --result 1|2
+//                                       REC row, the delete card; --nocard, --result 1|2,
+//                                       --partial (walk bounded), --space 0 unknown / 1 exact / 2 ~
 //   ./umbravox --check-pack path/to/folder     print OK <name> or the reason;
 //                                       exit 0 / 1; writes no PNG
 #include "../ui/screens.h"
@@ -54,7 +55,8 @@ int main(int argc, char** argv) {
     int setPageSim = 1;                // --setpage N: settings page, 1-based
     uint8_t autoLogSim = 0;            // --autolog 0 OFF, 1 ON
     int filesSim = 5, fileSelSim = -1, fileActSim = -1, fileScrollSim = 0, fileResultSim = 0;
-    bool fileConfirmSim = false, noCardSim = false;
+    bool fileConfirmSim = false, noCardSim = false, partialSim = false;
+    int spaceSim = 1;
     const char* which = "scan";
     const char* packDir = nullptr;
     const char* checkDir = nullptr;
@@ -80,6 +82,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--result") && i + 1 < argc) fileResultSim = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--confirm")) fileConfirmSim = true;
         else if (!strcmp(argv[i], "--nocard")) noCardSim = true;
+        else if (!strcmp(argv[i], "--partial")) partialSim = true;
+        else if (!strcmp(argv[i], "--space") && i + 1 < argc) spaceSim = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--pack") && i + 1 < argc) packDir = argv[++i];
         else if (!strcmp(argv[i], "--check-pack") && i + 1 < argc) checkDir = argv[++i];
     }
@@ -152,7 +156,9 @@ int main(int argc, char** argv) {
             }
             L.n = (uint8_t)(k < ui::MAX_FILE_ROWS ? k : ui::MAX_FILE_ROWS);
             L.found = (uint16_t)k;
-            if (L.card) { L.space = true; L.usedKB = 3250585; L.totalKB = 31166976; }
+            if (L.card && spaceSim) { L.space = true; L.spaceApprox = spaceSim == 2;
+                                      L.usedKB = 3250585; L.totalKB = 31166976; }
+            L.partial = partialSim && L.card;
             ui::Nav nv;
             nv.screen = ui::SCR_FILES;
             ui::filesRescanned(nv, L, nullptr);

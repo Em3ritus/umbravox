@@ -250,6 +250,7 @@ struct FileList {
     bool     card = false;     // the card answered the walk
     bool     partial = false;  // the walk stopped at its entry/time bound
     bool     space = false;    // usedKB/totalKB are known
+    bool     spaceApprox = false;  // ...but are an estimate (refreshes stopped)
     uint32_t usedKB = 0, totalKB = 0;
 };
 
@@ -358,6 +359,7 @@ struct State {
     bool     fileCard = false;
     bool     filePartial = false;
     bool     fileSpace = false;
+    bool     fileSpaceApprox = false;   // shown with a leading '~'
     uint32_t cardUsedKB = 0, cardTotalKB = 0;
 
     // Theme pack folders on the SD card that were skipped at boot (bad file,
