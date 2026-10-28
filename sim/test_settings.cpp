@@ -61,6 +61,10 @@ int main() {
     // that keeps the struct padding-free (see ui/model.h). The size is not a
     // stored format -- device/prefs.cpp writes every field under its own NVS
     // key -- so widening it migrates nothing.
+    //
+    // Still 14 with orient (portrait mode): it took the reserved `spare`
+    // byte, as model.h asked the next setting to. No padding was added and
+    // none removed; the next setting after orient widens the struct.
     static_assert(sizeof(Settings) == 14,
                   "Settings changed size -- see the padding note above, and "
                   "confirm every field has a default member initializer");
@@ -113,12 +117,11 @@ int main() {
                 }
             }
         }
-        // `spare` is the one byte that is deliberately not a setting: clamp
-        // pins it to 0, so no mutation of it can survive, and it is exempt
-        // here by name rather than by any heuristic.
+        // Every byte is a setting now (orient took the old `spare`), so no
+        // byte is exempt: each must have had a mutation survive the clamp.
         int unexercised = 0;
         for (size_t off = 0; off < sizeof(Settings); off++)
-            if (z[off] == f[off] && !exercised[off] && off != offsetof(Settings, spare)) unexercised++;
+            if (z[off] == f[off] && !exercised[off]) unexercised++;
         check("no field differs without settingsEqual noticing", missed == 0);
         check("every field byte was actually exercised", unexercised == 0);
     }
@@ -139,8 +142,8 @@ int main() {
         check("an alert-style change is detected", !settingsEqual(a, b));
         b = a; b.autoLog = 1;
         check("an auto-log change is detected", !settingsEqual(a, b));
-        b = a; b.spare = 7;
-        check("the spare byte is not a setting (never stored, never compared)", settingsEqual(a, b));
+        b = a; b.orient = ORIENT_PORTRAIT;
+        check("an orientation change is detected", !settingsEqual(a, b));
     }
 
     printf("clamping survives a corrupt store:\n");
@@ -171,9 +174,34 @@ int main() {
         s.autoLog = 255;
         clampSettings(s);
         check("0xFF auto-log (erased flash) clamps to OFF", s.autoLog == 0);
-        s.spare = 9;
+    }
+
+    printf("orientation:\n");
+    {
+        Settings s;
+        check("orientation defaults to LANDSCAPE", s.orient == ORIENT_LANDSCAPE);
+        State st;
+        check("a default State selects LANDSCAPE", st.set.orient == ORIENT_LANDSCAPE);
+        check("portrait is allowed on a host by default", portraitAllowed());
+        s.orient = ORIENT_PORTRAIT;
         clampSettings(s);
-        check("clamp zeroes the spare byte", s.spare == 0);
+        check("PORTRAIT is kept", s.orient == ORIENT_PORTRAIT);
+        Settings t = s;
+        check("round trip: PORTRAIT copies and compares equal", settingsEqual(s, t) && t.orient == ORIENT_PORTRAIT);
+        s.orient = 2;
+        clampSettings(s);
+        check("unknown orientation clamps to LANDSCAPE", s.orient == ORIENT_LANDSCAPE);
+        s.orient = 0xFF;
+        clampSettings(s);
+        check("0xFF orientation (erased flash) clamps to LANDSCAPE", s.orient == ORIENT_LANDSCAPE);
+        setPortraitAllowed(false);
+        s.orient = ORIENT_PORTRAIT;
+        clampSettings(s);
+        check("a landscape-only board clamps PORTRAIT to LANDSCAPE", s.orient == ORIENT_LANDSCAPE);
+        setPortraitAllowed(true);
+        s.orient = ORIENT_PORTRAIT;
+        clampSettings(s);
+        check("...and keeps it once portrait is allowed again", s.orient == ORIENT_PORTRAIT);
     }
 
     printf("a sweep must be available on its theme:\n");

@@ -41,6 +41,7 @@ void write(const ui::Settings& s) {
     nvs.putUChar("sweep",   s.sweep);
     nvs.putUChar("labels",  s.labels);
     nvs.putUChar("alertsty", s.alertStyle);
+    nvs.putUChar("orient",  s.orient);
     stored = s;
     lastSeen = s;
 }
@@ -90,6 +91,7 @@ bool load(ui::Settings& s) {
     in.sweep    = nvs.getUChar("sweep",    s.sweep);
     in.labels   = nvs.getUChar("labels",   s.labels);
     in.alertStyle = nvs.getUChar("alertsty", s.alertStyle);
+    in.orient   = nvs.getUChar("orient",   s.orient);     // absent on older stores -> LANDSCAPE
 
     // Anything out of range is treated as corrupt and pulled back in, not
     // trusted because it came off flash.
@@ -98,9 +100,10 @@ bool load(ui::Settings& s) {
     stored = in;
     lastSeen = in;
 
-    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u, theme %u (%s), sweep %u\n",
+    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u, theme %u (%s), sweep %u, %s\n",
                   in.bright, in.dwellMs, in.bleDuty, in.bands, in.alertMin,
-                  in.theme, pal::themeName(in.theme), in.sweep);
+                  in.theme, pal::themeName(in.theme), in.sweep,
+                  in.orient == ui::ORIENT_PORTRAIT ? "portrait" : "landscape");
     return true;
 }
 

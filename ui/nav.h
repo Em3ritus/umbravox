@@ -76,6 +76,12 @@ bool navTouch(Nav& n, Settings& set, bool down, int16_t x, int16_t y);
 // stepping a knob cannot disagree about what is valid.
 void clampSettings(Settings& s);
 
+// Whether this board can show ORIENT_PORTRAIT. True unless the device says
+// otherwise at boot (the Waveshare 3.5" is LANDSCAPE ONLY); clampSettings
+// reads it, and ATTUNE's ORIENT row shows "LANDSCAPE ONLY" when it is false.
+void setPortraitAllowed(bool ok);
+bool portraitAllowed();
+
 // True when two Settings hold the same values.
 //
 // This lives beside the struct rather than in device/prefs.cpp, where the

@@ -99,17 +99,18 @@ struct Settings {
     // a few seconds (device/autolog.h). OFF by default, so nothing changes
     // for anyone who does not turn it on. Settings page 2.
     uint8_t  autoLog = 0;     // 0 OFF, 1 ON
-    // Reserved. autoLog widened Settings from 12 to 13 bytes, and dwellMs
-    // keeps it 2-aligned, so without this byte the compiler would add one of
-    // padding -- and padding is what sim/test_settings.cpp must be able to
-    // read as "a field someone forgot to initialise". This byte is a real,
-    // initialised member instead: clampSettings forces it to 0, it is never
-    // stored (NVS keeps each setting under its own key, so the struct size is
-    // not a stored format) and settingsEqual skips it. The NEXT setting takes
-    // this byte (rename it, store it, compare it); the one after that widens
-    // the struct again and updates the static_assert.
-    uint8_t  spare = 0;
+    // Which way up the panel is driven: ORIENT_LANDSCAPE (the default, and
+    // what every older store reads as) or ORIENT_PORTRAIT, the tall 120x160
+    // canvas (ui/portrait_layout.h). ATTUNE page 2. This took the reserved
+    // byte autoLog left (it used to be `spare`), so Settings is still 14 bytes
+    // with no padding; the NEXT setting widens the struct and updates the
+    // static_assert in sim/test_settings.cpp. clampSettings pulls unknown
+    // values -- and PORTRAIT on a board that cannot show it -- to LANDSCAPE.
+    uint8_t  orient = 0;      // Orientation
 };
+
+// Settings.orient. Unknown values clamp to LANDSCAPE.
+enum Orientation : uint8_t { ORIENT_LANDSCAPE = 0, ORIENT_PORTRAIT = 1, ORIENT_N = 2 };
 
 // COSMIC MUFFIN's alert animations, chosen by Settings.alertStyle.
 enum AlertStyle : uint8_t { AL_SUPERNOVA = 0, AL_VORTEX, AL_COMET, AL_LOCKON,
@@ -160,6 +161,7 @@ constexpr int SET_ROWS = 7;   // six knobs and a reset
 // holds AUTO LOG in its first row and has five rows free for what comes next.
 constexpr int SET_PAGES = 2;
 constexpr int SET_AUTOLOG_ROW = 0;   // on page 2 (setPage == 1)
+constexpr int SET_ORIENT_ROW  = 2;   // on page 2: LANDSCAPE <-> PORTRAIT, round robin on -/+
 
 // How many RSSI samples a device keeps. One per sighting rather than one
 // per second: beacons arrive when the hop comes round, so a time-based

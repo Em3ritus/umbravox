@@ -279,8 +279,15 @@ void clampSettings(Settings& s) {
     if (s.alertStyle >= ALERT_STYLE_COUNT) s.alertStyle = AL_SUPERNOVA;
     if (s.idleMode >= IDLE_MODE_N) s.idleMode = IDLE_DIM;
     if (s.autoLog > 1) s.autoLog = 0;     // unknown (or erased flash): OFF
-    s.spare = 0;                          // reserved, never a value
+    // Unknown (or erased flash) is LANDSCAPE, and so is PORTRAIT on a board
+    // whose panel the portrait layout does not fit (the Waveshare 3.5").
+    if (s.orient >= ORIENT_N || (s.orient == ORIENT_PORTRAIT && !portraitAllowed()))
+        s.orient = ORIENT_LANDSCAPE;
 }
+
+namespace { bool g_portraitOk = true; }
+void setPortraitAllowed(bool ok) { g_portraitOk = ok; }
+bool portraitAllowed() { return g_portraitOk; }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
     return a.alertMin == b.alertMin && a.bright  == b.bright  &&
@@ -288,8 +295,8 @@ bool settingsEqual(const Settings& a, const Settings& b) {
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
            a.labels   == b.labels   && a.alertStyle == b.alertStyle &&
-           a.idleMode == b.idleMode && a.autoLog == b.autoLog;
-    // `spare` is not compared: it is not a setting and is never stored.
+           a.idleMode == b.idleMode && a.autoLog == b.autoLog &&
+           a.orient   == b.orient;
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {
