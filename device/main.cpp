@@ -8,6 +8,7 @@
 #include <Arduino_GFX_Library.h>
 
 #include "screens.h"
+#include "draw.h"
 #include "gnss.h"
 #include "gpstrack.h"
 #include <math.h>
@@ -101,7 +102,12 @@ static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, board::ROTATION, fals
 #endif
 
 static ui::Canvas canvas;          // 38,400 bytes, internal SRAM by design
+// One doubled canvas row: 320 px landscape, 240 px portrait.
+static_assert(2 * ui::W <= PANEL_W && 2 * ui::H <= PANEL_W, "lineBuf holds a doubled row either way");
 static uint16_t   lineBuf[PANEL_W];
+// Where the 2x canvas lands on the panel in the rotation now on the glass
+// (board.h CANVAS_X/Y, or CANVAS_X/Y_TALL in portrait). applyOrientation().
+static int canvasX = board::CANVAS_X, canvasY = board::CANVAS_Y;
 #if !defined(WS_C5_35)
 static HardwareSerial gpsPort(1);
 #else
@@ -118,19 +124,22 @@ static void gnssSink(char c, uint32_t now) { ui::Gnss::feed(c, now); }
 // buffer and pushing each row twice keeps the transfer sequential, which is
 // what matters: on a single-core C5 every millisecond in here is a
 // millisecond not spent capturing.
+// The canvas's runtime geometry (canvas.w x canvas.h, stride canvas.w) is
+// what is clipped to and strided by: 160x120 landscape, 120x160 portrait.
 static void blitRect(const uint16_t* src, const ui::Rect& r) {
+    const int cw = canvas.w, ch = canvas.h;
     const int x0 = r.x < 0 ? 0 : r.x;
     const int y0 = r.y < 0 ? 0 : r.y;
-    const int x1 = (r.x + r.w) > ui::W ? ui::W : (r.x + r.w);
-    const int y1 = (r.y + r.h) > ui::H ? ui::H : (r.y + r.h);
+    const int x1 = (r.x + r.w) > cw ? cw : (r.x + r.w);
+    const int y1 = (r.y + r.h) > ch ? ch : (r.y + r.h);
     if (x1 <= x0 || y1 <= y0) return;
     const int w = x1 - x0;
 
     gfx->startWrite();
-    gfx->writeAddrWindow(board::CANVAS_X + x0 * 2, board::CANVAS_Y + y0 * 2,
+    gfx->writeAddrWindow(canvasX + x0 * 2, canvasY + y0 * 2,
                          w * 2, (y1 - y0) * 2);
     for (int y = y0; y < y1; y++) {
-        const uint16_t* s = src + (size_t)y * ui::W + x0;
+        const uint16_t* s = src + (size_t)y * cw + x0;
         for (int x = 0; x < w; x++) {
             lineBuf[x * 2]     = s[x];
             lineBuf[x * 2 + 1] = s[x];
@@ -143,6 +152,22 @@ static void blitRect(const uint16_t* src, const ui::Rect& r) {
 
 // The backlight, 0..255. A GPIO LEDC channel on the NM-CYD-C5; the I/O
 // expander's PWM register on the Waveshare, where no GPIO reaches it.
+// Turn the panel and the touch mapping to an orientation, live: no reboot.
+// The canvas is resized here too, so nothing blits a stale geometry; the
+// caller forces a full repaint of the frame being drawn, and
+// ui::orientationChanged() throws away every screen's dirty history.
+static void applyOrientation(uint8_t orient) {
+    const bool tall = orient == ui::ORIENT_PORTRAIT && board::HAS_PORTRAIT;
+    const uint8_t rot = tall ? board::ROTATION_TALL : board::ROTATION;
+    gfx->setRotation(rot);
+    touch::setRotation(rot);
+    canvasX = tall ? board::CANVAS_X_TALL : board::CANVAS_X;
+    canvasY = tall ? board::CANVAS_Y_TALL : board::CANVAS_Y;
+    ui::sizeCanvas(canvas, tall ? ui::ORIENT_PORTRAIT : ui::ORIENT_LANDSCAPE);
+    ui::orientationChanged();
+    Serial.printf("display: %s (rotation %u)\n", tall ? "portrait" : "landscape", (unsigned)rot);
+}
+
 static void setBacklight(uint8_t pwm) {
 #if defined(WS_C5_35)
     exio::backlight(pwm);
@@ -666,6 +691,9 @@ void setup() {
     // coordinator registers it claims nothing, so the node mesh is unchanged.
     meshcore::setCollector(collector::onFrame);   // netId is loaded + logged in loop()
     touch::begin();
+    // Before loop()'s first prefs::load(): a board without portrait clamps a
+    // stored PORTRAIT to LANDSCAPE there.
+    ui::setPortraitAllowed(board::HAS_PORTRAIT);
 #if defined(WS_C5_35)
     pmu::begin();     // on the touch bus, which exio::begin() opened
     gpsi2c::begin();  // so is the LC76G
@@ -1422,6 +1450,17 @@ void loop() {
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
     const bool switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
 
+    // ORIENTATION: the panel turns the moment the setting does (the ORIENT
+    // row's tap, or the stored value on the first pass -- the panel came up
+    // landscape in setup()). Here, in the drawing task, between frames.
+    static uint8_t shownOrient = ui::ORIENT_LANDSCAPE;
+    bool orientChanged = false;
+    if (set.orient != shownOrient) {
+        applyOrientation(set.orient);
+        shownOrient = set.orient;
+        orientChanged = true;
+    }
+
     // Push settings to the hardware only when they actually move: changing
     // the BLE duty restarts the scanner, so doing it every frame would mean
     // never scanning at all.
@@ -1671,12 +1710,13 @@ void loop() {
         if (animOn) {
             if (animStep.enter) {
                 canvas.clear(pal::VOID);
-                const ui::Rect all{0, 0, ui::W, ui::H};
+                const ui::Rect all{0, 0, canvas.w, canvas.h};
                 blitRect(canvas.px, all);
             }
             if (animStep.draw) {
                 const idlemode::Dirty d = idlemode::drawFrame(canvas, animStep.frame, animStep.prev,
-                                                              pal::VOID, pal::WITCH_HI);
+                                                              pal::VOID, pal::WITCH_HI,
+                                                              canvas.h > canvas.w);
                 for (int k = 0; k < d.n; k++) {
                     const ui::Rect ur{d.r[k].x, d.r[k].y, d.r[k].w, d.r[k].h};
                     blitRect(canvas.px, ur);
@@ -1717,17 +1757,9 @@ void loop() {
         lastTheme = s.set.theme;
         themeChanged = true;
     }
-    if      (nav.screen == ui::SCR_CODEX)  ui::drawCodex(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_DETAIL) ui::drawDetail(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_ECHOES) ui::drawEchoes(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_GRIMOIRE) ui::drawGrimoire(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_OMENS)  ui::drawOmens(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_DOMAIN) ui::drawDomain(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_MESH)   ui::drawMesh(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_ATTUNE) ui::drawAttune(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_ASPECT) ui::drawAspect(canvas, s, &dirty);
-    else if (nav.screen == ui::SCR_FILES)  ui::drawFiles(canvas, s, &dirty);
-    else                                   ui::drawScan(canvas, s, &dirty);
+    // One dispatcher for both orientations (ui/draw.h): the landscape screens
+    // as they were, or their portrait layouts and placeholders.
+    ui::drawScreen(canvas, s, &dirty);
 
     // A screen change invalidates every region the outgoing screen reported.
     // The incoming one has its own first-frame logic, but it has already run
@@ -1741,10 +1773,12 @@ void loop() {
     // screens' stale dirty state. A future navigation path that changes the
     // theme or leaves ASPECT without setting `switched` will show leftover
     // pixels from the old theme.
-    if (switched || justWoke || themeChanged || animDirtied) {
+    // An orientation switch is the same kind of event: it also resets every
+    // screen's prev State (applyOrientation), so it may happen on any screen.
+    if (switched || justWoke || themeChanged || animDirtied || orientChanged) {
         animDirtied = false;
         dirty.clear();
-        dirty.add(0, 0, ui::W, ui::H);
+        dirty.add(0, 0, canvas.w, canvas.h);
         justWoke = false;
     }
     if (screenOff) justWoke = true;

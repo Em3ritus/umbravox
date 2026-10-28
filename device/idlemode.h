@@ -58,11 +58,14 @@ struct Pose { int16_t cx, cy; uint8_t r; };
 // A dot that breathes (8 frames = 4 s: 1 2 3 4 3 2 1 and a blank) and, after
 // each breath, reappears at the next of four spots. It only moves while
 // nothing is drawn, so the old spot is always already clean.
-inline Pose pose(uint32_t frame) {
+// `tall`: the portrait 120x160 canvas, where the four spots are the
+// landscape ones transposed so they stay on the glass.
+inline Pose pose(uint32_t frame, bool tall = false) {
     static const uint8_t R[8] = {1, 2, 3, 4, 3, 2, 1, 0};
     static const int16_t X[4] = {40, 120, 120, 40};
     static const int16_t Y[4] = {36, 36, 84, 84};
     const uint32_t spot = (frame / 8) % 4;
+    if (tall) return Pose{Y[spot], X[spot], R[frame % 8]};
     return Pose{X[spot], Y[spot], R[frame % 8]};
 }
 
@@ -78,11 +81,12 @@ inline Rect boxOf(const Pose& p) {
 // Draw one frame into the canvas and return the regions that changed. `prev`
 // is the last frame actually drawn (NO_FRAME if none): if the loop stalled and
 // frames were skipped, its box is erased too, so no residue is left behind.
-inline Dirty drawFrame(ui::Canvas& c, uint32_t frame, uint32_t prev, uint16_t bg, uint16_t fg) {
+inline Dirty drawFrame(ui::Canvas& c, uint32_t frame, uint32_t prev, uint16_t bg, uint16_t fg,
+                       bool tall = false) {
     Dirty d{{}, 0};
-    const Pose p = pose(frame);
+    const Pose p = pose(frame, tall);
     if (prev != NO_FRAME) {
-        const Pose q = pose(prev);
+        const Pose q = pose(prev, tall);
         if (q.cx != p.cx || q.cy != p.cy) {
             const Rect o = boxOf(q);
             c.fill(o.x, o.y, o.w, o.h, bg);

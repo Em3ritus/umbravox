@@ -27,7 +27,7 @@ struct Point {
     // canvas. Wakes a dimmed screen, never navigates. Equals `down` on a
     // board whose canvas fills the panel.
     bool     any  = false;
-    int16_t  x = 0, y = 0;        // canvas coordinates (0..159, 0..119)
+    int16_t  x = 0, y = 0;        // canvas coordinates (0..159, 0..119; portrait 0..119, 0..159)
     uint16_t rawX = 0, rawY = 0;  // straight off the controller, for calibration
     uint16_t z = 0;               // pressure estimate
 };
@@ -39,5 +39,10 @@ void begin();
 // Poll. Cheap enough to call every frame: 5 short SPI transactions on the
 // NM-CYD-C5, one 7-byte I2C read (rarely up to three) on the WS_C5_35.
 Point read();
+
+// The display's Arduino_GFX rotation, so read() maps into the canvas it is
+// showing. NM-CYD-C5: any of 0..3 (board::ROTATION, board::ROTATION_TALL).
+// WS_C5_35: landscape only, so this is a no-op there.
+void setRotation(uint8_t r);
 
 } // namespace touch

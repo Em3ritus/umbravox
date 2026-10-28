@@ -11,7 +11,8 @@
 //                 expander, AXP2101 PMU, native-USB console.
 //
 // Only device/ includes this. ui/ never knows which board it is on -- it
-// draws a 160x120 canvas and the device decides where that lands.
+// draws a 160x120 canvas (120x160 in portrait) and the device decides where
+// that lands.
 #pragma once
 #include <stdint.h>
 
@@ -56,6 +57,16 @@ constexpr int CANVAS_X = 80;
 constexpr int CANVAS_Y = 80;
 constexpr bool HAS_STATUS_STRIP = true;
 
+// PORTRAIT: not on this board (first version). The panel is 320x480 native
+// and the status strip, the 2x geometry and the FT6336 turn are all laid out
+// for landscape; ui::setPortraitAllowed(false) clamps the setting and ATTUNE
+// shows "LANDSCAPE ONLY". The tall constants mirror landscape so nothing
+// that reads them can land off the glass.
+constexpr bool    HAS_PORTRAIT  = false;
+constexpr uint8_t ROTATION_TALL = ROTATION;
+constexpr int     CANVAS_X_TALL = CANVAS_X;
+constexpr int     CANVAS_Y_TALL = CANVAS_Y;
+
 #elif defined(NM_CYD_C5)
 
 // LCD, touch and the SD card all share one SPI bus. Confirmed against
@@ -80,7 +91,20 @@ constexpr int    GPS_BAUD   = 9600;
 
 // Native 240x320 portrait; rotation 3 lands it landscape, which is how the
 // board is cased and how the UI is laid out.
-constexpr uint8_t ROTATION = 3;
+//
+// PORTRAIT (ATTUNE page 2 -> ORIENT) drives the panel at ROTATION_PORTRAIT,
+// switched live with gfx->setRotation(). Arduino_GFX's 0 is the panel's own
+// orientation; which end the USB-C port is at depends on the case, so if
+// portrait comes up upside down, change 0 to 2 here -- one line. FLIP_180
+// turns BOTH orientations over (landscape 3 -> 1, portrait 0 -> 2), for a
+// board mounted the other way up. Touch follows either automatically
+// (device/touchmap.h).
+constexpr bool    FLIP_180 = false;
+constexpr uint8_t ROTATION_LANDSCAPE = 3;
+constexpr uint8_t ROTATION_PORTRAIT  = 0;
+constexpr uint8_t ROTATION      = FLIP_180 ? (ROTATION_LANDSCAPE + 2) & 3 : ROTATION_LANDSCAPE;
+constexpr uint8_t ROTATION_TALL = FLIP_180 ? (ROTATION_PORTRAIT  + 2) & 3 : ROTATION_PORTRAIT;
+constexpr bool    HAS_PORTRAIT  = true;
 
 constexpr int PANEL_W = 320;
 constexpr int PANEL_H = 240;
@@ -88,6 +112,9 @@ constexpr int PANEL_H = 240;
 constexpr int CANVAS_X = 0;
 constexpr int CANVAS_Y = 0;
 constexpr bool HAS_STATUS_STRIP = false;
+// Portrait: the 120x160 canvas at 2x is the whole 240x320 panel.
+constexpr int CANVAS_X_TALL = 0;
+constexpr int CANVAS_Y_TALL = 0;
 
 #else
 #error "no board selected: build with -DNM_CYD_C5 or -DWS_C5_35"

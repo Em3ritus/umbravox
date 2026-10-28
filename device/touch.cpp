@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "board.h"
 #include "canvas.h"
+#include "touchmap.h"
 
 #if defined(NM_CYD_C5)
 #include <SPI.h>
@@ -33,6 +34,11 @@ constexpr uint32_t SPI_HZ = 2000000;
 //   centre        2096   1910
 constexpr uint16_t CAL_X_BOTTOM = 350,  CAL_X_TOP  = 3720;   // rawX -> screen Y
 constexpr uint16_t CAL_Y_RIGHT  = 240,  CAL_Y_LEFT = 3640;   // rawY -> screen X
+
+// The calibration above was measured with the display at this rotation; the
+// display's current one is `rot` (setRotation).
+constexpr int CAL_ROTATION = 3;
+uint8_t rot = board::ROTATION;
 
 // Below this the panel is not being pressed, it is just noise.
 constexpr uint16_t Z_THRESHOLD = 400;
@@ -78,6 +84,8 @@ int16_t mapInv(uint16_t raw, uint16_t lo, uint16_t hi, int16_t out) {
 
 } // namespace
 
+void setRotation(uint8_t r) { rot = (uint8_t)(r & 3); }
+
 void begin() {
     pinMode(PIN_CS, OUTPUT);
     digitalWrite(PIN_CS, HIGH);
@@ -109,9 +117,16 @@ Point read() {
     p.any  = p.down;
 
     if (p.down) {
-        // Axes crossed: raw Y gives screen X, raw X gives screen Y.
-        p.x = mapInv(ry, CAL_Y_RIGHT,  CAL_Y_LEFT, ui::W);
-        p.y = mapInv(rx, CAL_X_BOTTOM, CAL_X_TOP,  ui::H);
+        // Axes crossed: raw Y gives screen X, raw X gives screen Y -- in the
+        // calibration's landscape panel pixels, then carried to the canvas
+        // of the rotation on the glass. At rotation 3 this is exactly the
+        // old 160x120 mapping (floor(2v)/2 == floor(v)).
+        const int lx = mapInv(ry, CAL_Y_RIGHT,  CAL_Y_LEFT, 2 * ui::W);
+        const int ly = mapInv(rx, CAL_X_BOTTOM, CAL_X_TOP,  2 * ui::H);
+        int cx, cy;
+        touchmap::toCanvas(CAL_ROTATION, rot, lx, ly, cx, cy);
+        p.x = (int16_t)cx;
+        p.y = (int16_t)cy;
     }
     return p;
 }
@@ -182,6 +197,8 @@ void rotate(uint16_t nx, uint16_t ny, int& sx, int& sy) {
 }
 
 } // namespace
+
+void setRotation(uint8_t) {}     // landscape only on this board (board.h)
 
 void begin() {
     exio::begin();   // touch reset is on the expander; a no-op if already up

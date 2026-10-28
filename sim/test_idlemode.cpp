@@ -332,6 +332,27 @@ int main() {
               animPxPerSec * 100 < normalPxPerSec);
     }
 
+    printf("portrait (the tall 120x160 canvas):\n");
+    {
+        bool inside = true, moves = true;
+        for (uint32_t f = 0; f < 64; f++) {
+            const Pose p = pose(f, true);
+            const Rect r = boxOf(p);
+            if (r.x < 0 || r.y < 0 || r.x + r.w > 120 || r.y + r.h > 160) inside = false;
+            const Pose l = pose(f);
+            if (p.cx != l.cy || p.cy != l.cx || p.r != l.r) moves = false;
+        }
+        check("every tall pose's box is inside 120x160", inside);
+        check("the tall poses are the landscape ones transposed", moves);
+        static ui::Canvas c;
+        c.setSize(120, 160);
+        c.clear(0);
+        const Dirty d = drawFrame(c, 11, 10, 0, 0xFFFF, true);
+        const Pose p = pose(11, true);
+        check("drawFrame(tall) draws the dot at the tall pose",
+              c.px[p.cy * 120 + p.cx] == 0xFFFF && d.n >= 1);
+    }
+
     printf("%s\n", fails ? "FAILED" : "all passed");
     return fails ? 1 : 0;
 }
