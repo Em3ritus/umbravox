@@ -597,6 +597,8 @@ void tick(uint32_t now) {
 
 } // namespace collector
 
+namespace { namespace files { void bootSpace(); } }   // below, with the FILES screen
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -676,6 +678,7 @@ void setup() {
     // (logging counts past WD-NNNN files and skips any existing name).
     sdlog::begin();
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
+    files::bootSpace(); // the one card free-space query (may scan the FAT); FILES caches it
     // Theme packs: after the card and the log (skips are logged), and before
     // loop()'s first prefs::load(), so a saved pack name finds its pack.
     themeload::scan();
@@ -1020,19 +1023,47 @@ bool pollConsole() {
 // the logging session's file changes while it is up -- never per frame. One
 // walk of the root, on this (the loop) task, in one go: at most
 // filescan::MAX_ENTRIES (512) entries or filescan::BUDGET_MS (1 s) of wall
-// clock, then one FatFs free-space query. Worst case: the 1 s walk plus the
-// first free-space query after boot, which on a card whose FSInfo is not
-// trusted reads the whole FAT once (seconds on a 32 GB card; cached after).
-// Capture keeps running in the Wi-Fi/BLE callbacks meanwhile; the GPS UART
-// buffer holds 2 s; logging's next flush is simply late. The walk is recorded
-// by sdlog's stall meter (perf.csv). Nothing here transmits.
+// clock. Card space is NOT asked on opening: FatFs's free count can scan the
+// whole FAT the first time (seconds on a big card), so it is asked once in
+// setup() (bootSpace) and cached; after a delete it is refreshed only while
+// a refresh takes <= 500 ms, else the cached numbers carry on as estimates
+// ('~'). Worst case on opening: the 1 s walk. Capture keeps running in the
+// Wi-Fi/BLE callbacks; the GPS UART buffers 2 s; logging's next flush is
+// late. The walk is recorded by sdlog's stall meter. Nothing transmits.
 namespace files {
 ui::FileList list;
+filescan::SpaceCache spaceCache;
 char activeSeen[40] = "";      // logging::fileName() at the last scan
 
 struct Ctx { filescan::Walk w; };
 bool onEntry(const char* name, bool isDir, uint32_t size, void* c) {
     return filescan::visit(((Ctx*)c)->w, name, isDir, size, millis());
+}
+
+// setup(), after sdlog::begin(): the one free-space query that may be slow.
+void bootSpace() {
+    if (!sdlog::present()) return;
+    const uint32_t t0 = millis();
+    uint32_t used = 0, total = 0;
+    const bool ok = sdlog::space(used, total);
+    const uint32_t ms = millis() - t0;
+    filescan::spaceBoot(spaceCache, ok, used, total, ms);
+    elog::event(ok ? elog::INFO : elog::WARN, "sd", "free-space query took %lu ms%s",
+                (unsigned long)ms, ok ? "" : " and failed");
+}
+
+// After a successful delete of `bytes`: refresh if that is still cheap.
+void spaceAfterDelete(uint32_t bytes) {
+    if (!filescan::spaceWantRefresh(spaceCache)) { filescan::spaceDeleted(spaceCache, bytes); return; }
+    const uint32_t t0 = millis();
+    uint32_t used = 0, total = 0;
+    const bool ok = sdlog::space(used, total);
+    const uint32_t ms = millis() - t0;
+    filescan::spaceRefreshed(spaceCache, ok, used, total, ms);
+    if (!ok) filescan::spaceDeleted(spaceCache, bytes);
+    if (!filescan::spaceWantRefresh(spaceCache))
+        elog::event(elog::WARN, "sd", "free-space refresh took %lu ms%s; showing estimates",
+                    (unsigned long)ms, ok ? "" : " and failed");
 }
 
 void scan(ui::Nav& nav) {
@@ -1043,9 +1074,9 @@ void scan(ui::Nav& nav) {
     filescan::begin(ctx.w, list, t0);
     if (!sdlog::present() ||
         !sdlog::listDirSized("/", onEntry, &ctx, filescan::MAX_ENTRIES + 1)) {
-        list = ui::FileList();               // card absent or pulled: NO CARD
+        filescan::reset(list);               // card absent or pulled: NO CARD
     } else {
-        list.space = sdlog::space(list.usedKB, list.totalKB);
+        filescan::spaceInto(spaceCache, list);   // cached: never asked here
     }
     snprintf(activeSeen, sizeof activeSeen, "%s", logging::fileName());
     ui::filesRescanned(nav, list, prev);
@@ -1055,24 +1086,39 @@ void scan(ui::Nav& nav) {
                   (unsigned long)(millis() - t0));
 }
 
-// Delete list row `idx`, re-checking the policy on its NAME against the live
-// session -- the index came from the UI and is not trusted for that.
+bool cardExists(const char* p) { return sdlog::exists(p); }
+bool cardIsDir(const char* p)  { return sdlog::isDir(p); }
+bool cardRemove(const char* p) { return sdlog::removeFile(p); }
+
+// Delete list row `idx`. The index came from the UI, so the policy is
+// re-checked on the NAME against the live session, and the card goes through
+// SDDEL's sequence (exists, not a directory, remove): filescan::removeLog.
 bool remove(int idx) {
     if (idx < 0 || idx >= list.n) return false;
     char path[ui::FILE_NAME_MAX + 1];
     if (!filescan::pathOf(list.rows[idx].name, path, sizeof path)) return false;
-    if (const char* why = filescan::deleteCheck(path, logging::fileName())) {
-        elog::event(elog::WARN, "files", "refused to delete %s from the screen: %s", path, why);
-        return false;
-    }
     const uint32_t size = list.rows[idx].size;
-    if (!sdlog::removeFile(path)) {
-        elog::event(elog::WARN, "files", "delete %s from the screen failed", path);
-        return false;
+    const filescan::RemoveIo io{cardExists, cardIsDir, cardRemove};
+    switch (filescan::removeLog(path, logging::fileName(), io)) {
+        case filescan::RM_OK:
+            elog::event(elog::INFO, "files", "deleted %s (%lu bytes) from the screen", path,
+                        (unsigned long)size);
+            spaceAfterDelete(size);
+            return true;
+        case filescan::RM_REFUSED:
+            elog::event(elog::WARN, "files", "refused to delete %s from the screen: %s", path,
+                        filescan::deleteCheck(path, logging::fileName()));
+            return false;
+        case filescan::RM_MISSING:
+            elog::event(elog::WARN, "files", "delete %s from the screen: no such file", path);
+            return false;
+        case filescan::RM_DIR:
+            elog::event(elog::WARN, "files", "delete %s from the screen: is a directory", path);
+            return false;
+        default:
+            elog::event(elog::WARN, "files", "delete %s from the screen failed", path);
+            return false;
     }
-    elog::event(elog::INFO, "files", "deleted %s (%lu bytes) from the screen", path,
-                (unsigned long)size);
-    return true;
 }
 } // namespace files
 
