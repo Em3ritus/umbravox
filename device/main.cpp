@@ -12,6 +12,7 @@
 #include "framediff.h"
 #include "gnss.h"
 #include "gpstrack.h"
+#include "gpshint.h"
 #include <math.h>
 #include "capture.h"
 #include "blescan.h"
@@ -1013,13 +1014,32 @@ bool pollConsole() {
                               (unsigned long)g.cycles, (unsigned long)g.bytes, (unsigned long)g.empty,
                               (unsigned long)g.fails, (unsigned long)g.recov, (unsigned long)g.wakes);
 #endif
-                const ui::Gnss::Fix& f = ui::Gnss::fix();
-                Serial.printf("gps: nmea good %lu bad %lu, in view %u, fix %s used %u",
+                // The bring-up facts in three lines: is anything arriving,
+                // does it parse, and what does the receiver say about the sky.
+                const ui::Gnss::Counts& k = ui::Gnss::counts();
+#if defined(WS_C5_35)
+                Serial.printf("gps: LC76G on I2C, bytes %lu, ", (unsigned long)k.bytes);
+#else
+                Serial.printf("gps: uart rx GPIO %d @ %d (module TXD -> P5 RX; TX unused), bytes %lu, ",
+                              (int)PIN_GPS_RX, GPS_BAUD, (unsigned long)k.bytes);
+#endif
+                if (k.bytes) Serial.printf("last byte %lu ms ago\n", (unsigned long)(millis() - k.lastByteMs));
+                else         Serial.println("no byte yet");
+                Serial.printf("gps: nmea good %lu bad %lu | RMC %lu GGA %lu GSA %lu GSV %lu TXT %lu other %lu\n",
                               (unsigned long)ui::Gnss::good(), (unsigned long)ui::Gnss::bad(),
-                              (unsigned)ui::Gnss::inView(), f.valid ? "yes" : "no", (unsigned)f.used);
+                              (unsigned long)k.rmc, (unsigned long)k.gga, (unsigned long)k.gsa,
+                              (unsigned long)k.gsv, (unsigned long)k.txt, (unsigned long)k.other);
+                const ui::Gnss::Status& st = ui::Gnss::status();
+                const ui::Gnss::Fix& f = ui::Gnss::fix();
+                static const char* const MODE[] = {"?", "none", "2D", "3D"};
+                Serial.printf("gps: quality %u mode %s, sats %u in GGA, in view %u, hdop %u.%02u, date %s, fix %s",
+                              (unsigned)st.quality, MODE[st.mode <= 3 ? st.mode : 0], (unsigned)st.sats,
+                              (unsigned)ui::Gnss::inView(), (unsigned)(st.hdop100 / 100),
+                              (unsigned)(st.hdop100 % 100), ui::Gnss::utcEpoch(millis()) ? "yes" : "no",
+                              ui::Gnss::fresh(millis()) ? "FIXED" : "NO GPS");
                 if (f.valid)
-                    Serial.printf(" at %.5f,%.5f, %lu ms old", f.lat7 / 1e7, f.lon7 / 1e7,
-                                  (unsigned long)(millis() - f.atMs));
+                    Serial.printf(", last at %.5f,%.5f used %u, %lu ms old", f.lat7 / 1e7, f.lon7 / 1e7,
+                                  (unsigned)f.used, (unsigned long)(millis() - f.atMs));
                 Serial.println();
             } else if (!strncmp(line, "PERF", 4)) {
                 Serial.println("=== PERF BEGIN ===");
@@ -1179,6 +1199,22 @@ void loop() {
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
     // under 100 bytes, so this never blocks long enough to matter.
     while (gpsPort.available()) ui::Gnss::feed((char)gpsPort.read(), millis());
+    // Bring-up: one line each, once per boot, if the wiring or the baud is
+    // wrong. A compare per loop; see gpshint.h. elog mirrors to Serial.
+    {
+        static gpshint::Watch gpsWatch;
+        switch (gpsWatch.check(millis(), ui::Gnss::counts().bytes, ui::Gnss::good())) {
+        case gpshint::NO_DATA:
+            elog::event(elog::WARN, "gps", "no data on GPIO %d: check TXD->P5 RX, 3.3V power, GND",
+                        (int)PIN_GPS_RX);
+            break;
+        case gpshint::NO_PARSE:
+            elog::event(elog::WARN, "gps", "%lu bytes on GPIO %d but no valid NMEA: baud mismatch? (expecting %d)",
+                        (unsigned long)ui::Gnss::counts().bytes, (int)PIN_GPS_RX, GPS_BAUD);
+            break;
+        default: break;
+        }
+    }
 #else
     // One short synchronous LC76G cycle, at most twice a second, and never
     // while the panel is being touched. See ws_c5_gps.h.
@@ -1683,7 +1719,7 @@ void loop() {
         static elog::Gate lostGate;
         if (live && !wasLive) { q0At = ui::Gnss::qualZero(); badAt = ui::Gnss::bad(); }
         if (!live && wasLive && lostGate.allow(millis(), 30000))
-            elog::event(elog::INFO, "gps", "fix lost: %lu quality-0 GGAs, %lu bad checksums "
+            elog::event(elog::INFO, "gps", "fix lost: %lu quality-0 GGAs, %lu bad NMEA lines "
                         "while it was held",
                         (unsigned long)(ui::Gnss::qualZero() - q0At),
                         (unsigned long)(ui::Gnss::bad() - badAt));
