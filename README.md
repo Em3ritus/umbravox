@@ -71,6 +71,30 @@ switchable themes, animated dials, a summoning-circle aesthetic.
   whichever theme's colours are active, so every theme can use every sweep
   (the gaze needs the seal's eyes, so it stays with BAPH0MAU5).
 
+## Portrait mode (first version, not yet hardware-verified)
+
+ATTUNE → PAGE 2 → **ORIENT** switches the NM-CYD-C5 between LANDSCAPE (the
+default) and PORTRAIT, live, with no reboot; the choice is saved and the board
+boots into it. Portrait draws a tall 120×160 canvas at 2×, which fills the
+240×320 panel.
+
+- **Laid out for portrait:** the scan screen (tiles, the theme's dial or
+  emblem, the spectrum, a full-width START/STOP), the alert cards (every rite,
+  including the COSMIC MUFFIN styles and theme-pack rites), the menu
+  (GRIMOIRE), both ATTUNE settings pages, and FILES.
+- **Everything else** (codex, sighting, map, mesh, omens, echoes, aspect)
+  shows a "PORTRAIT LAYOUT COMING" card with a BACK button. To get the full UI
+  back, go to ATTUNE page 2 and set ORIENT to LANDSCAPE.
+- **NM-CYD-C5 only.** The Waveshare 3.5" stays landscape; its ORIENT row
+  reads "LANDSCAPE ONLY".
+- **If portrait comes up upside down for your case:** in `device/board.h`,
+  change `ROTATION_PORTRAIT` from 0 to 2. `FLIP_180 = true` turns both
+  orientations over for a board mounted the other way up. Touch follows
+  either change.
+- **Not yet verified on hardware:** this has been tested in the simulator and
+  host tests only. Touch accuracy and portrait frame cost on the real board are
+  still to be confirmed.
+
 ## Theme packs
 
 You can give UMBRAVOX your own look without a toolchain. A theme pack is a small
