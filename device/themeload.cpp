@@ -11,6 +11,9 @@
 // so a pointer cannot be handed in where an array was meant; the rest use
 // capOf(), which does not compile on a pointer. No sizeof on a buffer here.
 #include "themeload.h"
+#include <new>
+#include <type_traits>
+#include <utility>
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_heap_caps.h>
@@ -38,17 +41,24 @@ constexpr size_t WHY_CAP  = 96;
 
 uint8_t  nSkipped = 0;
 
-char     names[MAX_FOLDERS][32];
-uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS];
 int      nNames = 0;
 uint16_t nSeen = 0;                          // valid-named folders listed
 
-// One theme.json at a time. The guard's scratch is needed only before the
-// first theme.json is read, so the two share storage.
-union {
-    uint8_t      json[MAX_JSON];
-    GuardScratch guard;
-} buf;
+// Everything only scan() needs: the folder names and sizes, one theme.json
+// at a time (the guard's scratch is needed only before the first theme.json
+// is read, so the two share storage), and the crash list. About 6.6 KB, so it
+// lives in PSRAM for the length of scan() and is freed after: internal RAM is
+// what Wi-Fi and BLE run out of.
+struct Scratch {
+    char     names[MAX_FOLDERS][32];
+    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS];
+    union {
+        uint8_t      json[MAX_JSON];
+        GuardScratch guard;
+    } buf;
+    BadList  bad;
+};
+Scratch* S = nullptr;
 
 // The registered packs' emblems. pal::addPack stores the Emblem POINTER and
 // Emblem::px points into its buffer, so both live for the whole program:
@@ -65,7 +75,6 @@ int         nTaken = 0;
 // guardClear, badMatch) are shared with the host test; this is the NVS
 // behind them. `bad` is the list of packs that have crashed the loader.
 Preferences nvs;
-BadList     bad;
 GuardCur    cur;
 
 bool   kvIsKey(void*, const char* k)                              { return nvs.isKey(k); }
@@ -118,19 +127,19 @@ void onEntry(const char* name, bool isDir, void*) {
     if (!isDir) return;                      // a file in /themes is not a pack
     if (!folderNameOk(name)) { skip(name, admitWhy(ADMIT_BAD_FOLDER)); return; }
     if (nSeen < 0xFFFF) nSeen++;
-    nNames = keepName(names, nNames, MAX_FOLDERS, name);
+    nNames = keepName(S->names, nNames, MAX_FOLDERS, name);
 }
 
 void measure() {
     char path[PATH_CAP];
     for (int i = 0; i < nNames; i++) {
-        jsonSz[i] = pathOf(path, names[i], "theme.json") ? sdlog::sizeOf(path) : 0;
-        embSz[i]  = pathOf(path, names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
+        S->jsonSz[i] = pathOf(path, S->names[i], "theme.json") ? sdlog::sizeOf(path) : 0;
+        S->embSz[i]  = pathOf(path, S->names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
     }
 }
 
 uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot wrap it
-    const uint64_t t = (uint64_t)jsonSz[i] + embSz[i];
+    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i];
     return t > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)t;
 }
 
@@ -141,7 +150,7 @@ uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot w
 bool guardBegin() {
     uint32_t sizes[MAX_FOLDERS];
     for (int i = 0; i < nNames; i++) sizes[i] = totalOf(i);
-    const GuardBootResult g = guardBoot(KV, names, sizes, nNames, bad, buf.guard, cur);
+    const GuardBootResult g = guardBoot(KV, S->names, sizes, nNames, S->bad, S->buf.guard, cur);
     if (g.listJunk)
         elog::event(elog::WARN, "theme", "crash list in NVS was unreadable; replaced");
     if (g.folded[0]) {
@@ -177,15 +186,16 @@ const Emblem* loadEmblem(const char* folder, uint32_t size, char (&why)[WHY_CAP]
 }
 
 bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]) {
-    static_assert(capOf(buf.json) == MAX_JSON, "theme.json buffer");
+    static_assert(std::extent<std::remove_reference_t<decltype(std::declval<Scratch&>().buf.json)>>::value
+                  == MAX_JSON, "theme.json buffer");
     char path[PATH_CAP];
     const uint32_t n = pathOf(path, folder, "theme.json")
-                     ? sdlog::readFile(path, buf.json, (uint32_t)MAX_JSON) : 0;
+                     ? sdlog::readFile(path, S->buf.json, (uint32_t)MAX_JSON) : 0;
     if (n == 0 || n != js) { setWhy(why, "theme.json could not be read"); return false; }
 
     Pack p;
     char pwhy[48];
-    if (!parse((const char*)buf.json, n, p, pwhy, capOf(pwhy))) {
+    if (!parse((const char*)S->buf.json, n, p, pwhy, capOf(pwhy))) {
         setWhy(why, "theme.json: %s", pwhy);
         return false;
     }
@@ -207,29 +217,46 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]
 }
 
 void visit(int i) {
-    const char* folder = names[i];
+    const char* folder = S->names[i];
     const uint32_t total = totalOf(i);
-    if (badMatch(bad, folder, total)) {
+    if (badMatch(S->bad, folder, total)) {
         skip(folder, "skipped, a reset happened while loading it");
         return;
     }
     if (nTaken >= MAX_PACKS) { skip(folder, admitWhy(ADMIT_FULL)); return; }
-    if (jsonSz[i] == 0) { skip(folder, "no theme.json"); return; }
-    if (jsonSz[i] > MAX_JSON) { skip(folder, "theme.json over 4096 bytes"); return; }
+    if (S->jsonSz[i] == 0) { skip(folder, "no theme.json"); return; }
+    if (S->jsonSz[i] > MAX_JSON) { skip(folder, "theme.json over 4096 bytes"); return; }
 
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), folder, total);
     if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
     char why[WHY_CAP] = "unknown";
-    const bool ok = loadPack(folder, jsonSz[i], embSz[i], why);
+    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], why);
     guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }
 
 } // namespace
 
+void scanWith();
+
 void scan() {
     if (!sdlog::present()) return;           // no card: nothing loaded, nothing skipped
+    void* p = heap_caps_malloc(sizeof(Scratch), MALLOC_CAP_SPIRAM);
+    if (!p) {
+        // The unit requires PSRAM; without it, no packs rather than 6.6 KB of
+        // internal RAM. Built-in themes still work.
+        elog::event(elog::ERR, "theme", "no PSRAM for the pack loader, packs not loaded");
+        return;
+    }
+    S = new (p) Scratch();
+    scanWith();
+    S->~Scratch();
+    heap_caps_free(p);
+    S = nullptr;
+}
+
+void scanWith() {
     nNames = 0; nSeen = 0;
     if (!sdlog::listDir(DIR, onEntry, nullptr)) return;   // no /themes: normal
     if (nNames == 0) return;
@@ -238,7 +265,7 @@ void scan() {
                     (unsigned)(nSeen - nNames), MAX_FOLDERS);
         for (int i = nNames; i < nSeen; i++) countSkip();
     }
-    sortNames(names, nNames);
+    sortNames(S->names, nNames);
     measure();
     // Without the guard a pack that crashes the parser would trap the board in
     // a reset loop, so no NVS means no packs.

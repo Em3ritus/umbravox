@@ -32,6 +32,7 @@
 #include "idlemode.h"
 #include "autolog.h"
 #include "filescan.h"
+#include <new>
 #include "files.h"
 #include "rehome.h"
 #include "phase.h"
@@ -1029,7 +1030,19 @@ bool pollConsole() {
 // buffers 2 s; logging's next flush is late. The walk is recorded by sdlog's
 // stall meter. Nothing transmits.
 namespace files {
-ui::FileList list;
+// The list (1.8 KB) lives in PSRAM, allocated on first use: internal RAM is
+// what Wi-Fi and BLE run short of. If it cannot be had, FILES reads NO CARD.
+ui::FileList* L = nullptr;
+bool ensure() {
+    static bool tried = false;
+    if (L || tried) return L != nullptr;
+    tried = true;
+    void* p = heap_caps_malloc(sizeof(ui::FileList), MALLOC_CAP_SPIRAM);
+    if (!p) p = malloc(sizeof(ui::FileList));
+    if (!p) { elog::event(elog::ERR, "files", "no memory for the log list"); return false; }
+    L = new (p) ui::FileList();
+    return true;
+}
 char activeSeen[40] = "";      // logging::fileName() at the last scan
 
 struct Ctx { filescan::Walk w; };
@@ -1038,6 +1051,12 @@ bool onEntry(const char* name, bool isDir, uint32_t size, void* c) {
 }
 
 void scan(ui::Nav& nav) {
+    if (!ensure()) {                         // nothing to list into: NO CARD
+        nav.filesN = 0; nav.fileSel = -1; nav.fileConfirm = false;
+        ui::filesSetActive(nav, -1);
+        return;
+    }
+    ui::FileList& list = *L;
     char prev[ui::FILE_NAME_MAX] = "";
     if (nav.fileSel >= 0 && nav.fileSel < list.n) strcpy(prev, list.rows[nav.fileSel].name);
     const uint32_t t0 = millis();
@@ -1065,7 +1084,8 @@ bool cardRemove(const char* p) { return sdlog::removeFile(p); }
 // re-checked on the NAME against the live session, and the card goes through
 // SDDEL's sequence (exists, not a directory, remove): filescan::removeLog.
 bool remove(int idx) {
-    if (idx < 0 || idx >= list.n) return false;
+    if (!L || idx < 0 || idx >= L->n) return false;
+    const ui::FileList& list = *L;
     char path[ui::FILE_NAME_MAX + 1];
     if (!filescan::pathOf(list.rows[idx].name, path, sizeof path)) return false;
     const uint32_t size = list.rows[idx].size;
@@ -1440,7 +1460,7 @@ void loop() {
             ui::filesResult(nav, ok, millis());
         }
         if (strcmp(files::activeSeen, logging::fileName()) != 0) files::scan(nav);
-        ui::filesSetActive(nav, filescan::activeIndex(files::list, logging::fileName()));
+        if (files::L) ui::filesSetActive(nav, filescan::activeIndex(*files::L, logging::fileName()));
     } else {
         nav.filesScanRequested = nav.fileDeleteRequested = false;
     }
@@ -1584,7 +1604,7 @@ void loop() {
             s.nTrack = (uint8_t)n;
         }
     } else if (nav.screen == ui::SCR_FILES) {
-        ui::filesPublish(s, nav, files::list);
+        if (files::L) ui::filesPublish(s, nav, *files::L);
     } else if (nav.screen == ui::SCR_DETAIL) {
         if (nav.filter == ui::F_BLE) blescan::fillDetail(s, nav.selected, millis());
         else cap::fillDetail(s, nav.selected, nav.filter == ui::F_5G, millis());
@@ -1713,7 +1733,7 @@ void loop() {
     // The incoming one has its own first-frame logic, but it has already run
     // for this frame, so force the repaint here.
     static bool justWoke = true;
-    // Load-bearing coupling: every screen keeps its own `static State prev` /
+    // Load-bearing coupling: every screen keeps its own `prev` (ui::prevState) /
     // `static bool first` for dirty tracking, and those mean nothing across a
     // theme change. That is safe only because the theme can change solely
     // while ASPECT is on screen, so the user always leaves via a screen

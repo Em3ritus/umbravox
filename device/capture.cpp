@@ -1,4 +1,5 @@
 #include "capture.h"
+#include <new>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -83,8 +84,11 @@ volatile uint32_t nTableDrops = 0;
 volatile uint32_t nLongProbes = 0;   // inserts past PROBE_LIMIT: collision flood?
 // The evil-twin pass budget, SSID filter and deferred checks (twinbudget.h).
 twinbudget::Bucket     twinBudget;
-twinbudget::SsidFilter twinFilter;          // 4 KB
-twinbudget::DeferRing  twinRing;
+// The evil-twin filter (4 KB) and its queue: in PSRAM, allocated in begin()
+// beside the dedup table, which the same critical sections already read
+// there. Never touched from an ISR or with the flash cache disabled.
+twinbudget::SsidFilter* twinF = nullptr;
+twinbudget::DeferRing*  twinR = nullptr;
 twinbudget::Job        twinJob;             // the loop task's deferred check
 volatile uint32_t nTwinDeferred = 0;
 static_assert(twinbudget::BURST >= (uint32_t)TABLE, "a pass over a full table must be affordable");
@@ -426,8 +430,8 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     // table. The pass only reads other entries. On a dual-core build the lock
     // is simply held for the whole pass, as before.
     const twinbudget::Inline tg = twinbudget::gate(
-        dedup::runTwinPass(hit, name, auth), name, hashSeed, twinFilter, twinBudget,
-        millis(), nOrder, twinRing, (uint16_t)slot, tableGen);
+        dedup::runTwinPass(hit, name, auth), name, hashSeed, (*twinF), twinBudget,
+        millis(), nOrder, (*twinR), (uint16_t)slot, tableGen);
     if (tg == twinbudget::DEFERRED) nTwinDeferred++;
     if (tg == twinbudget::RUN) {
         for (uint32_t q = 0; q < nOrder; q++) {
@@ -460,7 +464,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     }
     // Now that it has a name and security, other APs can be its twin: the
     // filter (twinbudget.h) learns the name after this AP's own check above.
-    if (table_[slot].ssid[0] && table_[slot].auth) twinFilter.add(table_[slot].ssid, hashSeed);
+    if (table_[slot].ssid[0] && table_[slot].auth) (*twinF).add(table_[slot].ssid, hashSeed);
 
     Blip& b = recent_[hsh % RECENT];
     b.angle  = (uint16_t)(hsh % 360);
@@ -493,6 +497,18 @@ void begin() {
     used_  = (bool*)heap_caps_malloc(sizeof(bool) * TABLE, MALLOC_CAP_SPIRAM);
     order_ = (uint16_t*)heap_caps_malloc(sizeof(uint16_t) * TABLE, MALLOC_CAP_SPIRAM);
     logBits_ = (uint8_t*)heap_caps_calloc((TABLE + 7) / 8, 1, MALLOC_CAP_SPIRAM);
+    // The twin filter and queue: PSRAM like the table, internal RAM only as a
+    // fallback (5 KB, which could succeed), halting below if neither can.
+    void* tf = heap_caps_malloc(sizeof(twinbudget::SsidFilter), MALLOC_CAP_SPIRAM);
+    void* tr = heap_caps_malloc(sizeof(twinbudget::DeferRing), MALLOC_CAP_SPIRAM);
+    if (!tf) tf = malloc(sizeof(twinbudget::SsidFilter));
+    if (!tr) tr = malloc(sizeof(twinbudget::DeferRing));
+    if (!tf || !tr) {
+        Serial.println("capture: FATAL -- no room for the twin filter");
+        for (;;) delay(1000);
+    }
+    twinF = new (tf) twinbudget::SsidFilter();
+    twinR = new (tr) twinbudget::DeferRing();
     const bool inPsram = table_ && used_ && order_ && logBits_;
     if (!inPsram) {
         free(table_); free(used_); free(order_); free(logBits_);
@@ -567,7 +583,7 @@ void tick(uint32_t nowMs) {
         // reads it under the lock: not the caller's earlier nowMs.
         const uint32_t now = millis();
         uint16_t found = 0;
-        const twinbudget::Step st = twinbudget::step(twinJob, twinRing, twinBudget, now,
+        const twinbudget::Step st = twinbudget::step(twinJob, (*twinR), twinBudget, now,
             tableGen, nOrder,
             [](uint16_t tgt) {
                 return [tgt](uint32_t q) {
@@ -938,7 +954,7 @@ void reset() {
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; }
     nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
-    twinFilter.clear(); twinRing = twinbudget::DeferRing{}; twinJob.active = false;
+    (*twinF).clear(); (*twinR) = twinbudget::DeferRing{}; twinJob.active = false;
     nTwinDeferred = 0;
     nProbes = 0; nProbeFrames = 0;
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
@@ -958,7 +974,7 @@ void rollover() {
     memset(used_, 0, sizeof(bool) * TABLE);
     nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0;                  // an empty table has no probe chains
-    twinFilter.clear();             // no SSIDs; queued checks die with tableGen
+    (*twinF).clear();             // no SSIDs; queued checks die with tableGen
     twinJob.active = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     tableGen++;
@@ -984,7 +1000,7 @@ uint32_t tableDrops() { return nTableDrops; }
 uint32_t longProbes() { return nLongProbes; }
 void twinStats(uint32_t& deferred, uint32_t& lost, uint32_t& stale) {
     portENTER_CRITICAL(&mux);
-    deferred = nTwinDeferred; lost = twinRing.lost; stale = twinRing.stale;
+    deferred = nTwinDeferred; lost = (*twinR).lost; stale = (*twinR).stale;
     portEXIT_CRITICAL(&mux);
 }
 
