@@ -5,6 +5,11 @@ CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
 SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp
+# nav.cpp reaches every screen, and the screens share chrome and name tables,
+# so this links the same sources as the simulator (minus its main) rather than
+# a hand-picked subset that breaks each time a screen grows a dependency.
+SRC_NOMAIN = $(filter-out main_sim.cpp,$(SRC))
+
 # Every ui header, found rather than listed. The hand-written list silently
 # omitted nav.h, layout.h, signatures.h and wifi_auth.h, so editing any of
 # them left umbravox stale -- and a stale binary makes `regress` pass while
@@ -12,7 +17,7 @@ SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.c
 # cannot forget them.
 HDR = $(wildcard ../ui/*.h) png_writer.h
 
-$(BIN): $(SRC) $(HDR)
+$(BIN): $(SRC) $(HDR) packload.h
 	$(CXX) $(CXXFLAGS) -o $@ $(SRC) -lm
 
 run: $(BIN)
@@ -126,11 +131,6 @@ test_enrollwin: test_enrollwin.cpp ../device/enrollwin.h
 test_idlemode: test_idlemode.cpp ../device/idlemode.h ../ui/model.h ../ui/nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_idlemode.cpp $(SRC_NOMAIN) -lm
 
-# nav.cpp reaches every screen, and the screens share chrome and name tables,
-# so this links the same sources as the simulator (minus its main) rather than
-# a hand-picked subset that breaks each time a screen grows a dependency.
-SRC_NOMAIN = $(filter-out main_sim.cpp,$(SRC))
-
 test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_settings.cpp $(SRC_NOMAIN) -lm
 
@@ -145,7 +145,7 @@ test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 test_contrast: test_contrast.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_contrast.cpp $(SRC_NOMAIN) -lm
 
-test_trig: test_trig.cpp trig_audit.h $(SRC_NOMAIN) $(HDR)
+test_trig: test_trig.cpp trig_audit.h packload.h $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -include trig_audit.h -o $@ test_trig.cpp $(SRC_NOMAIN) -lm
 
 # Links the host pack loader; PACKS_DIR is relative to sim/, where make runs it.
