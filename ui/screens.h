@@ -62,6 +62,16 @@ const char* alertName(uint8_t theme, uint8_t style);
 void themeRowName(uint8_t theme, char* out, size_t cap);
 // The alert card over the dial panel; draws nothing when no alert is active.
 void drawAlert(Canvas& c, const State& s);
+// The same card in any rectangle: drawAlert is this with the landscape dial
+// panel, portrait passes its own. Every rite is drawn relative to x,y,w,h
+// (h >= 66 holds the name and its three detail lines).
+void drawAlertIn(Canvas& c, const State& s, int x, int y, int w, int h);
+// The channel spectrum strip in any rectangle (landscape: COL_R_X, SPEC_Y...).
+void drawSpectrumAt(Canvas& c, const State& s, int x, int y, int w, int h);
+// A card: fill, edge, corner marks (`cross` for the dial's inscription marks).
+void drawPanel(Canvas& c, int x, int y, int w, int h, uint16_t fillCol, bool cross = false);
+// The footer's 5x5 GPS status rune.
+void drawStatRune(Canvas& c, int x, int y, uint16_t col, bool filled);
 
 // CODEX -- the register of what has been found: one row per network, with
 // band, name, signal and channel. Scrolls.

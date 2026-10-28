@@ -88,6 +88,14 @@ void statRune(Canvas& c, int x, int y, uint16_t col, bool filled) {
 
 }  // namespace
 
+void drawPanel(Canvas& c, int x, int y, int w, int h, uint16_t fillCol, bool cross) {
+    panel(c, x, y, w, h, fillCol, cross);
+}
+
+void drawStatRune(Canvas& c, int x, int y, uint16_t col, bool filled) {
+    statRune(c, x, y, col, filled);
+}
+
 const char* screenName(uint8_t screen, bool plain) {
     switch (screen) {
         case SCR_SCAN:     return "SCAN";                        // header shows the wordmark
@@ -153,17 +161,17 @@ void drawTile(Canvas& c, int y, const char* label, uint32_t value, uint16_t acce
     c.text(COL_L_X + 6, y + 12, buf, pal::BRIGHT, 2);
 }
 
-void drawSpectrum(Canvas& c, const State& s) {
-    panel(c, COL_R_X, SPEC_Y, COL_R_W, SPEC_H, pal::PANEL);
+void drawSpectrumBody(Canvas& c, const State& s, int SX, int SY, int SW, int SH) {
+    panel(c, SX, SY, SW, SH, pal::PANEL);
 
     const int bw = 3, gap = 1, sep = 5;
     const int total = CH24 * (bw + gap) + sep + CH5 * (bw + gap) - gap;
-    int x = COL_R_X + (COL_R_W - total) / 2;
-    const int base = SPEC_Y + SPEC_H - 3;
+    int x = SX + (SW - total) / 2;
+    const int base = SY + SH - 3;
     const int maxH = 10;
 
-    c.hline(COL_R_X + 3, base + 1, COL_R_W - 6, pal::EDGE);
-    c.text(COL_R_X + COL_R_W - 7, SPEC_Y + 2, ">", pal::EDGE_LIT);   // opens MESH
+    c.hline(SX + 3, base + 1, SW - 6, pal::EDGE);
+    c.text(SX + SW - 7, SY + 2, ">", pal::EDGE_LIT);   // opens MESH
 
     // No node count here: the footer carries it (up to 99). The strip's old
     // one-digit marker read "9N" for 12 nodes and contradicted it.
@@ -181,12 +189,16 @@ void drawSpectrum(Canvas& c, const State& s) {
         if (here) col = pal::BRIGHT;
 
         c.fill(x, base - h + 1, bw, h, col);
-        if (here) c.fill(x, SPEC_Y + 2, bw, 1, pal::WITCH_HI);
+        if (here) c.fill(x, SY + 2, bw, 1, pal::WITCH_HI);
         x += bw + gap;
     }
 }
 
 }  // namespace
+
+void drawSpectrumAt(Canvas& c, const State& s, int x, int y, int w, int h) {
+    drawSpectrumBody(c, s, x, y, w, h);
+}
 
 void drawFooter(Canvas& c, const State& s) {
     c.hline(0, FOOT_Y, W, pal::EDGE_LIT);
@@ -325,20 +337,22 @@ int pentagramTrace(Canvas& c, int cx, int cy, int r, uint16_t col,
 
 } // namespace
 
-void alertFigure(Canvas& c, const State& s, int cx, int cy, int r, uint16_t col) {
+namespace {
+
+// cardW x cardH is the alert card the figure sits in.
+void alertFigure(Canvas& c, const State& s, int cx, int cy, int r, uint16_t col,
+                 int cardW, int cardH) {
     if (pal::centrepiece(s.set.theme) == pal::CP_SEAL) sealFigure(c, cx, cy, r, col);
     else {
         // The strike arrives oversized, which is thin lines for a heptagram but
         // a solid disc for an emblem: keep that one inside the card.
         if (pal::emblem(s.set.theme)) {
-            const int rMax = (COL_R_W < DIAL_H ? COL_R_W : DIAL_H) / 2 - 2;
+            const int rMax = (cardW < cardH ? cardW : cardH) / 2 - 2;
             if (r > rMax) r = rMax;
         }
         drawMotif(c, s.set.theme, cx, cy, r, 0, 128, col);
     }
 }
-
-namespace {
 
 // The threat name resolving out of marks, and the supporting detail arriving
 // only once it has settled. Shared by both themes' rites and drawn on top of
@@ -591,6 +605,10 @@ void drawAlertLockOn(Canvas& c, const State& s, uint16_t edge,
 } // namespace
 
 void drawAlert(Canvas& c, const State& s) {
+    drawAlertIn(c, s, COL_R_X, DIAL_Y, COL_R_W, DIAL_H);
+}
+
+void drawAlertIn(Canvas& c, const State& s, int X, int Y, int Wd, int Hd) {
     if (!s.alertActive || s.alertThreat == TH_NONE) return;
 
     // Colour is the confidence, not the threat. A LOW-confidence hit on
@@ -604,7 +622,6 @@ void drawAlert(Canvas& c, const State& s) {
       : s.alertConf == CONF_MED  ? safeEdge(pal::AMBER, SAFE_MED,  pal::VOID, pal::PANEL)
                                  : safeEdge(pal::WITCH, SAFE_LOW,  pal::VOID, pal::PANEL);
 
-    const int X = COL_R_X, Y = DIAL_Y, Wd = COL_R_W, Hd = DIAL_H;
     const int age = (int)s.alertAge;
 
     c.fill(X, Y, Wd, Hd, pal::VOID);
@@ -653,12 +670,12 @@ void drawAlert(Canvas& c, const State& s) {
     if (age < ALERT_FLARE_MS) {
         const int k = ALERT_FLARE_MS - age;
         c.fill(X, Y, Wd, Hd, Canvas::mix(pal::VOID, edge, k, ALERT_FLARE_MS * 2));
-        alertFigure(c, s, mx, my, 30 + k / 5, Canvas::mix(edge, pal::BRIGHT, k, ALERT_FLARE_MS));
+        alertFigure(c, s, mx, my, 30 + k / 5, Canvas::mix(edge, pal::BRIGHT, k, ALERT_FLARE_MS), Wd, Hd);
         return;
     }
 
     // The figure stays, faint, under everything that follows.
-    alertFigure(c, s, mx, my, 30, Canvas::mix(pal::VOID, edge, 1, 5));
+    alertFigure(c, s, mx, my, 30, Canvas::mix(pal::VOID, edge, 1, 5), Wd, Hd);
 
     // 2. The ward closes: the border traces itself from top-centre, both
     //    ways at once, and only locks shut at the end.
@@ -891,7 +908,7 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     }
     drawDialAt(c, s, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND);
     drawAlert(c, s);
-    if (SPEC_H > 0) drawSpectrum(c, s);
+    if (SPEC_H > 0) drawSpectrumAt(c, s, COL_R_X, SPEC_Y, COL_R_W, SPEC_H);
     drawFooter(c, s);
     drawReticle(c, s);
 
