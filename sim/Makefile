@@ -4,7 +4,7 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
-SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp
+SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -156,6 +156,11 @@ test_trig: test_trig.cpp trig_audit.h packload.h $(SRC_NOMAIN) $(HDR)
 test_pack_parity: test_pack_parity.cpp packload.h $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_pack_parity.cpp $(SRC_NOMAIN) -lm
 
+# FILES: the screen's state machine, its renders, and the list/delete rules
+# (device/filescan.h) against the serial SDDEL's policy.
+test_files: test_files.cpp ../device/filescan.h ../device/sdcmd.h ../device/sdlog.h $(SRC_NOMAIN) $(HDR)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ test_files.cpp $(SRC_NOMAIN) -lm
+
 test_footer: test_footer.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_footer.cpp $(SRC_NOMAIN) -lm
 
@@ -170,7 +175,7 @@ test_sdcmd: test_sdcmd.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/
 sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ sdcmd_console.cpp ../ui/themepack.cpp -lm
 
-TESTS = test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity
+TESTS = test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -194,7 +199,7 @@ test: $(TESTS) sdcmd_console emblem-check sdput-check
 # UMBRAVOX must render exactly as it did before this work started. With no
 # version control there is nothing to diff against after the fact, so the
 # baseline was captured up front and this target is the contract.
-SCREENS = scan codex detail domain mesh omens echoes grimoire attune
+SCREENS = scan codex detail domain mesh omens echoes grimoire attune files
 
 MANIFEST = $(CURDIR)/../private/baseline/MANIFEST.md5
 

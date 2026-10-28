@@ -14,7 +14,7 @@
 
 namespace ui {
 
-enum Screen : uint8_t { SCR_SCAN = 0, SCR_CODEX, SCR_DETAIL, SCR_DOMAIN, SCR_MESH, SCR_OMENS, SCR_ECHOES, SCR_GRIMOIRE, SCR_ATTUNE, SCR_ASPECT, SCR_COUNT };
+enum Screen : uint8_t { SCR_SCAN = 0, SCR_CODEX, SCR_DETAIL, SCR_DOMAIN, SCR_MESH, SCR_OMENS, SCR_ECHOES, SCR_GRIMOIRE, SCR_ATTUNE, SCR_ASPECT, SCR_FILES, SCR_COUNT };
 enum Filter : uint8_t { F_WIFI = 0, F_5G, F_BLE, F_COUNT };
 
 struct Nav {
@@ -31,6 +31,26 @@ struct Nav {
     uint16_t selected = 0;      // which codex row the detail screen is showing
     uint8_t  rangeIdx = 1;      // territory map scale
     uint8_t  setPage = 0;       // settings page (0-based, < SET_PAGES); back to 0 on leaving
+
+    // The caller's clock, for the FILES confirm's timing. filesTick() sets it
+    // (call it before navTouch each poll); nav itself never reads a clock.
+    uint32_t nowMs = 0;
+
+    // FILES (ui/files.h). filesN / filesActive describe the caller's list and
+    // are set by it (filesRescanned, filesSetActive); the rest is the screen's.
+    uint8_t  filesN = 0;
+    int8_t   filesActive = -1;      // list index of the logging session, -1 none
+    int8_t   fileSel = -1;          // list index selected, -1 none
+    bool     fileConfirm = false;   // the YES / NO card is up
+    uint32_t fileConfirmAt = 0;     // nowMs when it appeared
+    uint8_t  fileResult = 0;        // 0 none, 1 DELETED, 2 FAILED
+    uint32_t fileResultAt = 0;
+    // Requests to the caller, which owns the card: rescan the list (set on
+    // entering FILES), and delete list row fileDeleteIdx (set by YES). The
+    // caller clears them after acting, and re-checks the policy on the name.
+    bool     filesScanRequested = false;
+    bool     fileDeleteRequested = false;
+    int8_t   fileDeleteIdx = -1;
 
     // Set when the reset row is tapped; the caller clears it after acting.
     bool    resetRequested = false;

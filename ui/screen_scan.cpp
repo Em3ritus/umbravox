@@ -99,6 +99,7 @@ const char* screenName(uint8_t screen, bool plain) {
         case SCR_GRIMOIRE: return plain ? "MENU"     : "GRIMOIRE";
         case SCR_ATTUNE:   return plain ? "SETTINGS" : "ATTUNE";
         case SCR_ASPECT:   return plain ? "DISPLAY"  : "ASPECT";
+        case SCR_FILES:    return plain ? "FILES"    : "SCROLLS";
         default:           return "";
     }
 }

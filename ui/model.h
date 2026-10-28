@@ -230,6 +230,29 @@ struct Echo {
     bool    randomised = false;   // locally-administered address
 };
 
+// FILES: the owner's session logs on the SD card (/WD-*.csv, the serial
+// SDDEL's own policy: device/sdcmd.h). The device keeps the newest
+// MAX_FILE_ROWS of them in a FileList (device/filescan.h builds it, newest
+// first) and publishes only the FILE_VIS rows on screen into State, the way
+// the codex publishes its window of sightings: State is copied by every
+// screen's dirty tracking, so a whole list in it would cost RAM ten times.
+constexpr int FILE_NAME_MAX = 24;   // basename + NUL; "WD-20260127-153012.csv" is 22
+constexpr int MAX_FILE_ROWS = 64;
+constexpr int FILE_VIS      = 5;    // rows on screen at once
+struct FileRow {
+    char     name[FILE_NAME_MAX] = {0};   // bare basename, as on the card
+    uint32_t size = 0;                    // bytes
+};
+struct FileList {
+    FileRow  rows[MAX_FILE_ROWS];
+    uint8_t  n = 0;            // rows kept, newest first
+    uint16_t found = 0;        // logs seen on the card (may exceed n; saturates)
+    bool     card = false;     // the card answered the walk
+    bool     partial = false;  // the walk stopped at its entry/time bound
+    bool     space = false;    // usedKB/totalKB are known
+    uint32_t usedKB = 0, totalKB = 0;
+};
+
 struct State {
     // counters
     uint16_t nets24 = 0, nets5 = 0, ble = 0;
@@ -317,6 +340,25 @@ struct State {
     bool     touchDown = false;
 
     uint32_t frame = 0;           // animation clock; drives the sweep
+
+    // FILES (ui/files.h): the visible window of the log list, and the
+    // screen's interaction state. All defaulted, so a State built anywhere
+    // else (the wasm bridge, the designer preview) shows nothing of it.
+    FileRow  fileRows[FILE_VIS];
+    uint8_t  nFileRows = 0;       // rows in the window
+    uint8_t  fileTotal = 0;       // rows in the list
+    uint16_t fileFound = 0;       // logs on the card (fileTotal is capped)
+    int16_t  fileScroll = 0;      // list index of fileRows[0]
+    int8_t   fileSel = -1;        // list index selected, -1 none
+    int8_t   fileActive = -1;     // list index of the logging session, -1 none
+    char     fileSelName[FILE_NAME_MAX] = {0};
+    uint32_t fileSelSize = 0;
+    bool     fileConfirm = false; // the delete confirmation is up
+    uint8_t  fileResult = 0;      // 0 none, 1 DELETED, 2 FAILED (shown ~2 s)
+    bool     fileCard = false;
+    bool     filePartial = false;
+    bool     fileSpace = false;
+    uint32_t cardUsedKB = 0, cardTotalKB = 0;
 
     // Theme pack folders on the SD card that were skipped at boot (bad file,
     // clash, over the limit, or a reset while loading one). ASPECT shows the

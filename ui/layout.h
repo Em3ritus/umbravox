@@ -101,4 +101,20 @@ constexpr int ASP_NAME_MAX = 12;
 constexpr int ASP_SKIP_Y  = 15, ASP_SKIP_H = 7;
 constexpr int ASP_SKIP_LX = 3,  ASP_SKIP_RX = 98, ASP_SKIP_W = 59;
 
+// FILES: a count line, five log rows, and an action bar, inside the body.
+constexpr int FILE_INFO_Y = 15;                 // "12 LOGS" / "3.1G USED"
+constexpr int FILE_ROW_Y  = 24, FILE_ROW_H = 12; // FILE_VIS rows: 24..83
+constexpr int FILE_ROW_X  = 3,  FILE_ROW_W = 150; // the scrollbar is right of it
+constexpr int FILE_BAR_Y  = 87, FILE_BAR_H = 12;  // the action bar
+constexpr int FILE_DEL_X  = 104, FILE_DEL_W = 52; // DELETE, bottom right
+// The confirmation card covers the rows and the bar. NO is the default: the
+// larger target, where the finger that tapped DELETE already is; YES is small
+// and far from it, so neither a bounce nor a lazy second tap can say yes.
+constexpr int FILE_CARD_X = 4,  FILE_CARD_Y = 24, FILE_CARD_W = 152, FILE_CARD_H = 76;
+constexpr int FILE_YES_X  = 10, FILE_YES_Y = 78, FILE_YES_W = 34, FILE_YES_H = 16;
+constexpr int FILE_NO_X   = 70, FILE_NO_Y  = 70, FILE_NO_W  = 80, FILE_NO_H  = 26;
+// The way in: ATTUNE page 2, the row under AUTO LOG, an OPEN button where
+// page 1's -/+ pairs sit. (GRIMOIRE's 3x3 grid is full.)
+constexpr int SET_FILES_ROW = 1;                // on page 2 (setPage == 1)
+
 } // namespace ui

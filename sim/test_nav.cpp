@@ -539,7 +539,8 @@ int main() {
         {
             const Settings ref = s;
             for (int r = 0; r < SET_ROWS - 1; r++) {
-                if (r == SET_AUTOLOG_ROW) continue;
+                // FILES' OPEN opens a screen (sim/test_files.cpp covers it).
+                if (r == SET_AUTOLOG_ROW || r == SET_FILES_ROW) continue;
                 tap(n, s, SET_PLUS_X + 2, rowY(r));     // one-sided: a - then + would cancel
                 tap(n, s, SET_PLUS_X + 2, rowY(r));
                 tap(n, s, SET_MINUS_X + 2, rowY(r));

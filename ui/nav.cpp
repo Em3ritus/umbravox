@@ -3,6 +3,7 @@
 #include "signatures.h"
 #include "screens.h"
 #include "palette.h"
+#include "files.h"
 
 namespace ui {
 namespace {
@@ -149,6 +150,8 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
     if (hit(x, y, 0, 0, BACK_W, HDR_H)) {
         if (n.screen == SCR_DETAIL) {
             n.screen = SCR_CODEX;
+        } else if (n.screen == SCR_FILES) {
+            filesLeave(n);          // cancels any confirm; back to ATTUNE page 2
         } else {
             n.screen = SCR_SCAN;
             n.scroll = 0;
@@ -156,6 +159,8 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
         n.dragAccum = 0;
         return true;
     }
+
+    if (n.screen == SCR_FILES) return filesTap(n, x, y);
 
     // A codex row opens that device.
     if (n.screen == SCR_CODEX && y >= BODY_Y && y < BODY_Y + BODY_H) {
@@ -214,8 +219,17 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
                 continue;
             }
             if (n.setPage == 1) {
-                // Page 2. Only AUTO LOG so far; the other rows are empty and
-                // inert. Two values, so - and + both flip it.
+                // Page 2: AUTO LOG, then FILES; the other rows are empty
+                // and inert. FILES has one OPEN button where -/+ sit.
+                if (r == SET_FILES_ROW) {
+                    const int bw = SET_PLUS_X + SET_BTN_W - SET_MINUS_X;
+                    if (hit(x, y, SET_MINUS_X, y0 + 1, bw, SET_BTN_H)) {
+                        filesEnter(n);
+                        return true;
+                    }
+                    continue;
+                }
+                // AUTO LOG has two values, so - and + both flip it.
                 if (r != SET_AUTOLOG_ROW) continue;
                 if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H) ||
                     hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H))
@@ -290,7 +304,8 @@ bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {
         }
 
         const bool scrollable = (n.screen == SCR_CODEX || n.screen == SCR_OMENS ||
-                                 n.screen == SCR_ECHOES);
+                                 n.screen == SCR_ECHOES ||
+                                 (n.screen == SCR_FILES && !n.fileConfirm));
         if (!n.dragging && scrollable && n.maxScroll > 0 &&
             iabs(y - n.startY) > DRAG_START) {
             n.dragging = true;

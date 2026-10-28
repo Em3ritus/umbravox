@@ -14,11 +14,15 @@
 //                                       with --screen --sweep --alert --frame --scale)
 //   ./umbravox out.png --nodes 3        mesh nodes connected (scan footer, MESH)
 //   ./umbravox out.png --screen attune --setpage 2 --autolog 1   settings page 2
+//   ./umbravox out.png --screen files --files 64 --scroll 59 --selected 61 --active 62 --confirm
+//                                       FILES: N logs (default 5), scroll, selection,
+//                                       REC row, the delete card; --nocard, --result 1|2
 //   ./umbravox --check-pack path/to/folder     print OK <name> or the reason;
 //                                       exit 0 / 1; writes no PNG
 #include "../ui/screens.h"
 #include "../ui/demo.h"
 #include "../ui/nav.h"
+#include "../ui/files.h"
 #include "../ui/palette.h"
 #include "../ui/signatures.h"
 #include "png_writer.h"
@@ -49,6 +53,8 @@ int main(int argc, char** argv) {
     int nodesSim = -1;                 // --nodes N: mesh nodes connected (default: the demo's)
     int setPageSim = 1;                // --setpage N: settings page, 1-based
     uint8_t autoLogSim = 0;            // --autolog 0 OFF, 1 ON
+    int filesSim = 5, fileSelSim = -1, fileActSim = -1, fileScrollSim = 0, fileResultSim = 0;
+    bool fileConfirmSim = false, noCardSim = false;
     const char* which = "scan";
     const char* packDir = nullptr;
     const char* checkDir = nullptr;
@@ -67,6 +73,13 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--nodes") && i + 1 < argc) nodesSim = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--setpage") && i + 1 < argc) setPageSim = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--autolog") && i + 1 < argc) autoLogSim = (uint8_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--files") && i + 1 < argc) filesSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--selected") && i + 1 < argc) fileSelSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--active") && i + 1 < argc) fileActSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) fileScrollSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--result") && i + 1 < argc) fileResultSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--confirm")) fileConfirmSim = true;
+        else if (!strcmp(argv[i], "--nocard")) noCardSim = true;
         else if (!strcmp(argv[i], "--pack") && i + 1 < argc) packDir = argv[++i];
         else if (!strcmp(argv[i], "--check-pack") && i + 1 < argc) checkDir = argv[++i];
     }
@@ -124,12 +137,39 @@ int main(int argc, char** argv) {
         const bool echoes = !strcmp(which, "echoes");
         const bool grim   = !strcmp(which, "grimoire");
         const bool aspect = !strcmp(which, "aspect");
-        s.screen = aspect ? ui::SCR_ASPECT : attune ? ui::SCR_ATTUNE : detail ? ui::SCR_DETAIL
+        const bool files  = !strcmp(which, "files");
+        if (files) {
+            // Invented logs, newest first: dated ones, then two dateless.
+            static ui::FileList L;
+            L = ui::FileList();
+            L.card = !noCardSim;
+            const int k = noCardSim ? 0 : (filesSim < 0 ? 0 : filesSim);
+            for (int r = 0; r < k && r < ui::MAX_FILE_ROWS; r++) {
+                if (r >= 2 && r == k - 1) snprintf(L.rows[r].name, ui::FILE_NAME_MAX, "WD-%04d.csv", 3);
+                else snprintf(L.rows[r].name, ui::FILE_NAME_MAX, "WD-2026%02d%02d-%02d%02d%02d.csv",
+                              10 - r / 27, 27 - r % 27, 21 - r % 12, (r * 17) % 60, (r * 7) % 60);
+                L.rows[r].size = (uint32_t)(((r * 2654435761u) >> 8) % 9000000u) + 41000u;
+            }
+            L.n = (uint8_t)(k < ui::MAX_FILE_ROWS ? k : ui::MAX_FILE_ROWS);
+            L.found = (uint16_t)k;
+            if (L.card) { L.space = true; L.usedKB = 3250585; L.totalKB = 31166976; }
+            ui::Nav nv;
+            nv.screen = ui::SCR_FILES;
+            ui::filesRescanned(nv, L, nullptr);
+            nv.scroll = (int16_t)fileScrollSim;
+            nv.fileSel = (int8_t)(fileSelSim < L.n ? fileSelSim : -1);
+            ui::filesSetActive(nv, fileActSim);
+            nv.fileConfirm = fileConfirmSim;
+            nv.fileResult = (uint8_t)fileResultSim;
+            ui::filesPublish(s, nv, L);
+        }
+        s.screen = files ? ui::SCR_FILES : aspect ? ui::SCR_ASPECT : attune ? ui::SCR_ATTUNE : detail ? ui::SCR_DETAIL
                  : echoes ? ui::SCR_ECHOES : grim ? ui::SCR_GRIMOIRE
                  : omens ? ui::SCR_OMENS : domain ? ui::SCR_DOMAIN
                  : meshs ? ui::SCR_MESH : codex ? ui::SCR_CODEX : ui::SCR_SCAN;
         s.filter = ui::F_WIFI;
-        if (aspect)      ui::drawAspect(c, s);
+        if (files)       ui::drawFiles(c, s);
+        else if (aspect) ui::drawAspect(c, s);
         else if (attune) ui::drawAttune(c, s);
         else if (meshs)  ui::drawMesh(c, s);
         else if (domain) ui::drawDomain(c, s);

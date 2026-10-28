@@ -122,7 +122,16 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
         }
 
         if (page == 1) {
-            // Page 2: AUTO LOG, then rows left free for the next settings.
+            // Page 2: AUTO LOG, FILES, then rows left free for what comes next.
+            if (r == SET_FILES_ROW) {
+                c.text(6, y + 2, screenName(SCR_FILES, s.set.labels), pal::DIM);
+                const int bx = SET_MINUS_X;
+                const int bw = SET_PLUS_X + SET_BTN_W - SET_MINUS_X;
+                c.fill(bx, y + 1, bw, SET_BTN_H, Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
+                c.rect(bx, y + 1, bw, SET_BTN_H, pal::EDGE_LIT);
+                c.textCenter(bx + bw / 2, y + 3, "OPEN", pal::WITCH_HI);
+                continue;
+            }
             if (r != SET_AUTOLOG_ROW) continue;
             c.text(6, y + 2, "AUTO LOG", pal::DIM);
             c.textRight(SET_MINUS_X - 4, y + 2, s.set.autoLog ? "ON" : "OFF", pal::BRIGHT);

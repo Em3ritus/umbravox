@@ -98,6 +98,9 @@ void drawMesh(Canvas& c, const State& s, Dirty* d = nullptr);
 // ATTUNE -- the settings knobs.
 void drawAttune(Canvas& c, const State& s, Dirty* d = nullptr);
 
+// FILES -- the session logs on the card (ui/files.h has the interaction).
+void drawFiles(Canvas& c, const State& s, Dirty* d = nullptr);
+
 // Shared chrome, so the two screens cannot drift apart. Declared here because
 // each screen draws its own -- there is no frame around them.
 void drawHeader(Canvas& c, const State& s, const char* title);
