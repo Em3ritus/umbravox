@@ -200,6 +200,26 @@ void drawFooter(Canvas& c, const State& s) {
     statRune(c, 3, ty + 1, fc, s.gpsFix);
     c.text(11, ty, s.gpsFix ? "FIXED" : "NO GPS", fc);
 
+    // Mesh nodes connected, home screen only (the sub-screens keep the footer
+    // they always had). DIM at none so the slot never jumps, the mesh's
+    // GREEN once a node is live. On-brand it is a three-node glyph; plain
+    // labels spell it "N". Capped at 99: two digits is all the gap holds.
+    if (s.screen == SCR_SCAN) {
+        const uint16_t nc = s.nNodes ? pal::GREEN : pal::DIM;
+        char num[3];
+        u2s(num, s.nNodes > 99 ? 99 : s.nNodes);
+        if (s.set.labels == 1) {
+            char lab[4] = {'N', num[0], num[1], 0};
+            c.text(NODE_X, ty, lab, nc);
+        } else {
+            static const uint8_t MESH[5] = {0b00100, 0b01010, 0b01010, 0b10001, 0b11111};
+            for (int j = 0; j < 5; j++)
+                for (int i = 0; i < 5; i++)
+                    if ((MESH[j] >> (4 - i)) & 1) c.pixel(NODE_X + i, ty + 1 + j, nc);
+            c.text(NODE_X + 7, ty, num, nc);
+        }
+    }
+
     // The record control, framed as a button so it reads as tappable, sitting
     // on the right. The universal record dot: hollow = ready to log, filled =
     // recording. No elapsed timer: the label says what a tap will do.
@@ -701,7 +721,8 @@ void dirtyChrome(Dirty& d, const State& s, const State& p) {
 
     if (s.uptimeS != p.uptimeS || s.sats != p.sats ||
         s.gpsFix != p.gpsFix || s.sdOk != p.sdOk ||
-        s.logState != p.logState)
+        s.logState != p.logState || s.nNodes != p.nNodes ||
+        s.set.labels != p.set.labels)
         d.add(0, FOOT_Y, W, H - FOOT_Y);
 
     // The reticle needs two regions: where it is, and where it was.
