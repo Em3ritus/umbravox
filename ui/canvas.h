@@ -36,7 +36,15 @@ public:
     }
 
     void clear(uint16_t c);
-    void pixel(int x, int y, uint16_t c);
+    // Inline, with the clip read once into locals: this is the hottest call
+    // in the UI (circles, lines, runes, glyphs, the emblem all land here).
+    // Note px is uint16_t and w/h int16_t, which may alias, so a helper that
+    // loops must copy w/h to locals first or every store reloads them.
+    void pixel(int x, int y, uint16_t c) {
+        const int cw = w, ch = h;
+        if ((unsigned)x >= (unsigned)cw || (unsigned)y >= (unsigned)ch) return;
+        px[y * cw + x] = c;
+    }
 
     void hline(int x, int y, int w, uint16_t c);
     void vline(int x, int y, int h, uint16_t c);

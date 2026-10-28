@@ -3,23 +3,36 @@
 
 namespace ui {
 
-void Canvas::clear(uint16_t c) {
-    for (int i = 0; i < w * h; i++) px[i] = c;
-}
+// Every helper here copies w and h into locals before it loops (see the
+// aliasing note on pixel() in canvas.h), and clips once per primitive, not
+// once per pixel. The whole-frame passes are templated on the two canvas
+// sizes so the divisions by constants (vignette's MAXD) stay constant
+// divisions, as they were when W and H were the only geometry.
 
-void Canvas::pixel(int x, int y, uint16_t c) {
-    if (x < 0 || y < 0 || x >= w || y >= h) return;
-    px[y * w + x] = c;
+void Canvas::clear(uint16_t c) {
+    const int n = w * h;
+    uint16_t* p = px;
+    for (int i = 0; i < n; i++) p[i] = c;
 }
 
 void Canvas::hline(int x, int y, int n, uint16_t c) {
     if (n < 0) { x += n; n = -n; }
-    for (int i = 0; i < n; i++) pixel(x + i, y, c);
+    const int cw = w, ch = h;
+    if ((unsigned)y >= (unsigned)ch) return;
+    int x0 = x < 0 ? 0 : x;
+    const int x1 = x + n > cw ? cw : x + n;
+    uint16_t* p = px + y * cw;
+    for (; x0 < x1; x0++) p[x0] = c;
 }
 
 void Canvas::vline(int x, int y, int n, uint16_t c) {
     if (n < 0) { y += n; n = -n; }
-    for (int i = 0; i < n; i++) pixel(x, y + i, c);
+    const int cw = w, ch = h;
+    if ((unsigned)x >= (unsigned)cw) return;
+    int y0 = y < 0 ? 0 : y;
+    const int y1 = y + n > ch ? ch : y + n;
+    uint16_t* p = px + x;
+    for (; y0 < y1; y0++) p[y0 * cw] = c;
 }
 
 void Canvas::line(int x0, int y0, int x1, int y1, uint16_t c) {
@@ -46,7 +59,18 @@ void Canvas::rect(int x, int y, int rw, int rh, uint16_t c) {
 }
 
 void Canvas::fill(int x, int y, int rw, int rh, uint16_t c) {
-    for (int j = 0; j < rh; j++) hline(x, y + j, rw, c);
+    // Negative sizes draw nothing, as the old per-row hline loop did for rh,
+    // and hline(-rw) mirrored for rw: keep that.
+    if (rh <= 0 || rw == 0) return;
+    if (rw < 0) { x += rw; rw = -rw; }
+    const int cw = w, ch = h;
+    const int x0 = x < 0 ? 0 : x, x1 = x + rw > cw ? cw : x + rw;
+    const int y0 = y < 0 ? 0 : y, y1 = y + rh > ch ? ch : y + rh;
+    if (x0 >= x1) return;
+    for (int j = y0; j < y1; j++) {
+        uint16_t* p = px + j * cw;
+        for (int i = x0; i < x1; i++) p[i] = c;
+    }
 }
 
 void Canvas::circle(int cx, int cy, int r, uint16_t c) {
@@ -138,37 +162,93 @@ uint16_t Canvas::mix(uint16_t a, uint16_t b, int n, int d) {
     return (uint16_t)((r << 11) | (g << 5) | bl);
 }
 
-void Canvas::vignette() {
-    // Squared radius, so no sqrt. Full brightness out to ~45% of the corner
-    // distance, then a linear fall to 62% at the very corners.
-    // Runtime w x h: in portrait the light is in the middle of the tall frame.
-    const int CX = w / 2, CY = h / 2;
-    const int MAXD = CX * CX + CY * CY;
-    for (int y = 0; y < h; y++) {
+namespace {
+
+// Squared radius, so no sqrt. Full brightness out to ~45% of the corner
+// distance, then a linear fall to 62% at the very corners. CW/CH are
+// template constants for the two real canvases (constant divisors); the
+// runtime fallback is the same arithmetic.
+template <int CW, int CH>
+void vignetteT(uint16_t* px) {
+    constexpr int CX = CW / 2, CY = CH / 2;
+    constexpr int MAXD = CX * CX + CY * CY;
+    for (int y = 0; y < CH; y++) {
         const int dy = y - CY;
-        for (int x = 0; x < w; x++) {
+        uint16_t* row = px + y * CW;
+        for (int x = 0; x < CW; x++) {
             const int dx = x - CX;
             const int t = (dx * dx + dy * dy) * 100 / MAXD;   // 0..100
             if (t <= 45) continue;
             const int f = 100 - (t - 45) * 26 / 55;           // 100..74
-            uint16_t p = px[y * w + x];
+            const uint16_t p = row[x];
             const int r = (((p >> 11) & 0x1F) * f) / 100;
             const int g = (((p >>  5) & 0x3F) * f) / 100;
             const int b = (( p        & 0x1F) * f) / 100;
-            px[y * w + x] = (uint16_t)((r << 11) | (g << 5) | b);
+            row[x] = (uint16_t)((r << 11) | (g << 5) | b);
         }
     }
 }
 
-void Canvas::scanlines() {
-    for (int y = 1; y < h; y += 2)
-        for (int x = 0; x < w; x++) {
-            uint16_t c = px[y * w + x];
+void vignetteRt(uint16_t* px, int cw, int ch) {
+    const int CX = cw / 2, CY = ch / 2;
+    const int MAXD = CX * CX + CY * CY;
+    for (int y = 0; y < ch; y++) {
+        const int dy = y - CY;
+        uint16_t* row = px + y * cw;
+        for (int x = 0; x < cw; x++) {
+            const int dx = x - CX;
+            const int t = (dx * dx + dy * dy) * 100 / MAXD;
+            if (t <= 45) continue;
+            const int f = 100 - (t - 45) * 26 / 55;
+            const uint16_t p = row[x];
+            const int r = (((p >> 11) & 0x1F) * f) / 100;
+            const int g = (((p >>  5) & 0x3F) * f) / 100;
+            const int b = (( p        & 0x1F) * f) / 100;
+            row[x] = (uint16_t)((r << 11) | (g << 5) | b);
+        }
+    }
+}
+
+// Every second row darkened to 11/16.
+template <int CW, int CH>
+void scanlinesT(uint16_t* px) {
+    for (int y = 1; y < CH; y += 2) {
+        uint16_t* row = px + y * CW;
+        for (int x = 0; x < CW; x++) {
+            const uint16_t c = row[x];
             const int r = ((c >> 11) & 0x1F) * 11 / 16;
             const int g = ((c >>  5) & 0x3F) * 11 / 16;
             const int b = ( c        & 0x1F) * 11 / 16;
-            px[y * w + x] = (uint16_t)((r << 11) | (g << 5) | b);
+            row[x] = (uint16_t)((r << 11) | (g << 5) | b);
         }
+    }
+}
+
+void scanlinesRt(uint16_t* px, int cw, int ch) {
+    for (int y = 1; y < ch; y += 2) {
+        uint16_t* row = px + y * cw;
+        for (int x = 0; x < cw; x++) {
+            const uint16_t c = row[x];
+            const int r = ((c >> 11) & 0x1F) * 11 / 16;
+            const int g = ((c >>  5) & 0x3F) * 11 / 16;
+            const int b = ( c        & 0x1F) * 11 / 16;
+            row[x] = (uint16_t)((r << 11) | (g << 5) | b);
+        }
+    }
+}
+
+} // namespace
+
+void Canvas::vignette() {
+    if (w == W && h == H)      vignetteT<W, H>(px);      // landscape
+    else if (w == H && h == W) vignetteT<H, W>(px);      // portrait
+    else                       vignetteRt(px, w, h);
+}
+
+void Canvas::scanlines() {
+    if (w == W && h == H)      scanlinesT<W, H>(px);
+    else if (w == H && h == W) scanlinesT<H, W>(px);
+    else                       scanlinesRt(px, w, h);
 }
 
 } // namespace ui
