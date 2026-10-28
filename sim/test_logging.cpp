@@ -370,12 +370,15 @@ int main() {
     start(0, T0);
     failWrites = true;
     wifi.add((int)applog::ROLLOVER_APS);
+    check("not transitioning before a roll is due", !transitioning());
     tick(CATCHUP_MS, T0);
     check("not rolled at once", rolls == 0);
+    check("a roll waiting on the card reads as transitioning", transitioning());
     tick(CATCHUP_MS + ROLL_MAX_WAIT_MS - 1, T0);
     check("not before ROLL_MAX_WAIT_MS", rolls == 0);
     tick(CATCHUP_MS + ROLL_MAX_WAIT_MS, T0);
     check("forced roll keeps capture going", rolls == 1 && clears == 1 && lastForced);
+    check("the roll done: no longer transitioning", !transitioning());
     check("every unwritten row counted", lastLost == applog::ROLLOVER_APS);
     failWrites = false;
     stop(CATCHUP_MS + ROLL_MAX_WAIT_MS + 1);
@@ -623,9 +626,11 @@ int main() {
         failWrites = true;
         resetTables(UC::clear, 10, T0 + 1);                 // cannot drain: pending
         check("reset pending", rolls == 0);
+        check("a pending reset reads as transitioning", transitioning());
         failWrites = false;
         cardMs = 500;                                       // slowish card
         stop(20);
+        check("STOP applied it: no longer transitioning", !transitioning());
         check("rows on the card + reported == 5000",
               stopReports == 1 && stopReset &&
               (uint32_t)occurrences(files[f], "\nW") + stopLost == 5000);

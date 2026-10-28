@@ -82,6 +82,11 @@ void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch);
 
 State       state();
 bool        wantsActive();   // the flag to persist: true from start to stop
+// True while a rollover or a RESET COUNTERS is due but still draining rows to
+// the card (it completes on later ticks). Only possible while logging; an idle
+// roll or reset completes inside the call. device/autolog.h will not start a
+// session while this is set.
+bool        transitioning();
 uint32_t    sessionSecs(uint32_t nowMs);
 const char* fileName();      // current session file, "" when idle
 uint32_t    lastRows();      // rows in the current file

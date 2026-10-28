@@ -321,6 +321,7 @@ void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
 
 State       state()                 { return st; }
 bool        wantsActive()           { return want; }
+bool        transitioning()         { return rollWaiting || resetClear != nullptr; }
 const char* fileName()              { return name; }
 uint32_t    lastRows()              { return rows; }
 uint32_t    lastSkipped()           { return skipped; }

@@ -29,6 +29,7 @@ void write(const ui::Settings& s) {
     nvs.putUChar("alertmin", s.alertMin);
     nvs.putUChar("idle",    s.idleIdx);
     nvs.putUChar("idlemode", s.idleMode);
+    nvs.putUChar("autolog", s.autoLog);
     // Every field settingsEqual compares must also be stored here and read in
     // load(), or the save timer never settles and hammers flash. Anyone who
     // takes a spare byte for a new setting must add it to both.
@@ -72,6 +73,7 @@ bool load(ui::Settings& s) {
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
     in.idleMode = nvs.getUChar("idlemode", s.idleMode);   // absent on older stores -> DIM
+    in.autoLog  = nvs.getUChar("autolog",  s.autoLog);    // absent on older stores -> OFF
     in.theme    = nvs.getUChar("theme",    s.theme);
     // The saved pack name, if any, decides the theme (see write()). Absent or
     // too long for any real pack name reads back as "" -- no pack. Resolved

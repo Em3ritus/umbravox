@@ -30,6 +30,7 @@
 #include "chanplan.h"
 #include "balance.h"
 #include "idlemode.h"
+#include "autolog.h"
 #include "rehome.h"
 #include "phase.h"
 #include <esp_now.h>
@@ -1328,9 +1329,16 @@ void loop() {
     applied = set;
     prefs::tick(set, millis());
 
+    // AUTO LOG's latch lives for this boot: a reboot is what clears a STOP.
+    static autolog::Latch autoLatch;
+
     if (nav.logToggleRequested) {
+        const bool wasWanted = logging::wantsActive();
         logging::toggle(millis(), ui::Gnss::utcEpoch(millis()));
         prefs::setLogging(logging::wantsActive());
+        // A tap that ended a session is the owner's STOP: AUTO LOG must not
+        // start another this boot (until the setting is turned OFF and ON).
+        if (wasWanted && !logging::wantsActive()) autolog::noteManualStop(autoLatch);
         nav.logToggleRequested = false;
     }
 
@@ -1343,11 +1351,31 @@ void loop() {
         enroll::reset(millis());
     }
 
+    bool resetThisLoop = false;
     if (nav.resetRequested) {
         nav.resetRequested = false;
+        resetThisLoop = true;
         logging::resetTables(logwire::resetAll, millis(), ui::Gnss::utcEpoch(millis()));
         alertlog::clear();
         Serial.println("counters cleared");
+    }
+
+    // AUTO LOG (device/autolog.h): start exactly as START does once the fix
+    // has held, unless the owner stopped it this boot, there is no card, or a
+    // roll/RESET is under way. Logging policy only: nothing is transmitted.
+    {
+        autolog::Inputs ai;
+        ai.enabled       = set.autoLog == 1;
+        ai.logging       = logging::wantsActive();
+        ai.cardPresent   = sdlog::present();
+        ai.fixFresh      = ui::Gnss::fresh(millis());
+        ai.transitioning = resetThisLoop || logging::transitioning();
+        ai.nowMs         = millis();
+        if (autolog::step(autoLatch, ai)) {
+            logging::start(millis(), ui::Gnss::utcEpoch(millis()));
+            prefs::setLogging(logging::wantsActive());
+            elog::event(elog::INFO, "log", "auto-started on GPS fix");
+        }
     }
 
     // Alerts: take the strongest recent hit from either radio that clears
@@ -1421,6 +1449,7 @@ void loop() {
     s.screen = nav.screen;
     s.filter = nav.filter;
     s.scroll = nav.scroll;
+    s.setPage = nav.setPage;
     if (nav.screen == ui::SCR_CODEX) {
         if (nav.filter == ui::F_BLE) blescan::fillSights(s, nav.scroll);
         else                         cap::fillSights(s, nav.scroll, nav.filter == ui::F_5G);
