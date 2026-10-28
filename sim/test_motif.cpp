@@ -110,8 +110,10 @@ int main(int argc, char** argv) {
         static const uint32_t WANT[16] = {
             // Scan renders 0..3 re-pinned on integration for the field-fixes
             // footer ("NO FIX" -> "NO GPS"): the only pixels that moved are
-            // the footer text (rows 108..114, cols 29..45).
-            0x339B2921u, 0x87303AE2u, 0x716879A8u, 0x85BCAA94u,
+            // the footer text (rows 108..114, cols 29..45). Re-pinned again
+            // for the footer's mesh node count (glyph + "0", DIM): the only
+            // pixels that moved are rows 108..114, cols 56..67.
+            0x9AEF124Eu, 0x4768E261u, 0x3E46EFE6u, 0xCB8FC0BAu,
             0x98443D4Fu, 0x3B0FCDF5u, 0xB8989D41u, 0xA7A853D7u,
             0x3462C731u, 0x5ED8CDD4u, 0x10423CCBu, 0xC65AC96Eu,
             0x63009A05u, 0xD478848Eu, 0x5BA0A744u, 0x1FE8CF87u,
