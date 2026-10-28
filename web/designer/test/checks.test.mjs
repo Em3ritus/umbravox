@@ -143,3 +143,12 @@ test('runChecks survives themes with no or empty colours', () => {
     for (const r of out) assert.ok(!/NaN|Infinity/.test(r.text), r.text);
   }
 });
+
+test('a name longer than 12 characters warns that the settings screen cuts it', () => {
+  const t = base(); t.name = 'ABCDEFGHIJKLM';
+  const rs = runChecks(t, null);
+  assert.equal(find(rs, 'warn', /first 12 characters.*13 chars/).length, 1);
+  assert.equal(errors(rs).length, 0);
+  t.name = 'ABCDEFGHIJKL';
+  assert.equal(find(runChecks(t, null), 'warn', /first 12/).length, 0);
+});

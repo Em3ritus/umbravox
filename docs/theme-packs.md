@@ -107,7 +107,7 @@ These numbers are the same ones the device and the designer use
 | packs the device loads | 8 (the first 8 by folder name) |
 | folders examined under `/themes` | 32 (the first 32 by name); further folders are not read, but are logged to `/diag.log` and counted as skipped. Folders with invalid names are also logged and counted. |
 | folder name | 1-31 letters, digits, `-` or `_`; anything else is skipped |
-| `name` | 20 characters, unique, not one of the four reserved names |
+| `name` | 20 characters, unique, not one of the four reserved names. The settings screen shows only the first 12, so two long names that start the same look identical there (the designer warns). |
 | `header` | 18 characters |
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |

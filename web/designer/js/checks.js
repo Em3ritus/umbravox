@@ -80,6 +80,7 @@ export function runChecks(theme, emblem) {
   const nm = typeof t.name === 'string' ? t.name : '';
   checkString('Name', nm, limits.MAX_NAME, 1, out);
   if (nm && !/^[A-Z0-9 .-]*$/.test(nm)) out.push(error('Name may only use ' + limits.nameChars + ' (capital letters).'));
+  if (nm.length > 12) out.push(warn('The settings screen shows only the first 12 characters of a name (this one is ' + nm.length + ' chars), so two long names that start the same will look identical.'));
   if (limits.reservedNames.includes(nm)) out.push(error('Name "' + nm + '" is reserved: it is a built-in theme\'s name, so the device would skip this pack.'));
 
   // author
