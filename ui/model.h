@@ -92,10 +92,23 @@ struct Settings {
     // meaningful while idleIdx != 0. This took the old slack byte: dwellMs
     // makes Settings 2-aligned, so without a byte here the struct would end in
     // padding -- and padding is what the host test must be able to treat as
-    // "a field someone forgot to initialise". Settings is therefore full
-    // again; the NEXT new setting must either widen it deliberately (update
-    // the static_assert in sim/test_settings.cpp) or share a byte.
+    // "a field someone forgot to initialise". (autoLog then widened it
+    // deliberately; see `spare` below.)
     uint8_t  idleMode = 0;    // IdleMode
+    // Start a logging session by itself once the GPS has held a fresh fix for
+    // a few seconds (device/autolog.h). OFF by default, so nothing changes
+    // for anyone who does not turn it on. Settings page 2.
+    uint8_t  autoLog = 0;     // 0 OFF, 1 ON
+    // Reserved. autoLog widened Settings from 12 to 13 bytes, and dwellMs
+    // keeps it 2-aligned, so without this byte the compiler would add one of
+    // padding -- and padding is what sim/test_settings.cpp must be able to
+    // read as "a field someone forgot to initialise". This byte is a real,
+    // initialised member instead: clampSettings forces it to 0, it is never
+    // stored (NVS keeps each setting under its own key, so the struct size is
+    // not a stored format) and settingsEqual skips it. The NEXT setting takes
+    // this byte (rename it, store it, compare it); the one after that widens
+    // the struct again and updates the static_assert.
+    uint8_t  spare = 0;
 };
 
 // COSMIC MUFFIN's alert animations, chosen by Settings.alertStyle.
@@ -141,6 +154,12 @@ inline void idleStep(Settings& s, int dir) {
 
 constexpr int SET_IDLE_ROW = 5;   // the IDLE row: timeout and mode, round-robin on -/+
 constexpr int SET_ROWS = 7;   // six knobs and a reset
+// The settings screen has two pages of six knob rows each. The last row
+// (RESET, with the PAGE n/2 pager beside CLEAR) is the same on both, so the
+// pager never moves under the finger. Page 1 is the original six; page 2
+// holds AUTO LOG in its first row and has five rows free for what comes next.
+constexpr int SET_PAGES = 2;
+constexpr int SET_AUTOLOG_ROW = 0;   // on page 2 (setPage == 1)
 
 // How many RSSI samples a device keeps. One per sighting rather than one
 // per second: beacons arrive when the hop comes round, so a time-based
@@ -243,6 +262,7 @@ struct State {
     int16_t  scroll = 0;          // first row shown
     uint8_t  screen = 0;          // which screen is up; see nav.h
     uint8_t  filter = 0;          // which band the codex is showing
+    uint8_t  setPage = 0;         // settings screen page, 0-based (SET_PAGES)
     Settings set;
     Detail   detail;
 

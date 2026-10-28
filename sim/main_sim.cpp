@@ -13,6 +13,7 @@
 //   ./umbravox out.png --pack path/to/folder   render a theme pack (composes
 //                                       with --screen --sweep --alert --frame --scale)
 //   ./umbravox out.png --nodes 3        mesh nodes connected (scan footer, MESH)
+//   ./umbravox out.png --screen attune --setpage 2 --autolog 1   settings page 2
 //   ./umbravox --check-pack path/to/folder     print OK <name> or the reason;
 //                                       exit 0 / 1; writes no PNG
 #include "../ui/screens.h"
@@ -46,6 +47,8 @@ int main(int argc, char** argv) {
     uint8_t idleModeSim = 0;           // --idlemode 0 DIM, 1 OFF, 2 ANIM
     int alertSim = -1;                 // --alert: force an alert of this style
     int nodesSim = -1;                 // --nodes N: mesh nodes connected (default: the demo's)
+    int setPageSim = 1;                // --setpage N: settings page, 1-based
+    uint8_t autoLogSim = 0;            // --autolog 0 OFF, 1 ON
     const char* which = "scan";
     const char* packDir = nullptr;
     const char* checkDir = nullptr;
@@ -62,6 +65,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--idlemode") && i + 1 < argc) idleModeSim = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--alert") && i + 1 < argc) alertSim = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--nodes") && i + 1 < argc) nodesSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--setpage") && i + 1 < argc) setPageSim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--autolog") && i + 1 < argc) autoLogSim = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--pack") && i + 1 < argc) packDir = argv[++i];
         else if (!strcmp(argv[i], "--check-pack") && i + 1 < argc) checkDir = argv[++i];
     }
@@ -96,6 +101,8 @@ int main(int argc, char** argv) {
         s.set.idleMode = idleModeSim;
         s.netId = netIdSim;      // preview the MESH screen's enrolled state
         if (nodesSim >= 0) s.nNodes = (uint8_t)(nodesSim > 255 ? 255 : nodesSim);
+        s.set.autoLog = autoLogSim;
+        s.setPage = (uint8_t)(setPageSim >= 1 && setPageSim <= ui::SET_PAGES ? setPageSim - 1 : 0);
         if (alertSim >= 0) {
             // Hold an alert up so each style can be rendered at any point in its
             // rite: --frame is the alert's age in 20 ms steps.

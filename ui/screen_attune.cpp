@@ -96,13 +96,21 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
 
+    const int page = s.setPage < SET_PAGES ? s.setPage : 0;
     for (int r = 0; r < SET_ROWS; r++) {
         const int y = SET_Y + r * SET_H;
         if (r) c.hline(5, y - 2, 148, Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
 
-        c.text(6, y + 2, rowLabel(r), pal::DIM);
-
         if (r == SET_ROWS - 1) {
+            c.text(6, y + 2, rowLabel(r), pal::DIM);
+            // The pager, the same on every page so it never moves under the
+            // finger: tap to go round the pages.
+            char pg[10] = "PAGE 1/2";
+            pg[5] = (char)('1' + page);
+            pg[7] = (char)('0' + SET_PAGES);
+            c.fill(SET_PAGE_X, y + 1, SET_PAGE_W, SET_BTN_H, Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
+            c.rect(SET_PAGE_X, y + 1, SET_PAGE_W, SET_BTN_H, pal::EDGE_LIT);
+            c.textCenter(SET_PAGE_X + SET_PAGE_W / 2, y + 3, pg, pal::WITCH_HI);
             // The destructive one gets a single wide button and the only red
             // on the screen, so it cannot be mistaken for a knob.
             const int bx = SET_MINUS_X;
@@ -112,6 +120,18 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
             c.textCenter(bx + bw / 2, y + 3, "CLEAR", pal::RED);
             continue;
         }
+
+        if (page == 1) {
+            // Page 2: AUTO LOG, then rows left free for the next settings.
+            if (r != SET_AUTOLOG_ROW) continue;
+            c.text(6, y + 2, "AUTO LOG", pal::DIM);
+            c.textRight(SET_MINUS_X - 4, y + 2, s.set.autoLog ? "ON" : "OFF", pal::BRIGHT);
+            button(c, SET_MINUS_X, y + 1, "-", true);
+            button(c, SET_PLUS_X,  y + 1, "+", true);
+            continue;
+        }
+
+        c.text(6, y + 2, rowLabel(r), pal::DIM);
 
         char val[16];
         rowValue(s.set, r, val);
@@ -139,7 +159,8 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
             if (s.set.bright != prev.set.bright || s.set.dwellMs != prev.set.dwellMs ||
                 s.set.bleDuty != prev.set.bleDuty || s.set.bands != prev.set.bands ||
                 s.set.alertMin != prev.set.alertMin || s.set.idleIdx != prev.set.idleIdx ||
-                s.set.idleMode != prev.set.idleMode)
+                s.set.idleMode != prev.set.idleMode || s.set.autoLog != prev.set.autoLog ||
+                s.setPage != prev.setPage)
                 d->add(0, BODY_Y, W, BODY_H);
             dirtyChrome(*d, s, prev);
         }

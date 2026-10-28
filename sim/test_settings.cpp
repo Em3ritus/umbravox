@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <new>
+#include <cstddef>
 
 static int fails = 0;
 
@@ -55,7 +56,12 @@ int main() {
     //
     // So: grow the struct and this assert fires. Give every new field a
     // default initializer, then update the size here deliberately.
-    static_assert(sizeof(Settings) == 12,
+    //
+    // 12 -> 14 with autoLog: one new field plus the initialised `spare` byte
+    // that keeps the struct padding-free (see ui/model.h). The size is not a
+    // stored format -- device/prefs.cpp writes every field under its own NVS
+    // key -- so widening it migrates nothing.
+    static_assert(sizeof(Settings) == 14,
                   "Settings changed size -- see the padding note above, and "
                   "confirm every field has a default member initializer");
 
@@ -107,9 +113,12 @@ int main() {
                 }
             }
         }
+        // `spare` is the one byte that is deliberately not a setting: clamp
+        // pins it to 0, so no mutation of it can survive, and it is exempt
+        // here by name rather than by any heuristic.
         int unexercised = 0;
         for (size_t off = 0; off < sizeof(Settings); off++)
-            if (z[off] == f[off] && !exercised[off]) unexercised++;
+            if (z[off] == f[off] && !exercised[off] && off != offsetof(Settings, spare)) unexercised++;
         check("no field differs without settingsEqual noticing", missed == 0);
         check("every field byte was actually exercised", unexercised == 0);
     }
@@ -128,6 +137,10 @@ int main() {
         check("a label-mode change is detected", !settingsEqual(a, b));
         b = a; b.alertStyle = AL_VORTEX;
         check("an alert-style change is detected", !settingsEqual(a, b));
+        b = a; b.autoLog = 1;
+        check("an auto-log change is detected", !settingsEqual(a, b));
+        b = a; b.spare = 7;
+        check("the spare byte is not a setting (never stored, never compared)", settingsEqual(a, b));
     }
 
     printf("clamping survives a corrupt store:\n");
@@ -146,6 +159,21 @@ int main() {
         s.alertStyle = 200;
         clampSettings(s);
         check("out-of-range alert style falls back", s.alertStyle < ALERT_STYLE_COUNT);
+
+        s = Settings();
+        check("auto-log defaults OFF", s.autoLog == 0);
+        s.autoLog = 1;
+        clampSettings(s);
+        check("auto-log ON is kept", s.autoLog == 1);
+        s.autoLog = 2;
+        clampSettings(s);
+        check("unknown auto-log value clamps to OFF", s.autoLog == 0);
+        s.autoLog = 255;
+        clampSettings(s);
+        check("0xFF auto-log (erased flash) clamps to OFF", s.autoLog == 0);
+        s.spare = 9;
+        clampSettings(s);
+        check("clamp zeroes the spare byte", s.spare == 0);
     }
 
     printf("a sweep must be available on its theme:\n");

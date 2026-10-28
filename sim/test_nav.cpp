@@ -479,6 +479,145 @@ int main() {
         pal::setTheme(pal::TH_UMBRAVOX);
     }
 
+    printf("settings pages:\n");
+    {
+        auto tap = [](Nav& n, Settings& s, int x, int y) {
+            navTouch(n, s, true,  (int16_t)x, (int16_t)y);
+            return navTouch(n, s, false, (int16_t)x, (int16_t)y);
+        };
+        const int lastY = SET_Y + (SET_ROWS - 1) * SET_H;           // the RESET row
+        const int pgX = SET_PAGE_X + SET_PAGE_W / 2, pgY = lastY + 1 + SET_BTN_H / 2;
+        auto rowY = [](int r) { return SET_Y + r * SET_H + 1 + SET_BTN_H / 2; };
+
+        Nav n; n.screen = SCR_ATTUNE;
+        Settings s;
+        const Settings before = s;
+        check("pages: settings opens on page 1", n.setPage == 0);
+        const bool full = tap(n, s, pgX, pgY);
+        check("pages: PAGE flips 1 -> 2", n.setPage == 1);
+        check("pages: a flip asks for a full repaint", full);
+        tap(n, s, pgX, pgY);
+        check("pages: PAGE wraps 2 -> 1", n.setPage == 0);
+        check("pages: flipping touches no setting and no reset",
+              !memcmp(&s, &before, sizeof s) && !n.resetRequested);
+
+        // The hit zone's edges, both axes.
+        struct { int x, y; bool flips; const char* what; } edge[] = {
+            {SET_PAGE_X - 1,              pgY, false, "pages: x just left of PAGE is inert"},
+            {SET_PAGE_X,                  pgY, true,  "pages: PAGE's left column flips"},
+            {SET_PAGE_X + SET_PAGE_W - 1, pgY, true,  "pages: PAGE's right column flips"},
+            {SET_PAGE_X + SET_PAGE_W,     pgY, false, "pages: x just right of PAGE is inert"},
+            {pgX, lastY,                       false, "pages: row above PAGE is inert"},
+            {pgX, lastY + 1,                   true,  "pages: PAGE's top row flips"},
+            {pgX, lastY + SET_BTN_H,           true,  "pages: PAGE's bottom row flips"},
+            {pgX, lastY + 1 + SET_BTN_H,       false, "pages: row below PAGE is inert"},
+        };
+        for (auto& e : edge) {
+            Nav m; m.screen = SCR_ATTUNE; Settings t;
+            tap(m, t, e.x, e.y);
+            check(e.what, (m.setPage == 1) == e.flips && !m.resetRequested);
+        }
+        {
+            Nav m; m.screen = SCR_ASPECT; Settings t;
+            tap(m, t, pgX, pgY);
+            check("pages: the same spot on ASPECT is not a pager", m.setPage == 0);
+        }
+
+        // Page 2: AUTO LOG toggles on either button; every other knob row inert.
+        n.setPage = 1; s = Settings();
+        tap(n, s, SET_PLUS_X + 2, rowY(SET_AUTOLOG_ROW));
+        check("page 2: AUTO LOG + turns it ON", s.autoLog == 1);
+        tap(n, s, SET_PLUS_X + 2, rowY(SET_AUTOLOG_ROW));
+        check("page 2: AUTO LOG + again wraps to OFF", s.autoLog == 0);
+        tap(n, s, SET_MINUS_X + 2, rowY(SET_AUTOLOG_ROW));
+        check("page 2: AUTO LOG - turns it ON", s.autoLog == 1);
+        tap(n, s, SET_MINUS_X + 2, rowY(SET_AUTOLOG_ROW));
+        check("page 2: AUTO LOG - again wraps to OFF", s.autoLog == 0);
+        tap(n, s, 20, rowY(SET_AUTOLOG_ROW));
+        tap(n, s, 70, rowY(SET_AUTOLOG_ROW));
+        check("page 2: AUTO LOG label and value are inert", s.autoLog == 0);
+        {
+            const Settings ref = s;
+            for (int r = 0; r < SET_ROWS - 1; r++) {
+                if (r == SET_AUTOLOG_ROW) continue;
+                tap(n, s, SET_PLUS_X + 2, rowY(r));     // one-sided: a - then + would cancel
+                tap(n, s, SET_PLUS_X + 2, rowY(r));
+                tap(n, s, SET_MINUS_X + 2, rowY(r));
+            }
+            check("page 2: the other knob rows are inert",
+                  !memcmp(&s, &ref, sizeof s) && n.setPage == 1);
+        }
+        {
+            Nav m; m.screen = SCR_ATTUNE; m.setPage = 1; Settings t;
+            tap(m, t, SET_MINUS_X + 20, lastY + 1 + SET_BTN_H / 2);
+            check("page 2: CLEAR still requests the reset", m.resetRequested);
+        }
+        // Page 1: row 0 is still ALERT, and nothing on page 1 reaches AUTO LOG.
+        {
+            Nav m; m.screen = SCR_ATTUNE; Settings t;
+            const uint8_t a0 = t.alertMin;
+            tap(m, t, SET_PLUS_X + 2, rowY(0));
+            check("page 1: row 0 + still steps ALERT", t.alertMin == a0 + 1 && t.autoLog == 0);
+            for (int r = 0; r < SET_ROWS - 1; r++)
+                for (int k = 0; k < 3; k++) {
+                    tap(m, t, SET_MINUS_X + 2, rowY(r));
+                    tap(m, t, SET_PLUS_X + 2, rowY(r));
+                    tap(m, t, SET_PLUS_X + 2, rowY(r));
+                }
+            check("page 1: no knob reaches AUTO LOG", t.autoLog == 0);
+        }
+        // Leaving the screen puts it back on page 1 for the next visit.
+        n.setPage = 1;
+        tap(n, s, 4, 4);
+        check("pages: back leaves settings and resets to page 1",
+              n.screen == SCR_SCAN && n.setPage == 0);
+    }
+
+    printf("settings pages render:\n");
+    {
+        pal::setTheme(pal::TH_UMBRAVOX);
+        static Canvas p1, p2, p2on;
+        State st; st.screen = SCR_ATTUNE;
+        drawAttune(p1, st);
+        st.setPage = 1; drawAttune(p2, st);
+        st.set.autoLog = 1; drawAttune(p2on, st);
+        const int lastY = SET_Y + (SET_ROWS - 1) * SET_H;
+        bool lastRowSameButPager = true, page2Differs = false;
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++) {
+                const bool diff = p1.px[y * W + x] != p2.px[y * W + x];
+                if (y >= SET_Y - 2 && y < lastY) { if (diff) page2Differs = true; continue; }   // knob rows (row 5's buttons reach y 84)
+                const bool inPager = x >= SET_PAGE_X && x < SET_PAGE_X + SET_PAGE_W &&
+                                     y > lastY && y <= lastY + SET_BTN_H;
+                if (diff && !inPager) lastRowSameButPager = false;
+            }
+        check("render: page 2 has different knob rows", page2Differs);
+        check("render: header, RESET row and footer match except the pager", lastRowSameButPager);
+        bool onOffOnlyInRow = true, onOffDiffers = false;
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
+                if (p2.px[y * W + x] != p2on.px[y * W + x]) {
+                    onOffDiffers = true;
+                    if (y < SET_Y || y >= SET_Y + SET_H || x >= SET_MINUS_X) onOffOnlyInRow = false;
+                }
+        check("render: AUTO LOG ON/OFF changes only its value text", onOffDiffers && onOffOnlyInRow);
+
+        // The body is dirtied by a page flip and by the setting.
+        Dirty d;
+        State a; a.screen = SCR_ATTUNE;
+        drawAttune(p1, a, &d);                  // first frame primes prev
+        State b = a; b.setPage = 1;
+        drawAttune(p1, b, &d);
+        bool body = false;
+        for (int i = 0; i < d.n; i++) if (d.r[i].y <= SET_Y && d.r[i].h >= BODY_H) body = true;
+        check("dirty: a page flip repaints the body", body);
+        State c2 = b; c2.set.autoLog = 1;
+        drawAttune(p1, c2, &d);
+        body = false;
+        for (int i = 0; i < d.n; i++) if (d.r[i].y <= SET_Y && d.r[i].h >= BODY_H) body = true;
+        check("dirty: AUTO LOG change repaints the body", body);
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

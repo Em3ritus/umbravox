@@ -30,6 +30,7 @@ struct Nav {
     int16_t dragAccum = 0;      // leftover finger pixels, below one row
     uint16_t selected = 0;      // which codex row the detail screen is showing
     uint8_t  rangeIdx = 1;      // territory map scale
+    uint8_t  setPage = 0;       // settings page (0-based, < SET_PAGES); back to 0 on leaving
 
     // Set when the reset row is tapped; the caller clears it after acting.
     bool    resetRequested = false;

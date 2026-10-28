@@ -70,6 +70,11 @@ constexpr int SET_H     = 12;
 // The IDLE row's -/+ step one list: NEVER, then each timeout with DIM, OFF
 // and ANIM (see idleStep). An eighth row would not fit, so the mode shares it.
 constexpr int SET_MINUS_X = 114, SET_PLUS_X = 136, SET_BTN_W = 18, SET_BTN_H = 10;
+// The pager: "PAGE 1/2" in the RESET row, between the label (ends x 34) and
+// CLEAR (starts at SET_MINUS_X). It stops 18 px short of CLEAR so a finger
+// aimed at the page cannot land on the destructive button. Tapping it flips
+// round-robin through SET_PAGES, like the IDLE row's list.
+constexpr int SET_PAGE_X = 40, SET_PAGE_W = 56;
 
 // MESH screen network-control row: the net id, then ENROLL and RESET buttons.
 constexpr int MESH_NET_Y = 85;

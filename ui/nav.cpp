@@ -199,12 +199,27 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
     }
 
     if (n.screen == SCR_ATTUNE) {
+        if (n.setPage >= SET_PAGES) n.setPage = 0;
         for (int r = 0; r < SET_ROWS; r++) {
             const int y0 = SET_Y + r * SET_H;
             if (r == SET_ROWS - 1) {
+                // The same last row on every page: the pager, then CLEAR.
+                if (hit(x, y, SET_PAGE_X, y0 + 1, SET_PAGE_W, SET_BTN_H)) {
+                    n.setPage = (uint8_t)((n.setPage + 1) % SET_PAGES);
+                    return true;    // same screen, but every knob row is new
+                }
                 const int bw = SET_PLUS_X + SET_BTN_W - SET_MINUS_X;
                 if (hit(x, y, SET_MINUS_X, y0 + 1, bw, SET_BTN_H))
                     n.resetRequested = true;
+                continue;
+            }
+            if (n.setPage == 1) {
+                // Page 2. Only AUTO LOG so far; the other rows are empty and
+                // inert. Two values, so - and + both flip it.
+                if (r != SET_AUTOLOG_ROW) continue;
+                if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H) ||
+                    hit(x, y, SET_PLUS_X,  y0 + 1, SET_BTN_W, SET_BTN_H))
+                    st.autoLog = st.autoLog ? 0 : 1;
                 continue;
             }
             if (hit(x, y, SET_MINUS_X, y0 + 1, SET_BTN_W, SET_BTN_H)) adjust(st, r, -1);
@@ -249,6 +264,8 @@ void clampSettings(Settings& s) {
     if (!(pal::sweepMask(s.theme) & (1 << s.sweep))) s.sweep = pal::startSweep(s.theme);
     if (s.alertStyle >= ALERT_STYLE_COUNT) s.alertStyle = AL_SUPERNOVA;
     if (s.idleMode >= IDLE_MODE_N) s.idleMode = IDLE_DIM;
+    if (s.autoLog > 1) s.autoLog = 0;     // unknown (or erased flash): OFF
+    s.spare = 0;                          // reserved, never a value
 }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
@@ -257,7 +274,8 @@ bool settingsEqual(const Settings& a, const Settings& b) {
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
            a.labels   == b.labels   && a.alertStyle == b.alertStyle &&
-           a.idleMode == b.idleMode;
+           a.idleMode == b.idleMode && a.autoLog == b.autoLog;
+    // `spare` is not compared: it is not a setting and is never stored.
 }
 
 bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {
@@ -303,7 +321,9 @@ bool navTouch(Nav& n, Settings& st, bool down, int16_t x, int16_t y) {
     if (iabs(n.lastX - n.startX) > TAP_SLOP ||
         iabs(n.lastY - n.startY) > TAP_SLOP) return false;
 
-    return onTap(n, st, n.lastX, n.lastY);
+    const bool changed = onTap(n, st, n.lastX, n.lastY);
+    if (n.screen != SCR_ATTUNE) n.setPage = 0;   // settings always open on page 1
+    return changed;
 }
 
 } // namespace ui
