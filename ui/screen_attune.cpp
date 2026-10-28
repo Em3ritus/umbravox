@@ -5,6 +5,7 @@
 // you actually hear; BLE duty is the direct cost to WiFi capture, because
 // there is one radio; bands narrows the hop when you only care about one.
 #include "screens.h"
+#include "prevstate.h"
 #include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
@@ -156,7 +157,7 @@ void drawAttune(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_ATTUNE);   // PSRAM on the board
         static bool  first = true;
         d->clear();
         if (first) {

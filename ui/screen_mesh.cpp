@@ -4,6 +4,8 @@
 // out of range, or never assigned, and the only symptom would be a capture
 // rate that felt a bit low. The marks (age) and the loss figures matter most.
 #include "screens.h"
+#include "prevstate.h"
+#include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -154,7 +156,7 @@ void drawMesh(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_MESH);   // PSRAM on the board
         static bool  first = true;
         d->clear();
         if (first) { d->add(0, 0, W, H); first = false; }

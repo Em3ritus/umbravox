@@ -1,5 +1,6 @@
 #include "contrast.h"
 #include "screens.h"
+#include "prevstate.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "runes.h"
@@ -898,7 +899,7 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();   // last, so it sits over the type as well
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_SCAN);   // PSRAM on the board
         static bool  first = true;
         markDirty(*d, s, prev, first);
         prev  = s;

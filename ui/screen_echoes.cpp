@@ -6,6 +6,7 @@
 // kind of finding, and the reason the randomised-address column matters --
 // an un-randomised probe is a far stronger identifier than a rotating one.
 #include "screens.h"
+#include "prevstate.h"
 #include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
@@ -101,7 +102,7 @@ void drawEchoes(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_ECHOES);   // PSRAM on the board
         static bool first = true;
         d->clear();
         if (first) { d->add(0, 0, W, H); first = false; }

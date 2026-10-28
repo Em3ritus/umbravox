@@ -4,6 +4,7 @@
 // around me right now"; this answers "what have I actually got", which is the
 // question you have on a drive.
 #include "screens.h"
+#include "prevstate.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -133,7 +134,7 @@ void drawCodex(Canvas& c, const State& s, Dirty* d) {
 
     if (d) {
         static uint32_t prevHash = 0;
-        static State    prev;
+        State&    prev = prevState(SCR_CODEX);   // PSRAM on the board
         static bool     first = true;
         d->clear();
         if (first) {

@@ -2,6 +2,7 @@
 // that deletes. Everything a tap does is decided in files.cpp; this only
 // draws what State says.
 #include "screens.h"
+#include "prevstate.h"
 #include "files.h"
 #include "nav.h"
 #include "palette.h"
@@ -137,7 +138,7 @@ void drawFiles(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_FILES);   // PSRAM on the board
         static bool first = true;
         d->clear();
         if (first) { d->add(0, 0, W, H); first = false; }

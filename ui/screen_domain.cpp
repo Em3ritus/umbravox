@@ -9,6 +9,7 @@
 // a stationary device spin, and a map that moves while you stand still is
 // worse than one that is merely not aligned with the windscreen.
 #include "screens.h"
+#include "prevstate.h"
 #include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
@@ -108,7 +109,7 @@ void drawDomain(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_DOMAIN);   // PSRAM on the board
         static bool first = true;
         d->clear();
         if (first) { d->add(0, 0, W, H); first = false; }

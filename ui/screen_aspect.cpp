@@ -8,6 +8,7 @@
 // picture would drift, and the whole reason ui/layout.h exists is that two
 // copies of the same geometry always do.
 #include "screens.h"
+#include "prevstate.h"
 #include "palette.h"
 #include "font5x7.h"
 #include "layout.h"
@@ -133,7 +134,7 @@ void drawAspect(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_ASPECT);   // PSRAM on the board
         static bool  first = true;
         d->clear();
         if (first) {

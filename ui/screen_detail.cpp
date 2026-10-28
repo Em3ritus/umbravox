@@ -6,6 +6,7 @@
 // climbing for the last twenty sightings tells you that you are driving
 // toward whatever it is.
 #include "screens.h"
+#include "prevstate.h"
 #include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
@@ -165,7 +166,7 @@ void drawDetail(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_DETAIL);   // PSRAM on the board
         static bool  first = true;
         d->clear();
         if (first) { d->add(0, 0, W, H); first = false; }

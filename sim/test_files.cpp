@@ -3,6 +3,7 @@
 // and the device's list/delete rules (device/filescan.h), which must agree
 // with the serial SDDEL's policy (device/sdcmd.h) file for file.
 #include "../ui/files.h"
+#include "../ui/prevstate.h"
 #include "../ui/nav.h"
 #include "../ui/layout.h"
 #include "../ui/palette.h"
@@ -681,6 +682,18 @@ int main() {
         drawFiles(rb, b2);
         check("a long dateless label stops short of the REC column",
               sameRegion(ra, rb, FILE_REC_X - 2, FILE_ROW_Y, 22, FILE_ROW_H - 1));
+    }
+
+    // Each screen keeps its own last-drawn State (ui/prevstate.h; PSRAM on
+    // the board): one slot per screen, stable, out-of-range ids safe.
+    {
+        bool distinct = true;
+        for (int a = 0; a < SCR_COUNT; a++)
+            for (int b = a + 1; b < SCR_COUNT; b++)
+                if (&prevState((uint8_t)a) == &prevState((uint8_t)b)) distinct = false;
+        check("prevState: one slot per screen", distinct);
+        check("prevState: the same slot every call", &prevState(SCR_FILES) == &prevState(SCR_FILES));
+        check("prevState: an unknown id falls back to SCAN's slot", &prevState(200) == &prevState(SCR_SCAN));
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

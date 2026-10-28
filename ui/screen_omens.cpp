@@ -4,6 +4,7 @@
 // confidence it was graded at and whether it carries a position -- a hit
 // without one cannot be gone back to, which is worth knowing at a glance.
 #include "screens.h"
+#include "prevstate.h"
 #include "nav.h"
 #include "palette.h"
 #include "font5x7.h"
@@ -94,7 +95,7 @@ void drawOmens(Canvas& c, const State& s, Dirty* d) {
     c.scanlines();
 
     if (d) {
-        static State prev;
+        State& prev = prevState(SCR_OMENS);   // PSRAM on the board
         static bool first = true;
         d->clear();
         if (first) { d->add(0, 0, W, H); first = false; }
