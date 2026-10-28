@@ -143,48 +143,10 @@ inline bool visit(Walk& w, const char* name, bool isDir, uint32_t size, uint32_t
     if (strlen(name) >= (size_t)ui::FILE_NAME_MAX || !pathOf(name, path, sizeof path)) return true;
     if (!isLog(path)) return true;
     if (w.L->found < 0xFFFF) w.L->found++;
+    const uint32_t kb = size / 1024 + (size % 1024 ? 1 : 0);
+    w.L->logKB = w.L->logKB > 0xFFFFFFFFu - kb ? 0xFFFFFFFFu : w.L->logKB + kb;
     insert(*w.L, name, size);
     return true;
-}
-
-// Card space, cached. FatFs's free count (f_getfree) may scan the whole FAT
-// the first time, so it is asked once at boot and then only after a delete,
-// and only while those refreshes stay cheap.
-constexpr uint32_t SPACE_SLOW_MS = 500;
-struct SpaceCache {
-    bool known = false, approx = false, slow = false;
-    uint32_t usedKB = 0, totalKB = 0;
-};
-// The boot query. A slow one is the FAT scan FatFs then caches, so it does
-// not stop the refreshes; a failed one leaves the space unknown ("--").
-inline void spaceBoot(SpaceCache& c, bool ok, uint32_t usedKB, uint32_t totalKB, uint32_t ms) {
-    (void)ms;
-    c = SpaceCache();
-    if (!ok) return;
-    c.known = true;
-    c.usedKB = usedKB;
-    c.totalKB = totalKB;
-}
-// After a delete: ask the card again only while that has stayed cheap.
-inline bool spaceWantRefresh(const SpaceCache& c) { return c.known && !c.slow; }
-// A refresh over SPACE_SLOW_MS (or a failed one) stops refreshing for this
-// boot; from then on the numbers are estimates, shown with '~'.
-inline void spaceRefreshed(SpaceCache& c, bool ok, uint32_t usedKB, uint32_t totalKB, uint32_t ms) {
-    if (ok) { c.usedKB = usedKB; c.totalKB = totalKB; }
-    if (!ok || ms > SPACE_SLOW_MS) { c.slow = true; c.approx = true; }
-}
-// A delete without a refresh: take the file's size (rounded up to KiB) off.
-inline void spaceDeleted(SpaceCache& c, uint32_t bytes) {
-    if (!c.known) return;
-    const uint32_t kb = bytes / 1024 + (bytes % 1024 ? 1 : 0);
-    c.usedKB = c.usedKB > kb ? c.usedKB - kb : 0;
-    c.approx = true;
-}
-inline void spaceInto(const SpaceCache& c, ui::FileList& L) {
-    L.space = c.known;
-    L.spaceApprox = c.known && c.approx;
-    L.usedKB = c.known ? c.usedKB : 0;
-    L.totalKB = c.known ? c.totalKB : 0;
 }
 
 // Deleting: SDDEL's sequence (sdcmd Console::del) on the card's primitives.

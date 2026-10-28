@@ -106,11 +106,11 @@ void drawConfirm(Canvas& c, const State& s) {
 void drawFiles(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
     drawHeader(c, s, screenName(SCR_FILES, s.set.labels));
-    // Free space, between the title and the band badge.
+    // The card's capacity, between the title and the band badge.
     if (s.fileCard) {
         char f[20];
-        filesSpaceText(s, false, f);
-        c.textRight(137, 2, f, s.fileSpace ? pal::GREEN : pal::DIM);
+        filesCardText(s, f);
+        c.textRight(137, 2, f, pal::DIM);
     }
 
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
@@ -122,7 +122,7 @@ void drawFiles(Canvas& c, const State& s, Dirty* d) {
         filesCountText(s, cnt);
         c.text(5, FILE_INFO_Y, cnt, s.filePartial ? pal::AMBER : pal::DIM);
         char u[20];
-        filesSpaceText(s, true, u);
+        filesLogsText(s, u);
         c.textRight(154, FILE_INFO_Y, u, pal::DIM);
     }
     c.hline(3, FILE_ROW_Y - 2, 154, pal::EDGE);
@@ -147,16 +147,13 @@ void drawFiles(Canvas& c, const State& s, Dirty* d) {
                         s.fileSel != prev.fileSel || s.fileActive != prev.fileActive ||
                         s.fileConfirm != prev.fileConfirm || s.fileResult != prev.fileResult ||
                         s.fileCard != prev.fileCard || s.filePartial != prev.filePartial ||
-                        s.fileSpace != prev.fileSpace || s.cardUsedKB != prev.cardUsedKB ||
-                        s.fileSpaceApprox != prev.fileSpaceApprox || s.fileSelSize != prev.fileSelSize ||
+                        s.fileLogKB != prev.fileLogKB || s.fileSelSize != prev.fileSelSize ||
                         memcmp(s.fileSelName, prev.fileSelName, sizeof s.fileSelName) != 0;
             for (int i = 0; !body && i < s.nFileRows; i++)
                 body = s.fileRows[i].size != prev.fileRows[i].size ||
                        memcmp(s.fileRows[i].name, prev.fileRows[i].name, FILE_NAME_MAX) != 0;
             if (body) d->add(0, BODY_Y, W, BODY_H);
-            if (s.cardTotalKB != prev.cardTotalKB || s.cardUsedKB != prev.cardUsedKB ||
-                s.fileSpace != prev.fileSpace || s.fileCard != prev.fileCard ||
-                s.fileSpaceApprox != prev.fileSpaceApprox)
+            if (s.cardMB != prev.cardMB || s.fileCard != prev.fileCard)
                 d->add(0, 0, W, HDR_H);
             dirtyChrome(*d, s, prev);
         }

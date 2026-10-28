@@ -13,6 +13,7 @@ namespace {
 template <class T, size_t N>
 constexpr size_t capOf(const T (&)[N]) { return N; }
 bool mounted = false;
+uint32_t cardMb = 0;                           // CSD capacity, read once at mount
 uint32_t stallMax = 0;                         // longest write since takeMaxStallMs()
 inline void noteStall(uint32_t t0) {
     const uint32_t d = millis() - t0;
@@ -33,8 +34,8 @@ bool begin() {
     // transactions.
     mounted = (SD_CS >= 0) && SD.begin(SD_CS, SPI);
     if (mounted) {
-        Serial.printf("sdlog: card mounted on CS %d, %llu MB\n",
-                      SD_CS, (unsigned long long)(SD.cardSize() >> 20));
+        cardMb = (uint32_t)(SD.cardSize() >> 20);
+        Serial.printf("sdlog: card mounted on CS %d, %lu MB\n", SD_CS, (unsigned long)cardMb);
     } else {
         Serial.printf("sdlog: no card / mount failed on CS %d\n", SD_CS);
     }
@@ -201,17 +202,7 @@ bool listDirSized(const char* path, bool (*cb)(const char* name, bool isDir, uin
     return true;
 }
 
-bool space(uint32_t& usedKB, uint32_t& totalKB) {
-    usedKB = totalKB = 0;
-    if (!mounted) return false;
-    const uint32_t t0 = millis();
-    const uint64_t total = SD.totalBytes(), used = SD.usedBytes();
-    noteStall(t0);
-    if (!total) return false;
-    totalKB = (uint32_t)(total >> 10);
-    usedKB  = (uint32_t)(used >> 10);
-    return true;
-}
+uint32_t cardMB() { return cardMb; }
 
 uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap) {
     if (!mounted || !path || path[0] != '/' || !buf || cap == 0) return 0;

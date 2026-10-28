@@ -189,22 +189,21 @@ void fileLabelLong(const char* name, char* out, int cap) {
     out[i] = 0;
 }
 
-void filesSpaceText(const State& s, bool used, char* out) {
+void filesCardText(const State& s, char* out) {
     out[0] = 0;
-    if (!s.fileCard) return;
-    int i = 0;
-    if (!s.fileSpace) {
-        out[i++] = '-'; out[i++] = '-';
-    } else {
-        if (s.fileSpaceApprox) out[i++] = '~';
-        const uint32_t kb = used ? s.cardUsedKB
-                          : (s.cardTotalKB > s.cardUsedKB ? s.cardTotalKB - s.cardUsedKB : 0);
-        fmtKB(kb, out + i);
-        i = (int)strlen(out);
-    }
-    const char* w = used ? " USED" : " FREE";
+    if (!s.fileCard || !s.cardMB) return;
+    fmtUnits((uint64_t)s.cardMB << 20, out);
+    const char* w = " CARD";
+    int i = (int)strlen(out);
     while (*w) out[i++] = *w++;
     out[i] = 0;
+}
+
+void filesLogsText(const State& s, char* out) {
+    out[0] = 0;
+    if (!s.fileCard || !s.fileFound) return;
+    fmtKB(s.fileLogKB, out);
+    if (s.filePartial) { const int i = (int)strlen(out); out[i] = '+'; out[i + 1] = 0; }
 }
 
 void filesCountText(const State& s, char* out) {
@@ -240,10 +239,8 @@ void filesPublish(State& s, const Nav& n, const FileList& L) {
     s.fileFound   = L.found;
     s.fileCard    = L.card;
     s.filePartial = L.partial;
-    s.fileSpace   = L.space;
-    s.fileSpaceApprox = L.space && L.spaceApprox;
-    s.cardUsedKB  = L.usedKB;
-    s.cardTotalKB = L.totalKB;
+    s.cardMB      = L.cardMB;
+    s.fileLogKB   = L.logKB;
     int sc = n.scroll;
     const int m = L.n > FILE_VIS ? L.n - FILE_VIS : 0;
     if (sc > m) sc = m;

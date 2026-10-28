@@ -45,7 +45,8 @@ switchable themes, animated dials, a summoning-circle aesthetic.
   touches the old one. **AUTO LOG** (settings page 2) starts a session by itself
   once the GPS fix holds. Not yet verified on hardware.
 - **On-unit file explorer** — the FILES screen (settings page 2) lists the session
-  logs on the card, newest first, with date, size and card space, and deletes one
+  logs on the card, newest first, with date and size, their total and the card's
+  capacity, and deletes one
   after a YES / NO confirmation. The file being logged to is marked REC and cannot
   be deleted. Not yet verified on hardware.
 - **Threat & point-of-interest alerts** — 162 device signatures (surveillance

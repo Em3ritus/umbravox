@@ -66,9 +66,12 @@ void fileLabel(const char* name, char* out, int cap);
 // The confirm card's line: the same, to the second ("2026-01-27 15:30:12"),
 // so two logs started in the same minute can be told apart.
 void fileLabelLong(const char* name, char* out, int cap);
-// "27G FREE" / "3.1G USED" (used = true), "~" first when estimated, "--"
-// before the card space is known, "" with no card. out holds >= 16.
-void filesSpaceText(const State& s, bool used, char* out);
+// The header's "28G CARD": the card's capacity, "" with no card or an
+// unknown size. And the count line's right end: the logs' total ("3.1G",
+// "3.1G+" when the walk was bounded, so it is a floor), "" with none.
+// out holds >= 16.
+void filesCardText(const State& s, char* out);
+void filesLogsText(const State& s, char* out);
 // The count line: "5 LOGS", "1 LOG", "64/80 LOGS", or "LIST INCOMPLETE" when
 // the walk stopped at its bound (the newest logs may be the missing ones).
 void filesCountText(const State& s, char* out);

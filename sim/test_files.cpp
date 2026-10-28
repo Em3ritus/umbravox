@@ -365,7 +365,7 @@ int main() {
     // ---- publish --------------------------------------------------------------------
     {
         FileList L = makeList(64);
-        L.found = 80; L.space = true; L.usedKB = 3250585; L.totalKB = 31250000;
+        L.found = 80; L.cardMB = 28899; L.logKB = 3250585;
         Nav n = openWith(64, L);
         n.scroll = 59;
         n.fileSel = 61;
@@ -374,9 +374,9 @@ int main() {
         filesPublish(s, n, L);
         check("publish: window of 5 from scroll 59", s.nFileRows == 5 && s.fileScroll == 59 &&
               !strcmp(s.fileRows[0].name, L.rows[59].name) && !strcmp(s.fileRows[4].name, L.rows[63].name));
-        check("publish: counts, selection, active, space", s.fileTotal == 64 && s.fileFound == 80 &&
+        check("publish: counts, selection, active, card, log total", s.fileTotal == 64 && s.fileFound == 80 &&
               s.fileSel == 61 && s.fileActive == 62 && !strcmp(s.fileSelName, L.rows[61].name) &&
-              s.fileSelSize == L.rows[61].size && s.fileCard && s.fileSpace && s.cardUsedKB == 3250585);
+              s.fileSelSize == L.rows[61].size && s.fileCard && s.cardMB == 28899 && s.fileLogKB == 3250585);
         FileList E;
         Nav m;
         State t;
@@ -547,73 +547,63 @@ int main() {
 
 
     // ---- fix round 1 --------------------------------------------------------------------
-    // Card space: queried once at boot, refreshed after a delete only while
-    // refreshes are cheap; "--" until known, "~" once it is an estimate.
+    // Card size and log total: only cheap, truthful numbers. The card's
+    // capacity is the CSD's (sdlog reads it at mount, no FAT scan); the log
+    // total is summed by the directory walk. No free-space query exists.
     {
-        filescan::SpaceCache c;
         FileList L;
-        filescan::spaceInto(c, L);
-        check("space: unknown before the boot query", !L.space && !L.spaceApprox);
-        check("space: no refresh before the boot query", !filescan::spaceWantRefresh(c));
-        filescan::spaceBoot(c, false, 0, 0, 20);
-        filescan::spaceInto(c, L);
-        check("space: a failed boot query stays unknown, never refreshed",
-              !L.space && !filescan::spaceWantRefresh(c));
-        c = filescan::SpaceCache();
-        filescan::spaceBoot(c, true, 3000000, 31000000, 4200);   // a slow FAT scan at boot
-        filescan::spaceInto(c, L);
-        check("space: boot query known and exact even when slow", L.space && !L.spaceApprox &&
-              L.usedKB == 3000000 && L.totalKB == 31000000);
-        check("space: a slow BOOT query does not stop refreshes (FatFs caches it)", filescan::spaceWantRefresh(c));
-        filescan::spaceRefreshed(c, true, 2999000, 31000000, 12);
-        filescan::spaceInto(c, L);
-        check("space: a fast refresh updates and stays exact", L.usedKB == 2999000 && !L.spaceApprox &&
-              filescan::spaceWantRefresh(c));
-        filescan::spaceRefreshed(c, true, 2998000, 31000000, filescan::SPACE_SLOW_MS);
-        check("space: a refresh of exactly 500 ms is still fine", filescan::spaceWantRefresh(c));
-        filescan::spaceRefreshed(c, true, 2997000, 31000000, filescan::SPACE_SLOW_MS + 1);
-        filescan::spaceInto(c, L);
-        check("space: a refresh over 500 ms stops refreshing, numbers marked ~",
-              !filescan::spaceWantRefresh(c) && L.space && L.spaceApprox && L.usedKB == 2997000);
-        filescan::spaceDeleted(c, 10 * 1024 + 1);
-        filescan::spaceInto(c, L);
-        check("space: without refresh a delete is estimated (used - 11 KiB)", L.usedKB == 2997000 - 11 && L.spaceApprox);
-        filescan::spaceDeleted(c, 0xFFFFFFFFu);
-        filescan::spaceInto(c, L);
-        check("space: the estimate never goes below 0", L.usedKB == 0);
-        filescan::SpaceCache f;
-        filescan::spaceBoot(f, true, 100, 1000, 5);
-        filescan::spaceRefreshed(f, false, 0, 0, 5);
-        filescan::spaceInto(f, L);
-        check("space: a failed refresh keeps the cache, marks ~, stops refreshing",
-              L.space && L.spaceApprox && L.usedKB == 100 && !filescan::spaceWantRefresh(f));
+        filescan::Walk w;
+        filescan::begin(w, L, 0);
+        filescan::visit(w, "WD-0001.csv", false, 1025, 1);        // 2 KiB, rounded up
+        filescan::visit(w, "WD-0002.csv", false, 2048, 1);        // 2 KiB
+        filescan::visit(w, "diag.log", false, 999999, 1);         // not a log: not counted
+        check("walk: log total in KiB, rounded up per file, logs only", L.logKB == 4);
+        filescan::begin(w, L, 0);
+        for (int i = 0; i < 100; i++) {
+            char nm[FILE_NAME_MAX];
+            snprintf(nm, sizeof nm, "WD-%04d.csv", i);
+            filescan::visit(w, nm, false, 1024, 2);
+        }
+        check("walk: the total covers every log found, not only the 64 kept", L.n == 64 && L.logKB == 100);
+        filescan::begin(w, L, 0);
+        filescan::visit(w, "WD-0001.csv", false, 0xFFFFFFFFu, 1);
+        L.logKB = 0xFFFFFFF0u;
+        filescan::visit(w, "WD-0002.csv", false, 0xFFFFFFFFu, 1);
+        check("walk: the total saturates", L.logKB == 0xFFFFFFFFu);
 
         State st;
-        st.fileCard = true;
         char b[20];
-        filesSpaceText(st, false, b);
-        check("space text: -- until known", !strcmp(b, "-- FREE"));
-        filesSpaceText(st, true, b);
-        check("space text: -- USED until known", !strcmp(b, "-- USED"));
-        st.fileSpace = true; st.cardUsedKB = 3250585; st.cardTotalKB = 31166976;
-        filesSpaceText(st, false, b);
-        check("space text: free exact", !strcmp(b, "27G FREE"));
-        st.fileSpaceApprox = true;
-        filesSpaceText(st, true, b);
-        check("space text: ~ when estimated", !strcmp(b, "~3.1G USED"));
+        filesCardText(st, b);
+        check("card text: nothing with no card", b[0] == 0);
+        st.fileCard = true;
+        filesCardText(st, b);
+        check("card text: nothing when the size is unknown", b[0] == 0);
+        st.cardMB = 28899;
+        filesCardText(st, b);
+        check("card text: 28899 MB reads 28G CARD", !strcmp(b, "28G CARD"));
+        st.cardMB = 1907;
+        filesCardText(st, b);
+        check("card text: 1907 MB reads 1.9G CARD", !strcmp(b, "1.9G CARD"));
+
+        st.fileFound = 0;
+        filesLogsText(st, b);
+        check("logs text: nothing with no logs", b[0] == 0);
+        st.fileFound = 5; st.fileTotal = 5; st.fileLogKB = 3250585;
+        filesLogsText(st, b);
+        check("logs text: total of the logs, 3.1G", !strcmp(b, "3.1G"));
+        st.filePartial = true;
+        filesLogsText(st, b);
+        check("logs text: a bounded walk marks the total as a floor (+)", !strcmp(b, "3.1G+"));
         st.fileCard = false;
-        filesSpaceText(st, true, b);
-        check("space text: nothing with no card", b[0] == 0);
-        char tl[2] = {'~', 0};
-        check("font: '~' has a glyph", Font::row(tl[0], 1) != 0 || Font::row(tl[0], 2) != 0 || Font::row(tl[0], 3) != 0);
+        filesLogsText(st, b);
+        check("logs text: nothing with no card", b[0] == 0);
     }
     // In-place reset: no 1.8 KB temporary on the loop stack, and every field zero.
     {
         FileList L = makeList(64);
-        L.partial = L.space = L.spaceApprox = true; L.usedKB = 5; L.totalKB = 9; L.found = 99;
+        L.partial = true; L.cardMB = 5; L.logKB = 9; L.found = 99;
         filescan::reset(L);
-        bool zero = L.n == 0 && L.found == 0 && !L.card && !L.partial && !L.space && !L.spaceApprox &&
-                    L.usedKB == 0 && L.totalKB == 0;
+        bool zero = L.n == 0 && L.found == 0 && !L.card && !L.partial && L.cardMB == 0 && L.logKB == 0;
         for (int i = 0; i < MAX_FILE_ROWS && zero; i++) zero = L.rows[i].name[0] == 0 && L.rows[i].size == 0;
         check("reset() zeroes the list in place", zero);
         filescan::Walk w;

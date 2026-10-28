@@ -358,9 +358,10 @@ wrapped by `device/filescan.h`), so the screen and the console cannot disagree.
   (`2026-01-27 15:30`), or the dateless name (`WD-0012`), and the size. Dated names
   sort by their stamp and come before dateless ones (which have no clock), those by
   number. The newest 64 are kept; the count line says `64/80 LOGS` when there are
-  more, and a `+` when the walk hit its bound. Used space is on the count line and
-  free space in the header. An empty card reads `NO LOGS`, a missing or pulled one
-  `NO CARD`.
+  more. The count line's right end is the total size of the logs found (`3.1G`, or
+  `3.1G+` when the walk was bounded), and the header shows the card's capacity
+  (`28G CARD`, from its CSD register as read at mount). There is no free-space figure
+  (see Cost). An empty card reads `NO LOGS`, a missing or pulled one `NO CARD`.
 - **REC** marks the file the logging session is writing. Selecting it shows `LOGGING`
   and a disabled `IN USE` button: it cannot be deleted, and no confirmation opens.
 - **Delete**: tap a row, then DELETE. A card asks `DELETE THIS LOG?` with the date,
@@ -373,12 +374,10 @@ wrapped by `device/filescan.h`), so the screen and the console cannot disagree.
   `files: deleted /WD-....csv (N bytes) from the screen` to `/diag.log`.
 - **Cost**: the list is rebuilt only on opening, after a delete, and when the
   session's file changes while the screen is up: one root walk on the loop task,
-  bounded at 512 entries or 1 s; a bounded walk reads `LIST INCOMPLETE`. Card space is
-  never asked on opening: FatFs's first free-space query can read the whole FAT
-  (seconds on a big card), so it is asked once at boot (`sd: free-space query took N
-  ms` in `/diag.log`) and cached; the screen shows `--` if that failed. After a
-  delete it is refreshed and timed; a refresh over 500 ms (or a failed one) stops the
-  refreshes for that boot and later deletes are estimated, shown as `~3.1G`. Capture
+  bounded at 512 entries or 1 s; a bounded walk reads `LIST INCOMPLETE`. Nothing in
+  the firmware asks for free space: FatFs's free count (`f_getfree`, behind
+  `SD.usedBytes()`/`totalBytes()`) scanned the whole FAT for 8.4 s on the 28.9 GB test
+  card, blocking the loop and the SD volume. Capture
   runs in the radio callbacks meanwhile and the GPS UART buffers 2 s.
 - The confirm shows the time to the second; row labels are cut to 16 characters so
   they never reach REC; the footer's START/STOP control is drawn DIM and is inert on
@@ -388,7 +387,7 @@ wrapped by `device/filescan.h`), so the screen and the console cannot disagree.
 All of the screen's state (selection, scroll, the confirm and its timers, the bounce
 guard, the protected row) is pure `ui/files.cpp`, tested by `sim/test_files.cpp`;
 `sim/umbravox --screen files --files N --scroll S --selected K --active K --confirm
---nocard --result 1|2 --partial --space 0|1|2` renders any of it.
+--nocard --result 1|2 --partial` renders any of it.
 
 ## What the scan screen shows
 

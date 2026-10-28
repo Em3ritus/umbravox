@@ -597,8 +597,6 @@ void tick(uint32_t now) {
 
 } // namespace collector
 
-namespace { namespace files { void bootSpace(); } }   // below, with the FILES screen
-
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -678,7 +676,6 @@ void setup() {
     // (logging counts past WD-NNNN files and skips any existing name).
     sdlog::begin();
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
-    files::bootSpace(); // the one card free-space query (may scan the FAT); FILES caches it
     // Theme packs: after the card and the log (skips are logged), and before
     // loop()'s first prefs::load(), so a saved pack name finds its pack.
     themeload::scan();
@@ -1023,47 +1020,21 @@ bool pollConsole() {
 // the logging session's file changes while it is up -- never per frame. One
 // walk of the root, on this (the loop) task, in one go: at most
 // filescan::MAX_ENTRIES (512) entries or filescan::BUDGET_MS (1 s) of wall
-// clock. Card space is NOT asked on opening: FatFs's free count can scan the
-// whole FAT the first time (seconds on a big card), so it is asked once in
-// setup() (bootSpace) and cached; after a delete it is refreshed only while
-// a refresh takes <= 500 ms, else the cached numbers carry on as estimates
-// ('~'). Worst case on opening: the 1 s walk. Capture keeps running in the
-// Wi-Fi/BLE callbacks; the GPS UART buffers 2 s; logging's next flush is
-// late. The walk is recorded by sdlog's stall meter. Nothing transmits.
+// clock. No free-space figure: FatFs's free count (f_getfree, behind
+// SD.usedBytes/totalBytes) scanned the whole FAT for 8.4 s on the 28.9 GB
+// test card, blocking the loop and the SD volume, so nothing in the firmware
+// asks for it. FILES shows the card's capacity (its CSD, read at mount) and
+// the total of the logs the walk already saw. Worst case on opening: the 1 s
+// walk. Capture keeps running in the Wi-Fi/BLE callbacks; the GPS UART
+// buffers 2 s; logging's next flush is late. The walk is recorded by sdlog's
+// stall meter. Nothing transmits.
 namespace files {
 ui::FileList list;
-filescan::SpaceCache spaceCache;
 char activeSeen[40] = "";      // logging::fileName() at the last scan
 
 struct Ctx { filescan::Walk w; };
 bool onEntry(const char* name, bool isDir, uint32_t size, void* c) {
     return filescan::visit(((Ctx*)c)->w, name, isDir, size, millis());
-}
-
-// setup(), after sdlog::begin(): the one free-space query that may be slow.
-void bootSpace() {
-    if (!sdlog::present()) return;
-    const uint32_t t0 = millis();
-    uint32_t used = 0, total = 0;
-    const bool ok = sdlog::space(used, total);
-    const uint32_t ms = millis() - t0;
-    filescan::spaceBoot(spaceCache, ok, used, total, ms);
-    elog::event(ok ? elog::INFO : elog::WARN, "sd", "free-space query took %lu ms%s",
-                (unsigned long)ms, ok ? "" : " and failed");
-}
-
-// After a successful delete of `bytes`: refresh if that is still cheap.
-void spaceAfterDelete(uint32_t bytes) {
-    if (!filescan::spaceWantRefresh(spaceCache)) { filescan::spaceDeleted(spaceCache, bytes); return; }
-    const uint32_t t0 = millis();
-    uint32_t used = 0, total = 0;
-    const bool ok = sdlog::space(used, total);
-    const uint32_t ms = millis() - t0;
-    filescan::spaceRefreshed(spaceCache, ok, used, total, ms);
-    if (!ok) filescan::spaceDeleted(spaceCache, bytes);
-    if (!filescan::spaceWantRefresh(spaceCache))
-        elog::event(elog::WARN, "sd", "free-space refresh took %lu ms%s; showing estimates",
-                    (unsigned long)ms, ok ? "" : " and failed");
 }
 
 void scan(ui::Nav& nav) {
@@ -1076,7 +1047,7 @@ void scan(ui::Nav& nav) {
         !sdlog::listDirSized("/", onEntry, &ctx, filescan::MAX_ENTRIES + 1)) {
         filescan::reset(list);               // card absent or pulled: NO CARD
     } else {
-        filescan::spaceInto(spaceCache, list);   // cached: never asked here
+        list.cardMB = sdlog::cardMB();           // the CSD's figure, no FAT scan
     }
     snprintf(activeSeen, sizeof activeSeen, "%s", logging::fileName());
     ui::filesRescanned(nav, list, prev);
@@ -1103,7 +1074,6 @@ bool remove(int idx) {
         case filescan::RM_OK:
             elog::event(elog::INFO, "files", "deleted %s (%lu bytes) from the screen", path,
                         (unsigned long)size);
-            spaceAfterDelete(size);
             return true;
         case filescan::RM_REFUSED:
             elog::event(elog::WARN, "files", "refused to delete %s from the screen: %s", path,

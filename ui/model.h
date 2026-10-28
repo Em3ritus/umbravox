@@ -249,9 +249,12 @@ struct FileList {
     uint16_t found = 0;        // logs seen on the card (may exceed n; saturates)
     bool     card = false;     // the card answered the walk
     bool     partial = false;  // the walk stopped at its entry/time bound
-    bool     space = false;    // usedKB/totalKB are known
-    bool     spaceApprox = false;  // ...but are an estimate (refreshes stopped)
-    uint32_t usedKB = 0, totalKB = 0;
+    // Only cheap, truthful numbers: the card's capacity (its CSD register,
+    // read at mount) and the sum of the logs' sizes from the walk. There is
+    // no free space: FatFs's free count can scan the whole FAT (8.4 s
+    // measured on a 28.9 GB card).
+    uint32_t cardMB = 0;       // 0 = unknown
+    uint32_t logKB = 0;        // every log found, KiB rounded up per file; saturates
 };
 
 struct State {
@@ -358,9 +361,8 @@ struct State {
     uint8_t  fileResult = 0;      // 0 none, 1 DELETED, 2 FAILED (shown ~2 s)
     bool     fileCard = false;
     bool     filePartial = false;
-    bool     fileSpace = false;
-    bool     fileSpaceApprox = false;   // shown with a leading '~'
-    uint32_t cardUsedKB = 0, cardTotalKB = 0;
+    uint32_t cardMB = 0;          // card capacity, 0 unknown
+    uint32_t fileLogKB = 0;       // total of the logs found
 
     // Theme pack folders on the SD card that were skipped at boot (bad file,
     // clash, over the limit, or a reset while loading one). ASPECT shows the

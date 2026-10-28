@@ -78,10 +78,10 @@ uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap);
 // `maxEntries`. Recorded as a stall. false with no card or no `path`.
 bool listDirSized(const char* path, bool (*cb)(const char* name, bool isDir, uint32_t size, void* ctx),
                   void* ctx, uint32_t maxEntries);
-// Card space in KiB. false with no card or if FatFs cannot say. The first
-// call after mount may scan the whole FAT when the card's FSInfo free count
-// is not trusted (seconds on a large card); FatFs caches it after that.
-bool space(uint32_t& usedKB, uint32_t& totalKB);
+// The card's capacity in MB, from its CSD register as read at mount (no FAT
+// scan); 0 with no card. There is deliberately no free-space query: FatFs's
+// free count can scan the whole FAT (8.4 s on a 28.9 GB card).
+uint32_t cardMB();
 
 // The longest a write held up the loop (ms) since this was last called, across
 // the session appends (openAppend..closeAppend) and append. Reading it clears it; perflog logs it so the cost of
