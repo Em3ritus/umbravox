@@ -633,6 +633,43 @@ int main() {
         check("idle", state() == IDLE);
     }
 
+    printf("STOP when logging is already IDLE or NO_CARD:\n");
+    {
+        fresh();
+        begin(false, hooks(), 0, T0);
+        wifi.add(40);
+        const int opensBefore = opens;
+        stop(10);
+        check("IDLE: stays idle, no report, no file, nothing drained",
+              state() == IDLE && stopReports == 0 && files.empty() && opens == opensBefore &&
+              !wantsActive());
+
+        fresh();
+        cardPresent = false;
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        wifi.add(40);
+        check("NO_CARD precondition", state() == NO_CARD);
+        stop(10);
+        check("NO_CARD: idle, no report, no file, rows untouched",
+              state() == IDLE && stopReports == 0 && files.empty() && !wantsActive() &&
+              wifi.v.size() == 40);
+
+        fresh();
+        begin(false, hooks(), 0, T0);
+        start(0, T0);
+        wifi.add(5000);
+        failWrites = true;
+        resetTables(UC::clear, 10, T0 + 1);                 // cannot drain: pending
+        cardPresent = false;
+        failWrites = false;
+        tick(FLUSH_MS, T0 + 2);
+        check("card out with a reset pending -> NO_CARD", state() == NO_CARD);
+        stop(FLUSH_MS + 1);
+        check("NO_CARD + pending reset: applied by STOP, no drain, no report",
+              state() == IDLE && stopReports == 0 && wifi.v.empty() && files.size() <= 1);
+    }
+
     printf("held rows (AP still in range) are released by STOP, rollover and RESET:\n");
     fresh();
     begin(false, hooks(), 0, T0);

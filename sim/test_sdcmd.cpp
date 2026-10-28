@@ -662,6 +662,15 @@ static void testFixRound1() {
         check("REBOOT mid-upload removes it", !r.sd.isDir("/themes/new7"));
         int loops = 0;
         for (int i = 0; i < 50; i++) { r.sdput(("/themes/p" + std::to_string(i) + "/emblem.bin").c_str(), d); r.send("ABORT"); loops++; }
+        // A file appears in the new folder meanwhile (another writer): the
+        // fake's rmdir refuses a non-empty folder, as FAT does, and the
+        // upload's cleanup must neither force it nor lose the file.
+        r.sdput("/themes/busy/theme.json", d);
+        r.sd.files["/themes/busy/other.bin"] = bytes(4, 9);
+        check("ABORT does not remove a new folder that is no longer empty",
+              r.send("ABORT") == "OK aborted" && r.sd.isDir("/themes/busy") &&
+              r.sd.has("/themes/busy/other.bin") && !r.sd.has("/themes/busy/theme.json.tmp"));
+        r.sd.files.erase("/themes/busy/other.bin"); r.sd.dirs.erase("/themes/busy");
         check("50 x SDPUT+ABORT leave no folders", r.sd.dirs.size() == 2);   // "/" and "/themes"
     }
     {
