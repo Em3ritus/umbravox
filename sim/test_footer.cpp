@@ -145,6 +145,31 @@ int main() {
         check("dirty: label mode change repaints the footer", footerDirty(d));
     }
 
+    // The spectrum strip carries no node count any more: the footer count is
+    // the one number. The old "<digit>N" marker stopped at 9 ("9N" for 12
+    // nodes), so it contradicted the footer. The strip must render the same
+    // for 0, 4, 9, 12 and 99 nodes (UMBRAVOX, the theme with a strip).
+    {
+        pal::setTheme(pal::TH_UMBRAVOX);
+        static Canvas a, b;
+        State s0;
+        s0.screen = SCR_SCAN;
+        s0.chan = 6;
+        s0.load24[5] = 60;
+        drawScan(a, s0);
+        bool same = SPEC_H > 0;
+        const int counts[] = {4, 9, 12, 99};
+        for (int k = 0; k < 4 && same; k++) {
+            State s1 = s0;
+            s1.nNodes = (uint8_t)counts[k];
+            drawScan(b, s1);
+            for (int y = SPEC_Y; y < SPEC_Y + SPEC_H && same; y++)
+                for (int x = COL_R_X; x < COL_R_X + COL_R_W; x++)
+                    if (a.px[y * W + x] != b.px[y * W + x]) { same = false; break; }
+        }
+        check("spectrum strip shows no node marker (0/4/9/12/99 render alike)", same);
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

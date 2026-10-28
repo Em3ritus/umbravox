@@ -163,13 +163,8 @@ void drawSpectrum(Canvas& c, const State& s) {
     c.hline(COL_R_X + 3, base + 1, COL_R_W - 6, pal::EDGE);
     c.text(COL_R_X + COL_R_W - 7, SPEC_Y + 2, ">", pal::EDGE_LIT);   // opens MESH
 
-    // A node count, so the mesh is visible without opening it.
-    if (s.nNodes) {
-        char nb[6] = {0};
-        nb[0] = (char)('0' + (s.nNodes > 9 ? 9 : s.nNodes));
-        nb[1] = 'N';
-        c.text(COL_R_X + 3, SPEC_Y + 2, nb, pal::GREEN);
-    }
+    // No node count here: the footer carries it (up to 99). The strip's old
+    // one-digit marker read "9N" for 12 nodes and contradicted it.
 
     for (int i = 0; i < CH24 + CH5; i++) {
         const bool is5 = i >= CH24;
@@ -766,7 +761,7 @@ void markDirty(Dirty& d, const State& s, const State& p, bool first) {
     if (s.ble != p.ble)
         d.add(COL_L_X, TILE_Y[2], COL_L_W, TILE_H);
 
-    bool spec = s.chan != p.chan || s.on5 != p.on5 || s.nNodes != p.nNodes;
+    bool spec = s.chan != p.chan || s.on5 != p.on5;
     for (int i = 0; !spec && i < CH24; i++) spec = s.load24[i] != p.load24[i];
     for (int i = 0; !spec && i < CH5;  i++) spec = s.load5[i]  != p.load5[i];
     if (spec && SPEC_H > 0) d.add(COL_R_X, SPEC_Y, COL_R_W, SPEC_H);
