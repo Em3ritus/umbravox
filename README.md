@@ -117,6 +117,17 @@ Primary target is the **RockBase NM-CYD-C5** — a "Cheap Yellow Display" for th
 | GPS | external NMEA receiver on header P5 (GPIO 4 RX, 9600 baud) |
 | Storage | microSD on the shared SPI bus (CS 10) |
 
+**GPS module.** A GY-GPS6MV2 (u-blox NEO-6M) works at its factory defaults:
+VCC to 3V3 (its regulator also takes 5 V), GND to GND, module **TXD to P5 RX
+(GPIO 4)**; RXD stays unconnected, as UMBRAVOX never writes to the GPS. The
+footer reads `NO GPS` until a 2D/3D fix, then `FIXED`; give it about 30 s
+outdoors from cold, and expect no fix indoors. The `GPS` console command prints
+bytes received, sentences good/bad by type, fix quality, satellites and HDOP,
+and a one-time line in `/diag.log` flags "no data" (wiring) or "no valid NMEA"
+(baud). Wiring, expected output, troubleshooting and a bench checklist:
+[docs/gps-gy-gps6mv2.md](docs/gps-gy-gps6mv2.md). Tested against NMEA fixtures
+only, not yet on the real module.
+
 Scanning **nodes** and **coordinators** are headless — any ESP32-C5 board works
 (Waveshare ESP32-C5 and Seeed XIAO ESP32-C5 are both confirmed). They need only
 power and a radio: no display, touch or GPS.
