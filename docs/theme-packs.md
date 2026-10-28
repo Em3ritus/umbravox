@@ -214,8 +214,9 @@ tested on a real unit.
 `/themes/<name>/`, where `<name>` is the folder's name made safe the way the
 designer makes it (lower case, runs of other characters become `-`). The tool reads
 only regular files that really sit in that folder: a `theme.json` or `emblem.bin`
-that is a symlink (even to another file in the pack), a FIFO, a device or a
-directory is refused, so a booby-trapped pack zip cannot make it upload some other
+that is a symlink (even to another file in the pack), a hard link (a file with
+more than one link, which could be a second name for a file elsewhere), a FIFO, a
+device or a directory is refused, so a booby-trapped pack zip cannot make it upload some other
 file from your computer. The folder you name may itself be a symlink; it is
 followed, and the pack is named after the folder as you typed it.
 

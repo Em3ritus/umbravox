@@ -78,6 +78,9 @@ def read_pack_file(folder_real, fname, cap):
     if not stat.S_ISREG(st.st_mode):
         raise ValueError("%s is not a regular file (a symlink, FIFO, device or "
                          "directory): refused" % path)
+    if st.st_nlink > 1:
+        raise ValueError("%s has %d hard links (it may be a link to a file outside "
+                         "the pack): refused" % (path, st.st_nlink))
     if os.path.dirname(os.path.realpath(path)) != folder_real:
         raise ValueError("%s resolves outside the pack folder: refused" % path)
     if st.st_size == 0:
@@ -247,6 +250,10 @@ def selftest_files(check):
         d = pack("sym-inside")
         os.symlink("theme.json", os.path.join(d, "emblem.bin"))   # even to a file in the pack
         check("symlink to a file inside the pack refused", refused(d, "not a regular file"))
+
+        d = pack("hard-emblem")
+        os.link(secret, os.path.join(d, "emblem.bin"))
+        check("hard-linked emblem.bin refused", refused(d, "hard link"))
 
         d = pack("fifo-theme", theme=None)
         os.mkfifo(os.path.join(d, "theme.json"))
