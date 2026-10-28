@@ -42,7 +42,12 @@ switchable themes, animated dials, a summoning-circle aesthetic.
   2 minutes), are lost. Session files are named `WD-<date>-<time>.csv`
   (`WD-NNNN.csv` before the GPS has given a date), always lowercase, and a
   new file starts at 20,000 APs. A reboot resumes into a new file and never
-  touches the old one. Not yet verified on hardware.
+  touches the old one. **AUTO LOG** (settings page 2) starts a session by itself
+  once the GPS fix holds. Not yet verified on hardware.
+- **On-unit file explorer** — the FILES screen (settings page 2) lists the session
+  logs on the card, newest first, with date, size and card space, and deletes one
+  after a YES / NO confirmation. The file being logged to is marked REC and cannot
+  be deleted. Not yet verified on hardware.
 - **Threat & point-of-interest alerts** — 162 device signatures (surveillance
   cameras, ALPRs, AirTag / Tile / Find My trackers, Remote ID drones,
   Flipper / pentest gear, card-skimmer modules…), each with its own confidence
@@ -175,7 +180,8 @@ and `--no-stub`; details in [docs/design-notes.md](docs/design-notes.md).
 The CYD keeps a plain-text diagnostic log at **`/diag.log`** on the card: every
 boot records the firmware build and the **reset reason** (so a crash, watchdog or
 brownout leaves a fingerprint), plus a line on any SD-write failure or low-heap
-event. It caps at ~128 KB and rotates once. If something misbehaves, pull the card
+event, a session AUTO LOG started (`log: auto-started on GPS fix`) and a log deleted
+from the FILES screen (`files: deleted /WD-....csv (N bytes) from the screen`). It caps at ~128 KB and rotates once. If something misbehaves, pull the card
 and send `diag.log`, or print it over USB serial with the `DIAG` command (115200
 baud).
 
@@ -199,6 +205,8 @@ install theme packs without removing the card, `SDPUT`, `SDDEL <path>`,
 them (see [Installing over USB](docs/theme-packs.md#installing-over-usb-without-removing-the-card)).
 They work on the wired console only, can write nothing but pack files and delete
 nothing but pack files and old session logs, and are not yet verified on hardware.
+Session logs can also be deleted on the unit itself from the FILES screen, under the
+same rule (never the file being logged to).
 
 ## Project layout
 

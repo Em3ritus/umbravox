@@ -313,7 +313,15 @@ page and its tests are in `web/designer/`; Pages builds and publishes it.
 | DWELL | 100-600 ms | time parked per channel |
 | BLE | 0-100% | share of the radio BLE may take; 0 gives it all to WiFi |
 | BANDS | both / 2.4 / 5 GHz | narrows the hop cycle |
-| CLEAR | | wipes both dedup tables and every counter |
+| IDLE | NEVER / 15S..5M with DIM, OFF or ANIM | what the panel does after no touch |
+| RESET: PAGE 1/2 | | flips between the two settings pages (the same last row on both) |
+| RESET: CLEAR | | wipes both dedup tables and every counter |
+| *page 2:* AUTO LOG | OFF / ON | starts a session by itself once the GPS fix has held 5 s (`device/autolog.h`); a manual STOP holds it off until the next boot, or until it is turned OFF and ON; each start writes `log: auto-started on GPS fix` to `/diag.log` |
+| *page 2:* FILES | OPEN | opens the FILES screen (below) |
+
+Page 1 is the original six knobs; page 2 holds AUTO LOG and FILES and has four rows
+free. The pager sits in the RESET row so it never moves under the finger, 18 px
+clear of CLEAR.
 
 Three of these are the trade-offs that were *measured* rather than guessed,
 which is why they are knobs at all.
@@ -329,8 +337,51 @@ number moves with BANDS too, since 5 GHz-only visits 8 channels rather than
 fixed step, because 10% turned out to be comfortably readable -- the useful
 range keeps going below where a 10-point step can reach.
 
-Settings are **not persisted** yet. NVS is available and the partition table
-already reserves it.
+Settings **are persisted**: `device/prefs.cpp` keeps each one under its own NVS key
+and saves a few seconds after the last change, so a reboot comes back as it was left.
+An absent key (a fresh board, or one flashed over older firmware) reads as the default.
+
+`docs/attune.png` is a hand-made capture with no script or make target behind it, and
+is now **stale** (it predates the IDLE row and the pager). Re-render it with
+`sim/umbravox docs/attune.png --screen attune --scale 4` when convenient.
+
+### FILES
+
+Reached from ATTUNE page 2 (the grimoire's 3x3 grid is full). On-brand the screen is
+called SCROLLS; plain labels call it FILES. It lists the owner's session logs on the
+card, `/WD-*.csv` in any case, and nothing else: `diag.log`, `perf.csv` and `/themes`
+are neither shown nor deletable here. "Is it a log" and "may it be deleted" are the
+serial `SDDEL`'s own policy functions (`sdcmd::sessionFile` / `sdcmd::delPolicy`,
+wrapped by `device/filescan.h`), so the screen and the console cannot disagree.
+
+- **Rows**, newest first, five at a time, drag to scroll: date and time from the name
+  (`2026-01-27 15:30`), or the dateless name (`WD-0012`), and the size. Dated names
+  sort by their stamp and come before dateless ones (which have no clock), those by
+  number. The newest 64 are kept; the count line says `64/80 LOGS` when there are
+  more, and a `+` when the walk hit its bound. Used space is on the count line and
+  free space in the header. An empty card reads `NO LOGS`, a missing or pulled one
+  `NO CARD`.
+- **REC** marks the file the logging session is writing. Selecting it shows `LOGGING`
+  and a disabled `IN USE` button: it cannot be deleted, and no confirmation opens.
+- **Delete**: tap a row, then DELETE. A card asks `DELETE THIS LOG?` with the date,
+  size and `CANNOT UNDO`. NO is the default: the large button, where the DELETE tap
+  already was, and any tap but YES cancels. YES is small and far left. Every tap in
+  the first 400 ms is ignored, so a bounce can neither confirm nor cancel. The card
+  cancels itself after 10 s, on back, on any rescan, and if the file becomes the
+  session. The device deletes by name after re-checking the policy against the live
+  session, rescans, shows `DELETED` or `FAILED` for 2 s, and writes
+  `files: deleted /WD-....csv (N bytes) from the screen` to `/diag.log`.
+- **Cost**: the list is rebuilt only on opening, after a delete, and when the
+  session's file changes while the screen is up. One root walk on the loop task,
+  bounded at 512 entries or 1 s, then one free-space query. The first free-space query
+  after boot can read the whole FAT once if the card's FSInfo count is not trusted
+  (seconds on a 32 GB card; FatFs caches it after). Capture runs in the radio
+  callbacks meanwhile and the GPS UART buffers 2 s.
+
+All of the screen's state (selection, scroll, the confirm and its timers, the bounce
+guard, the protected row) is pure `ui/files.cpp`, tested by `sim/test_files.cpp`;
+`sim/umbravox --screen files --files N --scroll S --selected K --active K --confirm
+--nocard --result 1|2` renders any of it.
 
 ## What the scan screen shows
 
@@ -341,8 +392,8 @@ already reserves it.
 | **Runes** | On UMBRAVOX, sixteen marks walking the band, slowly and against the sweep. Those near the beam catch the light and those away from it fall back, so the ring reads as consecrated rather than as a flat border. |
 | **Field** | Radius is RSSI -- the `-90` labels the outer ring. **Angle is not a bearing.** There is no magnetometer, and RSSI alone cannot give direction. The intent is a stable hash of the BSSID, so a given AP sits in the same spot for the whole drive and you can watch the field move as you drive. (The hash is keyed per boot, so the spot changes from one boot to the next.) |
 | **Sweep** | Cosmetic, but it earns its place: with the radar, a contact's fade is driven by how long since the beam crossed it, which on the device is just `millis()` since last seen. (The candle draws no beam, so nothing is ever just crossed; contacts there are simply present.) Stale contacts decay so the dial does not silt up. |
-| **Spectrum** | 13 bars for 2.4 GHz, 8 for the 5 GHz subset we hop, split by a gap. The parked channel is drawn bright with a tick above it. |
-| **Footer** | `FIXED` or `NO GPS` on the left; on the right the logging control: `START` (not logging; tap to start), `STOP` (logging; tap to stop) or `NO CARD`, beside a dot that is filled red while logging. No satellite count, uptime or timer. |
+| **Spectrum** | 13 bars for 2.4 GHz, 8 for the 5 GHz subset we hop, split by a gap. The parked channel is drawn bright with a tick above it. It carries no node count (the old one-digit marker read `9N` for 12 nodes); the footer does. |
+| **Footer** | `FIXED` or `NO GPS` on the left; then the mesh node count (a three-node glyph and up to `99`; `N12` with plain labels), DIM at none and green once a node is live, home screen only; on the right the logging control: `START` (not logging; tap to start), `STOP` (logging; tap to stop) or `NO CARD`, beside a dot that is filled red while logging. No satellite count, uptime or timer. |
 
 There is **no battery gauge**: this board has no battery sensing, and a gauge
 that cannot be measured is a number invented on the device's behalf. The
@@ -362,7 +413,7 @@ circle and no spectrum strip.
 13 ..100 TILES    x2  w56     CIRCLE  x61 w97 h70
                                   field r22 - runes r26 - bound r31
                                 SPECTRUM  x61 w97 h16  (y85)
-103      FOOTER   FIXED/NO GPS - START/STOP/NO CARD
+103      FOOTER   FIXED/NO GPS - nodes - START/STOP/NO CARD
 ```
 
 Screen geometry is named constants in `ui/layout.h`; the dial's radii are the
@@ -712,6 +763,8 @@ ui/      compiles for BOTH the PC and the device
   screens.h      screen entry points
   screen_scan.cpp UMBRAVOX
   screen_aspect.cpp ASPECT: theme and sweep pickers and the live dial preview
+  files.h/cpp    FILES: the screen's pure interaction state (select, confirm, timers)
+  screen_files.cpp FILES, drawn
   palette.h/cpp  the theme table: colours, dial radii, offered sweeps
   seal.h/cpp     the BAPH0MAU5 centrepiece: face bitmap, drawn figure, mark band
   sweep.h/cpp    the five searches, and the detection that matches each
@@ -722,6 +775,7 @@ sim/     PC only
   Makefile
 device/  board only
   main.cpp       owns the panel, the backlight and the 1:2 blit. That is all.
+  filescan.h     FILES: which files are listed and deletable (sdcmd's policy), the bounded walk
 tools/
   gen_sigil.py   generates ui/sigil.h from the source art
 platformio.ini
