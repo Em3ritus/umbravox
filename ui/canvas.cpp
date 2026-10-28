@@ -177,8 +177,11 @@ void vignetteT(uint16_t* px) {
         uint16_t* row = px + y * CW;
         for (int x = 0; x < CW; x++) {
             const int dx = x - CX;
-            const int t = (dx * dx + dy * dy) * 100 / MAXD;   // 0..100
-            if (t <= 45) continue;
+            // floor(d2*100/MAXD) <= 45  <=>  d2*100 < 46*MAXD: the lit centre
+            // (most of the frame) is skipped without a division.
+            const int d2 = (dx * dx + dy * dy) * 100;
+            if (d2 < 46 * MAXD) continue;
+            const int t = d2 / MAXD;                          // 46..100
             const int f = 100 - (t - 45) * 26 / 55;           // 100..74
             const uint16_t p = row[x];
             const int r = (((p >> 11) & 0x1F) * f) / 100;
@@ -197,8 +200,9 @@ void vignetteRt(uint16_t* px, int cw, int ch) {
         uint16_t* row = px + y * cw;
         for (int x = 0; x < cw; x++) {
             const int dx = x - CX;
-            const int t = (dx * dx + dy * dy) * 100 / MAXD;
-            if (t <= 45) continue;
+            const int d2 = (dx * dx + dy * dy) * 100;
+            if (d2 < 46 * MAXD) continue;
+            const int t = d2 / MAXD;
             const int f = 100 - (t - 45) * 26 / 55;
             const uint16_t p = row[x];
             const int r = (((p >> 11) & 0x1F) * f) / 100;
