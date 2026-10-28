@@ -53,10 +53,11 @@ int main() {
         eq("lots of bytes, one good", w.check(10000, 20000, 1), NONE);
     }
 
-    printf("millis wrap is not a boot:\n");
+    printf("first check long after boot (late start, no wrap logic):\n");
     {
         Watch w;
-        eq("first check late", w.check(0xFFFFFF00u, 0, 0), NO_DATA);
+        eq("first check at ~49.7 days: no data", w.check(0xFFFFFF00u, 0, 0), NO_DATA);
+        eq("after millis wraps: not said again", w.check(5000, 0, 0), NONE);
     }
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

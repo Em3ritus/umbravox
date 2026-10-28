@@ -44,7 +44,10 @@ GY-GPS6MV2 boards the LED blinks once a second once there is a fix.
   RMC sentence has carried a plausible date. The NEO-6M often knows the date a
   little before it has a position. A session started before that is named
   `WD-NNNN.csv`. Dates from an unset clock (1980, 2080, years before 2024) are
-  refused as "no date".
+  refused as "no date". A date is accepted from any RMC with a valid time and
+  date, including a `V` (no-fix) one, so a receiver whose clock kept running
+  through an outage, or one with a wrong RTC date in a plausible year, can name
+  a log file with that date before it has a fix.
 
 ## Expected NMEA
 
@@ -95,7 +98,8 @@ gps: quality 1 mode 3D, sats 8 in GGA, in view 11, hdop 1.01, date yes, fix FIXE
 
 ## Hints on the console and in `/diag.log`
 
-Once per boot, at most:
+Once per boot, at most, and only on the UART boards (the NM-CYD-C5; not the
+Waveshare board, whose GPS is on I2C):
 
 - `gps: no data on GPIO 4: check TXD->P5 RX, 3.3V power, GND` if no byte has
   arrived 10 s after boot.

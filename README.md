@@ -123,8 +123,8 @@ VCC to 3V3 (its regulator also takes 5 V), GND to GND, module **TXD to P5 RX
 footer reads `NO GPS` until a 2D/3D fix, then `FIXED`; give it about 30 s
 outdoors from cold, and expect no fix indoors. The `GPS` console command prints
 bytes received, sentences good/bad by type, fix quality, satellites and HDOP,
-and a one-time line in `/diag.log` flags "no data" (wiring) or "no valid NMEA"
-(baud). Wiring, expected output, troubleshooting and a bench checklist:
+and, on the UART boards only, a one-time line in `/diag.log` flags "no data"
+(wiring) or "no valid NMEA" (baud). Wiring, expected output, troubleshooting and a bench checklist:
 [docs/gps-gy-gps6mv2.md](docs/gps-gy-gps6mv2.md). Tested against NMEA fixtures
 only, not yet on the real module.
 
