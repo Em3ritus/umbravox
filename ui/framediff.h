@@ -27,4 +27,9 @@ void frameDiff(const Canvas& c, Dirty& d);
 // Forget the shadow: the next frameDiff reports everything.
 void frameDiffReset();
 
+// Allocate the shadow now if it is not yet, and say whether there is one.
+// ui/ has no log; the device asks this when it enters portrait and logs a
+// failure once (every portrait frame is then a full blit, slower but right).
+bool frameDiffReady();
+
 } // namespace ui

@@ -32,6 +32,8 @@ uint16_t* shadow() {
 
 void frameDiffReset() { valid = false; }
 
+bool frameDiffReady() { return shadow() != nullptr; }
+
 void frameDiff(const Canvas& c, Dirty& d) {
     d.clear();
     const int w = c.w, h = c.h;

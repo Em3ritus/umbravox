@@ -428,6 +428,7 @@ int main() {
 
     printf("orientation switch and the pixel diff:\n");
     {
+        check("the frame shadow is available (host: static)", frameDiffReady());
         prevState(SCR_SCAN).nets24 = 99;
         prevState(SCR_FILES).fileTotal = 7;
         orientationChanged();

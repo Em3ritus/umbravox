@@ -9,6 +9,7 @@
 
 #include "screens.h"
 #include "draw.h"
+#include "framediff.h"
 #include "gnss.h"
 #include "gpstrack.h"
 #include <math.h>
@@ -166,6 +167,14 @@ static void applyOrientation(uint8_t orient) {
     ui::sizeCanvas(canvas, tall ? ui::ORIENT_PORTRAIT : ui::ORIENT_LANDSCAPE);
     ui::orientationChanged();
     Serial.printf("display: %s (rotation %u)\n", tall ? "portrait" : "landscape", (unsigned)rot);
+    // The portrait dirty tracking needs a 38 KB frame shadow in PSRAM. Without
+    // it every portrait frame is a full blit (correct, ~35 ms): say so, once.
+    static bool shadowLogged = false;
+    if (tall && !shadowLogged && !ui::frameDiffReady()) {
+        shadowLogged = true;
+        Serial.println("display: no PSRAM for the portrait frame shadow -- full blits");
+        elog::event(elog::WARN, "ui", "portrait: no PSRAM for the 38 KB frame shadow, every frame a full blit");
+    }
 }
 
 static void setBacklight(uint8_t pwm) {
