@@ -365,12 +365,114 @@ static void dates() {
     eq("carried, not 1980", (long)Gnss::utcEpoch(2000), (long)Gnss::toEpoch(2026, 10, 28, 10, 15, 13));
 }
 
+static void review() {
+    using namespace ui;
+    const char* GGA3D = FIX3D[2];
+
+    printf("quality 1 with empty coordinates:\n");
+    Gnss::reset();
+    Gnss::sentence("$GPGGA,101601.00,,,,,1,04,2.00,499.6,M,48.0,M,,*68", 1000);
+    eq("accepted as a sentence", (long)Gnss::good(), 1);
+    eq("no fix", Gnss::fix().valid, 0);
+    eq("not fresh", Gnss::fresh(1000), 0);
+    eq("no 0,0 lat", Gnss::fix().lat7, 0);
+    eq("no 0,0 lon", Gnss::fix().lon7, 0);
+    eq("fix time untouched", (long)Gnss::fix().atMs, 0);
+    // And after a real fix, it must not move the position to 0,0 or refresh it.
+    Gnss::sentence(GGA3D, 2000);
+    Gnss::sentence("$GPGGA,101601.00,,,,,1,04,2.00,499.6,M,48.0,M,,*68", 3000);
+    eq("position kept", Gnss::fix().lat7, LAT3D);
+    eq("not refreshed", (long)Gnss::fix().atMs, 2000);
+
+    printf("padding bytes between sentences (I2C FIFO NUL/0xFF):\n");
+    Gnss::reset();
+    wire(GGA3D, 1000); wire("\r\n", 1000);
+    Gnss::feed('\0', 1000); Gnss::feed('\0', 1000);
+    wire("\xff\xff\xff", 1000);
+    wire(FIX3D[0], 1000); wire("\r\n", 1000);
+    Gnss::feed('\0', 1000);
+    wire(FIX3D[3], 1000); wire("\r\n", 1000);
+    wire("\xff", 1000); Gnss::feed('\0', 1000);
+    eq("three good", (long)Gnss::good(), 3);
+    eq("padding is not bad", (long)Gnss::bad(), 0);
+
+    printf("I2C-style 1 KB chunks, padded:\n");
+    Gnss::reset();
+    {
+        // Four seconds of 3D output in 1 KB reads. A FIFO that is read
+        // while empty fills the read's tail with 0xFF/NUL; it does so between
+        // sentences, which is where an empty FIFO is. (The LC76G path reads
+        // exactly the queued length, so it has no padding at all; padding
+        // inside a sentence would drop that one line, as any control byte does.)
+        int chunks = 0, inChunk = 0;
+        for (int sec = 0; sec < 4; sec++)
+            for (const char* l : FIX3D) {
+                const int len = (int)strlen(l) + 2;
+                if (inChunk + len > 1024) {
+                    for (; inChunk < 1024; inChunk++) Gnss::feed(inChunk & 1 ? '\0' : '\xff', 1000);
+                    chunks++; inChunk = 0;
+                }
+                wire(l, 1000); wire("\r\n", 1000);
+                inChunk += len;
+            }
+        for (; inChunk < 1024; inChunk++) Gnss::feed(inChunk & 1 ? '\0' : '\xff', 1000);
+        chunks++;
+        eq("more than one chunk", chunks >= 2, 1);
+        eq("every sentence good", (long)Gnss::good(), 32);
+        eq("nothing bad", (long)Gnss::bad(), 0);
+        eq("fix", Gnss::fresh(1000), 1);
+        eq("bytes counted, padding included", (long)Gnss::counts().bytes, (long)chunks * 1024);
+    }
+
+    printf("a control byte inside a sentence still rejects it:\n");
+    Gnss::reset();
+    wire("$GPGGA,101601.00,4717.1", 1000); Gnss::feed('\0', 1000);
+    wire("1399,N,00833.91590,E,1,08,1.01,499.6,M,48.0,M,,*57\r\n", 1000);
+    eq("rejected", (long)Gnss::bad(), 1);
+    eq("no fix", Gnss::fix().valid, 0);
+
+    printf("nothing after the checksum digits:\n");
+    Gnss::reset();
+    Gnss::sentence("$GPGGA,101601.00,4717.11399,N,00833.91590,E,1,08,1.01,499.6,M,48.0,M,,*57garbage", 1000);
+    eq("'*57garbage' rejected", (long)Gnss::bad(), 1);
+    eq("no fix", Gnss::fix().valid, 0);
+    wire("$GPGGA,101601.00,4717.11399,N,00833.91590,E,1,08,1.01,499.6,M,48.0,M,,*57", 1000);
+    Gnss::feed('\0', 1000); wire("x\r\n", 1000);
+    eq("'*57\\0x' rejected", (long)Gnss::bad(), 2);
+    eq("still no fix", Gnss::fix().valid, 0);
+    Gnss::sentence("$GPGGA,101601.00,4717.11399,N,00833.91590,E,1,08,1.01,499.6,M,48.0,M,,*57\r\n", 1000);
+    eq("a trailing CRLF is fine", Gnss::fix().valid, 1);
+
+    printf("buffer boundary:\n");
+    {
+        char body[120];
+        // '$' + body + '*hh' = 99 characters: fits the 100-byte buffer.
+        int n = snprintf(body, sizeof body, "GPTXT,01,01,02,");
+        while (n < 95) body[n++] = 'z';
+        body[n] = 0;
+        Gnss::reset();
+        const char* s99 = withCk(body);
+        eq("99-char line", (long)strlen(s99), 99);
+        wire(s99, 1000); wire("\r\n", 1000);
+        eq("99 accepted", (long)Gnss::counts().txt, 1);
+        eq("99 not bad", (long)Gnss::bad(), 0);
+        body[n++] = 'z'; body[n] = 0;
+        Gnss::reset();
+        const char* s100 = withCk(body);
+        eq("100-char line", (long)strlen(s100), 100);
+        wire(s100, 1000); wire("\r\n", 1000);
+        eq("100 rejected", (long)Gnss::bad(), 1);
+        eq("100 not TXT", (long)Gnss::counts().txt, 0);
+    }
+}
+
 int main() {
     using namespace ui;
     neo6m();
     wireNoise();
     talkers();
     dates();
+    review();
 
     // Canonical example sentence: 48 deg 07.038' N, 011 deg 31.000' E.
     Gnss::reset();

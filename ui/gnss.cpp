@@ -12,7 +12,7 @@ uint32_t epoch     = 0;      // UTC seconds at that moment
 // to fit, it would lose its checksum and its tail.
 char     buf[100];
 int      bufN = 0;
-bool     bufOver = false;
+bool     bufDrop = false;   // this line is overlong or noisy: drop it at its end
 Fix      cur;
 Status   st;
 Counts   cnt;
@@ -172,6 +172,10 @@ bool sentence(const char* s, uint32_t nowMs) {
     if (s[i] != '*') { nBad++; return false; }
     const int hi = hexVal(s[i + 1]), lo = hi < 0 ? -1 : hexVal(s[i + 2]);
     if (hi < 0 || lo < 0 || sum != (uint8_t)((hi << 4) | lo)) { nBad++; return false; }
+    // Nothing after the two digits but the line ending: "*57garbage" is a
+    // line that ran into the next one, not a sentence.
+    for (int k = i + 3; s[k]; k++)
+        if (s[k] != '\r' && s[k] != '\n') { nBad++; return false; }
     // "$ttsss," at least: two-character talker, three-character type.
     if (i < 6) { nBad++; return false; }
     nGood++;
@@ -247,18 +251,27 @@ void feed(char c, uint32_t nowMs) {
     cnt.bytes++;
     cnt.lastByteMs = nowMs;
     if (c == '\r' || c == '\n') {
-        if (bufOver)   nBad++;
+        if (bufDrop)   nBad++;
         else if (bufN) { buf[bufN] = 0; sentence(buf, nowMs); }
-        bufN = 0; bufOver = false;
+        bufN = 0; bufDrop = false;
         return;
     }
     if (c == '$') {                               // resync on a fresh start
-        if (bufN || bufOver) nBad++;              // the line before it was cut off
-        bufN = 0; bufOver = false;
+        if (bufN || bufDrop) nBad++;              // the line before it was cut off
+        bufN = 0; bufDrop = false;
     }
-    if (bufOver) return;
+    if (bufDrop) return;
+    const uint8_t u = (uint8_t)c;
+    if (u < 0x20 || u > 0x7e) {
+        // Between sentences, NUL/0xFF padding (an I2C receiver's empty FIFO)
+        // and boot glitches are not data: skip them. Inside one, a control
+        // byte is line noise and the whole line goes; buffering it would let
+        // a NUL hide whatever follows it from the checks in sentence().
+        if (bufN) bufDrop = true;
+        return;
+    }
     if (bufN < (int)sizeof(buf) - 1) buf[bufN++] = c;
-    else bufOver = true;
+    else bufDrop = true;
 }
 
 const Fix& fix() { return cur; }
@@ -292,7 +305,7 @@ uint32_t bad()  { return nBad; }
 uint32_t qualZero() { return nQual0; }
 
 void reset() {
-    bufN = 0; bufOver = false; nViews = 0; nGood = 0; nBad = 0; nQual0 = 0;
+    bufN = 0; bufDrop = false; nViews = 0; nGood = 0; nBad = 0; nQual0 = 0;
     epoch = 0; epochAtMs = 0;
     cur = Fix{}; st = Status{}; cnt = Counts{};
 }
