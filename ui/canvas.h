@@ -13,12 +13,27 @@
 
 namespace ui {
 
+// The LANDSCAPE canvas, and the size of the buffer in either orientation.
+// Every landscape screen draws against these constants, unchanged.
 constexpr int W = 160;
 constexpr int H = 120;
 
 class Canvas {
 public:
     uint16_t px[W * H];
+
+    // The geometry actually in use: 160x120 (landscape, the default) or
+    // 120x160 (portrait). The buffer is the same 19,200 pixels; `w` is the
+    // stride and every helper clips to w x h. Change it with setSize().
+    int16_t w = W, h = H;
+
+    // Refuses (returns false, unchanged) a size that is not positive or does
+    // not fit the buffer.
+    bool setSize(int nw, int nh) {
+        if (nw <= 0 || nh <= 0 || nw * nh > W * H) return false;
+        w = (int16_t)nw; h = (int16_t)nh;
+        return true;
+    }
 
     void clear(uint16_t c);
     void pixel(int x, int y, uint16_t c);

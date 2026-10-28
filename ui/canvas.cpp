@@ -4,22 +4,22 @@
 namespace ui {
 
 void Canvas::clear(uint16_t c) {
-    for (int i = 0; i < W * H; i++) px[i] = c;
+    for (int i = 0; i < w * h; i++) px[i] = c;
 }
 
 void Canvas::pixel(int x, int y, uint16_t c) {
-    if (x < 0 || y < 0 || x >= W || y >= H) return;
-    px[y * W + x] = c;
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    px[y * w + x] = c;
 }
 
-void Canvas::hline(int x, int y, int w, uint16_t c) {
-    if (w < 0) { x += w; w = -w; }
-    for (int i = 0; i < w; i++) pixel(x + i, y, c);
+void Canvas::hline(int x, int y, int n, uint16_t c) {
+    if (n < 0) { x += n; n = -n; }
+    for (int i = 0; i < n; i++) pixel(x + i, y, c);
 }
 
-void Canvas::vline(int x, int y, int h, uint16_t c) {
-    if (h < 0) { y += h; h = -h; }
-    for (int i = 0; i < h; i++) pixel(x, y + i, c);
+void Canvas::vline(int x, int y, int n, uint16_t c) {
+    if (n < 0) { y += n; n = -n; }
+    for (int i = 0; i < n; i++) pixel(x, y + i, c);
 }
 
 void Canvas::line(int x0, int y0, int x1, int y1, uint16_t c) {
@@ -37,16 +37,16 @@ void Canvas::line(int x0, int y0, int x1, int y1, uint16_t c) {
     }
 }
 
-void Canvas::rect(int x, int y, int w, int h, uint16_t c) {
-    if (w <= 0 || h <= 0) return;
-    hline(x, y, w, c);
-    hline(x, y + h - 1, w, c);
-    vline(x, y, h, c);
-    vline(x + w - 1, y, h, c);
+void Canvas::rect(int x, int y, int rw, int rh, uint16_t c) {
+    if (rw <= 0 || rh <= 0) return;
+    hline(x, y, rw, c);
+    hline(x, y + rh - 1, rw, c);
+    vline(x, y, rh, c);
+    vline(x + rw - 1, y, rh, c);
 }
 
-void Canvas::fill(int x, int y, int w, int h, uint16_t c) {
-    for (int j = 0; j < h; j++) hline(x, y + j, w, c);
+void Canvas::fill(int x, int y, int rw, int rh, uint16_t c) {
+    for (int j = 0; j < rh; j++) hline(x, y + j, rw, c);
 }
 
 void Canvas::circle(int cx, int cy, int r, uint16_t c) {
@@ -69,16 +69,16 @@ void Canvas::disc(int cx, int cy, int r, uint16_t c) {
             if (i * i + j * j <= r * r) pixel(cx + i, cy + j, c);
 }
 
-void Canvas::dottedRect(int x, int y, int w, int h, uint16_t c, int on, int off) {
+void Canvas::dottedRect(int x, int y, int rw, int rh, uint16_t c, int on, int off) {
     const int period = on + off;
-    if (period <= 0 || w <= 0 || h <= 0) return;
+    if (period <= 0 || rw <= 0 || rh <= 0) return;
     int t = 0;
-    for (int i = 0; i < w; i++, t++) {
-        if (t % period < on) { pixel(x + i, y, c); pixel(x + i, y + h - 1, c); }
+    for (int i = 0; i < rw; i++, t++) {
+        if (t % period < on) { pixel(x + i, y, c); pixel(x + i, y + rh - 1, c); }
     }
     t = 0;
-    for (int j = 0; j < h; j++, t++) {
-        if (t % period < on) { pixel(x, y + j, c); pixel(x + w - 1, y + j, c); }
+    for (int j = 0; j < rh; j++, t++) {
+        if (t % period < on) { pixel(x, y + j, c); pixel(x + rw - 1, y + j, c); }
     }
 }
 
@@ -105,7 +105,7 @@ void Canvas::text(int x, int y, const char* s, uint16_t c, int scale) {
     if (!s || scale < 1) return;
     for (int i = 0; s[i]; i++) {
         const int gx = x + i * Font::ADV * scale;
-        if (gx >= W) break;
+        if (gx >= w) break;
         for (int r = 0; r < Font::H; r++) {
             const uint8_t bits = Font::row(s[i], r);
             if (!bits) continue;
@@ -141,32 +141,33 @@ uint16_t Canvas::mix(uint16_t a, uint16_t b, int n, int d) {
 void Canvas::vignette() {
     // Squared radius, so no sqrt. Full brightness out to ~45% of the corner
     // distance, then a linear fall to 62% at the very corners.
-    constexpr int CX = W / 2, CY = H / 2;
-    constexpr int MAXD = CX * CX + CY * CY;
-    for (int y = 0; y < H; y++) {
+    // Runtime w x h: in portrait the light is in the middle of the tall frame.
+    const int CX = w / 2, CY = h / 2;
+    const int MAXD = CX * CX + CY * CY;
+    for (int y = 0; y < h; y++) {
         const int dy = y - CY;
-        for (int x = 0; x < W; x++) {
+        for (int x = 0; x < w; x++) {
             const int dx = x - CX;
             const int t = (dx * dx + dy * dy) * 100 / MAXD;   // 0..100
             if (t <= 45) continue;
             const int f = 100 - (t - 45) * 26 / 55;           // 100..74
-            uint16_t p = px[y * W + x];
+            uint16_t p = px[y * w + x];
             const int r = (((p >> 11) & 0x1F) * f) / 100;
             const int g = (((p >>  5) & 0x3F) * f) / 100;
             const int b = (( p        & 0x1F) * f) / 100;
-            px[y * W + x] = (uint16_t)((r << 11) | (g << 5) | b);
+            px[y * w + x] = (uint16_t)((r << 11) | (g << 5) | b);
         }
     }
 }
 
 void Canvas::scanlines() {
-    for (int y = 1; y < H; y += 2)
-        for (int x = 0; x < W; x++) {
-            uint16_t c = px[y * W + x];
+    for (int y = 1; y < h; y += 2)
+        for (int x = 0; x < w; x++) {
+            uint16_t c = px[y * w + x];
             const int r = ((c >> 11) & 0x1F) * 11 / 16;
             const int g = ((c >>  5) & 0x3F) * 11 / 16;
             const int b = ( c        & 0x1F) * 11 / 16;
-            px[y * W + x] = (uint16_t)((r << 11) | (g << 5) | b);
+            px[y * w + x] = (uint16_t)((r << 11) | (g << 5) | b);
         }
 }
 

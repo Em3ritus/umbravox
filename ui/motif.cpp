@@ -31,10 +31,10 @@ void drawEmblem(Canvas& c, const themepack::Emblem& e, int cx, int cy, int r,
     const int d = 2 * r;
     const int ew = e.w, eh = e.h;
     for (int y = cy - r; y <= cy + r; y++) {
-        if (y < 0 || y >= H) continue;
+        if (y < 0 || y >= c.h) continue;
         const int dy = y - cy;
         for (int x = cx - r; x <= cx + r; x++) {
-            if (x < 0 || x >= W) continue;
+            if (x < 0 || x >= c.w) continue;
             const int dx = x - cx;
             if (dx * dx + dy * dy > r * r) continue;        // mask to the circle
             int sx = (x - (cx - r)) * ew / d;

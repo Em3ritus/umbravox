@@ -141,6 +141,10 @@ test_settings: test_settings.cpp $(SRC_NOMAIN) $(HDR)
 test_motif: test_motif.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_motif.cpp $(SRC_NOMAIN) -lm
 
+# The canvas's runtime geometry (portrait): stride, clip, whole-frame passes.
+test_canvas: test_canvas.cpp ../ui/canvas.cpp ../ui/font5x7.cpp $(HDR)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_canvas.cpp ../ui/canvas.cpp ../ui/font5x7.cpp -lm
+
 test_nav: test_nav.cpp $(SRC_NOMAIN) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ test_nav.cpp $(SRC_NOMAIN) -lm
 
@@ -175,7 +179,7 @@ test_sdcmd: test_sdcmd.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/
 sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ sdcmd_console.cpp ../ui/themepack.cpp -lm
 
-TESTS = test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity
+TESTS = test_canvas test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
