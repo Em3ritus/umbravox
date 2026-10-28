@@ -152,11 +152,14 @@ void filesRows(Canvas& c, const State& s) {
         }
         char lab[FILE_LABEL_MAX + 1];
         fileLabel(s.fileRows[i].name, lab, sizeof lab);
-        c.text(pl::FILE_ROW_X + 4, y + 1, lab, sel ? pal::BRIGHT : pal::TEXT);
+        // Name on rows y..y+6, a blank row, then REC and the size on
+        // y+8..y+14 (y+15 is the rule under the row). On the selected row the
+        // size is BRIGHT: DIM all but vanishes on the selection fill.
+        c.text(pl::FILE_ROW_X + 4, y, lab, sel ? pal::BRIGHT : pal::TEXT);
         if (act) c.text(pl::FILE_ROW_X + 4, y + 8, "REC", pal::RED);
         char sz[8];
         fmtBytes(s.fileRows[i].size, sz);
-        c.textRight(pl::FILE_ROW_X + pl::FILE_ROW_W - 2, y + 8, sz, pal::DIM);
+        c.textRight(pl::FILE_ROW_X + pl::FILE_ROW_W - 2, y + 8, sz, sel ? pal::BRIGHT : pal::DIM);
     }
     if (s.fileTotal > FILE_VIS) {
         const int top = pl::FILE_ROW_Y, h = FILE_VIS * pl::FILE_ROW_H - 1;

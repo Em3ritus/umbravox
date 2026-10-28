@@ -426,6 +426,74 @@ int main() {
         pal::setTheme(pal::TH_UMBRAVOX);
     }
 
+    printf("no write wraps past x = 119 (per-row check):\n");
+    {
+        // A write at x >= 120 with stride 120 lands on the NEXT row's left
+        // edge. Draw every primitive (and the shared dial/alert/emblem
+        // drawers) hanging off the right edge and require column 0..9 of
+        // every row to stay untouched -- nothing here reaches the left.
+        static Canvas c;
+        bool ok = true;
+        const int themes[3] = {pal::TH_UMBRAVOX, pal::TH_BAPH0MAU5, packEmblem};
+        for (int k = 0; k < 14; k++) {
+            for (int t = 0; t < 3; t++) {
+                pal::setTheme((uint8_t)themes[t]);
+                c.setSize(pl::PW, pl::PH);
+                c.clear(0);
+                State s = demoState(7);
+                s.set.theme = (uint8_t)themes[t];
+                s.alertActive = true; s.alertThreat = TH_DRONE; s.alertConf = CONF_HIGH;
+                s.alertAge = (uint16_t)(k * 140);
+                s.set.alertStyle = (uint8_t)(k % ALERT_STYLE_COUNT);
+                switch (k) {
+                    case 0: for (int y = 0; y < 160; y++) c.pixel(120 + y % 5, y, 1); break;
+                    case 1: for (int y = 0; y < 160; y++) c.hline(100, y, 60, 1); break;
+                    case 2: c.fill(105, 0, 40, 160, 1); break;
+                    case 3: c.rect(110, 3, 30, 150, 1); c.dottedRect(112, 5, 30, 140, 1); break;
+                    case 4: for (int y = 0; y < 160; y += 3) c.line(100, y, 200, y + 20, 1); break;
+                    case 5: c.circle(115, 80, 40, 1); c.dottedCircle(115, 40, 30, 1); break;
+                    case 6: c.disc(118, 80, 30, 1); break;
+                    case 7: for (int y = 0; y < 150; y += 9) c.text(90, y, "OVERFLOWING", 1); break;
+                    case 8: c.text(100, 40, "WIDE", 1, 3); break;
+                    default:
+                        drawDialAt(c, s, 112, 80, R_FIELD, R_RUNES, R_STAR, R_BOUND);
+                        drawAlertIn(c, s, 70, 20, 116, 90);
+                        break;
+                }
+                for (int y = 0; y < pl::PH && ok; y++)
+                    for (int x = 0; x < 10; x++)
+                        if (c.px[y * pl::PW + x]) { ok = false; printf("    case %d theme %d: (%d,%d)\n", k, themes[t], x, y); break; }
+            }
+        }
+        check("primitives, dial, alerts and emblem off the right edge never wrap", ok);
+        pal::setTheme(pal::TH_UMBRAVOX);
+    }
+
+    printf("portrait FILES rows:\n");
+    {
+        // The name line and the size/REC line are separated by a blank pixel
+        // row: render a row with text and the same screen with no rows (the
+        // "NO LOGS" message is lower down), and the gap row must match.
+        pal::setTheme(pal::TH_UMBRAVOX);
+        State a = demoState(0);
+        a.set.orient = ORIENT_PORTRAIT; a.screen = SCR_FILES;
+        a.fileCard = true; a.fileTotal = 1; a.fileFound = 1; a.nFileRows = 1;
+        snprintf(a.fileRows[0].name, FILE_NAME_MAX, "WD-20261027-153012.csv");
+        a.fileRows[0].size = 8888888; a.fileActive = 0;
+        State b = a; b.nFileRows = 0; b.fileTotal = 0; b.fileFound = 0;
+        static Canvas ca, cb;
+        drawScreen(ca, a, nullptr);
+        drawScreen(cb, b, nullptr);
+        const int gap = pl::FILE_ROW_Y + 7;
+        bool clear = true, drawn = false;
+        for (int x = 0; x < pl::PW; x++) {
+            if (ca.px[gap * pl::PW + x] != cb.px[gap * pl::PW + x]) clear = false;
+            if (ca.px[(gap - 3) * pl::PW + x] != cb.px[(gap - 3) * pl::PW + x]) drawn = true;
+        }
+        check("the name line is drawn", drawn);
+        check("a blank pixel row separates the name from the size/REC line", clear);
+    }
+
     printf("orientation switch and the pixel diff:\n");
     {
         check("the frame shadow is available (host: static)", frameDiffReady());
