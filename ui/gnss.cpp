@@ -6,13 +6,24 @@ namespace {
 
 uint32_t epochAtMs = 0;      // millis() when `epoch` was true
 uint32_t epoch     = 0;      // UTC seconds at that moment
-uint32_t todaySecs = 0;      // seconds into the day, from GGA
-uint32_t dateYmd   = 0;      // yyyymmdd, from RMC
 
+// NMEA 0183 caps a sentence at 82 characters with its CRLF; this leaves room
+// for receivers that run a little long. A longer line is dropped whole: cut
+// to fit, it would lose its checksum and its tail.
 char     buf[100];
 int      bufN = 0;
+bool     bufOver = false;
 Fix      cur;
+Status   st;
+Counts   cnt;
 uint32_t nGood = 0, nBad = 0, nQual0 = 0;
+
+// RMC carries a two-digit year. 00-79 is read as 20yy and 80-99 as 19yy, the
+// usual century rule; then anything before MIN_YEAR is refused as "no date".
+// That catches the 1980-01-06 (GPS week 0) and 2080 defaults a receiver
+// reports from an unset clock, and a 2000s RTC default, none of which may name
+// a log file.
+constexpr int MIN_YEAR = 2024;
 
 // One slot per talker ID we accept, so GSV totals can be summed rather than
 // overwritten. Index is the two-character talker, packed.
@@ -38,17 +49,56 @@ void field(const char* s, int want, char* out, int n) {
     out[o] = 0;
 }
 
+bool digits(const char* s, int n) {
+    for (int i = 0; i < n; i++) if (s[i] < '0' || s[i] > '9') return false;
+    return true;
+}
+
 // hhmmss.sss -> seconds into the day. Returns -1 if it does not look like one.
 int hmsToSecs(const char* s) {
     int n = 0;
     while (s[n] && s[n] != '.') n++;
-    if (n < 6) return -1;
+    if (n != 6 || !digits(s, 6)) return -1;
     const int h = (s[0]-'0')*10 + (s[1]-'0');
     const int m = (s[2]-'0')*10 + (s[3]-'0');
     const int c = (s[4]-'0')*10 + (s[5]-'0');
     if (h > 23 || m > 59 || c > 60) return -1;
     return h * 3600 + m * 60 + c;
 }
+
+// ddmmyy -> days-valid y/m/d, or false. Two-digit year per the rule above.
+bool parseDate(const char* d, int& y, int& mo, int& dd) {
+    int n = 0;
+    while (d[n]) n++;
+    if (n != 6 || !digits(d, 6)) return false;
+    dd = (d[0]-'0')*10 + (d[1]-'0');
+    mo = (d[2]-'0')*10 + (d[3]-'0');
+    const int yy = (d[4]-'0')*10 + (d[5]-'0');
+    y = yy < 80 ? 2000 + yy : 1900 + yy;
+    if (y < MIN_YEAR || mo < 1 || mo > 12 || dd < 1) return false;
+    static const uint8_t mdays[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    return dd <= mdays[mo - 1] + (mo == 2 && leap);
+}
+
+// "1.01" -> 101, "99.99" -> 9999; empty -> 0.
+uint16_t toCenti(const char* s) {
+    uint32_t v = 0;
+    int frac = -1;
+    for (; *s; s++) {
+        if (*s == '.') { if (frac >= 0) break; frac = 0; continue; }
+        if (*s < '0' || *s > '9') break;
+        if (frac >= 2) continue;
+        v = v * 10 + (uint32_t)(*s - '0');
+        if (frac >= 0) frac++;
+        if (v > 650000) break;
+    }
+    if (frac < 0) frac = 0;
+    while (frac < 2) { v *= 10; frac++; }
+    return (uint16_t)(v > 65535 ? 65535 : v);
+}
+
+bool is3(const char* t, char a, char b, char c) { return t[0] == a && t[1] == b && t[2] == c; }
 
 int toInt(const char* s) {
     int v = 0;
@@ -106,52 +156,70 @@ uint32_t toEpochImpl(int y, int m, int d, int hh, int mm, int ss) {
 }
 
 bool sentence(const char* s, uint32_t nowMs) {
-    if (!s || s[0] != '$') return false;
+    if (!s || s[0] != '$') { nBad++; return false; }
 
-    // Checksum: XOR of everything between '$' and '*'.
+    // Checksum: XOR of everything between '$' and '*'. Required: the NEO-6M
+    // sends one on every sentence, and a line that lost its tail to a dropped
+    // byte would otherwise be taken whole. Bytes outside printable ASCII are
+    // line noise even when the XOR happens to agree.
     uint8_t sum = 0;
     int i = 1;
-    for (; s[i] && s[i] != '*'; i++) sum ^= (uint8_t)s[i];
-    if (s[i] == '*') {
-        const int hi = hexVal(s[i + 1]), lo = hexVal(s[i + 2]);
-        if (hi < 0 || lo < 0 || sum != (uint8_t)((hi << 4) | lo)) { nBad++; return false; }
+    for (; s[i] && s[i] != '*'; i++) {
+        const uint8_t c = (uint8_t)s[i];
+        if (c < 0x20 || c > 0x7e) { nBad++; return false; }
+        sum ^= c;
     }
+    if (s[i] != '*') { nBad++; return false; }
+    const int hi = hexVal(s[i + 1]), lo = hi < 0 ? -1 : hexVal(s[i + 2]);
+    if (hi < 0 || lo < 0 || sum != (uint8_t)((hi << 4) | lo)) { nBad++; return false; }
+    // "$ttsss," at least: two-character talker, three-character type.
+    if (i < 6) { nBad++; return false; }
     nGood++;
 
     const char* type = s + 3;          // skip '$' and the 2-char talker
     char f[16];
 
-    if (!(type[0] == 'G' && type[1] == 'G' && type[2] == 'A')) {
-        if (type[0] == 'G' && type[1] == 'S' && type[2] == 'V') {
+    if (!is3(type, 'G', 'G', 'A')) {
+        if (is3(type, 'G', 'S', 'V')) {
+            cnt.gsv++;
             field(s, 3, f, sizeof f);
             noteView(s, (uint8_t)toInt(f));
-        } else if (type[0] == 'R' && type[1] == 'M' && type[2] == 'C') {
-            // RMC field 9 is ddmmyy -- the only place the date appears.
-            char d[12];
+        } else if (is3(type, 'G', 'S', 'A')) {
+            cnt.gsa++;
+            field(s, 2, f, sizeof f);
+            const int m = toInt(f);
+            if (m >= 1 && m <= 3) st.mode = (uint8_t)m;
+        } else if (is3(type, 'T', 'X', 'T')) {
+            cnt.txt++;
+        } else if (is3(type, 'R', 'M', 'C')) {
+            cnt.rmc++;
+            // RMC field 9 is ddmmyy -- the only place the date appears. Time
+            // and date are taken from the same sentence or not at all; a
+            // refused date leaves the running clock alone.
+            char d[12], tf[16];
             field(s, 9, d, sizeof d);
-            if (d[0] && d[5]) {
-                const int dd = (d[0]-'0')*10 + (d[1]-'0');
-                const int mo = (d[2]-'0')*10 + (d[3]-'0');
-                const int yy = (d[4]-'0')*10 + (d[5]-'0');
-                if (dd >= 1 && dd <= 31 && mo >= 1 && mo <= 12)
-                    dateYmd = (uint32_t)((2000 + yy) * 10000 + mo * 100 + dd);
-            }
-            char tf[16];
             field(s, 1, tf, sizeof tf);
+            int y, mo, dd;
             const int secs = hmsToSecs(tf);
-            if (secs >= 0) todaySecs = (uint32_t)secs;
-            if (dateYmd && todaySecs) {
-                epoch = toEpochImpl((int)(dateYmd / 10000),
-                                    (int)((dateYmd / 100) % 100),
-                                    (int)(dateYmd % 100), 0, 0, 0) + todaySecs;
+            if (secs >= 0 && parseDate(d, y, mo, dd)) {
+                epoch = toEpochImpl(y, mo, dd, 0, 0, 0) + (uint32_t)secs;
                 epochAtMs = nowMs;
             }
+        } else {
+            cnt.other++;
         }
         return true;
     }
 
+    cnt.gga++;
     field(s, 6, f, sizeof f);
     const int qual = toInt(f);
+    st.quality = (uint8_t)(qual > 0 ? qual : 0);
+    field(s, 7, f, sizeof f);
+    const uint8_t sats = (uint8_t)toInt(f);
+    st.sats = sats;
+    field(s, 8, f, sizeof f);
+    st.hdop100 = toCenti(f);
     // Quality 0: the receiver has no solution this second. Not a reason to
     // drop the fix at once -- one such GGA used to, and it was most of the
     // fix flapping in the field logs. Nothing here changes: no position is
@@ -161,27 +229,36 @@ bool sentence(const char* s, uint32_t nowMs) {
     // output rate, and no new state.) Counted for diag.log.
     if (qual <= 0) { nQual0++; return true; }
 
-    field(s, 7, f, sizeof f);
-    cur.used = (uint8_t)toInt(f);
+    char lat[16], lon[16], ns[4], ew[4];
+    field(s, 2, lat, sizeof lat); field(s, 3, ns, sizeof ns);
+    field(s, 4, lon, sizeof lon); field(s, 5, ew, sizeof ew);
+    // A solution with no coordinates is not a position (it would be 0,0).
+    if (!lat[0] || !lon[0] || !ns[0] || !ew[0]) return true;
 
-    char val[16], hemi[4];
-    field(s, 2, val, sizeof val); field(s, 3, hemi, sizeof hemi);
-    cur.lat7 = toDeg7(val, hemi[0]);
-    field(s, 4, val, sizeof val); field(s, 5, hemi, sizeof hemi);
-    cur.lon7 = toDeg7(val, hemi[0]);
-
+    cur.used = sats;
+    cur.lat7 = toDeg7(lat, ns[0]);
+    cur.lon7 = toDeg7(lon, ew[0]);
     cur.valid = true;
     cur.atMs  = nowMs;
     return true;
 }
 
 void feed(char c, uint32_t nowMs) {
+    cnt.bytes++;
+    cnt.lastByteMs = nowMs;
     if (c == '\r' || c == '\n') {
-        if (bufN) { buf[bufN] = 0; sentence(buf, nowMs); bufN = 0; }
+        if (bufOver)   nBad++;
+        else if (bufN) { buf[bufN] = 0; sentence(buf, nowMs); }
+        bufN = 0; bufOver = false;
         return;
     }
-    if (c == '$') bufN = 0;                       // resync on a fresh start
+    if (c == '$') {                               // resync on a fresh start
+        if (bufN || bufOver) nBad++;              // the line before it was cut off
+        bufN = 0; bufOver = false;
+    }
+    if (bufOver) return;
     if (bufN < (int)sizeof(buf) - 1) buf[bufN++] = c;
+    else bufOver = true;
 }
 
 const Fix& fix() { return cur; }
@@ -207,14 +284,17 @@ uint32_t toEpoch(int y, int mo, int d, int h, int mi, int s) {
     return toEpochImpl(y, mo, d, h, mi, s);
 }
 
+const Status& status() { return st; }
+const Counts& counts() { return cnt; }
+
 uint32_t good() { return nGood; }
 uint32_t bad()  { return nBad; }
 uint32_t qualZero() { return nQual0; }
 
 void reset() {
-    bufN = 0; nViews = 0; nGood = 0; nBad = 0; nQual0 = 0;
-    epoch = 0; epochAtMs = 0; todaySecs = 0; dateYmd = 0;
-    cur = Fix{};
+    bufN = 0; bufOver = false; nViews = 0; nGood = 0; nBad = 0; nQual0 = 0;
+    epoch = 0; epochAtMs = 0;
+    cur = Fix{}; st = Status{}; cnt = Counts{};
 }
 
 } // namespace Gnss

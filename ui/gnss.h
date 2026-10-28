@@ -48,8 +48,29 @@ uint8_t inView();
 constexpr uint32_t FRESH_MS = 5000;
 bool fresh(uint32_t nowMs);
 
+// What the receiver said last, fix or not: the GPS console command and the
+// bring-up checklist read this, nothing gates on it.
+struct Status {
+    uint8_t  quality = 0;   // last GGA fix quality (0 = no solution)
+    uint8_t  sats    = 0;   // satellites in that GGA, even at quality 0
+    uint8_t  mode    = 0;   // last GSA fix mode: 1 none, 2 2D, 3 3D (0 = no GSA yet)
+    uint16_t hdop100 = 0;   // last GGA HDOP x100 (99.99 = no solution; 0 = empty)
+};
+const Status& status();
+
+// Bring-up counters. `bytes` counts every byte fed, good or not, so "bytes
+// but nothing good" (a baud mismatch) is told apart from "no bytes" (wiring).
+struct Counts {
+    uint32_t bytes = 0, lastByteMs = 0;
+    uint32_t rmc = 0, gga = 0, gsa = 0, gsv = 0, txt = 0, other = 0;   // accepted, by type
+};
+const Counts& counts();
+
 uint32_t good();   // sentences accepted
-uint32_t bad();    // sentences rejected on checksum
+// Lines rejected: bad or missing checksum, overlong, control bytes, no '$',
+// or cut off by the next '$'. Every NEO-6M sentence carries a checksum, and
+// jumper wires drop bytes, so a line without one is noise, not a sentence.
+uint32_t bad();
 uint32_t qualZero(); // GGAs with quality 0 (no solution): counted, not acted on
 void reset();
 
