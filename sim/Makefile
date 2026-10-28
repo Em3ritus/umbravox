@@ -213,6 +213,9 @@ test: $(TESTS) sdcmd_console emblem-check sdput-check
 # version control there is nothing to diff against after the fact, so the
 # baseline was captured up front and this target is the contract.
 SCREENS = scan codex detail domain mesh omens echoes grimoire attune files
+# Portrait (--orient portrait): the core screens, and CODEX for the placeholder.
+# Added to the baseline when portrait landed; the landscape lines are untouched.
+PORTRAIT_SCREENS = scan grimoire attune files codex
 
 MANIFEST = $(CURDIR)/../private/baseline/MANIFEST.md5
 
@@ -226,7 +229,12 @@ regress: $(BIN)
 	 for s in $(SCREENS); do \
 	   ./$(BIN) "$$d/$$s.png" --screen $$s --frame 0 --scale 4 >/dev/null; \
 	 done; \
+	 for s in $(PORTRAIT_SCREENS); do \
+	   ./$(BIN) "$$d/portrait-$$s.png" --orient portrait --screen $$s --frame 0 --scale 4 >/dev/null; \
+	 done; \
+	 ./$(BIN) "$$d/portrait-attune-p2.png" --orient portrait --screen attune --setpage 2 --frame 0 --scale 4 >/dev/null; \
+	 ./$(BIN) "$$d/portrait-alert.png" --orient portrait --alert 0 --frame 30 --scale 4 >/dev/null; \
 	 cd "$$d" && md5sum -c --quiet $(MANIFEST); \
-	 echo "regress: UMBRAVOX unchanged"
+	 echo "regress: UMBRAVOX unchanged (landscape and portrait)"
 
 .PHONY: run sheet clean test regress emblem-check sdput-check
