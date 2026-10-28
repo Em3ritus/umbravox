@@ -4,6 +4,7 @@
 #include "nav.h"
 #include "palette.h"
 #include "themepack.h"
+#include "elog.h"
 
 namespace prefs {
 namespace {
@@ -79,8 +80,11 @@ bool load(ui::Settings& s) {
     if (nvs.isKey("pack")) nvs.getString("pack", pack, sizeof pack);
     pack[sizeof pack - 1] = 0;
     in.theme    = pal::resolveSaved(pack, in.theme);
-    if (pack[0] && in.theme == pal::TH_UMBRAVOX)
+    if (pack[0] && in.theme == pal::TH_UMBRAVOX) {
         Serial.printf("prefs: saved theme pack \"%s\" not loaded, using UMBRAVOX\n", pack);
+        // load() runs from loop(), after elog::begin() in setup(), so this lands in /diag.log.
+        elog::event(elog::WARN, "theme", "saved theme '%s' is not on the card, using UMBRAVOX", pack);
+    }
     in.sweep    = nvs.getUChar("sweep",    s.sweep);
     in.labels   = nvs.getUChar("labels",   s.labels);
     in.alertStyle = nvs.getUChar("alertsty", s.alertStyle);
