@@ -46,6 +46,18 @@ int main(){
         bool once=true; for(int i=0;i<W*H;i++) if(fb.cnt[i]!=1){ once=false; break; }
         snprintf(m,sizeof m,"%dx%d strips tile exactly: every pixel written once",W,H);
         expect(once, m);
+
+        // hero separation + no-intrusion + fixed channel plan (collisions the review flagged)
+        const uieng::Rect hr = uieng::scan(W,H).hero;
+        const HeroSub hs = heroSub(hr);
+        snprintf(m,sizeof m,"%dx%d field clears the channel header (no border/text collision)",W,H);
+        expect(hs.field.y >= hr.y+27, m);
+        snprintf(m,sizeof m,"%dx%d spectrum sits below the field (no overlap)",W,H);
+        expect(hs.spectrum.y >= hs.field.y+hs.field.h, m);
+        snprintf(m,sizeof m,"%dx%d tallest spectrum bar stays below the field (no intrusion)",W,H);
+        expect(hs.barBase - hs.barMax >= hs.field.y+hs.field.h, m);
+        snprintf(m,sizeof m,"%dx%d fixed %d-channel plan (size-independent)",W,H,kChannels);
+        expect(kChannels==21, m);
     }
 
     // background restoration after a count change

@@ -95,6 +95,21 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
     else heptaInto(s, cx, cy, r, pal::GRID, pal::EDGE_LIT);
 }
 
+// Hero sub-layout (framed field + spectrum band). Exposed so the header/field/
+// spectrum separation and no-intrusion invariants are host-testable. The channel
+// plan is FIXED (count is size-independent); bar width/pitch adapt.
+static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz
+struct HeroSub { uieng::Rect field, spectrum; int barBase, barMax; };
+inline HeroSub heroSub(uieng::Rect hr) {
+    const int hdrH = 30, specH = 40;               // header clears the readout (text max y+26)
+    HeroSub h;
+    h.field    = {hr.x+2, hr.y+hdrH, hr.w-4, hr.h-hdrH-specH};
+    h.spectrum = {hr.x+4, hr.y+hr.h-specH, hr.w-8, specH};
+    h.barBase  = hr.y+hr.h-11;
+    h.barMax   = specH-16;                          // tallest fixture bar == barMax (24)
+    return h;
+}
+
 // --- compose one strip completely from the scene ------------------------------
 inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const uieng::ScanLayout L = uieng::scan(W, H);
@@ -129,15 +144,15 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
 
     // hero: readout / framed field (theme artwork + contacts) / labelled spectrum
     const uieng::Rect hr = L.hero;
-    txt(s, hr.x+4, hr.y+5,  "SCANNING", 1, pal::DIM);
-    txt(s, hr.x+4, hr.y+14, sc.ch, 2, pal::BRIGHT);
-    txt(s, hr.x+4+Font::width(sc.ch,2)+8, hr.y+20, sc.chBand, 1, pal::DIM);
+    txt(s, hr.x+4, hr.y+4,  "SCANNING", 1, pal::DIM);
+    txt(s, hr.x+4, hr.y+12, sc.ch, 2, pal::BRIGHT);             // ends y+26
+    txt(s, hr.x+4+Font::width(sc.ch,2)+8, hr.y+18, sc.chBand, 1, pal::DIM);  // ends y+25
 
-    const int hdrH=26, specH=38;
-    const int fTop=hr.y+hdrH, fH=hr.h-hdrH-specH;
-    const int fcx=hr.x+hr.w/2, fcy=fTop+fH/2;
-    const int fr=((hr.w<fH?hr.w:fH)/2) - 8;
-    frame(s, hr.x+2, fTop, hr.w-4, fH, pal::EDGE);
+    const HeroSub hs = heroSub(hr);
+    const uieng::Rect fld = hs.field;
+    const int fcx=fld.x+fld.w/2, fcy=fld.y+fld.h/2;
+    const int fr=((fld.w<fld.h?fld.w:fld.h)/2) - 6;
+    frame(s, fld.x, fld.y, fld.w, fld.h, pal::EDGE);
     if (fr>6) {
         drawArtwork(s, sc.theme, fcx, fcy, fr);
         static const struct { int ang, pct, b; } ct[6] =
@@ -146,14 +161,15 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             disc(s, fcx+(int)(rr*std::cos(t)), fcy+(int)(rr*std::sin(t)), 3, band[m.b]); }
     }
 
-    // spectrum: full-width adaptive bars + band labels
-    const int sx0=hr.x+4, sx1=hr.x+hr.w-4, availW=sx1-sx0;
-    const int pitch=9, bw=6, nb=availW/pitch, base=hr.y+hr.h-14;
-    static const int ph[12]={6,12,20,30,15,9,14,24,8,18,26,11};
-    for (int i=0;i<nb;i++){ const int x=sx0+i*pitch, hgt=ph[i%12];
-        box(s, x, base-hgt, bw, hgt, i < nb*3/5 ? pal::MAGENTA : pal::ICE); }
+    // spectrum: the SAME fixed channel plan at every size -- bar width/pitch
+    // adapt, the channel COUNT does not; bars stay inside the spectrum band.
+    static const int chH[kChannels]={6,12,20,30,15,9,14,24,8,18,26,11,22, 16,28,10,21,13,25,9,19};
+    const int sx0=hs.spectrum.x, availW=hs.spectrum.w;
+    const int pitch=availW/kChannels, bw=pitch>3?pitch-2:pitch;
+    for (int i=0;i<kChannels;i++){ const int x=sx0+i*pitch, hgt=chH[i]*hs.barMax/30;
+        box(s, x, hs.barBase-hgt, bw, hgt, i<kCh24 ? pal::MAGENTA : pal::ICE); }
     txt(s, sx0, hr.y+hr.h-8, "2.4 GHz", 1, pal::DIM);
-    txt(s, sx1-Font::width("5 GHz",1), hr.y+hr.h-8, "5 GHz", 1, pal::DIM);
+    txt(s, sx0+availW-Font::width("5 GHz",1), hr.y+hr.h-8, "5 GHz", 1, pal::DIM);
 
     // nav bar
     static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
