@@ -77,7 +77,7 @@ static Expect expectFor(const char* id, Rect r) {
     if(!strcmp(id,"threat"))      return Expect{Action::OpenThreatDetail,false,0,true,MATCH,true};
     if(!strncmp(id,"row",3)) {    // row at band b binds original record b-1
         const int band = (r.y - CONTACT_Y) / BAND, rec = band - 1;
-        return Expect{Action::OpenDeviceDetail,false,0,true,(rec>=0&&rec<4)?KEYS[rec]:nullptr,true};
+        return Expect{Action::OpenDeviceDetail,true,rec,true,(rec>=0&&rec<4)?KEYS[rec]:nullptr,true};
     }
     return Expect{Action::OpenGps,false,0,false,nullptr,false};   // unknown id -> never matches
 }
