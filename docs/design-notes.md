@@ -817,3 +817,25 @@ Always check `--scale 2` before believing a layout. Everything is legible at
   this replaces its ~1,350-line UI, which is built for a 160x80 ST7735.
 - Logging. The fix is parsed but goes nowhere yet: no SD card writes, no
   WiGLE CSV.
+
+## Known issue: early-boot PSRAM panic (depends on the exact binary)
+
+**Symptom.** On a reset (power-up, the reset pin, or a serial-port open) the NM-CYD-C5 can print
+`Guru Meditation Error: Core 0 panic'ed (Illegal instruction)` before any application code runs, reboot itself
+(`rst:0xc (SW_CPU)`), and then boot normally. `/diag.log` shows `reset=PANIC` for that boot. The cost is about
+0.6 s at boot and a misleading log line; every case seen recovered on the next boot (no boot loop).
+
+**Where.** The backtrace is inside ESP-IDF's `s_psram_chip_init` (`esp_psram.c`), reached from `esp_psram_init`
+via `do_system_init_fn` during startup, so it is not application logic. The faulting address is the same function in
+every failing build; the instruction word it reads differs between builds, which points at the flash cache or
+mapping being disturbed while the PSRAM is configured.
+
+**Evidence.** It depends on the exact binary: one build panicked on every reset, the next (14 bytes larger) was clean
+on 15 of 15, the one after panicked again, and the merged release candidate was clean on 12 of 12. Changing nothing but
+the layout toggled it. An upstream forum thread titled "Random boot failure depending on .flash.text size" describes the
+same class of failure on other chips, and Espressif's advisory AR2025-008 covers ESP32-C5 resets with PSRAM; neither gave a
+confirmed fix for this exact panic, so the root cause here is **not established**.
+
+**What to do.** Gate every firmware build you ship on `tools/bootprobe.py` (12 resets, frame timing). If a build
+panics, change the layout (any code change that moves flash text) and re-run, and do not publish that binary. A newer
+Arduino/IDF platform release may fix it; trying one is a worthwhile experiment.
