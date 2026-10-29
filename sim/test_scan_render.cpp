@@ -1,15 +1,22 @@
 // Host test for ui/scan_render.h (static SCAN strip compositor). Verifies, with
-// colors from the real theme model (pal::setTheme):
+// colors from the real theme model (pal::setTheme) and caller-supplied scene data
+// (scanfix::demo -- no embedded fixtures in the renderer):
 //   - clipping: no strip write lands outside the logical canvas;
 //   - strip boundaries + complete repaint: a full render writes every pixel
 //     EXACTLY once (strips tile the canvas with no gaps or overlaps);
-//   - background restoration: after changing a count, repainting only that
-//     tile's strips yields the same image as a full repaint (old value erased).
+//   - hero separation + no-intrusion + fixed channel plan (collisions reviewed);
+//   - rendered spectrum coverage: the fixture's channels actually paint
+//     kChannels bars (not merely that kChannels is a constant);
+//   - empty data: a scene with no contacts/channels still tiles cleanly;
+//   - background restoration + state transitions: repainting only the affected
+//     region yields the same image as a full repaint (old pixels erased), at
+//     both canvas sizes.
 // Build:
 //   g++ -std=c++17 -I. sim/test_scan_render.cpp ui/palette.cpp ui/themepack.cpp \
 //       ui/muffinseal.cpp ui/motif.cpp ui/canvas.cpp ui/font5x7.cpp -o /tmp/tsr -lm
 #include "../ui/scan_render.h"
 #include "../ui/palette.h"
+#include "scan_fixture.h"
 #include <cstdio>
 #include <vector>
 #include <algorithm>
@@ -25,22 +32,40 @@ struct FbSink : Sink {
             fb[gy*W+gx]=px[ry*w+rx]; ++cnt[gy*W+gx];
         }
     }
+    uint16_t at(int x,int y) const { return fb[y*W+x]; }
 };
 
 static int fails=0, checks=0;
 static void expect(bool c,const char* m){ ++checks; if(!c){++fails; printf("  FAIL %s\n",m);} else printf("  ok   %s\n",m); }
 
+// Count how many of the fixed channel columns actually carry a painted bar in
+// the rendered image -- rendered coverage, not a constant. A bar for channel i
+// occupies column sx0+i*pitch at the row just above barBase whenever activity>0.
+static int renderedBars(const FbSink& fb, int W, int H) {
+    const uieng::Rect hr = uieng::scan(W,H).hero;
+    const HeroSub hs = heroSub(hr);
+    const int availW=hs.spectrum.w, pitch=availW/kChannels;
+    int n=0;
+    for (int i=0;i<kChannels;i++){
+        const uint16_t want = i<kCh24 ? pal::MAGENTA : pal::ICE;
+        const int x=hs.spectrum.x+i*pitch, y=hs.barBase-1;
+        if (x>=0&&x<W&&y>=0&&y<H && fb.at(x,y)==want) ++n;
+    }
+    return n;
+}
+
 int main(){
     pal::setTheme(pal::TH_UMBRAVOX);     // colors from the existing theme model
-    Compositor comp; ScanScene sc;
+    Compositor comp;
     printf("strip buffer: %d bytes (%d px wide x %d rows)\n",
            Compositor::BUF_BYTES, Compositor::MAXW, Compositor::STRIP_H);
 
     for (int P=0;P<2;++P){
         const int W=P?320:480, H=P?240:320;
+        const ScanScene sc = scanfix::demo(pal::TH_UMBRAVOX);   // caller-supplied scene
         FbSink fb(W,H);
         comp.renderFull(W,H,sc,fb);
-        char m[72];
+        char m[80];
         snprintf(m,sizeof m,"%dx%d clipping: no out-of-bounds strip writes",W,H);
         expect(!fb.oob, m);
         bool once=true; for(int i=0;i<W*H;i++) if(fb.cnt[i]!=1){ once=false; break; }
@@ -56,14 +81,35 @@ int main(){
         expect(hs.spectrum.y >= hs.field.y+hs.field.h, m);
         snprintf(m,sizeof m,"%dx%d tallest spectrum bar stays below the field (no intrusion)",W,H);
         expect(hs.barBase - hs.barMax >= hs.field.y+hs.field.h, m);
-        snprintf(m,sizeof m,"%dx%d fixed %d-channel plan (size-independent)",W,H,kChannels);
-        expect(kChannels==21, m);
+
+        // rendered coverage: the fixture's channels actually paint kChannels bars
+        snprintf(m,sizeof m,"%dx%d spectrum renders all %d channel bars (rendered coverage)",W,H,kChannels);
+        expect(renderedBars(fb,W,H)==kChannels, m);
+
+        // empty data: no contacts, no channels -> still tiles cleanly, no oob
+        ScanScene empty; empty.theme=pal::TH_UMBRAVOX;      // all pointers null, counts 0
+        FbSink ef(W,H); comp.renderFull(W,H,empty,ef);
+        bool eonce=true; for(int i=0;i<W*H;i++) if(ef.cnt[i]!=1){ eonce=false; break; }
+        snprintf(m,sizeof m,"%dx%d empty scene renders cleanly (tiles once, no oob)",W,H);
+        expect(eonce && !ef.oob, m);
+        snprintf(m,sizeof m,"%dx%d empty scene paints no spectrum bars",W,H);
+        expect(renderedBars(ef,W,H)==0, m);
+
+        // state transition: rec Off -> On, repaint only the LOG status cell region
+        const uieng::ScanLayout L = uieng::scan(W,H);
+        ScanScene on = sc; on.rec = Rec::On;
+        FbSink full(W,H); comp.renderFull(W,H,on,full);        // reference: full render, rec On
+        FbSink reg(W,H);  comp.renderFull(W,H,sc,reg);         // start from rec Off
+        comp.renderRegion(W,H,on,L.statusCells[3],reg);        // repaint only the LOG cell strips
+        bool match=true; for(int i=0;i<W*H;i++) if(reg.fb[i]!=full.fb[i]){ match=false; break; }
+        snprintf(m,sizeof m,"%dx%d rec Off->On: region repaint == full repaint (old label erased)",W,H);
+        expect(match, m);
     }
 
-    // background restoration after a count change
+    // background restoration after a count change (full-size)
     {
         const int W=480,H=320; const uieng::ScanLayout L=uieng::scan(W,H);
-        ScanScene a; a.wifi=1665;
+        ScanScene a = scanfix::demo(pal::TH_UMBRAVOX); a.wifi=1665;
         ScanScene b=a; b.wifi=42;
         FbSink full(W,H); comp.renderFull(W,H,b,full);         // reference: full render, new count
         FbSink reg(W,H);  comp.renderFull(W,H,a,reg);          // start from old count

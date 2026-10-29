@@ -23,17 +23,67 @@ struct Sink {
     virtual ~Sink() {}
 };
 
-// What the static SCAN view shows. Strings are caller-owned.
-struct ScanScene {
-    const char* gps  = "3D FIX"; uint16_t gpsCol = 0;
-    const char* mesh = "3 NODES";
-    const char* batt = "78%";
-    const char* log  = "STOP";   uint16_t logCol = 0;
-    long wifi = 1665, g5 = 418, ble = 2903;
-    const char* ch     = "CH 06";
-    const char* chBand = "2.4 GHz";
-    uint8_t theme = 0;    // pal::ThemeId; drives artwork selection (pal::emblem / centrepiece)
+// --- presentation inputs: caller-supplied scene data (no embedded fixtures) ---
+enum class Gps : uint8_t { Acquiring, Fresh, Stale };     // never render Stale as Fresh
+enum class Rec : uint8_t { Off, On, NoCard };
+
+struct FieldContact {            // one seen/located device for the LIVE FIELD
+    const char* key;             // stable identity
+    int         rssi;            // dBm
+    int         band;            // 0=2.4GHz, 1=5GHz, 2=BLE
+    uint32_t    lastSeen;        // ms; age = now - lastSeen
 };
+
+struct ScanScene {
+    // status
+    Gps      gps = Gps::Acquiring; int gpsSats = 0; uint32_t gpsAgeMs = 0;
+    int      nodes = 0;
+    bool     hasCell = false; int battPct = 0;
+    Rec      rec = Rec::Off;
+    // counts
+    long     wifi = 0, g5 = 0, ble = 0;
+    // hero
+    const char* ch = "CH --"; const char* chBand = "2.4 GHz";
+    const FieldContact* contacts = nullptr; int nContacts = 0;  // caller-owned
+    const int*          channels = nullptr; int nChannels = 0;  // 0..100 each; kChannels entries
+    uint32_t            now = 0;                                 // clock for contact age
+    // theme
+    uint8_t  theme = 0;          // pal::ThemeId; drives artwork selection
+};
+
+// --- projections (pure, host-testable): scene data -> draw-ready values --------
+static constexpr uint32_t kContactExpireMs = 60000;   // matches capture's unseen-drop
+
+struct Marker { int dx, dy, band, sizePx; bool shown; };   // dx,dy relative to field centre
+inline unsigned keyHash(const char* k) {                   // stable synthetic angle source
+    unsigned h = 2166136261u; while (k && *k) h = (h ^ (unsigned char)*k++) * 16777619u; return h;
+}
+inline Marker projectContact(const FieldContact& c, uint32_t now, int fr) {
+    Marker m{0, 0, c.band, 3, false};
+    const uint32_t age = now - c.lastSeen;
+    if (age > kContactExpireMs) return m;                  // expired -> not shown
+    m.shown = true;
+    const int rssi = c.rssi < -90 ? -90 : (c.rssi > -30 ? -30 : c.rssi);
+    const int rr = fr * (-(rssi + 30)) / 60;               // strong(-30)=centre, weak(-90)=rim
+    const double a = (keyHash(c.key) % 360) * 3.14159265 / 180.0;   // synthetic bearing, not geographic
+    m.dx = (int)(rr * std::cos(a)); m.dy = (int)(rr * std::sin(a));
+    m.sizePx = age < 20000u ? 4 : age < 40000u ? 3 : 2;    // fade with age
+    return m;
+}
+inline uint16_t gpsLabel(const ScanScene& s, char* buf, int n) {    // text -> buf, returns colour
+    switch (s.gps) {
+        case Gps::Fresh: snprintf(buf,n,"3D %dSV", s.gpsSats);            return pal::GREEN;
+        case Gps::Stale: snprintf(buf,n,"STALE %us",(unsigned)(s.gpsAgeMs/1000)); return pal::AMBER;
+        default:         snprintf(buf,n,"ACQUIRING");                      return pal::DIM;
+    }
+}
+inline uint16_t recLabel(const ScanScene& s, char* buf, int n) {
+    switch (s.rec) {
+        case Rec::On:     snprintf(buf,n,"REC");   return pal::RED;
+        case Rec::NoCard: snprintf(buf,n,"NO SD"); return pal::AMBER;
+        default:          snprintf(buf,n,"STOP");  return pal::DIM;
+    }
+}
 
 // --- strip drawing (all coords global; writes clipped to the strip) -----------
 struct S { uint16_t* px; int W, y0, h; };
@@ -120,10 +170,15 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     box(s, 0, 0, W, 44, pal::PANEL);   box(s, 0, 43, W, 1, pal::EDGE);
     box(s, 0, H-44, W, 44, pal::PANEL); box(s, 0, H-44, W, 1, pal::EDGE);
 
-    // status bar: quiet label over an emphasised value
+    // status bar: quiet label over an emphasised value, from scene state
     static const char* const slab[4] = {"GPS","MESH","BATT","LOG"};
-    const char* sval[4] = { sc.gps, sc.mesh, sc.batt, sc.log };
-    const uint16_t scol[4] = { sc.gpsCol?sc.gpsCol:pal::GREEN, pal::TEXT, pal::TEXT, sc.logCol?sc.logCol:pal::RED };
+    char gbuf[16], rbuf[16], mbuf[16], bbuf[16];
+    const uint16_t gcol = gpsLabel(sc, gbuf, sizeof gbuf);
+    const uint16_t rcol = recLabel(sc, rbuf, sizeof rbuf);
+    snprintf(mbuf, sizeof mbuf, "%d NODES", sc.nodes);
+    if (sc.hasCell) snprintf(bbuf, sizeof bbuf, "%d%%", sc.battPct); else snprintf(bbuf, sizeof bbuf, "N/A");
+    const char* sval[4] = { gbuf, mbuf, bbuf, rbuf };
+    const uint16_t scol[4] = { gcol, pal::TEXT, sc.hasCell?pal::TEXT:pal::DIM, rcol };
     for (int i=0;i<4;i++){ const uieng::Rect c=L.statusCells[i];
         if (i) box(s, c.x, c.y+9, 1, 26, pal::EDGE);                  // cell divider
         txt(s, c.x+8, c.y+7,  slab[i], 1, pal::DIM);
@@ -155,19 +210,20 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     frame(s, fld.x, fld.y, fld.w, fld.h, pal::EDGE);
     if (fr>6) {
         drawArtwork(s, sc.theme, fcx, fcy, fr);
-        static const struct { int ang, pct, b; } ct[6] =
-            {{35,45,0},{110,70,1},{200,55,2},{300,32,0},{250,82,1},{80,90,2}};  // radius=signal, colour=band
-        for (auto& m : ct){ double t=m.ang*3.14159265/180.0; int rr=fr*m.pct/100;
-            disc(s, fcx+(int)(rr*std::cos(t)), fcy+(int)(rr*std::sin(t)), 3, band[m.b]); }
+        for (int i=0;i<sc.nContacts;i++){                   // projected contacts -> field markers
+            const Marker m = projectContact(sc.contacts[i], sc.now, fr);
+            if (m.shown) disc(s, fcx+m.dx, fcy+m.dy, m.sizePx, band[m.band]);
+        }
     }
 
-    // spectrum: the SAME fixed channel plan at every size -- bar width/pitch
-    // adapt, the channel COUNT does not; bars stay inside the spectrum band.
-    static const int chH[kChannels]={6,12,20,30,15,9,14,24,8,18,26,11,22, 16,28,10,21,13,25,9,19};
+    // spectrum: caller-supplied channel activity on a FIXED channel plan (count
+    // is size-independent); bar width/pitch adapt. Bars stay in the spectrum band.
     const int sx0=hs.spectrum.x, availW=hs.spectrum.w;
     const int pitch=availW/kChannels, bw=pitch>3?pitch-2:pitch;
-    for (int i=0;i<kChannels;i++){ const int x=sx0+i*pitch, hgt=chH[i]*hs.barMax/30;
-        box(s, x, hs.barBase-hgt, bw, hgt, i<kCh24 ? pal::MAGENTA : pal::ICE); }
+    if (sc.channels && sc.nChannels==kChannels)
+        for (int i=0;i<kChannels;i++){ int a=sc.channels[i]; a=a<0?0:(a>100?100:a);
+            const int x=sx0+i*pitch, hgt=a*hs.barMax/100;
+            box(s, x, hs.barBase-hgt, bw, hgt, i<kCh24 ? pal::MAGENTA : pal::ICE); }
     txt(s, sx0, hr.y+hr.h-8, "2.4 GHz", 1, pal::DIM);
     txt(s, sx0+availW-Font::width("5 GHz",1), hr.y+hr.h-8, "5 GHz", 1, pal::DIM);
 
