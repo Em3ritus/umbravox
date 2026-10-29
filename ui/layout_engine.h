@@ -114,15 +114,17 @@ struct HitList {
     }
 };
 
-// Presentation state the ACTIVE hit set depends on. Row keys are a snapshot the
-// caller freezes during a touch so the row<->record binding can't shift.
+// Presentation inputs the ACTIVE hit set depends on. All default to "nothing
+// actionable": no matched device, no fix, no located records -- so the engine
+// never fabricates a device-detail or threat target. `slot` is the positional
+// UI identity; `key` is the record identity; they are kept separate. Row/match
+// keys are a snapshot the CALLER owns and must hold stable from touch-down
+// through gesture completion, so the row<->record binding cannot shift mid-tap.
 struct HitCtx {
-    bool threat   = false;   // a signature match is live
-    bool hasFix   = true;    // GPS fix available (DOMAIN maps located rows)
-    int  nLocated = 99;      // located records available to map (DOMAIN wide)
-    const char*        threatKey = "threat";
-    const char* const* rowKeys   = nullptr;   // distinct stable keys, caller-owned
-    int                nRowKeys  = 0;
+    const char*        matchKey = nullptr;  // matched-device key; threat target emitted iff non-null
+    bool               hasFix   = false;    // GPS fix; DOMAIN maps rows only with a fix
+    const char* const* rowKeys  = nullptr;  // located-device keys, by original row order
+    int                nRowKeys = 0;        // a row is emitted ONLY for a valid supplied key
 };
 
 static const char* const kThreatDesc =
@@ -147,9 +149,9 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
                                          "Open Codex filtered to 5 GHZ",
                                          "Open Codex filtered to BLE"};
     for (int i = 0; i < 3; i++) h.add(tslot[i], s.tiles[i], Action::CodexFilter, i, nullptr, tdesc[i]);
-    if (ctx.threat)
+    if (ctx.matchKey)   // threat target only for a real matched device
         h.add("threat", {s.hero.x, s.hero.y, s.hero.w, 44},
-              Action::OpenThreatDetail, 0, ctx.threatKey, kThreatDesc);
+              Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
     return h;
 }
 
@@ -164,24 +166,30 @@ inline HitList domainHits(int W, int H, const HitCtx& ctx) {
 
     const int B = 44;
     const int cx = d.contacts.x, cy = d.contacts.y, cw = d.contacts.w;
-    static const char* const ROWSLOT[8] = {"row0","row1","row2","row3","row4","row5","row6","row7"};
+    static const char* const SLOT[8] = {"contact-0","contact-1","contact-2","contact-3",
+                                        "contact-4","contact-5","contact-6","contact-7"};
+    // A located-device key for the row at band b, or nullptr (no actionable row):
+    //   row at band b shows original record (b-1); never invented.
+    auto rowKey = [&](int band) -> const char* {
+        const int rec = band - 1;
+        return (ctx.hasFix && ctx.rowKeys && rec < ctx.nRowKeys) ? ctx.rowKeys[rec] : nullptr;
+    };
 
     if (d.wide) {
         const int nbands = domainRowBands(d);                 // band 0 = header, 1.. = rows
         h.add("all-contacts", {cx, cy, cw, B}, Action::OpenLocatedCodex, 0, nullptr,
               "Open Codex with located scope");
-        int b = 1;
-        if (ctx.threat && b < nbands) {
-            h.add("threat", {cx, cy + b*B, cw, B}, Action::OpenThreatDetail, 0, ctx.threatKey, kThreatDesc);
-            ++b;
+        for (int b = 1; b < nbands; ++b) {
+            const Rect r{cx, cy + b*B, cw, B};
+            if (b == 1 && ctx.matchKey) {   // threat REPLACES the first row; later rows retained
+                h.add("threat", r, Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
+            } else if (const char* key = rowKey(b)) {
+                h.add(SLOT[b & 7], r, Action::OpenDeviceDetail, b - 1, key,
+                      "Open mapped device detail by stable identity");
+            }  // else: empty band, no actionable hit
         }
-        for (int ri = 0; b < nbands && ctx.hasFix && ri < ctx.nLocated; ++b, ++ri) {
-            const char* key = (ctx.rowKeys && ri < ctx.nRowKeys) ? ctx.rowKeys[ri] : ROWSLOT[ri & 7];
-            h.add(key, {cx, cy + b*B, cw, B}, Action::OpenDeviceDetail, ri, key,
-                  "Open mapped device detail by stable identity");
-        }
-    } else if (ctx.threat) {
-        h.add("threat", {cx, cy, cw, B}, Action::OpenThreatDetail, 0, ctx.threatKey, kThreatDesc);
+    } else if (ctx.matchKey) {
+        h.add("threat", {cx, cy, cw, B}, Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
         h.add("all-contacts", {cx, cy + B, cw, B}, Action::OpenLocatedCodex, 0, nullptr, "Open located Codex");
     } else {
         h.add("all-contacts", d.contacts, Action::OpenLocatedCodex, 0, nullptr, "Open Codex with located scope");
