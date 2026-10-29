@@ -45,21 +45,25 @@ int main(){
     { Marker young=projectContact({"x",-50,0,0},10000,fr), old=projectContact({"x",-50,0,0},50000,fr);
       expect(young.sizePx > old.sizePx, "marker fades (smaller) with age"); }
 
-    // GPS projection: derived from validity/mode/age, never labels 2D/invalid as 3D
+    // GPS projection mirrors ui::Gnss::fresh(): freshness is validity+age only
+    // (strict 5s), independent of mode; mode only labels dimensionality.
     { char b[16]; uint16_t c;
-      c=gpsLabel({true,3,12,500},b,16);
-      expect(!strcmp(b,"3D 12SV") && c==pal::GREEN, "valid 3D fresh -> '3D 12SV', green");
-      c=gpsLabel({true,2,7,500},b,16);
-      expect(!strcmp(b,"2D 7SV") && c==pal::AMBER, "valid 2D fresh -> '2D 7SV', amber (not 3D)");
-      c=gpsLabel({true,0,5,500},b,16);                 // receiver 'valid' but no usable mode
-      expect(!strcmp(b,"ACQUIRING") && c==pal::DIM, "mode 0 -> ACQUIRING (no false fix)");
-      c=gpsLabel({false,3,9,500},b,16);                // mode claims 3D but fix not valid
-      expect(!strcmp(b,"ACQUIRING") && c==pal::DIM, "invalid fix -> ACQUIRING even if mode=3");
-      c=gpsLabel({true,3,12,12000},b,16);              // valid 3D but stale by age
-      expect(!strncmp(b,"STALE",5) && strstr(b,"12") && c==pal::AMBER, "aged 3D fix -> STALE <s>, amber");
-      expect(gpsState({false,0,0,0})==GpsState::Acquiring, "state: no fix -> Acquiring");
-      expect(gpsState({true,3,12,500})==GpsState::Fresh,   "state: valid 3D fresh -> Fresh");
-      expect(gpsState({true,3,12,9000})==GpsState::Stale,  "state: valid 3D aged -> Stale"); }
+      // freshness boundary is the existing strict FRESH_MS (valid && age < 5000)
+      expect(gpsState({true,3,12,4999})==GpsState::Fresh, "age 4999ms -> Fresh (<5s)");
+      expect(gpsState({true,3,12,5000})==GpsState::Stale, "age 5000ms -> Stale (boundary is strict)");
+      expect(gpsState({true,3,12,5001})==GpsState::Stale, "age 5001ms -> Stale");
+      // no valid position -> Acquiring regardless of mode/age
+      expect(gpsState({false,3,12,10})==GpsState::Acquiring, "no valid position -> Acquiring (even mode 3)");
+      // a valid position with mode unknown/none is NOT hidden behind Acquiring
+      expect(gpsState({true,0,6,1000})==GpsState::Fresh, "valid fresh, mode unknown -> Fresh (not hidden)");
+      expect(gpsState({true,0,6,9000})==GpsState::Stale, "valid aged, mode none/unknown -> Stale (not Acquiring)");
+      // labels: dimensionality only when GSA reports it
+      c=gpsLabel({true,3,12,500},b,16); expect(!strcmp(b,"3D 12SV") && c==pal::GREEN, "mode 3 fresh -> '3D 12SV', green");
+      c=gpsLabel({true,2,7,500},b,16);  expect(!strcmp(b,"2D 7SV")  && c==pal::GREEN, "mode 2 fresh -> '2D 7SV', green");
+      c=gpsLabel({true,0,6,500},b,16);  expect(!strcmp(b,"FIX 6SV") && c==pal::GREEN, "mode unknown fresh -> neutral 'FIX' (no dimensionality)");
+      c=gpsLabel({true,1,6,500},b,16);  expect(!strcmp(b,"FIX 6SV"), "mode 1 (none) fresh -> neutral 'FIX', not 2D/3D");
+      c=gpsLabel({true,3,12,12000},b,16); expect(!strncmp(b,"STALE",5) && strstr(b,"12") && c==pal::AMBER, "aged fix -> 'STALE <s>', amber");
+      c=gpsLabel({false,0,0,0},b,16);   expect(!strcmp(b,"ACQUIRING") && c==pal::DIM, "no fix -> ACQUIRING, dim"); }
 
     // recording state is explicit
     { ScanScene s; char b[16];

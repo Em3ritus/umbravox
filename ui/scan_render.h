@@ -28,10 +28,10 @@ enum class GpsState : uint8_t { Acquiring, Fresh, Stale };   // never render Sta
 enum class Rec : uint8_t { Off, On, NoCard };
 
 struct GnssFix {                 // raw receiver state; projected to a label below
-    bool     valid = false;      // receiver reports a usable position this update
-    uint8_t  mode  = 0;          // fix mode: 0=none/unknown, 2=2D, 3=3D
+    bool     valid = false;      // a position has been fixed (ui::Gnss::Fix::valid)
+    uint8_t  mode  = 0;          // GSA fix mode: 1=none, 2=2D, 3=3D (0=no GSA yet)
     int      sats  = 0;          // satellites used
-    uint32_t ageMs = 0;          // time since the last position update
+    uint32_t ageMs = 0;          // ms since the fix landed (now - atMs)
 };
 
 struct FieldContact {            // one seen/located device for the LIVE FIELD
@@ -78,19 +78,22 @@ inline Marker projectContact(const FieldContact& c, uint32_t now, int fr) {
     m.sizePx = age < 20000u ? 4 : age < 40000u ? 3 : 2;    // fade with age
     return m;
 }
-// GPS freshness is derived, not caller-asserted: a fix must be valid and at
-// least 2D, and no older than kGpsStaleMs, to count as Fresh. Mode drives 2D/3D
-// honestly -- never label a 2D/invalid fix as 3D.
-static constexpr uint32_t kGpsStaleMs = 3000;              // >3s without an update -> stale
+// Freshness mirrors ui::Gnss::fresh(now) exactly: a valid position no older than
+// FRESH_MS (strict <). It does NOT depend on GSA mode -- a valid-but-aged
+// position reads STALE, never ACQUIRING. Mode only chooses the label's
+// dimensionality; a fresh fix with no GSA yet is shown without claiming one.
+static constexpr uint32_t kGpsFreshMs = 5000;             // == ui::Gnss::FRESH_MS
 inline GpsState gpsState(const GnssFix& f) {
-    if (!f.valid || f.mode < 2) return GpsState::Acquiring;
-    return f.ageMs <= kGpsStaleMs ? GpsState::Fresh : GpsState::Stale;
+    if (!f.valid) return GpsState::Acquiring;             // no valid position
+    return f.ageMs < kGpsFreshMs ? GpsState::Fresh : GpsState::Stale;   // strict 5s boundary
 }
 inline uint16_t gpsLabel(const GnssFix& f, char* buf, int n) {     // text -> buf, returns colour
     switch (gpsState(f)) {
-        case GpsState::Fresh:                                      // 3D only for mode 3
-            snprintf(buf,n,"%s %dSV", f.mode==3 ? "3D" : "2D", f.sats);
-            return f.mode==3 ? pal::GREEN : pal::AMBER;            // 2D is degraded -> amber
+        case GpsState::Fresh:                                      // dimensionality only when GSA says so
+            if      (f.mode == 3) snprintf(buf,n,"3D %dSV",  f.sats);
+            else if (f.mode == 2) snprintf(buf,n,"2D %dSV",  f.sats);
+            else                  snprintf(buf,n,"FIX %dSV", f.sats);   // valid, dimension unknown
+            return pal::GREEN;                                    // colour tracks freshness, not mode
         case GpsState::Stale:
             snprintf(buf,n,"STALE %us",(unsigned)(f.ageMs/1000));  return pal::AMBER;
         default:
