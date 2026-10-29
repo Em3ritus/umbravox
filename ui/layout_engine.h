@@ -90,4 +90,58 @@ inline DomainLayout domain(int W, int H) {
     return d;
 }
 
+// --- hit regions (id + rect + action), derived from the same geometry --------
+// Rects are the layout regions above; ids/actions are the interaction contract
+// (matches geometry.json "hits"). Fixed-capacity, no heap — embedded-friendly.
+struct Hit { const char* id; Rect rect; const char* action; };
+struct HitList {
+    Hit items[20];
+    int count = 0;
+    void add(const char* id, Rect r, const char* action) { items[count++] = {id, r, action}; }
+};
+
+inline void addChromeHits(HitList& h, const Rect sc[4], const Rect nv[4]) {
+    static const char* const sid[4]  = {"gps", "mesh", "power", "logging"};
+    static const char* const sact[4] = {"Open GPS diagnostics", "Open Mesh",
+                                         "Power detail (NM: sensing unavailable)",
+                                         "Toggle logging; apply existing logger behavior"};
+    static const char* const nid[4]  = {"nav-scan", "nav-domain", "nav-codex", "nav-menu"};
+    static const char* const nact[4] = {"Open SCAN", "Open DOMAIN", "Open CODEX", "Open MENU"};
+    for (int i = 0; i < 4; i++) h.add(sid[i], sc[i], sact[i]);
+    for (int i = 0; i < 4; i++) h.add(nid[i], nv[i], nact[i]);
+}
+
+inline HitList scanHits(int W, int H) {            // 11 hits
+    const ScanLayout s = scan(W, H);
+    HitList h;
+    addChromeHits(h, s.statusCells, s.navCells);
+    static const char* const tid[3]  = {"WIFI", "5 GHZ", "BLE"};
+    static const char* const tact[3] = {"Open Codex filtered to WIFI",
+                                         "Open Codex filtered to 5 GHZ",
+                                         "Open Codex filtered to BLE"};
+    for (int i = 0; i < 3; i++) h.add(tid[i], s.tiles[i], tact[i]);
+    return h;
+}
+
+// DOMAIN contacts (wide) tile into 44px bands: band 0 = located-scope header,
+// bands 1..n-1 = mapped-device rows (opened by stable identity).
+inline int  domainRowBands(const DomainLayout& d) { return d.contacts.h / 44; }
+inline Rect domainBand(const DomainLayout& d, int k) {
+    return {d.contacts.x, d.contacts.y + k * 44, d.contacts.w, 44};
+}
+inline HitList domainHits(int W, int H) {
+    const DomainLayout d = domain(W, H);
+    HitList h;
+    addChromeHits(h, d.statusCells, d.navCells);
+    h.add("range-minus", d.minus, "Select adjacent existing range; clamp at endpoint");
+    h.add("range-plus",  d.plus,  "Select adjacent existing range; clamp at endpoint");
+    if (d.wide) {
+        const int n = domainRowBands(d);
+        h.add("all-contacts", domainBand(d, 0), "Open Codex with located scope");
+        for (int k = 1; k < n; k++)
+            h.add("row", domainBand(d, k), "Open mapped device detail by stable identity");
+    }
+    return h;
+}
+
 }  // namespace uieng
