@@ -1861,9 +1861,16 @@ void loop() {
         static uint8_t engPrev = 0xFF;
         const bool engScan = (nav.screen == ui::SCR_SCAN);
         if (engScan) {
+            // animStep.exit can set animDirtied while still dimmed (an ANIM->DIM/OFF
+            // mode change): engWoke is false then, but the animation overwrote the
+            // panel, so this external paint must force a full native repaint even
+            // for an unchanged scene -- and the flag is consumed here.
+            const bool extPaint = animDirtied;
             if (switched || engPrev != ui::SCR_SCAN) scanadapter::enter();
             else if (engWoke)                        scanadapter::wake();   // incl. OFF/ANIM wake
+            else if (extPaint)                       scanadapter::enter();  // external paint while dark
             else if (themeChanged)                   scanadapter::themeChanged();
+            if (extPaint) animDirtied = false;       // consumed in the engine path
             if (!scanadapter::pending()) {           // snapshot+commit a fresh, stable frame
                 scanr::GnssFix gf;
                 const ui::Gnss::Fix& fx = ui::Gnss::fix();

@@ -217,6 +217,22 @@ static void testTouchGate(){
     expect(g3.edge(true,true)==true,   "touch: after that finger lifts, a new press fires");
 }
 
+static void testEngineExternalPaint(){
+    // An external paint (the idle animation overwrote the panel during an
+    // ANIM->DIM mode change) forces a full repaint via enter(), even though the
+    // scene has not changed -- otherwise stale animation pixels would remain.
+    const int W=480,H=320;
+    Engine e; e.reset(W,H);
+    e.enter(); fill(e.back(), scanfix::demo(2)); e.commit();
+    while (e.pending()) e.nextSlice(100);                 // first full frame done
+    fill(e.back(), scanfix::demo(2)); e.commit();         // identical scene
+    expect(!e.pending(), "extpaint: unchanged scene queues no repaint");
+    e.enter();                                            // <- the external-paint event
+    fill(e.back(), scanfix::demo(2)); e.commit();         // still identical
+    int rows=0; while (e.pending()){ StripScheduler::Slice sl=e.nextSlice(100); rows+=sl.y1-sl.y0; }
+    expect(rows==H, "extpaint: a forced full repaints the whole screen despite an unchanged scene");
+}
+
 static void testEngineLeaveReentry(){
     const int W=480,H=320;
     Engine e; e.reset(W,H);
@@ -244,6 +260,7 @@ int main(){
     testSceneDirty();
     testTouchGate();
     testEngineIntegration();
+    testEngineExternalPaint();
     testEngineLeaveReentry();
     printf("\n%s  %d/%d checks passed\n", fails?"FAILED":"PASSED", checks-fails, checks);
     return fails?1:0;
