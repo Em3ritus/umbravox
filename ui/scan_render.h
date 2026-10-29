@@ -24,8 +24,15 @@ struct Sink {
 };
 
 // --- presentation inputs: caller-supplied scene data (no embedded fixtures) ---
-enum class Gps : uint8_t { Acquiring, Fresh, Stale };     // never render Stale as Fresh
+enum class GpsState : uint8_t { Acquiring, Fresh, Stale };   // never render Stale as Fresh
 enum class Rec : uint8_t { Off, On, NoCard };
+
+struct GnssFix {                 // raw receiver state; projected to a label below
+    bool     valid = false;      // receiver reports a usable position this update
+    uint8_t  mode  = 0;          // fix mode: 0=none/unknown, 2=2D, 3=3D
+    int      sats  = 0;          // satellites used
+    uint32_t ageMs = 0;          // time since the last position update
+};
 
 struct FieldContact {            // one seen/located device for the LIVE FIELD
     const char* key;             // stable identity
@@ -36,7 +43,7 @@ struct FieldContact {            // one seen/located device for the LIVE FIELD
 
 struct ScanScene {
     // status
-    Gps      gps = Gps::Acquiring; int gpsSats = 0; uint32_t gpsAgeMs = 0;
+    GnssFix  gps;                 // GNSS receiver state (projected by gpsLabel)
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
     Rec      rec = Rec::Off;
@@ -60,6 +67,7 @@ inline unsigned keyHash(const char* k) {                   // stable synthetic a
 }
 inline Marker projectContact(const FieldContact& c, uint32_t now, int fr) {
     Marker m{0, 0, c.band, 3, false};
+    if (c.band < 0 || c.band > 2) return m;                // invalid band -> rejected, not shown
     const uint32_t age = now - c.lastSeen;
     if (age > kContactExpireMs) return m;                  // expired -> not shown
     m.shown = true;
@@ -70,11 +78,23 @@ inline Marker projectContact(const FieldContact& c, uint32_t now, int fr) {
     m.sizePx = age < 20000u ? 4 : age < 40000u ? 3 : 2;    // fade with age
     return m;
 }
-inline uint16_t gpsLabel(const ScanScene& s, char* buf, int n) {    // text -> buf, returns colour
-    switch (s.gps) {
-        case Gps::Fresh: snprintf(buf,n,"3D %dSV", s.gpsSats);            return pal::GREEN;
-        case Gps::Stale: snprintf(buf,n,"STALE %us",(unsigned)(s.gpsAgeMs/1000)); return pal::AMBER;
-        default:         snprintf(buf,n,"ACQUIRING");                      return pal::DIM;
+// GPS freshness is derived, not caller-asserted: a fix must be valid and at
+// least 2D, and no older than kGpsStaleMs, to count as Fresh. Mode drives 2D/3D
+// honestly -- never label a 2D/invalid fix as 3D.
+static constexpr uint32_t kGpsStaleMs = 3000;              // >3s without an update -> stale
+inline GpsState gpsState(const GnssFix& f) {
+    if (!f.valid || f.mode < 2) return GpsState::Acquiring;
+    return f.ageMs <= kGpsStaleMs ? GpsState::Fresh : GpsState::Stale;
+}
+inline uint16_t gpsLabel(const GnssFix& f, char* buf, int n) {     // text -> buf, returns colour
+    switch (gpsState(f)) {
+        case GpsState::Fresh:                                      // 3D only for mode 3
+            snprintf(buf,n,"%s %dSV", f.mode==3 ? "3D" : "2D", f.sats);
+            return f.mode==3 ? pal::GREEN : pal::AMBER;            // 2D is degraded -> amber
+        case GpsState::Stale:
+            snprintf(buf,n,"STALE %us",(unsigned)(f.ageMs/1000));  return pal::AMBER;
+        default:
+            snprintf(buf,n,"ACQUIRING");                           return pal::DIM;
     }
 }
 inline uint16_t recLabel(const ScanScene& s, char* buf, int n) {
@@ -173,7 +193,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // status bar: quiet label over an emphasised value, from scene state
     static const char* const slab[4] = {"GPS","MESH","BATT","LOG"};
     char gbuf[16], rbuf[16], mbuf[16], bbuf[16];
-    const uint16_t gcol = gpsLabel(sc, gbuf, sizeof gbuf);
+    const uint16_t gcol = gpsLabel(sc.gps, gbuf, sizeof gbuf);
     const uint16_t rcol = recLabel(sc, rbuf, sizeof rbuf);
     snprintf(mbuf, sizeof mbuf, "%d NODES", sc.nodes);
     if (sc.hasCell) snprintf(bbuf, sizeof bbuf, "%d%%", sc.battPct); else snprintf(bbuf, sizeof bbuf, "N/A");
@@ -212,7 +232,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         drawArtwork(s, sc.theme, fcx, fcy, fr);
         for (int i=0;i<sc.nContacts;i++){                   // projected contacts -> field markers
             const Marker m = projectContact(sc.contacts[i], sc.now, fr);
-            if (m.shown) disc(s, fcx+m.dx, fcy+m.dy, m.sizePx, band[m.band]);
+            if (m.shown && m.band>=0 && m.band<3) disc(s, fcx+m.dx, fcy+m.dy, m.sizePx, band[m.band]);
         }
     }
 

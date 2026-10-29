@@ -104,6 +104,42 @@ int main(){
         bool match=true; for(int i=0;i<W*H;i++) if(reg.fb[i]!=full.fb[i]){ match=false; break; }
         snprintf(m,sizeof m,"%dx%d rec Off->On: region repaint == full repaint (old label erased)",W,H);
         expect(match, m);
+
+        // GPS transitions acquiring->fresh->stale: repaint only the GPS cell,
+        // compare to a full repaint (old label pixels must be erased).
+        const uieng::Rect gcell = L.statusCells[0];
+        {   ScanScene acq=sc; acq.gps={false,0,0,0};            // ACQUIRING
+            ScanScene fsh=sc; fsh.gps={true,3,12,500};          // 3D 12SV
+            FbSink ff(W,H); comp.renderFull(W,H,fsh,ff);
+            FbSink rr(W,H); comp.renderFull(W,H,acq,rr);
+            comp.renderRegion(W,H,fsh,gcell,rr);
+            bool mt=true; for(int i=0;i<W*H;i++) if(rr.fb[i]!=ff.fb[i]){ mt=false; break; }
+            snprintf(m,sizeof m,"%dx%d GPS acquiring->fresh: region==full (ACQUIRING label erased)",W,H);
+            expect(mt, m); }
+        {   ScanScene fsh=sc; fsh.gps={true,3,12,500};          // Fresh
+            ScanScene stl=sc; stl.gps={true,3,12,30000};        // Stale
+            FbSink ff(W,H); comp.renderFull(W,H,stl,ff);
+            FbSink rr(W,H); comp.renderFull(W,H,fsh,rr);
+            comp.renderRegion(W,H,stl,gcell,rr);
+            bool mt=true; for(int i=0;i<W*H;i++) if(rr.fb[i]!=ff.fb[i]){ mt=false; break; }
+            snprintf(m,sizeof m,"%dx%d GPS fresh->stale: region==full (old label erased)",W,H);
+            expect(mt, m); }
+
+        // A visible contact expires: advancing the clock past 60s drops its
+        // marker. Repaint only the hero region; it must match a full repaint
+        // (the old marker pixels are removed) and must actually change pixels.
+        {   ScanScene vis=sc;                                   // now=5000 -> contacts fresh
+            ScanScene exp=sc; exp.now = 5000 + kContactExpireMs + 2000;  // all contacts expired
+            FbSink ff(W,H); comp.renderFull(W,H,exp,ff);
+            FbSink rr(W,H); comp.renderFull(W,H,vis,rr);
+            comp.renderRegion(W,H,exp,L.hero,rr);
+            bool mt=true; for(int i=0;i<W*H;i++) if(rr.fb[i]!=ff.fb[i]){ mt=false; break; }
+            snprintf(m,sizeof m,"%dx%d contact expiry: hero region==full (old marker pixels removed)",W,H);
+            expect(mt, m);
+            FbSink vf(W,H); comp.renderFull(W,H,vis,vf);
+            bool ch=false; for(int i=0;i<W*H;i++) if(vf.fb[i]!=ff.fb[i]){ ch=true; break; }
+            snprintf(m,sizeof m,"%dx%d contact expiry actually removes marker pixels (sanity)",W,H);
+            expect(ch, m); }
     }
 
     // background restoration after a count change (full-size)
