@@ -1,8 +1,11 @@
 // scan_adapter -- drives the SCAN engine (ui/scan_render.h + ui/scan_present.h)
 // on the Waveshare panel: a native 480x320 composite, no 2x canvas and no
-// letterbox. Device-only glue around the pure core; defined only when the
-// engine is opted in, so the default WS build and the whole NM path are byte
-// for byte unchanged.
+// letterbox. Device-only glue around the pure core; its body is compiled only
+// when the engine is opted in, so the default WS build and the whole NM path
+// select the canvas renderer and carry none of this adapter. That is not a
+// byte-for-byte claim: shared WS code did change for the engine (touch::Point
+// gained panelX/panelY, stripTick gained a force flag). The default builds pass
+// with the canvas renderer selected; they are not asserted bit-identical.
 //
 //   -DWS_C5_35 -DUMBRAVOX_SCAN_ENGINE   builds and wires this in.
 #pragma once

@@ -1798,6 +1798,19 @@ void loop() {
         // polling -- far faster than a finger.
         delay(5);
 
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        // A SCAN restoration queued by an external paint (animStep.exit while
+        // the panel is still dark) is sliced, so the pass that queued it leaves
+        // most rows unpainted and this early-return would skip the rest. The
+        // scheduler's pending() is the latched obligation; drain it over these
+        // suspended passes in bounded slices -- no NEW snapshot started asleep,
+        // and never while the animation owns the panel -- until coverage
+        // completes, then quiet suspension resumes on its own.
+        if (nav.screen == ui::SCR_SCAN
+            && scanpres::serviceWhileSuspended(scanadapter::pending(), animOn))
+            scanadapter::service(/*budgetStrips*/4);
+#endif
+
         // ANIM: a dot breathing at <= 2 fps, one small blit per frame. On
         // entry the whole canvas is blanked and blitted once; after that
         // only the dot's own rectangle(s) are touched. (The enter/exit

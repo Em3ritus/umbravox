@@ -252,6 +252,64 @@ static void testEngineLeaveReentry(){
     expect(e.acceptsTouch(), "reentry: touch accepted after the fresh frame completes");
 }
 
+static void testSuspendDrain(){
+    // Round-5 closure: a full repaint queued while the panel is idle-suspended
+    // (external paint on animation exit) is sliced, so the pass that queues it
+    // services only its first slice. The suspend drain policy must finish the
+    // latched obligation over later suspended passes in bounded slices, keep
+    // touch gated until it completes, NOT interfere with an active animation,
+    // and then let normal suspension resume -- without ever starting a NEW
+    // redraw asleep (only service() is called on this path, never commit/enter).
+    using scanpres::serviceWhileSuspended;
+    const int W=480,H=320;
+    Engine e; e.reset(W,H);
+    scanr::Compositor comp; FbSink warm(W,H);
+
+    // Steady state: entered and fully painted once.
+    e.enter(); fill(e.back(), scanfix::demo(2)); e.commit();
+    while (e.pending()){ StripScheduler::Slice sl=e.nextSlice(4);
+        if(sl.y1>sl.y0) comp.renderRows(W,H,e.scene(),sl.y0,sl.y1,warm); }
+    expect(e.acceptsTouch(), "suspend: steady after the first full paint");
+
+    // External paint while dark: enter() latches a full repaint; the snapshot is
+    // committed (identical scene) and ONE bounded slice is serviced this pass.
+    FbSink cov(W,H);
+    e.enter(); fill(e.back(), scanfix::demo(2)); e.commit();
+    expect(e.pending() && !e.acceptsTouch(), "suspend: external paint latched a full repaint, touch gated");
+    StripScheduler::Slice first=e.nextSlice(4);
+    if(first.y1>first.y0) comp.renderRows(W,H,e.scene(),first.y0,first.y1,cov);
+    expect(e.pending() && first.y1-first.y0<=64, "suspend: queuing pass serviced only its first bounded slice");
+
+    // While the animation owns the panel the policy must NOT service: the
+    // obligation stays latched across those passes (no new redraw, no drain).
+    for (int i=0;i<3;i++)
+        expect(!serviceWhileSuspended(e.pending(), /*animOn*/true),
+               "suspend: no service while the animation owns the panel");
+    expect(e.pending(), "suspend: restoration obligation survives animation passes (latched)");
+
+    // Animation gone: drain over bounded suspended passes to completion.
+    int passes=0; bool bounded=true, gatedUntilDone=true;
+    while (serviceWhileSuspended(e.pending(), /*animOn*/false)){
+        StripScheduler::Slice sl=e.nextSlice(4);
+        if (sl.y1-sl.y0>64) bounded=false;
+        if (sl.y1>sl.y0) comp.renderRows(W,H,e.scene(),sl.y0,sl.y1,cov);
+        if (!sl.done && e.acceptsTouch()) gatedUntilDone=false;   // touch stays gated mid-drain
+        if (++passes>H/StripScheduler::STRIP+2) break;            // guard: never spin
+    }
+    bool once=true; for(int i=0;i<W*H;i++) if(cov.cnt[i]!=1){once=false;break;}
+    expect(bounded, "suspend: drain uses only bounded slices");
+    expect(passes>=2 && passes<=H/StripScheduler::STRIP, "suspend: completed over multiple bounded passes");
+    expect(once && !cov.oob, "suspend: first slice + drain cover every row exactly once (no asleep re-redraw)");
+    expect(gatedUntilDone, "suspend: touch stays gated until the drain completes");
+    expect(e.acceptsTouch(), "suspend: touch accepted once the drain completes");
+
+    // Normal suspension resumes: nothing pending, the policy no longer services.
+    expect(!e.pending(), "suspend: no obligation remains after the drain");
+    expect(!serviceWhileSuspended(e.pending(), false), "suspend: quiet suspension resumes when nothing is pending");
+    expect(!serviceWhileSuspended(false, false) && !serviceWhileSuspended(false, true),
+           "suspend: policy never services with no pending work");
+}
+
 int main(){
     testStore();
     testScheduler();
@@ -262,6 +320,7 @@ int main(){
     testEngineIntegration();
     testEngineExternalPaint();
     testEngineLeaveReentry();
+    testSuspendDrain();
     printf("\n%s  %d/%d checks passed\n", fails?"FAILED":"PASSED", checks-fails, checks);
     return fails?1:0;
 }

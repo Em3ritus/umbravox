@@ -346,4 +346,18 @@ private:
     bool haveFront_ = false, forceFull_ = true;
 };
 
+// --- idle-suspend drain policy ------------------------------------------------
+// A full repaint is sliced, so the pass that queues one (e.g. an external paint
+// on animation exit while the panel is still dark) services only its first
+// slice; the loop then idle-suspends and would early-return before the rest.
+// The scheduler's own pending() IS the latched obligation -- it persists across
+// passes -- so the policy is simply: while suspended, keep servicing a pending
+// redraw to completion, but NEVER while the low-power animation owns the panel
+// (it draws its own pixels), and never START a new redraw asleep (the caller
+// only ever calls service(), not snapshot(), on this path). Once pending clears,
+// the caller resumes quiet suspension. Pure, host-tested.
+inline bool serviceWhileSuspended(bool pending, bool animOn) {
+    return pending && !animOn;
+}
+
 }  // namespace scanpres
