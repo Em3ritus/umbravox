@@ -9,9 +9,11 @@
 #pragma once
 #include "layout_engine.h"
 #include "palette.h"
+#include "themepack.h"
 #include "font5x7.h"
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 
 namespace scanr {
 
@@ -30,6 +32,7 @@ struct ScanScene {
     long wifi = 1665, g5 = 418, ble = 2903;
     const char* ch     = "CH 06";
     const char* chBand = "2.4 GHz";
+    uint8_t theme = 0;    // pal::ThemeId; drives artwork selection (pal::emblem / centrepiece)
 };
 
 // --- strip drawing (all coords global; writes clipped to the strip) -----------
@@ -61,59 +64,101 @@ inline void centered(S& s, int cx, int gy, const char* t, int sc, uint16_t c) {
     txt(s, cx - Font::width(t,sc)/2, gy, t, sc, c);
 }
 
+// --- field artwork (follows the theme's selection) ----------------------------
+inline void disc(S& s, int cx, int cy, int r, uint16_t c) {
+    for (int y=cy-r;y<=cy+r;y++) for (int x=cx-r;x<=cx+r;x++)
+        if ((x-cx)*(x-cx)+(y-cy)*(y-cy) <= r*r) pt(s,x,y,c);
+}
+inline void frame(S& s, int x, int y, int w, int h, uint16_t c) {
+    box(s,x,y,w,1,c); box(s,x,y+h-1,w,1,c); box(s,x,y,1,h,c); box(s,x+w-1,y,1,h,c);
+}
+inline void heptaInto(S& s, int cx, int cy, int r, uint16_t ring, uint16_t star) {
+    for (int a=0;a<360;a+=5){ double t=a*3.14159265/180.0; pt(s, cx+(int)(r*std::cos(t)), cy+(int)(r*std::sin(t)), ring); }
+    int vx[7], vy[7];
+    for (int i=0;i<7;i++){ double t=(-90.0+i*360.0/7)*3.14159265/180.0; vx[i]=cx+(int)(r*std::cos(t)); vy[i]=cy+(int)(r*std::sin(t)); }
+    int k=0; for (int n=0;n<7;n++){ int nk=(k+3)%7; line(s,vx[k],vy[k],vx[nk],vy[nk],star); k=nk; }
+}
+inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r) {   // same mask/scale as motif::drawEmblem
+    if (r<=0 || !e.w || !e.h || !e.px) return;
+    const int d=2*r;
+    for (int y=cy-r;y<=cy+r;y++){ const int dy=y-cy;
+        for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(dx*dx+dy*dy>r*r) continue;
+            int sx=(x-(cx-r))*e.w/d, sy=(y-(cy-r))*e.h/d;
+            if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
+            pt(s,x,y, e.pal[e.px[sy*e.w+sx]]); } }
+}
+// Honor the theme's artwork, same policy as motif::drawMotif: a bitmap emblem
+// when the theme carries one, else the {7/3} heptagram.
+inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
+    const themepack::Emblem* e = pal::emblem(theme);
+    if (e && pal::centrepiece(theme) == pal::CP_EMBLEM) emblemInto(s, *e, cx, cy, r);
+    else heptaInto(s, cx, cy, r, pal::GRID, pal::EDGE_LIT);
+}
+
 // --- compose one strip completely from the scene ------------------------------
 inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const uieng::ScanLayout L = uieng::scan(W, H);
     const uint16_t band[3] = { pal::MAGENTA, pal::ICE, pal::GREEN };
-    box(s, 0, 0, W, H, pal::VOID);                                   // 1) background
+    box(s, 0, 0, W, H, pal::VOID);                                   // body
 
-    // 2) status bar
+    // chrome surfaces: status + nav get their own fill + divider
+    box(s, 0, 0, W, 44, pal::PANEL);   box(s, 0, 43, W, 1, pal::EDGE);
+    box(s, 0, H-44, W, 44, pal::PANEL); box(s, 0, H-44, W, 1, pal::EDGE);
+
+    // status bar: quiet label over an emphasised value
     static const char* const slab[4] = {"GPS","MESH","BATT","LOG"};
     const char* sval[4] = { sc.gps, sc.mesh, sc.batt, sc.log };
-    const uint16_t scol[4] = { sc.gpsCol?sc.gpsCol:pal::GREEN, pal::TEXT, pal::TEXT,
-                               sc.logCol?sc.logCol:pal::RED };
+    const uint16_t scol[4] = { sc.gpsCol?sc.gpsCol:pal::GREEN, pal::TEXT, pal::TEXT, sc.logCol?sc.logCol:pal::RED };
     for (int i=0;i<4;i++){ const uieng::Rect c=L.statusCells[i];
-        txt(s, c.x+6, c.y+6,  slab[i], 1, pal::DIM);
-        int vs = fitScale(sval[i], c.w-10, 2);
-        txt(s, c.x+6, c.y+18, sval[i], vs, scol[i]); }
-    box(s, 0, 43, W, 1, pal::EDGE);
+        if (i) box(s, c.x, c.y+9, 1, 26, pal::EDGE);                  // cell divider
+        txt(s, c.x+8, c.y+7,  slab[i], 1, pal::DIM);
+        int vs = fitScale(sval[i], c.w-12, 2);
+        txt(s, c.x+8, c.y+19, sval[i], vs, scol[i]); }
 
-    // 3) counts tiles
+    // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};
     char num[16]; const long vals[3] = { sc.wifi, sc.g5, sc.ble };
     for (int i=0;i<3;i++){ const uieng::Rect t=L.tiles[i];
         box(s, t.x, t.y, t.w, t.h, pal::PANEL);
-        box(s, t.x, t.y, 4, t.h, band[i]);
-        txt(s, t.x+12, t.y+8, tlab[i], 1, pal::DIM);
+        box(s, t.x, t.y, 3, t.h, band[i]);
+        frame(s, t.x, t.y, t.w, t.h, pal::EDGE);
+        txt(s, t.x+12, t.y+9, tlab[i], 1, pal::DIM);
         snprintf(num, sizeof num, "%ld", vals[i]);
-        int ns = fitScale(num, t.w-14, t.h>=60?3:2);
-        txt(s, t.x+12, t.y + (t.h>=60?30:22), num, ns, pal::BRIGHT); }
+        int ns = fitScale(num, t.w-16, t.h>=60?3:2);
+        txt(s, t.x+12, t.y + (t.h>=60?28:22), num, ns, pal::BRIGHT); }
 
-    // 4) hero: scanning readout + heptagram foundation + static spectrum
+    // hero: readout / framed field (theme artwork + contacts) / labelled spectrum
     const uieng::Rect hr = L.hero;
-    txt(s, hr.x+6, hr.y+6,  "SCANNING", 1, pal::DIM);
-    txt(s, hr.x+6, hr.y+16, sc.ch, 2, pal::BRIGHT);
-    txt(s, hr.x+6+Font::width(sc.ch,2)+8, hr.y+22, sc.chBand, 1, pal::DIM);
-    const int cx = hr.x + hr.w/2, cy = hr.y + hr.h/2 + 8;
-    const int rad = (hr.w < hr.h ? hr.w : hr.h)/2 - 22;
-    if (rad > 8) {
-        int vx[7], vy[7];
-        for (int i=0;i<7;i++){ double a=(-90.0 + i*360.0/7)*3.14159265/180.0;
-            vx[i]=cx+(int)(rad*std::cos(a)); vy[i]=cy+(int)(rad*std::sin(a)); }
-        for (int a=0;a<360;a+=5){ double r=a*3.14159265/180.0;
-            pt(s, cx+(int)(rad*std::cos(r)), cy+(int)(rad*std::sin(r)), pal::GRID); }
-        int k=0; for (int n=0;n<7;n++){ int nk=(k+3)%7; line(s, vx[k],vy[k], vx[nk],vy[nk], pal::EDGE_LIT); k=nk; }
-    }
-    // static spectrum along the hero's foot
-    const int bw=8, gap=3, by=hr.y+hr.h-4;
-    static const int ph[22]={6,12,20,34,16,9,14,24,8,18,28,11,21,13,26,10,22,7,19,12,24,9};
-    for (int i=0, x=hr.x+4; i<22 && x+bw<=hr.x+hr.w-2; ++i, x+=bw+gap)
-        box(s, x, by-ph[i], bw, ph[i], i<13 ? pal::MAGENTA : pal::ICE);
+    txt(s, hr.x+4, hr.y+5,  "SCANNING", 1, pal::DIM);
+    txt(s, hr.x+4, hr.y+14, sc.ch, 2, pal::BRIGHT);
+    txt(s, hr.x+4+Font::width(sc.ch,2)+8, hr.y+20, sc.chBand, 1, pal::DIM);
 
-    // 5) nav bar
-    box(s, 0, H-44, W, 1, pal::EDGE);
+    const int hdrH=26, specH=38;
+    const int fTop=hr.y+hdrH, fH=hr.h-hdrH-specH;
+    const int fcx=hr.x+hr.w/2, fcy=fTop+fH/2;
+    const int fr=((hr.w<fH?hr.w:fH)/2) - 8;
+    frame(s, hr.x+2, fTop, hr.w-4, fH, pal::EDGE);
+    if (fr>6) {
+        drawArtwork(s, sc.theme, fcx, fcy, fr);
+        static const struct { int ang, pct, b; } ct[6] =
+            {{35,45,0},{110,70,1},{200,55,2},{300,32,0},{250,82,1},{80,90,2}};  // radius=signal, colour=band
+        for (auto& m : ct){ double t=m.ang*3.14159265/180.0; int rr=fr*m.pct/100;
+            disc(s, fcx+(int)(rr*std::cos(t)), fcy+(int)(rr*std::sin(t)), 3, band[m.b]); }
+    }
+
+    // spectrum: full-width adaptive bars + band labels
+    const int sx0=hr.x+4, sx1=hr.x+hr.w-4, availW=sx1-sx0;
+    const int pitch=9, bw=6, nb=availW/pitch, base=hr.y+hr.h-14;
+    static const int ph[12]={6,12,20,30,15,9,14,24,8,18,26,11};
+    for (int i=0;i<nb;i++){ const int x=sx0+i*pitch, hgt=ph[i%12];
+        box(s, x, base-hgt, bw, hgt, i < nb*3/5 ? pal::MAGENTA : pal::ICE); }
+    txt(s, sx0, hr.y+hr.h-8, "2.4 GHz", 1, pal::DIM);
+    txt(s, sx1-Font::width("5 GHz",1), hr.y+hr.h-8, "5 GHz", 1, pal::DIM);
+
+    // nav bar
     static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
     for (int i=0;i<4;i++){ const uieng::Rect c=L.navCells[i];
+        if (i) box(s, c.x, c.y+11, 1, 22, pal::EDGE);
         int ns = fitScale(nav[i], c.w-8, 2);
         centered(s, c.x+c.w/2, c.y+14, nav[i], ns, i==0?pal::BRIGHT:pal::DIM);
         if (i==0){ int lw=Font::width(nav[i],ns); box(s, c.x+c.w/2-lw/2, H-8, lw, 2, pal::WITCH_HI); } }
