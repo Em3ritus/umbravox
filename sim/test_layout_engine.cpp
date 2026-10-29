@@ -1,7 +1,13 @@
-// Host test: assert layout_engine.h reproduces Codex's geometry.json EXACTLY
-// for the two approved profiles (480x320, 320x240). Build + run:
-//   g++ -std=c++17 -I.. sim/test_layout_engine.cpp -o /tmp/tle && /tmp/tle
+// Host test for ui/layout_engine.h. Asserts:
+//  (1) layout regions reproduce geometry.json exactly for both profiles;
+//  (2) the state-aware hit set matches the COMPLETE oracle (oracle_hits.inc,
+//      generated from geometry.json) for every SCAN/DOMAIN state at both sizes,
+//      with bounds / >=44px / distinct slots / non-overlap / threat-awareness.
+// Build + run:
+//   python3 sim/gen_oracle.py <geometry.json> > sim/oracle_hits.inc
+//   g++ -std=c++17 -Wall -I. sim/test_layout_engine.cpp -o /tmp/tle && /tmp/tle
 #include "../ui/layout_engine.h"
+#include "oracle_hits.inc"
 #include <cstdio>
 #include <cstring>
 using namespace uieng;
@@ -11,29 +17,9 @@ static int fails = 0, checks = 0;
 static void ck(const char* tag, Rect got, int x, int y, int w, int h) {
     const Rect exp{x, y, w, h};
     ++checks;
-    if (got == exp) { printf("  ok   %-14s (%d,%d,%d,%d)\n", tag, got.x, got.y, got.w, got.h); }
+    if (got == exp) {} // quiet on pass to keep the oracle output readable
     else { ++fails; printf("  FAIL %-14s got (%d,%d,%d,%d) exp (%d,%d,%d,%d)\n",
                            tag, got.x, got.y, got.w, got.h, x, y, w, h); }
-}
-static void ckb(const char* tag, bool got, bool exp) {
-    ++checks;
-    if (got == exp) printf("  ok   %-14s %s\n", tag, got ? "true" : "false");
-    else { ++fails; printf("  FAIL %-14s got %s exp %s\n", tag, got?"true":"false", exp?"true":"false"); }
-}
-static void ckHit(const HitList& hl, int i, const char* id, int x, int y, int w, int h, const char* act) {
-    ++checks;
-    if (i >= hl.count) { ++fails; printf("  FAIL hit[%d]       missing (count=%d)\n", i, hl.count); return; }
-    const Hit& g = hl.items[i];
-    const Rect e{x, y, w, h};
-    if (std::strcmp(g.id,id)==0 && g.rect==e && std::strcmp(g.action,act)==0)
-        printf("  ok   hit %-12s (%d,%d,%d,%d)\n", g.id, g.rect.x, g.rect.y, g.rect.w, g.rect.h);
-    else { ++fails; printf("  FAIL hit[%d] %-10s got {%s,(%d,%d,%d,%d)}\n", i, id,
-                           g.id, g.rect.x, g.rect.y, g.rect.w, g.rect.h); }
-}
-static void ckCount(const char* tag, int got, int exp) {
-    ++checks;
-    if (got == exp) printf("  ok   %-14s count=%d\n", tag, got);
-    else { ++fails; printf("  FAIL %-14s got %d exp %d\n", tag, got, exp); }
 }
 static void chromeCk(const ScanLayout& s, int W, int H, int cw) {
     ck("status", s.status, 0,0,W,44);
@@ -43,72 +29,86 @@ static void chromeCk(const ScanLayout& s, int W, int H, int cw) {
                            ck("navCell", s.navCells[i], i*cw,H-44,cw,44); }
 }
 
-int main() {
-    // ---- SCAN 480x320 ----
-    printf("SCAN 480x320\n");
-    { ScanLayout s = scan(480,320);
-      chromeCk(s,480,320,120);
-      ck("counts", s.counts, 8,52,111,216);
-      ck("hero",   s.hero,   127,52,345,216);
-      ck("tile0",  s.tiles[0], 8,52,111,72);
-      ck("tile1",  s.tiles[1], 8,124,111,72);
-      ck("tile2",  s.tiles[2], 8,196,111,72); }
-
-    // ---- SCAN 320x240 ----
-    printf("SCAN 320x240\n");
-    { ScanLayout s = scan(320,240);
-      chromeCk(s,320,240,80);
-      ck("counts", s.counts, 8,52,88,136);
-      ck("hero",   s.hero,   104,52,208,136);
-      ck("tile0",  s.tiles[0], 8,52,88,45);
-      ck("tile1",  s.tiles[1], 8,97,88,45);
-      ck("tile2",  s.tiles[2], 8,142,88,46); }
-
-    // ---- DOMAIN 480x320 ----
-    printf("DOMAIN 480x320\n");
+// --- layout region oracle (both profiles, exact) ------------------------------
+static void testLayout() {
+    { ScanLayout s = scan(480,320); chromeCk(s,480,320,120);
+      ck("counts", s.counts, 8,52,111,216); ck("hero", s.hero, 127,52,345,216);
+      ck("tile0", s.tiles[0], 8,52,111,72); ck("tile1", s.tiles[1], 8,124,111,72);
+      ck("tile2", s.tiles[2], 8,196,111,72); }
+    { ScanLayout s = scan(320,240); chromeCk(s,320,240,80);
+      ck("counts", s.counts, 8,52,88,136); ck("hero", s.hero, 104,52,208,136);
+      ck("tile0", s.tiles[0], 8,52,88,45); ck("tile1", s.tiles[1], 8,97,88,45);
+      ck("tile2", s.tiles[2], 8,142,88,46); }
     { DomainLayout d = domain(480,320);
-      ck("map",      d.map,      8,52,312,216);
-      ck("contacts", d.contacts, 328,52,144,168);
-      ck("range",    d.range,    328,224,144,44);
-      ck("minus",    d.minus,    328,224,44,44);
-      ck("plus",     d.plus,     428,224,44,44);
-      ckb("wide",    d.wide,     true); }
-
-    // ---- DOMAIN 320x240 ----
-    printf("DOMAIN 320x240\n");
+      ck("map", d.map, 8,52,312,216); ck("contacts", d.contacts, 328,52,144,168);
+      ck("range", d.range, 328,224,144,44); ck("minus", d.minus, 328,224,44,44);
+      ck("plus", d.plus, 428,224,44,44); }
     { DomainLayout d = domain(320,240);
-      ck("map",      d.map,      8,52,184,136);
-      ck("contacts", d.contacts, 200,52,112,88);
-      ck("range",    d.range,    200,144,112,44);
-      ck("minus",    d.minus,    200,144,44,44);
-      ck("plus",     d.plus,     268,144,44,44);
-      ckb("wide",    d.wide,     false); }
+      ck("map", d.map, 8,52,184,136); ck("contacts", d.contacts, 200,52,112,88);
+      ck("range", d.range, 200,144,112,44); ck("minus", d.minus, 200,144,44,44);
+      ck("plus", d.plus, 268,144,44,44); }
+}
 
-    // ---- SCAN hits (id + rect + action) ----
-    printf("SCAN hits 480x320\n");
-    { HitList h = scanHits(480,320);
-      ckCount("count", h.count, 11);
-      ckHit(h,0,"gps",0,0,120,44,"Open GPS diagnostics");
-      ckHit(h,3,"logging",360,0,120,44,"Toggle logging; apply existing logger behavior");
-      ckHit(h,4,"nav-scan",0,276,120,44,"Open SCAN");
-      ckHit(h,8,"WIFI",8,52,111,72,"Open Codex filtered to WIFI");
-      ckHit(h,10,"BLE",8,196,111,72,"Open Codex filtered to BLE"); }
-    printf("SCAN hits 320x240\n");
-    { HitList h = scanHits(320,240);
-      ckCount("count", h.count, 11);
-      ckHit(h,7,"nav-menu",240,196,80,44,"Open MENU");
-      ckHit(h,8,"WIFI",8,52,88,45,"Open Codex filtered to WIFI"); }
+// --- complete hit oracle (every state, both sizes) ----------------------------
+static HitCtx ctxFor(const char* state) {
+    HitCtx c;
+    static const char* const keys[4] = {"ka","kb","kc","kd"};
+    c.rowKeys = keys; c.nRowKeys = 4;
+    if (!strcmp(state,"acquiring")) { c.hasFix = false; c.nLocated = 0; }  // no fix -> no mapped rows
+    if (!strcmp(state,"threat"))     c.threat = true;
+    return c;
+}
+static bool req(const Rect& a, const ORect& b) { return a.x==b.x && a.y==b.y && a.w==b.w && a.h==b.h; }
+static bool overlap(const Rect& a, const Rect& b) {
+    return a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y < a.y+a.h;
+}
 
-    // ---- DOMAIN hits (wide: header + contact rows) ----
-    printf("DOMAIN hits 480x320\n");
-    { HitList h = domainHits(480,320);
-      ckCount("count", h.count, 13);
-      ckHit(h,8,"range-minus",328,224,44,44,"Select adjacent existing range; clamp at endpoint");
-      ckHit(h,9,"range-plus",428,224,44,44,"Select adjacent existing range; clamp at endpoint");
-      ckHit(h,10,"all-contacts",328,52,144,44,"Open Codex with located scope");
-      ckHit(h,11,"row",328,96,144,44,"Open mapped device detail by stable identity");
-      ckHit(h,12,"row",328,140,144,44,"Open mapped device detail by stable identity"); }
+static void testHits() {
+    for (int ci = 0; ci < ORACLE_N; ci++) {
+        const OCase& c = ORACLE[ci];
+        const HitCtx ctx = ctxFor(c.state);
+        const HitList h = (strcmp(c.screen,"scan")==0) ? scanHits(c.W,c.H,ctx) : domainHits(c.W,c.H,ctx);
+        char tag[40]; snprintf(tag,sizeof tag,"%s-%s-%d",c.screen,c.state,c.W);
+        int before = fails;
 
+        ++checks;                                            // count
+        if (h.count != c.n) { ++fails; printf("  FAIL %-18s count got %d exp %d\n",tag,h.count,c.n); }
+
+        ++checks;                                            // rect bijection vs oracle
+        bool used[20] = {false}; int matched = 0;
+        for (int i=0;i<c.n;i++) for (int j=0;j<h.count;j++)
+            if (!used[j] && req(h.items[j].rect, c.r[i])) { used[j]=true; ++matched; break; }
+        if (matched != c.n) { ++fails; printf("  FAIL %-18s rect match %d/%d\n",tag,matched,c.n); }
+
+        ++checks;                                            // bounds / >=44 / distinct / non-overlap
+        bool ok = true;
+        for (int j=0;j<h.count;j++) {
+            const Rect r = h.items[j].rect;
+            if (r.x<0||r.y<0||r.x+r.w>c.W||r.y+r.h>c.H) ok=false;
+            if (r.w<44||r.h<44) ok=false;
+            if (!h.items[j].slot || !h.items[j].slot[0]) ok=false;
+            for (int k=0;k<j;k++) {
+                if (!strcmp(h.items[j].slot,h.items[k].slot)) ok=false;
+                if (overlap(r, h.items[k].rect)) ok=false;
+            }
+        }
+        if (!ok) { ++fails; printf("  FAIL %-18s structural (bounds/min44/dup-slot/overlap)\n",tag); }
+
+        ++checks;                                            // state-awareness
+        int nthreat = 0;
+        for (int j=0;j<h.count;j++) if (h.items[j].action==Action::OpenThreatDetail) ++nthreat;
+        const int expThreat = (strcmp(c.state,"threat")==0) ? 1 : 0;
+        if (nthreat != expThreat) { ++fails; printf("  FAIL %-18s threat targets %d exp %d\n",tag,nthreat,expThreat); }
+
+        printf("  %-4s %-18s n=%d\n", (fails==before)?"ok":"FAIL", tag, h.count);
+    }
+}
+
+int main() {
+    printf("layout regions (exact, both profiles):\n");
+    testLayout();
+    printf("hit oracle (%d cases, all states x both sizes):\n", ORACLE_N);
+    testHits();
     printf("\n%s  %d/%d checks passed\n", fails ? "FAILED" : "PASSED", checks - fails, checks);
     return fails ? 1 : 0;
 }
