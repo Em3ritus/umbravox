@@ -236,6 +236,10 @@ Point read() {
     p.rawY = lastY;
     p.z    = 0;            // capacitive: no pressure worth the name
     p.any  = true;
+    // Panel coordinates for the native-resolution engine, kept even when the
+    // contact is off the 2x canvas (the status strip / side margins).
+    p.panelX = (int16_t)sx;
+    p.panelY = (int16_t)sy;
 
     // Off the 2x canvas is the status strip or the side margins: a contact,
     // but not one that lands on anything.

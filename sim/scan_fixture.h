@@ -5,9 +5,11 @@
 
 namespace scanfix {
 
-static const scanr::FieldContact CONTACTS[6] = {
-    {"ap:aa:1", -42, 0, 1000}, {"ap:bb:5", -61, 1, 1500}, {"ble:cc", -55, 2,  800},
-    {"ap:dd:6", -78, 0, 2000}, {"ap:ee:1", -85, 1,  500}, {"ble:ff", -33, 2, 1200},
+// Pre-projected field contacts (bearing, dist 0..100, band, lastSeen): the same
+// shape the device supplies from capture's dial state -- no invented identity.
+static const scanr::FieldBlip BLIPS[6] = {
+    { 20, 15, 0, 1000}, {140, 45, 1, 1500}, { 75, 30, 2,  800},
+    {210, 70, 0, 2000}, {300, 85, 1,  500}, {355, 10, 2, 1200},
 };
 static const int CHANNELS[21] = {20,40,65,100,50,30,45,80,25,60,85,35,72, 55,95,33,70,44,82,30,62};
 
@@ -19,7 +21,7 @@ inline scanr::ScanScene demo(uint8_t theme, uint32_t now = 5000) {
     s.hasCell = true; s.battPct = 78; s.rec = scanr::Rec::Off;
     s.wifi = 1665; s.g5 = 418; s.ble = 2903;
     s.ch = "CH 06"; s.chBand = "2.4 GHz";
-    s.contacts = CONTACTS; s.nContacts = 6;
+    s.blips = BLIPS; s.nBlips = 6;
     s.channels = CHANNELS; s.nChannels = 21;
     s.now = now; s.theme = theme;
     return s;

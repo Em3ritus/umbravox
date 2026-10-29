@@ -11,6 +11,7 @@
 #include "palette.h"
 #include "themepack.h"
 #include "font5x7.h"
+#include "gnss.h"
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -34,11 +35,22 @@ struct GnssFix {                 // raw receiver state; projected to a label bel
     uint32_t ageMs = 0;          // ms since the fix landed (now - atMs)
 };
 
-struct FieldContact {            // one seen/located device for the LIVE FIELD
-    const char* key;             // stable identity
+struct FieldContact {            // a raw sighting (host/fixture convenience)
+    const char* key;             // identity, for a stable SYNTHETIC bearing
     int         rssi;            // dBm
     int         band;            // 0=2.4GHz, 1=5GHz, 2=BLE
     uint32_t    lastSeen;        // ms; age = now - lastSeen
+};
+
+// What the compositor actually draws: a contact already reduced to its field
+// placement. The device supplies the REAL on-dial bearing and distance from
+// capture (no identity is invented); host fixtures derive one from a raw
+// FieldContact via toBlip(). Pre-projected geometry, not a fabricated key.
+struct FieldBlip {
+    uint16_t bearing;            // 0..359 degrees on the field
+    uint8_t  dist;               // 0..100; 0 = on top of us (centre), 100 = rim
+    uint8_t  band;               // 0=2.4GHz, 1=5GHz, 2=BLE
+    uint32_t lastSeen;           // ms; age = now - lastSeen
 };
 
 struct ScanScene {
@@ -51,8 +63,8 @@ struct ScanScene {
     long     wifi = 0, g5 = 0, ble = 0;
     // hero
     const char* ch = "CH --"; const char* chBand = "2.4 GHz";
-    const FieldContact* contacts = nullptr; int nContacts = 0;  // caller-owned
-    const int*          channels = nullptr; int nChannels = 0;  // 0..100 each; kChannels entries
+    const FieldBlip* blips = nullptr; int nBlips = 0;           // caller-owned, pre-projected
+    const int*       channels = nullptr; int nChannels = 0;    // 0..100 each; kChannels entries
     uint32_t            now = 0;                                 // clock for contact age
     // theme
     uint8_t  theme = 0;          // pal::ThemeId; drives artwork selection
@@ -65,24 +77,43 @@ struct Marker { int dx, dy, band, sizePx; bool shown; };   // dx,dy relative to 
 inline unsigned keyHash(const char* k) {                   // stable synthetic angle source
     unsigned h = 2166136261u; while (k && *k) h = (h ^ (unsigned char)*k++) * 16777619u; return h;
 }
-inline Marker projectContact(const FieldContact& c, uint32_t now, int fr) {
-    Marker m{0, 0, c.band, 3, false};
-    if (c.band < 0 || c.band > 2) return m;                // invalid band -> rejected, not shown
-    const uint32_t age = now - c.lastSeen;
-    if (age > kContactExpireMs) return m;                  // expired -> not shown
+// Place a contact already reduced to polar form: a bearing (degrees) and a
+// 0..100 distance (0 = on top of us -> field centre, 100 = rim). This is the
+// one source of truth for field placement -- expiry, the band guard, the
+// radius and the age fade. The device's capture field is already polar and
+// feeds this directly; host/raw contacts are reduced to it by projectContact.
+inline Marker placeMarker(int bearingDeg, int dist, int band, uint32_t ageMs, int fr) {
+    Marker m{0, 0, band, 3, false};
+    if (band < 0 || band > 2) return m;                    // invalid band -> rejected, not shown
+    if (ageMs > kContactExpireMs) return m;                // expired -> not shown
     m.shown = true;
-    const int rssi = c.rssi < -90 ? -90 : (c.rssi > -30 ? -30 : c.rssi);
-    const int rr = fr * (-(rssi + 30)) / 60;               // strong(-30)=centre, weak(-90)=rim
-    const double a = (keyHash(c.key) % 360) * 3.14159265 / 180.0;   // synthetic bearing, not geographic
+    if (dist < 0) dist = 0; else if (dist > 100) dist = 100;
+    const int rr = fr * dist / 100;                        // 0=centre, 100=rim
+    const double a = (bearingDeg % 360) * 3.14159265 / 180.0;   // synthetic bearing, not geographic
     m.dx = (int)(rr * std::cos(a)); m.dy = (int)(rr * std::sin(a));
-    m.sizePx = age < 20000u ? 4 : age < 40000u ? 3 : 2;    // fade with age
+    m.sizePx = ageMs < 20000u ? 4 : ageMs < 40000u ? 3 : 2;    // fade with age
     return m;
+}
+// Reduce a raw sighting to a drawable blip: a SYNTHETIC bearing from its key
+// and a distance from its signal. The device does not use this -- it supplies
+// the real on-dial bearing/distance from capture -- but host fixtures and the
+// projection tests do.
+inline FieldBlip toBlip(const FieldContact& c) {
+    const int rssi = c.rssi < -90 ? -90 : (c.rssi > -30 ? -30 : c.rssi);
+    return FieldBlip{ (uint16_t)(keyHash(c.key) % 360),
+                      (uint8_t)((-(rssi + 30)) * 100 / 60),   // strong(-30)=0, weak(-90)=100
+                      (uint8_t)c.band, c.lastSeen };
+}
+inline Marker projectContact(const FieldContact& c, uint32_t now, int fr) {
+    if (c.band < 0 || c.band > 2) return Marker{0, 0, c.band, 3, false};   // guard before cast
+    const FieldBlip b = toBlip(c);
+    return placeMarker(b.bearing, b.dist, b.band, now - b.lastSeen, fr);
 }
 // Freshness mirrors ui::Gnss::fresh(now) exactly: a valid position no older than
 // FRESH_MS (strict <). It does NOT depend on GSA mode -- a valid-but-aged
 // position reads STALE, never ACQUIRING. Mode only chooses the label's
 // dimensionality; a fresh fix with no GSA yet is shown without claiming one.
-static constexpr uint32_t kGpsFreshMs = 5000;             // == ui::Gnss::FRESH_MS
+static constexpr uint32_t kGpsFreshMs = ui::Gnss::FRESH_MS;   // single source of truth
 inline GpsState gpsState(const GnssFix& f) {
     if (!f.valid) return GpsState::Acquiring;             // no valid position
     return f.ageMs < kGpsFreshMs ? GpsState::Fresh : GpsState::Stale;   // strict 5s boundary
@@ -233,8 +264,9 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     frame(s, fld.x, fld.y, fld.w, fld.h, pal::EDGE);
     if (fr>6) {
         drawArtwork(s, sc.theme, fcx, fcy, fr);
-        for (int i=0;i<sc.nContacts;i++){                   // projected contacts -> field markers
-            const Marker m = projectContact(sc.contacts[i], sc.now, fr);
+        for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
+            const FieldBlip& b = sc.blips[i];
+            const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
             if (m.shown && m.band>=0 && m.band<3) disc(s, fcx+m.dx, fcy+m.dy, m.sizePx, band[m.band]);
         }
     }

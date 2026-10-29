@@ -27,6 +27,9 @@
 #include "dedup.h"
 #include "meshlive.h"
 #include "perflog.h"
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+#include "scan_adapter.h"
+#endif
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
@@ -234,13 +237,19 @@ static void drawStrip(const char* text, uint16_t fg) {
     gfx->endWrite();
 }
 
+// Set when something else painted over the strip (the SCAN engine clears the
+// whole panel on exit), so the next tick redraws even if the text is unchanged.
+static bool stripForced = true;
+static void stripForce() { stripForced = true; }
+
 static void stripTick(uint32_t now) {
     static char     shown[24] = "\x01";   // never matches, so the first tick draws
     static uint16_t shownFg = 0;
     char txt[24];
     uint16_t fg;
     stripText(pmu::read(now), txt, sizeof txt, fg);
-    if (strcmp(txt, shown) == 0 && fg == shownFg) return;
+    if (!stripForced && strcmp(txt, shown) == 0 && fg == shownFg) return;
+    stripForced = false;
     drawStrip(txt, fg);
     snprintf(shown, sizeof shown, "%s", txt);
     shownFg = fg;
@@ -672,6 +681,12 @@ void setup() {
         for (;;) delay(1000);
     }
     gfx->fillScreen(RGB565_BLACK);
+
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    // The native-resolution SCAN engine composes the whole 480x320 panel in
+    // bounded strips (no 2x canvas, no letterbox). Opt-in only.
+    scanadapter::begin(gfx, PANEL_W, PANEL_H);
+#endif
 
     // Arduino core 3.x LEDC. The old ledcSetup()/ledcAttachPin() pair is gone,
     // and ledcWrite() now takes the pin rather than a channel -- this is the
@@ -1434,6 +1449,7 @@ void loop() {
         dimmed = false;
     }
 
+    const bool wasDimmed = dimmed;             // a contact now is a wake, not a tap
     bool tpDown = tp.down;
     if (tp.any) {
         if (dimmed) { tpDown = false; }        // this one only wakes
@@ -1481,6 +1497,17 @@ void loop() {
     // one UI frame so the panel is not left showing the animation.
     const bool screenOff = ipNow.suspend && !animStep.exit;
 
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    // Wake detection for the engine, computed BEFORE the screenOff early-return
+    // below so an OFF/ANIM sleep (which returns early) is not missed. "Asleep"
+    // covers DIM and the suspended OFF/ANIM states; the wake forces a full
+    // native repaint in the draw block.
+    static bool engPrevAsleep = false;
+    const bool  engAsleepNow  = dimmed || screenOff;
+    const bool  engWoke       = engPrevAsleep && !engAsleepNow;
+    engPrevAsleep = engAsleepNow;
+#endif
+
     // Nav consumes the touch before the screen sees it, so a swipe that
     // changes screens does not also land as a tap on the one arriving.
     ui::filesTick(nav, millis());          // the FILES confirm's clock, before navTouch
@@ -1493,7 +1520,30 @@ void loop() {
                       : nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
                       : nav.screen == ui::SCR_ECHOES ? ui::MAX_ECHO_ROWS : ui::ROWS;
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
-    const bool switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
+    bool switched;
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    // A finger held across an engine->legacy exit must not click through to the
+    // arriving legacy screen: swallow its taps until it actually lifts.
+    static bool heldFromEngine = false;
+    if (heldFromEngine) { if (!tp.any) heldFromEngine = false; else tpDown = false; }
+    const uint8_t screenBefore = nav.screen;
+    if (nav.screen == ui::SCR_SCAN) {
+        // Native engine screen: the status strip and side tiles lie OUTSIDE the
+        // 2x canvas, where touch::read leaves down=false -- so hit-test in PANEL
+        // coordinates on any in-bounds contact, not tp.down. The wake tap
+        // (wasDimmed) is suppressed, and the pure gate consumes transition and
+        // held presses.
+        const bool inBounds = tp.panelX >= 0 && tp.panelX < PANEL_W
+                           && tp.panelY >= 0 && tp.panelY < PANEL_H;
+        const bool engContact = tp.any && !wasDimmed && inBounds;
+        switched = scanadapter::dispatchTouch(nav, engContact, tp.panelX, tp.panelY);
+    } else
+#endif
+    switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    if (switched && screenBefore == ui::SCR_SCAN && nav.screen != ui::SCR_SCAN && tp.any)
+        heldFromEngine = true;   // left engine SCAN with a finger down
+#endif
 
     // ORIENTATION: the panel turns the moment the setting does (the ORIENT
     // row's tap, or the stored value on the first pass -- the panel came up
@@ -1802,6 +1852,58 @@ void loop() {
         lastTheme = s.set.theme;
         themeChanged = true;
     }
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    // Engine SCAN: compose the whole panel natively (480x320) in bounded
+    // strips and skip the 2x canvas path entirely for this screen. The scene is
+    // snapshotted + committed once per frame (stable across the sliced redraw);
+    // the transfer is sliced so capture keeps the CPU between slices.
+    {
+        static uint8_t engPrev = 0xFF;
+        const bool engScan = (nav.screen == ui::SCR_SCAN);
+        if (engScan) {
+            if (switched || engPrev != ui::SCR_SCAN) scanadapter::enter();
+            else if (engWoke)                        scanadapter::wake();   // incl. OFF/ANIM wake
+            else if (themeChanged)                   scanadapter::themeChanged();
+            if (!scanadapter::pending()) {           // snapshot+commit a fresh, stable frame
+                scanr::GnssFix gf;
+                const ui::Gnss::Fix& fx = ui::Gnss::fix();
+                gf.valid = fx.valid; gf.mode = ui::Gnss::status().mode;
+                gf.sats  = fx.used;  gf.ageMs = millis() - fx.atMs;
+                const scanr::Rec rc = logging::state() == logging::ACTIVE  ? scanr::Rec::On
+                                    : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
+                                    :                                        scanr::Rec::Off;
+                const pmu::Batt b = pmu::read(millis());
+                scanadapter::snapshot(s, gf, rc, b.ok && b.cell, (int)b.pct, millis());
+            }
+            const uint32_t tD = millis();
+            scanadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
+            scanadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
+            perflog::frame(millis() - tD, 0);
+
+            static uint32_t engLogAt = 0;
+            if (millis() - engLogAt >= 10000) {
+                const uint32_t iv = millis() - engLogAt; engLogAt = millis();
+                const scanpres::PresentMetrics& m = scanadapter::metrics();
+                logf("[eng] fr %u sl %u compose %luus xfer %luus maxsl %luus rpm %lu "
+                     "| cap +%lu fr +%lu uq +%lu ble\n",
+                     (unsigned)m.frames, (unsigned)m.slices,
+                     (unsigned long)m.composeUs, (unsigned long)m.transferUs,
+                     (unsigned long)m.maxSliceUs, (unsigned long)m.renderPerMille(iv),
+                     (unsigned long)m.capFrames, (unsigned long)m.capUniq,
+                     (unsigned long)m.bleReports);
+                scanadapter::clearMetrics();
+            }
+            engPrev = nav.screen;
+            frame++;
+            return;
+        }
+        if (engPrev == ui::SCR_SCAN) {
+            scanadapter::leave();     // drop the frame, clear the panel
+            stripForce();             // the strip cache is stale after fillScreen; redraw it
+        }
+        engPrev = nav.screen;
+    }
+#endif
     // One dispatcher for both orientations (ui/draw.h): the landscape screens
     // as they were, or their portrait layouts and placeholders.
     ui::drawScreen(canvas, s, &dirty);
