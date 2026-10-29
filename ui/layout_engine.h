@@ -130,6 +130,10 @@ struct HitCtx {
 static const char* const kThreatDesc =
     "Open matching device detail; retain confidence and evidence; not a confirmed identity";
 
+// A record/match key is usable only if non-null AND non-empty. An empty string
+// is not a device identity and must not create an actionable target.
+inline bool validKey(const char* k) { return k && k[0]; }
+
 inline void addChromeHits(HitList& h, const Rect sc[4], const Rect nv[4]) {
     h.add("gps",     sc[0], Action::OpenGps,       0, nullptr, "Open GPS diagnostics");
     h.add("mesh",    sc[1], Action::OpenMesh,      0, nullptr, "Open Mesh");
@@ -149,7 +153,7 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
                                          "Open Codex filtered to 5 GHZ",
                                          "Open Codex filtered to BLE"};
     for (int i = 0; i < 3; i++) h.add(tslot[i], s.tiles[i], Action::CodexFilter, i, nullptr, tdesc[i]);
-    if (ctx.matchKey)   // threat target only for a real matched device
+    if (validKey(ctx.matchKey))   // threat target only for a real matched device
         h.add("threat", {s.hero.x, s.hero.y, s.hero.w, 44},
               Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
     return h;
@@ -172,7 +176,8 @@ inline HitList domainHits(int W, int H, const HitCtx& ctx) {
     //   row at band b shows original record (b-1); never invented.
     auto rowKey = [&](int band) -> const char* {
         const int rec = band - 1;
-        return (ctx.hasFix && ctx.rowKeys && rec < ctx.nRowKeys) ? ctx.rowKeys[rec] : nullptr;
+        if (!ctx.hasFix || !ctx.rowKeys || rec < 0 || rec >= ctx.nRowKeys) return nullptr;
+        return validKey(ctx.rowKeys[rec]) ? ctx.rowKeys[rec] : nullptr;   // empty key -> no row
     };
 
     if (d.wide) {
@@ -181,14 +186,14 @@ inline HitList domainHits(int W, int H, const HitCtx& ctx) {
               "Open Codex with located scope");
         for (int b = 1; b < nbands; ++b) {
             const Rect r{cx, cy + b*B, cw, B};
-            if (b == 1 && ctx.matchKey) {   // threat REPLACES the first row; later rows retained
+            if (b == 1 && validKey(ctx.matchKey)) {   // threat REPLACES the first row; later rows retained
                 h.add("threat", r, Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
             } else if (const char* key = rowKey(b)) {
                 h.add(SLOT[b & 7], r, Action::OpenDeviceDetail, b - 1, key,
                       "Open mapped device detail by stable identity");
             }  // else: empty band, no actionable hit
         }
-    } else if (ctx.matchKey) {
+    } else if (validKey(ctx.matchKey)) {
         h.add("threat", {cx, cy, cw, B}, Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
         h.add("all-contacts", {cx, cy + B, cw, B}, Action::OpenLocatedCodex, 0, nullptr, "Open located Codex");
     } else {

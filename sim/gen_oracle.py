@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 # Generate oracle_hits.inc from the delivered geometry.json: the COMPLETE set of
 # expected hits (id + rect) for every SCAN/DOMAIN state at both sizes. Fails hard
-# (nonzero exit) if any expected case is missing or duplicated, so a case can
-# never be silently skipped.
+# (nonzero exit) if any expected case is MISSING or DUPLICATED in the source, so
+# a case can never be silently skipped or shadowed.
 #   python3 gen_oracle.py <geometry.json> > oracle_hits.inc
 import json, sys
+from collections import Counter
 
 if len(sys.argv) != 2:
     sys.exit("usage: gen_oracle.py <geometry.json>")
-S = {s['name']: s for s in json.load(open(sys.argv[1]))['screens']}
+
+raw = json.load(open(sys.argv[1]))['screens']
+count = Counter(s['name'] for s in raw)          # duplicates counted on the ORIGINAL list
+first = {}
+for s in raw:
+    first.setdefault(s['name'], s)               # keep first occurrence
 
 SCREENS = ['scan', 'domain']
 STATES  = ['active', 'acquiring', 'stale', 'off', 'threat']
 SIZES   = [480, 320]
 expected = [(scr, st, W) for scr in SCREENS for W in SIZES for st in STATES]
 
-seen, cases = set(), []
+cases = []
 for scr, st, W in expected:
     nm = f'{scr}-{st}-{W}'
-    if nm not in S:   sys.exit(f"gen_oracle: ERROR missing expected case {nm}")
-    if nm in seen:    sys.exit(f"gen_oracle: ERROR duplicate case {nm}")
-    seen.add(nm)
-    cases.append((scr, st, W, 320 if W == 480 else 240, S[nm]['hits']))
-if len(cases) != len(expected):
-    sys.exit("gen_oracle: ERROR case-count mismatch")
+    if count[nm] == 0: sys.exit(f"gen_oracle: ERROR missing expected case {nm}")
+    if count[nm] > 1:  sys.exit(f"gen_oracle: ERROR duplicate case {nm} (x{count[nm]})")
+    cases.append((scr, st, W, 320 if W == 480 else 240, first[nm]['hits']))
 
 def esc(s): return s.replace('\\', '\\\\').replace('"', '\\"')
 

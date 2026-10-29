@@ -1,11 +1,11 @@
 // Host test for ui/layout_engine.h. Asserts:
 //  (1) layout regions reproduce geometry.json exactly for both profiles;
-//  (2) the state-aware hit set matches the COMPLETE oracle (oracle_hits.inc)
-//      for every SCAN/DOMAIN state at both sizes -- each hit bound to its
-//      action + payload (+ record key where applicable), plus bounds / >=44px /
-//      distinct slots / non-overlap / full-case-set;
-//  (3) NEGATIVE checks: swapped actions, wrong payloads, missing keys, and a
-//      short oracle all fail.
+//  (2) the state-aware hit set matches the COMPLETE oracle (oracle_hits.inc) for
+//      every SCAN/DOMAIN state at both sizes -- each hit bound to its action,
+//      payload AND exact record key at its rect, plus bounds / >=44px / distinct
+//      slots / non-overlap, and the full case set verified by membership+uniqueness;
+//  (3) NEGATIVE checks: swapped actions, wrong payloads, swapped/wrong/empty/null
+//      keys, and a missing/duplicate oracle case all fail.
 // Build + run:
 //   python3 sim/gen_oracle.py <geometry.json> > sim/oracle_hits.inc
 //   g++ -std=c++17 -Wall -I. -Isim sim/test_layout_engine.cpp -o /tmp/tle && /tmp/tle
@@ -24,13 +24,17 @@ static void expect(bool cond, const char* fmt, ...) {
     va_list ap; va_start(ap, fmt); printf("  FAIL "); vprintf(fmt, ap); printf("\n"); va_end(ap);
 }
 
+static const char* const KEYS[4] = {"k0","k1","k2","k3"};
+static const char* const MATCH   = "match";
+static const int CONTACT_Y = 52, BAND = 44;
+
 // ---------- (1) layout regions, exact, both profiles --------------------------
 static void ckRect(const char* tag, Rect g, int x,int y,int w,int h) {
     expect(g==Rect{x,y,w,h}, "%-12s got (%d,%d,%d,%d) exp (%d,%d,%d,%d)", tag,g.x,g.y,g.w,g.h,x,y,w,h);
 }
 static void testLayout() {
     for (int P=0; P<2; ++P) {
-        const int W = P? 320:480, H = P? 240:320, cw = W/4;
+        const int W=P?320:480, H=P?240:320, cw=W/4;
         ScanLayout s = scan(W,H);
         ckRect("status", s.status, 0,0,W,44);
         ckRect("nav", s.nav, 0,H-44,W,44);
@@ -52,10 +56,10 @@ static void testLayout() {
     ckRect("Dplus320",  domain(320,240).plus, 268,144,44,44);
 }
 
-// ---------- oracle id -> runtime action/payload mapping -----------------------
-struct Expect { Action a; bool chkPay; int pay; bool needKey; bool known; };
-static Expect expectFor(const char* id) {
-    auto E=[](Action a,bool cp=false,int p=0,bool nk=false){ return Expect{a,cp,p,nk,true}; };
+// ---------- oracle id -> expected action/payload/key --------------------------
+struct Expect { Action a; bool chkPay; int pay; bool needKey; const char* key; bool known; };
+static Expect expectFor(const char* id, Rect r) {
+    auto E=[](Action a,bool cp=false,int p=0){ return Expect{a,cp,p,false,nullptr,true}; };
     if(!strcmp(id,"gps"))         return E(Action::OpenGps);
     if(!strcmp(id,"mesh"))        return E(Action::OpenMesh);
     if(!strcmp(id,"power"))       return E(Action::PowerDetail);
@@ -70,53 +74,68 @@ static Expect expectFor(const char* id) {
     if(!strcmp(id,"range-minus")) return E(Action::RangeStep,true,-1);
     if(!strcmp(id,"range-plus"))  return E(Action::RangeStep,true,1);
     if(!strcmp(id,"all-contacts"))return E(Action::OpenLocatedCodex);
-    if(!strcmp(id,"threat"))      return E(Action::OpenThreatDetail,false,0,true);
-    if(!strncmp(id,"row",3))      return E(Action::OpenDeviceDetail,false,0,true);
-    return Expect{Action::OpenGps,false,0,false,false};   // unknown -> never matches
+    if(!strcmp(id,"threat"))      return Expect{Action::OpenThreatDetail,false,0,true,MATCH,true};
+    if(!strncmp(id,"row",3)) {    // row at band b binds original record b-1
+        const int band = (r.y - CONTACT_Y) / BAND, rec = band - 1;
+        return Expect{Action::OpenDeviceDetail,false,0,true,(rec>=0&&rec<4)?KEYS[rec]:nullptr,true};
+    }
+    return Expect{Action::OpenGps,false,0,false,nullptr,false};   // unknown id -> never matches
 }
-// Does the engine list contain a hit at oracle rect with the expected action,
-// payload, and (if a record target) a non-empty key distinct from the slot?
+static bool validKeyStr(const char* k){ return k && k[0]; }
+// Engine list must contain a hit at the oracle rect with the expected action,
+// payload, and (for record targets) a non-empty key distinct from the slot AND
+// equal to the expected record key.
 static bool bound(const HitList& h, const OHit& o) {
-    const Expect e = expectFor(o.id);
-    if (!e.known) return false;
-    for (int j=0;j<h.count;j++) {
-        const Hit& g = h.items[j];
-        if (!(g.rect==Rect{o.x,o.y,o.w,o.h})) continue;
-        if (g.action != e.a) continue;
-        if (e.chkPay && g.payload != e.pay) continue;
-        if (e.needKey && (!g.key || !g.key[0] || !g.slot || !strcmp(g.slot,g.key))) continue;
+    const Rect orect{o.x,o.y,o.w,o.h};
+    const Expect e = expectFor(o.id, orect);
+    if(!e.known) return false;
+    for(int j=0;j<h.count;j++){
+        const Hit& g=h.items[j];
+        if(!(g.rect==orect)) continue;
+        if(g.action!=e.a) continue;
+        if(e.chkPay && g.payload!=e.pay) continue;
+        if(e.needKey){
+            if(!validKeyStr(g.key)) continue;
+            if(!g.slot || !strcmp(g.slot,g.key)) continue;         // slot != record key
+            if(e.key && strcmp(g.key,e.key)!=0) continue;          // EXACT expected key
+        }
         return true;
     }
     return false;
 }
-static bool overlap(Rect a, Rect b) {
-    return a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
-}
+static bool overlap(Rect a, Rect b){ return a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h; }
 
-static const char* const KEYS[4] = {"k0","k1","k2","k3"};
 static HitCtx ctxFor(const char* st) {
     HitCtx c;
     if(!strcmp(st,"active")||!strcmp(st,"stale")||!strcmp(st,"off")) { c.hasFix=true; c.rowKeys=KEYS; c.nRowKeys=4; }
-    else if(!strcmp(st,"acquiring")) { c.hasFix=false; }               // fix lost -> no mapped rows
-    else if(!strcmp(st,"threat"))    { c.hasFix=true; c.rowKeys=KEYS; c.nRowKeys=4; c.matchKey="match"; }
+    else if(!strcmp(st,"acquiring")) { c.hasFix=false; }
+    else if(!strcmp(st,"threat"))    { c.hasFix=true; c.rowKeys=KEYS; c.nRowKeys=4; c.matchKey=MATCH; }
     return c;
 }
 static HitList hitsFor(const OCase& c) {
     const HitCtx ctx = ctxFor(c.state);
     return (strcmp(c.screen,"scan")==0) ? scanHits(c.W,c.H,ctx) : domainHits(c.W,c.H,ctx);
 }
+static int boundCount(const HitList& h, const OCase& c){ int n=0; for(int i=0;i<c.n;i++) if(bound(h,c.h[i])) ++n; return n; }
 
-// ---------- (2) complete hit oracle -------------------------------------------
+// ---------- (2) complete hit oracle: binding + case-set membership ------------
+static void testCaseSet() {
+    expect(ORACLE_N==ORACLE_EXPECTED, "oracle %d cases exp %d", ORACLE_N, ORACLE_EXPECTED);
+    const char* SCR[2]={"scan","domain"}; const char* ST[5]={"active","acquiring","stale","off","threat"}; int SZ[2]={480,320};
+    for(int a=0;a<2;a++) for(int s=0;s<5;s++) for(int z=0;z<2;z++){
+        int n=0; for(int i=0;i<ORACLE_N;i++)
+            if(!strcmp(ORACLE[i].screen,SCR[a])&&!strcmp(ORACLE[i].state,ST[s])&&ORACLE[i].W==SZ[z]) ++n;
+        expect(n==1, "case %s-%s-%d present %dx (exp 1)", SCR[a],ST[s],SZ[z],n);
+    }
+}
 static void testHits() {
-    expect(ORACLE_N==ORACLE_EXPECTED, "oracle has %d cases, expected %d", ORACLE_N, ORACLE_EXPECTED);
     for (int ci=0; ci<ORACLE_N; ++ci) {
         const OCase& c = ORACLE[ci];
         const HitList h = hitsFor(c);
         char t[40]; snprintf(t,sizeof t,"%s-%s-%d",c.screen,c.state,c.W);
         int before = fails;
         expect(h.count==c.n, "%-18s count got %d exp %d", t, h.count, c.n);
-        int boundN=0; for(int i=0;i<c.n;i++) if(bound(h,c.h[i])) ++boundN;
-        expect(boundN==c.n, "%-18s action/payload/key bound %d/%d", t, boundN, c.n);
+        expect(boundCount(h,c)==c.n, "%-18s action/payload/key bound %d/%d", t, boundCount(h,c), c.n);
         bool ok=true;
         for(int j=0;j<h.count;j++){
             const Rect r=h.items[j].rect;
@@ -136,44 +155,53 @@ static const OCase& find(const char* screen, const char* state, int W) {
     for(int i=0;i<ORACLE_N;i++) if(!strcmp(ORACLE[i].screen,screen)&&!strcmp(ORACLE[i].state,state)&&ORACLE[i].W==W) return ORACLE[i];
     static OCase none{}; return none;
 }
+static int actionIndex(HitList& h, Action a){ for(int j=0;j<h.count;j++) if(h.items[j].action==a) return j; return -1; }
+static int deviceCount(const HitList& h){ int n=0; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenDeviceDetail)++n; return n; }
+static int threatCount(const HitList& h){ int n=0; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenThreatDetail)++n; return n; }
+
 static void testNegative() {
-    // swapped actions: gps<->logging must break the gps binding
-    { const OCase& c = find("scan","active",480); HitList h = hitsFor(c);
-      Action a0=h.items[0].action; h.items[0].action=h.items[3].action; h.items[3].action=a0;
-      OHit gps{0,0,120,44,"gps"};
-      expect(!bound(h,gps), "negative: swapped gps/logging action not detected"); }
-    // wrong payload: nav-domain payload mangled must break its binding
-    { const OCase& c = find("scan","active",480); HitList h = hitsFor(c);
-      h.items[5].payload = 99;   // nav-domain
-      OHit nd{120,276,120,44,"nav-domain"};
-      expect(!bound(h,nd), "negative: wrong nav payload not detected"); }
-    // missing keys: hasFix but no rowKeys/matchKey -> NO device/threat targets
-    { HitCtx c; c.hasFix=true;   // rowKeys=null, matchKey=null
-      HitList h = domainHits(480,320,c);
-      int dev=0,thr=0; for(int j=0;j<h.count;j++){ if(h.items[j].action==Action::OpenDeviceDetail)++dev;
-                                                   if(h.items[j].action==Action::OpenThreatDetail)++thr; }
-      expect(dev==0 && thr==0, "negative: fabricated targets without keys (dev=%d thr=%d)", dev, thr);
-      expect(h.count==11, "negative: no-key domain-480 count got %d exp 11", h.count); }
-    // a record row must carry a key distinct from its slot
-    { HitCtx c; c.hasFix=true; c.rowKeys=KEYS; c.nRowKeys=4;
-      HitList h = domainHits(480,320,c);
-      bool good=true; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenDeviceDetail)
-          if(!h.items[j].key||!strcmp(h.items[j].slot,h.items[j].key)) good=false;
-      expect(good, "negative: row slot/key not separated"); }
-    // wide threat retains the SECOND row's record (k1), not restart at k0
-    { HitCtx c; c.hasFix=true; c.rowKeys=KEYS; c.nRowKeys=4; c.matchKey="match";
-      HitList h = domainHits(480,320,c);
-      bool hasK1=false, hasK0Row=false;
-      for(int j=0;j<h.count;j++){ if(h.items[j].action==Action::OpenDeviceDetail){
-          if(h.items[j].key && !strcmp(h.items[j].key,"k1")) hasK1=true;
-          if(h.items[j].key && !strcmp(h.items[j].key,"k0")) hasK0Row=true; } }
-      expect(hasK1 && !hasK0Row, "wide-threat retains second row k1 (k1=%d k0row=%d)", hasK1, hasK0Row); }
+    // swapped actions: gps<->logging must break full binding
+    { const OCase& c=find("scan","active",480); HitList h=hitsFor(c);
+      Action a=h.items[0].action; h.items[0].action=h.items[3].action; h.items[3].action=a;
+      expect(boundCount(h,c) < c.n, "neg: swapped gps/logging action not detected"); }
+    // wrong payload: mangle nav-domain payload
+    { const OCase& c=find("scan","active",480); HitList h=hitsFor(c);
+      h.items[5].payload = 99;
+      expect(boundCount(h,c) < c.n, "neg: wrong nav payload not detected"); }
+    // swapped ROW keys: k0<->k1 on their rects must break binding
+    { const OCase& c=find("domain","active",480); HitList h=hitsFor(c);
+      int i0=-1,i1=-1; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenDeviceDetail){ if(i0<0)i0=j; else i1=j; }
+      const char* tk=h.items[i0].key; h.items[i0].key=h.items[i1].key; h.items[i1].key=tk;
+      expect(boundCount(h,c) < c.n, "neg: swapped row keys not detected"); }
+    // wrong THREAT key: replace with an unrelated valid key
+    { const OCase& c=find("domain","threat",480); HitList h=hitsFor(c);
+      int it=actionIndex(h,Action::OpenThreatDetail); h.items[it].key="unrelated";
+      expect(boundCount(h,c) < c.n, "neg: wrong threat key not detected"); }
+    // NULL keys: no fix/match -> no device or threat targets
+    { HitCtx c; HitList h=domainHits(480,320,c);   // all defaults null
+      expect(deviceCount(h)==0 && threatCount(h)==0 && h.count==11, "neg: null keys fabricate targets"); }
+    // EMPTY keys: empty strings must not create targets
+    { static const char* const EMPTY[2]={"",""}; HitCtx c; c.hasFix=true; c.rowKeys=EMPTY; c.nRowKeys=2; c.matchKey="";
+      HitList hd=domainHits(480,320,c); HitList hs=scanHits(480,320,c);
+      expect(deviceCount(hd)==0 && threatCount(hd)==0, "neg: empty keys make DOMAIN targets");
+      expect(threatCount(hs)==0, "neg: empty matchKey makes SCAN threat"); }
+    // record rows carry a key distinct from slot (every row, not just one)
+    { const OCase& c=find("domain","active",480); HitList h=hitsFor(c); bool good=true;
+      for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenDeviceDetail)
+          if(!validKeyStr(h.items[j].key)||!strcmp(h.items[j].slot,h.items[j].key)) good=false;
+      expect(good, "neg: row slot/key not separated"); }
+    // wide threat retains the SECOND row (k1), drops the first (k0)
+    { const OCase& c=find("domain","threat",480); HitList h=hitsFor(c);
+      bool k1=false,k0=false; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenDeviceDetail){
+          if(h.items[j].key&&!strcmp(h.items[j].key,"k1"))k1=true; if(h.items[j].key&&!strcmp(h.items[j].key,"k0"))k0=true; }
+      expect(k1 && !k0, "neg: wide-threat retains k1 drops k0 (k1=%d k0=%d)", k1, k0); }
 }
 
 int main() {
     printf("layout regions (exact, both profiles):\n"); testLayout();
+    printf("case set (membership + uniqueness):\n");     testCaseSet();
     printf("hit oracle (%d cases, all states x both sizes):\n", ORACLE_N); testHits();
-    printf("negative checks (detectors must bite):\n"); testNegative();
+    printf("negative checks (detectors must bite):\n");   testNegative();
     printf("\n%s  %d/%d checks passed\n", fails ? "FAILED" : "PASSED", checks-fails, checks);
     return fails ? 1 : 0;
 }
