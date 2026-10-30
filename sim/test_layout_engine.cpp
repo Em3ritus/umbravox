@@ -46,7 +46,7 @@ static void testLayout() {
     ckRect("hero480",     scan(480,320).hero,   156,52,308,216);
     ckRect("tile2_480",   scan(480,320).tiles[2], 16,192,132,62);
     ckRect("stop480",     scan(480,320).stop, 398,276,82,44);
-    ckRect("wordmark480", scan(480,320).wordmark, 16,13,96,16);
+    ckRect("wordmark480", scan(480,320).wordmark, 8,0,128,44);
     ckRect("counts320",   scan(320,240).counts, 8,52,88,136);
     ckRect("hero320",     scan(320,240).hero,   104,52,208,136);
     ckRect("tile2_320",   scan(320,240).tiles[2], 8,142,88,46);
@@ -186,7 +186,7 @@ static void testNegative() {
       expect(boundCount(h,c) < c.n, "neg: wrong threat key not detected"); }
     // NULL keys: no fix/match -> no device or threat targets
     { HitCtx c; HitList h=domainHits(480,320,c);   // all defaults null
-      expect(deviceCount(h)==0 && threatCount(h)==0 && h.count==11, "neg: null keys fabricate targets"); }
+      expect(deviceCount(h)==0 && threatCount(h)==0 && h.count==12, "neg: null keys fabricate targets"); }
     // EMPTY keys: empty strings must not create targets
     { static const char* const EMPTY[2]={"",""}; HitCtx c; c.hasFix=true; c.rowKeys=EMPTY; c.nRowKeys=2; c.matchKey="";
       HitList hd=domainHits(480,320,c); HitList hs=scanHits(480,320,c);

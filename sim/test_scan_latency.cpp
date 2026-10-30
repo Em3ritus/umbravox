@@ -25,12 +25,13 @@ static std::vector<uint16_t> draw(int w,int h,const scanr::ScanScene& sc) {
 static void profile(int w,int h,int theme,uint64_t expected) {
     pal::setTheme(theme);auto sc=scanfix::demo(theme);
     auto old=draw(w,h,sc);uint64_t hash=14695981039346656037ull;
-    // Preserve the accepted golden outside the new SCAN bridge control.
-    // This rectangle was VOID before the additive button; do not re-baseline
-    // the radar, spectrum or chrome merely because a control was added.
-    const auto button=uieng::scan(w,h).bridge;
-    for(int y=0;y<h;++y)for(int x=0;x<w;++x){
-        auto px=(x>=button.x && x<button.x+button.w && y>=button.y && y<button.y+button.h)?pal::VOID:old[y*w+x];
+    // Preserve the previous body/nav golden, excluding the old body toggle.
+    // Header changes are tested separately, including partial repaints.
+    const auto button=uieng::chrome(w,h).bridge;
+    const auto hero=uieng::scan(w,h).hero;
+    const uieng::Rect former{hero.x+4,hero.y+48,w>=400?76:68,44};
+    for(int y=44;y<h;++y)for(int x=0;x<w;++x){
+        auto px=(x>=former.x && x<former.x+former.w && y>=former.y && y<former.y+former.h)?pal::VOID:old[y*w+x];
         hash^=px;hash*=1099511628211ull;
     }
     assert(hash==expected);
@@ -116,8 +117,7 @@ int main() {
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
     // Updated only for the approved recording/header chrome changes.
-    const uint64_t golden[2][3]={{0x118e6874398a3569ull,0x966c95869aaa3862ull,0xf26d9609895fc2f1ull},
-        {0xe282fc6fba3b343dull,0x3e6cd902fe9d5c26ull,0xa62e0abdf8d7008aull}};
+    const uint64_t golden[2][3]={{0xeca3327840892174ull,0x340efa6080574fb9ull,0xf99e3ce6ebaf5ac9ull},{0x2cc08412119264a5ull,0x48a66ca959e5e56cull,0x1e8e1e9835eaf2baull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

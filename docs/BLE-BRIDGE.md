@@ -7,7 +7,7 @@ WiFi scan lifecycle or initialize a second BLE stack.
 
 ## Operation
 
-On the Waveshare native UI, tap BRIDGE on SCAN to toggle ON/OFF.
+On the Waveshare native UI, tap BRIDGE in the shared header on any screen to toggle ON/OFF.
 Choose the app separately under MENU -> SETTINGS -> page 3/3 -> BRIDGE APP
 (WARDRIVEGO / BISCUIT). Turning OFF remembers that app. These choices persist
 in NVS; existing stores default to OFF and WarDriveGo. BLE's percentage setting still controls the

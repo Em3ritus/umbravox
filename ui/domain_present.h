@@ -59,6 +59,7 @@ public:
         sc_.rows = rows_; sc_.nRows = 0;
     }
     void gps(const domr::GnssFix& f) { sc_.gps = f; }
+    void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
     void status(int nodes, bool hasCell, int batt, domr::Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
     }
@@ -115,7 +116,7 @@ inline void sceneDirty(const DomainScene& a, const DomainScene& b, bool& status,
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16)
                          && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes
-             || a.hasCell != b.hasCell || a.battPct != b.battPct;
+             || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
 
     bool mapSame = a.rangeM == b.rangeM && a.plotShown == b.plotShown
                    && a.plotTotal == b.plotTotal && a.plotBeyond == b.plotBeyond

@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace scanr {
 
@@ -60,6 +61,7 @@ struct ScanScene {
     GnssFix  gps;                 // GNSS receiver state (projected by gpsLabel)
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
+    bool pmuOk = false, charging = false;
     Rec      rec = Rec::Off;
     // counts
     long     wifi = 0, g5 = 0, ble = 0;
@@ -242,6 +244,8 @@ struct ChromeState {
     bool    hasCell = false;
     int     batt    = 0;
     Rec     rec     = Rec::Off;
+    uint8_t theme = 0;
+    bool bridgeOn = false, pmuOk = false, charging = false;
 };
 inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
                        const ChromeState& st, int activeTab) {
@@ -254,22 +258,34 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     box(s, body.x, 38, body.w, 1, pal::EDGE);
     box(s, body.x, H - 46, body.w, 1, pal::EDGE);
 
-    // header: UMBRAVOX wordmark + single-line GPS / MESH / BAT. GPS is compacted
-    // to "GPS 3D" here (so the shared gpsLabel is untouched); stale/acquiring
-    // fall back to its text.
-    txt(s, c.wordmark.x, c.wordmark.y, "UMBRAVOX", (W >= 400) ? 2 : 1, pal::BRIGHT);
+    // Fixed title box: theme names fit without moving any controls.
+    char title[64]; snprintf(title,sizeof title,"%s",pal::themeName(st.theme));
+    const int titleScale=fitScale(title,c.wordmark.w-8,2);
+    const int maxChars=(c.wordmark.w-8)/(6*titleScale);
+    if ((int)strlen(title)>maxChars && maxChars>=3) {
+        title[maxChars]=0; title[maxChars-1]='.'; title[maxChars-2]='.'; title[maxChars-3]='.';
+    }
+    centered(s,c.wordmark.x+c.wordmark.w/2,(44-7*titleScale)/2,title,titleScale,pal::BRIGHT);
     char hb[24];
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
-    if (gst==GpsState::Fresh)
-        snprintf(hb, sizeof hb, "GPS %s", st.gps.mode==3?"3D":st.gps.mode==2?"2D":"FIX");
-    else snprintf(hb, sizeof hb, "%s", gst==GpsState::Stale ? "GPS STALE" : "GPS WAIT");
-    txt(s, c.statusCells[0].x+2, 16, hb, 1, gcol);
-    snprintf(hb, sizeof hb, "MESH %d", st.nodes);
-    txt(s, c.statusCells[1].x+2, 16, hb, 1, pal::TEXT);
-    if (st.hasCell) snprintf(hb, sizeof hb, "BAT %d%%", std::max(0,std::min(100,st.batt)));
-    else snprintf(hb, sizeof hb, "BAT N/A");
-    txt(s, c.statusCells[2].x+2, 16, hb, 1, st.hasCell ? pal::TEXT : pal::DIM);
+    const char* fix=gst==GpsState::Fresh ? (st.gps.mode==3?"3D":st.gps.mode==2?"2D":"FIX") : gst==GpsState::Stale?"STALE":"ACQ";
+    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,7,"GPS",1,pal::DIM);
+    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,23,fix,1,gcol);
+    if(c.statusCells[1].w) {
+        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,7,"MESH",1,pal::DIM);
+        snprintf(hb,sizeof hb,"%d",st.nodes);
+        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,23,hb,1,pal::TEXT);
+    }
+    const auto bt=c.bridge;
+    frame(s,bt.x+3,4,bt.w-6,34,st.bridgeOn?pal::WITCH_HI:pal::EDGE_LIT);
+    centered(s,bt.x+bt.w/2,9,"BRIDGE",1,pal::DIM);
+    centered(s,bt.x+bt.w/2,25,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::WITCH_HI:pal::TEXT);
+    const bool level=st.hasCell && st.batt>=0 && st.batt<=100;
+    centered(s,c.statusCells[2].x+c.statusCells[2].w/2,7,level&&st.charging?"CHG":"BAT",1,pal::DIM);
+    if(level) snprintf(hb,sizeof hb,"%d%%",st.batt);
+    else snprintf(hb,sizeof hb,"%s",st.pmuOk&&!st.hasCell?"NO BAT":"N/A");
+    centered(s,c.statusCells[2].x+c.statusCells[2].w/2,23,hb,1,level?pal::TEXT:pal::DIM);
 
     // nav: four tabs (activeTab lit + underlined) at the design-1 label positions
     static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
@@ -305,7 +321,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
 
     // shared design-1 chrome: header (wordmark + GPS/MESH/BAT) + nav (SCAN lit)
     // + the STOP/REC record control. SCAN passes its own 16px body for the dividers.
-    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, 0);
+    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging}, 0);
 
     // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};
@@ -326,12 +342,6 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const uieng::Rect hr = L.hero;
     txt(s, hr.x+4, hr.y+6, "LIVE FIELD", 1, pal::DIM);
     txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,2), hr.y+4, sc.ch, 2, pal::BRIGHT);  // channel, right
-
-    const auto bt=L.bridge;
-    box(s,bt.x,bt.y,bt.w,bt.h,pal::PANEL);
-    frame(s,bt.x,bt.y,bt.w,bt.h,sc.bridgeOn?pal::WITCH_HI:pal::EDGE_LIT);
-    centered(s,bt.x+bt.w/2,bt.y+8,"BRIDGE",1,pal::DIM);
-    centered(s,bt.x+bt.w/2,bt.y+24,sc.bridgeOn?"ON":"OFF",1,sc.bridgeOn?pal::WITCH_HI:pal::BRIGHT);
 
     const HeroSub hs = heroSub(hr);
     const uieng::Rect fld = hs.field;

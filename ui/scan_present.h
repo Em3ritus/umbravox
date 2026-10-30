@@ -63,6 +63,7 @@ public:
     void bridge(bool on) { sc_.bridgeOn=on; }
     void animate(bool enabled) { sc_.animateSweep = enabled; }
     void gps(const GnssFix& f)                    { sc_.gps = f; }
+    void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
     void status(int nodes, bool hasCell, int batt, Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
     }
@@ -118,10 +119,10 @@ inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
     const bool recSame = scanr::recLabel(a, ra, 16) == scanr::recLabel(b, rb, 16)
                          && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes
-             || a.hasCell != b.hasCell || a.battPct != b.battPct;
+             || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
 
     const bool countSame = a.wifi == b.wifi && a.g5 == b.g5 && a.ble == b.ble;   // count tiles
-    const bool chSame = a.bridgeOn==b.bridgeOn && !__builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "")
+    const bool chSame = !__builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "")
                         && !__builtin_strcmp(a.chBand ? a.chBand : "", b.chBand ? b.chBand : "");
     bool chanSame = a.nChannels == b.nChannels;
     for (int i = 0; chanSame && i < a.nChannels; i++) chanSame = a.channels[i] == b.channels[i];

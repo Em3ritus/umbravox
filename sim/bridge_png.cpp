@@ -1,5 +1,6 @@
 #include "../ui/project.h"
 #include "png_writer.h"
+#include "scan_fixture.h"
 #include <vector>
 #include <string>
 int main(int argc,char** argv){
@@ -22,5 +23,12 @@ int main(int argc,char** argv){
    if(!png::write(file.c_str(),pixels.data(),w,h,1))return 1;
   }
 
+  for(int theme=0;theme<3;++theme){
+   pal::setTheme(theme);auto sc=scanfix::demo(theme);sc.bridgeOn=true;sc.pmuOk=true;sc.hasCell=true;sc.battPct=78;sc.charging=true;
+   for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};scanr::composeStrip(strip,w,h,sc);}
+   file=std::string(argv[1])+"/header-theme-"+std::to_string(theme)+"-"+std::to_string(w)+".png";
+   if(!png::write(file.c_str(),pixels.data(),w,h,1))return 1;
+  }
+  pal::setTheme(0);
  }
 }

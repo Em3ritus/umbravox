@@ -30,6 +30,7 @@ public:
         sc_.theme = theme; sc_.now = now;
     }
     void gps(const menr::GnssFix& f) { sc_.gps = f; }
+    void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
     void status(int nodes, bool hasCell, int batt, menr::Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
     }
@@ -53,7 +54,7 @@ inline void sceneDirty(const MenuScene& a, const MenuScene& b, bool& status, boo
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16)
                          && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes
-             || a.hasCell != b.hasCell || a.battPct != b.battPct;
+             || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
     body = a.plain != b.plain;
 }
 

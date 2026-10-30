@@ -107,7 +107,9 @@ public:
                 // ATTUNE and ASPECT both emit SettingStep with overlapping
                 // payloads, so disambiguate by the screen we are on, never by
                 // the payload magnitude.
-                if (scr_ == Screen::Aspect) {
+                if (h.payload == 9) {
+                    r.settingStep = h.payload; // Shared BRIDGE toggle on every screen.
+                } else if (scr_ == Screen::Aspect) {
                     if (h.payload == 2 || h.payload == -2)      r.sweepStep = h.payload < 0 ? -1 : 1;
                     else if (h.payload == 3 || h.payload == -3) r.alertStep = h.payload < 0 ? -1 : 1;
                 } else {

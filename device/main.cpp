@@ -213,6 +213,7 @@ static void stripText(const pmu::Batt& b, char* out, size_t n, uint16_t& fg) {
     fg = pal::TEXT;
     if (!b.ok)        { snprintf(out, n, "%s", ""); return; }
     if (!b.cell)      { snprintf(out, n, "%s", b.usb ? "USB  NO CELL" : ""); fg = pal::DIM; return; }
+    if (b.pct > 100) { snprintf(out, n, "BAT N/A"); fg = pal::DIM; return; }
     if (b.charging)   { snprintf(out, n, "CHG %u%%", (unsigned)b.pct); fg = pal::GREEN; return; }
     if (b.usb)        { snprintf(out, n, "USB %u%%", (unsigned)b.pct); fg = pal::GREEN; return; }
     snprintf(out, n, "BAT %u%% %u.%02uV", (unsigned)b.pct,
@@ -1983,7 +1984,7 @@ void loop() {
             const uint32_t pmuStart=micros();
             const pmu::Batt b = pmu::read(millis());
             bootStall("pmu read",pmuStart);
-            { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis()); bootStall("engine snapshot", _s); }
+            { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis(), b.ok, b.charging); bootStall("engine snapshot", _s); }
         }
         const uint32_t tD = millis();
         const uint32_t renderStart=micros();

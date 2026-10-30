@@ -24,7 +24,7 @@ int main(){
         expect(d.spark.y+d.spark.h==d.body.y+d.body.h && !overlap(d.stats,d.spark), "spark at body bottom, clear of stats");
 
         HitList h = detailHits(W,H);
-        expect(h.count==8+1, "detail hits: 8 chrome + BACK");
+        expect(h.count==(W>=400?9:8)+1, "detail hits: 8 chrome + BACK");
         bool ok=true; const Hit* bk=nullptr;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;

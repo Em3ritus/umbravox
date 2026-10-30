@@ -118,3 +118,5 @@ sim/test_sight_order
 
 sim/test_ble_bridge
 sim/bridge_png
+
+/sim/test_header

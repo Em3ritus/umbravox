@@ -63,7 +63,7 @@ int main(){
         expect(ok, "hits: in-bounds, >=44px, distinct slots, non-overlapping");
 
         // chrome(8) + 4 filters + wantRows rows
-        expect(h.count==8+4+2+wantRows, "hit count = 8 chrome + 4 filters + 2 pager controls + rows");
+        expect(h.count==(W>=400?9:8)+4+2+wantRows, "hit count = 8 chrome + 4 filters + 2 pager controls + rows");
 
         auto findAction=[&](const char* slot)->const Hit*{
             for(int j=0;j<h.count;j++) if(!strcmp(h.items[j].slot,slot)) return &h.items[j]; return nullptr; };
@@ -86,12 +86,12 @@ int main(){
     }
 
     { const char* keys[8]={"a","b","c","d","e","f","g","h"};HitCtx c;c.rowKeys=keys;c.nRowKeys=8;
-      const auto h=codexHits(480,720,c);expect(h.count==20,"taller profiles stay within hit-list capacity"); }
+      const auto h=codexHits(480,720,c);expect(h.count==21,"taller profiles stay within hit-list capacity"); }
 
     // null + empty keys fabricate no rows
     { HitCtx c; HitList h=codexHits(480,320,c);              // rowKeys null
       int rows=0; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenDeviceDetail) rows++;
-      expect(rows==0 && h.count==14, "null keys: filters present, no fabricated rows"); }
+      expect(rows==0 && h.count==15, "null keys: filters present, no fabricated rows"); }
     { static const char* const EMPTY[3]={"","",""}; HitCtx c; c.rowKeys=EMPTY; c.nRowKeys=3;
       HitList h=codexHits(480,320,c);
       int rows=0; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenDeviceDetail) rows++;

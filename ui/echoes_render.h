@@ -32,6 +32,8 @@ struct EchoScene {
     GnssFix  gps;
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
+    bool pmuOk = false, charging = false;
+    bool bridgeOn = false;
     Rec      rec = Rec::Off;
     const EchoRow* rows = nullptr; int nRows = 0;
     int      total = 0;        // probes recorded (>= nRows)
@@ -50,7 +52,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const EchoScene& sc) {
     using scanr::box; using scanr::txt; using scanr::centered;
     const uieng::LogLayout L = uieng::echoes(W, H);
     // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
-    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, -1);
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging}, -1);
 
     txt(s, L.title.x, L.title.y + 2, "ECHOES", 2, pal::BRIGHT);
     { char tb[20];

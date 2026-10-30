@@ -23,7 +23,7 @@ int main(){
         expect(g.nRows>=1 && g.rowH==14, "log shows at least one compact row");
 
         HitList h = omensHits(W,H);
-        expect(h.count==8, "omens hits: chrome nav only (log is scroll, not taps)");
+        expect(h.count==(W>=400?9:8), "omens hits: chrome nav only (log is scroll, not taps)");
         bool ok=true, navOk=true;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;

@@ -38,7 +38,7 @@ bool pending();
 // Project live ui::State into the current screen's Store and commit the stable
 // snapshot (fills back buffer, diffs, invalidates changed bands, swaps in).
 void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
-              scanr::Rec rec, bool hasCell, int batt, uint32_t now);
+              scanr::Rec rec, bool hasCell, int batt, uint32_t now, bool pmuOk, bool charging);
 
 // Render at most budgetStrips strips of the current screen; true when a full
 // frame just completed.

@@ -245,9 +245,9 @@ bool pending() {
 }
 
 void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
-              scanr::Rec rec, bool hasCell, int batt, uint32_t now) {
+              scanr::Rec rec, bool hasCell, int batt, uint32_t now, bool pmuOk, bool charging) {
     sceneRec_ = rec;
-    uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now;
+    uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now; c.pmuOk = pmuOk; c.charging = charging;
     switch (cur_) {
         case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c); eScan_.back().animate(true); eScan_.commit();   break;
         case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c, W_, H_); eDomain_.commit(); break;

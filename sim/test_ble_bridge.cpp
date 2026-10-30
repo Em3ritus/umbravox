@@ -117,7 +117,7 @@ int main(){
         uiState.set.bleBridge=1;uiproj::scan(store,uiState,chrome);assert(store.scene().bridgeOn);
         const auto on=store.scene();uiState.set.bleBridge=0;uiproj::scan(store,uiState,chrome);
         bool status=false,body=false,field=false;scanpres::sceneDirty(w,h,on,store.scene(),status,body,&field);
-        assert(body && !field);
+        assert(status && !body);
 
         const int per=uieng::attuneRowsPerPage(h),page=8/per;
         const auto hits=uieng::attuneHits(h==240?320:480,h,page);

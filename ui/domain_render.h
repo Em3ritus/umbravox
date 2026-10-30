@@ -86,6 +86,8 @@ struct DomainScene {
     GnssFix  gps;
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
+    bool pmuOk = false, charging = false;
+    bool bridgeOn = false;
     Rec      rec = Rec::Off;
     // map / radar
     const MapDot*   dots  = nullptr; int nDots  = 0;    // located, within range
@@ -136,7 +138,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
 
     // shared design-1 chrome: header (wordmark + GPS/MESH/BAT) + nav (DOMAIN lit,
     // index 1) + the STOP/REC record control. Single-sourced in scanr::drawChrome.
-    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, 1);
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging}, 1);
 
     // --- the map: panel, lattice, N-up radar, track, dots, you, readouts ------
     const uieng::Rect m = L.map;

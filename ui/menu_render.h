@@ -37,6 +37,8 @@ struct MenuScene {
     GnssFix  gps;
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
+    bool pmuOk = false, charging = false;
+    bool bridgeOn = false;
     Rec      rec = Rec::Off;
     // hub state
     bool     plain = false;      // label mode: false = on-brand, true = plain
@@ -51,7 +53,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
 
     box(s, 0, 0, W, H, pal::VOID);
     // shared design-1 chrome: header + nav (MENU lit, index 3) + STOP/REC control
-    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, 3);
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging}, 3);
 
     // the grid: eight launcher tiles + a LABELS toggle. Design #1 is muted
     // chrome -- the old WITCH (bright violet) tile accents clashed on hardware,
