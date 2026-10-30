@@ -75,7 +75,7 @@ inline Chrome chrome(int W, int H) {
 // fifth nav hit. `wordmark` is draw-only.
 struct ScanLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
-    Rect counts, hero, tiles[3];
+    Rect counts, hero, tiles[3], bridge;
     Rect wordmark, stop;
 };
 inline ScanLayout scan(int W, int H) {
@@ -96,6 +96,7 @@ inline ScanLayout scan(int W, int H) {
         for (int i = 0; i < 3; i++) s.tiles[i] = {8, 52 + i * th, 88, (i < 2) ? th : (H - 104 - 2 * th)};
         s.hero = {104, 52, W - 104 - 8, H - 104};
     }
+    s.bridge = {s.hero.x+4,s.hero.y+48,wide?76:68,44};
     s.counts = {s.tiles[0].x, s.tiles[0].y, s.tiles[0].w, H - 104};
     return s;
 }
@@ -197,6 +198,7 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
     const ScanLayout s = scan(W, H);
     HitList h;
     addChromeHits(h, W, H);              // shared design-1 header + nav + STOP
+    h.add("bridge",s.bridge,Action::SettingStep,9,nullptr,"Toggle BLE bridge");
     // count tiles
     static const char* const tslot[3] = {"WIFI","5 GHZ","BLE"};
     static const char* const tdesc[3] = {"Open Codex filtered to WIFI",
@@ -505,8 +507,9 @@ inline HitList attuneHits(int W, int H, int page) {
     for (int i = 0; i < per; i++) {
         const int knob = page * per + i;
         if (knob >= kAttuneKnobs) break;
-        h.add(mslot[i], a.minus[i], Action::SettingStep, -(knob + 1), nullptr, "Step this setting down");
-        h.add(pslot[i], a.plus[i],  Action::SettingStep, +(knob + 1), nullptr, "Step this setting up");
+        const int setting = knob==8 ? 9 : knob; // BRIDGE APP uses the remembered app selector
+        h.add(mslot[i], a.minus[i], Action::SettingStep, -(setting + 1), nullptr, "Step this setting down");
+        h.add(pslot[i], a.plus[i],  Action::SettingStep, +(setting + 1), nullptr, "Step this setting up");
     }
     h.add("pager", a.pager, Action::SettingPage, (page + 1) % pages, nullptr, "Cycle settings pages");
     h.add("clear", a.clear, Action::SettingReset, 0, nullptr, "Reset settings to defaults");

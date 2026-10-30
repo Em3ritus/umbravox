@@ -25,7 +25,23 @@ static std::vector<uint16_t> draw(int w,int h,const scanr::ScanScene& sc) {
 static void profile(int w,int h,int theme,uint64_t expected) {
     pal::setTheme(theme);auto sc=scanfix::demo(theme);
     auto old=draw(w,h,sc);uint64_t hash=14695981039346656037ull;
-    for(auto px:old){hash^=px;hash*=1099511628211ull;}assert(hash==expected);
+    // Preserve the accepted golden outside the new SCAN bridge control.
+    // This rectangle was VOID before the additive button; do not re-baseline
+    // the radar, spectrum or chrome merely because a control was added.
+    const auto button=uieng::scan(w,h).bridge;
+    for(int y=0;y<h;++y)for(int x=0;x<w;++x){
+        auto px=(x>=button.x && x<button.x+button.w && y>=button.y && y<button.y+button.h)?pal::VOID:old[y*w+x];
+        hash^=px;hash*=1099511628211ull;
+    }
+    assert(hash==expected);
+    auto toggled=sc;toggled.bridgeOn=true;
+    const auto on=draw(w,h,toggled);auto partialToggle=old;int changed=0;
+    for(int y=button.y;y<button.y+button.h;y+=16){
+        scanr::S strip{partialToggle.data()+y*w,w,y,std::min(16,button.y+button.h-y)};
+        scanr::composeStrip(strip,w,h,toggled);
+    }
+    for(size_t i=0;i<on.size();++i)changed+=on[i]!=old[i];
+    assert(changed>0 && partialToggle==on);
     sc.animateSweep=true;
     auto base=draw(w,h,sc);
     bool status=false,body=false,field=false;

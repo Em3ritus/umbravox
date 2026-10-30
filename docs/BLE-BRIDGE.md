@@ -7,9 +7,10 @@ WiFi scan lifecycle or initialize a second BLE stack.
 
 ## Operation
 
-On the Waveshare native UI, open MENU -> SETTINGS, then page 3/3.
-BRIDGE cycles OFF / WARDRIVEGO / BISCUIT. The choice persists in NVS and
-existing stores default to OFF. BLE's percentage setting still controls the
+On the Waveshare native UI, tap BRIDGE on SCAN to toggle ON/OFF.
+Choose the app separately under MENU -> SETTINGS -> page 3/3 -> BRIDGE APP
+(WARDRIVEGO / BISCUIT). Turning OFF remembers that app. These choices persist
+in NVS; existing stores default to OFF and WarDriveGo. BLE's percentage setting still controls the
 advertisement scanner; BRIDGE separately controls the phone peripheral.
 
 - **WarDriveGo:** discovers `Umbravox-XXXX` via the GhostLink service UUID.
@@ -22,6 +23,9 @@ advertisement scanner; BRIDGE separately controls the phone peripheral.
   `CMD:stopscan`. Band selection filters the exported observations; it does not
   override the board's capture-band settings. Time synchronization stops the
   app-time request; it does not replace the GNSS clock.
+- **Startup:** briefly pauses an active BLE discovery scan before GATT reset/
+  registration, then resumes it. A deliberately stopped scan stays stopped.
+  Stop/init/resume failures are surfaced; failed startup returns the UI to OFF.
 - **OFF:** stops advertising, disconnects the phone, and clears the stream.
   Allocated GATT objects and bounded PSRAM buffers remain for reuse; toggling
   does not deinitialize BLE or tear down the scanner.
@@ -93,7 +97,12 @@ remains separate from this work.
 
 These are software checks. Phone discovery, subscriptions, AP ingestion, reconnects,
 radio coexistence and heap with the GATT server enabled are **not yet hardware
-validated**. No flash accompanies this implementation. The current hardware-accepted
+validated**. The original bridge build was flashed and activation crashed. Inspection of
+its linked NimBLE binary confirmed GATT mutation is forbidden during discovery;
+the original implementation did not pause scanning before server creation.
+No panic was captured in the subsequent idle-only serial observation. The pause/
+restore fix is host-tested but awaits a new hardware validation.
+The current hardware-accepted
 baseline remains `227b5e8`; the branch also contains the unflashed RSSI sorting change.
 
 After an authorized flash, select each app in turn and verify discovery, APs,

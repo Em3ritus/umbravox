@@ -74,6 +74,7 @@ static Expect expectFor(const char* id, Rect r) {
     if(!strcmp(id,"stop"))        return E(Action::ToggleLogging);   // SCAN design #1: REC/STOP on the nav
     if(!strcmp(id,"WIFI"))        return E(Action::CodexFilter,true,0);
     if(!strcmp(id,"5 GHZ"))       return E(Action::CodexFilter,true,1);
+    if(!strcmp(id,"bridge"))      return E(Action::SettingStep,true,9);
     if(!strcmp(id,"BLE"))         return E(Action::CodexFilter,true,2);
     if(!strcmp(id,"range-minus")) return E(Action::RangeStep,true,-1);
     if(!strcmp(id,"range-plus"))  return E(Action::RangeStep,true,1);

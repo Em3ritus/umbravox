@@ -58,6 +58,7 @@ inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) 
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
     st.status(s.nNodes, c.hasCell, c.batt, c.rec);
+    st.bridge(s.set.bleBridge!=0);
     st.counts(s.nets24, s.nets5, s.ble);
     char ch[16]; snprintf(ch, sizeof ch, "CH %02u", (unsigned)s.chan);
     st.channel(ch, s.on5 ? "5 GHz" : "2.4 GHz");
@@ -165,7 +166,7 @@ inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char
                   else { char u[16]; if (v < 60) snprintf(u,sizeof u,"%uS",(unsigned)v); else snprintf(u,sizeof u,"%uM",(unsigned)(v/60));
                          snprintf(val,vn,"%s %s", u, st.idleMode==ui::IDLE_OFF?"OFF":st.idleMode==ui::IDLE_ANIM?"ANIM":"DIM"); }
                   break; }
-        case 8: snprintf(lbl,ln,"BRIDGE"); snprintf(val,vn,"%s",st.bleBridge==1?"WARDRIVEGO":st.bleBridge==2?"BISCUIT":"OFF"); break;
+        case 8: snprintf(lbl,ln,"BRIDGE APP"); snprintf(val,vn,"%s",st.bridgeApp==2?"BISCUIT":"WARDRIVEGO"); break;
         case 6: snprintf(lbl,ln,"AUTOLOG"); snprintf(val,vn,"%s", st.autoLog?"ON":"OFF"); break;
         default: snprintf(lbl,ln,"ORIENT"); snprintf(val,vn,"%s", st.orient==ui::ORIENT_PORTRAIT?"PORTRAIT":"LANDSCAPE"); break;
     }

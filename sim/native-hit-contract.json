@@ -102,6 +102,16 @@
             132,
             62
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            160,
+            100,
+            76,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -206,6 +216,16 @@
             132,
             62
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            160,
+            100,
+            76,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -310,6 +330,16 @@
             132,
             62
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            160,
+            100,
+            76,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -414,6 +444,16 @@
             132,
             62
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            160,
+            100,
+            76,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -527,6 +567,16 @@
             308,
             44
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            160,
+            100,
+            76,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -631,6 +681,16 @@
             88,
             46
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            108,
+            100,
+            68,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -735,6 +795,16 @@
             88,
             46
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            108,
+            100,
+            68,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -839,6 +909,16 @@
             88,
             46
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            108,
+            100,
+            68,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -943,6 +1023,16 @@
             88,
             46
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            108,
+            100,
+            68,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },
@@ -1056,6 +1146,16 @@
             208,
             44
           ]
+        },
+        {
+          "id": "bridge",
+          "rect": [
+            108,
+            100,
+            68,
+            44
+          ],
+          "action": "Toggle BLE bridge"
         }
       ]
     },

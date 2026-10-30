@@ -60,6 +60,7 @@ public:
         ch_buf_[0] = 0; band_buf_[0] = 0;
         sc_.ch = ch_buf_; sc_.chBand = band_buf_;
     }
+    void bridge(bool on) { sc_.bridgeOn=on; }
     void animate(bool enabled) { sc_.animateSweep = enabled; }
     void gps(const GnssFix& f)                    { sc_.gps = f; }
     void status(int nodes, bool hasCell, int batt, Rec rec) {
@@ -120,7 +121,7 @@ inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
              || a.hasCell != b.hasCell || a.battPct != b.battPct;
 
     const bool countSame = a.wifi == b.wifi && a.g5 == b.g5 && a.ble == b.ble;   // count tiles
-    const bool chSame = !__builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "")
+    const bool chSame = a.bridgeOn==b.bridgeOn && !__builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "")
                         && !__builtin_strcmp(a.chBand ? a.chBand : "", b.chBand ? b.chBand : "");
     bool chanSame = a.nChannels == b.nChannels;
     for (int i = 0; chanSame && i < a.nChannels; i++) chanSame = a.channels[i] == b.channels[i];

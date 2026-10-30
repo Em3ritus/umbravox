@@ -55,6 +55,7 @@ struct FieldBlip {
 };
 
 struct ScanScene {
+    bool bridgeOn = false;
     // status
     GnssFix  gps;                 // GNSS receiver state (projected by gpsLabel)
     int      nodes = 0;
@@ -325,6 +326,12 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const uieng::Rect hr = L.hero;
     txt(s, hr.x+4, hr.y+6, "LIVE FIELD", 1, pal::DIM);
     txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,2), hr.y+4, sc.ch, 2, pal::BRIGHT);  // channel, right
+
+    const auto bt=L.bridge;
+    box(s,bt.x,bt.y,bt.w,bt.h,pal::PANEL);
+    frame(s,bt.x,bt.y,bt.w,bt.h,sc.bridgeOn?pal::WITCH_HI:pal::EDGE_LIT);
+    centered(s,bt.x+bt.w/2,bt.y+8,"BRIDGE",1,pal::DIM);
+    centered(s,bt.x+bt.w/2,bt.y+24,sc.bridgeOn?"ON":"OFF",1,sc.bridgeOn?pal::WITCH_HI:pal::BRIGHT);
 
     const HeroSub hs = heroSub(hr);
     const uieng::Rect fld = hs.field;

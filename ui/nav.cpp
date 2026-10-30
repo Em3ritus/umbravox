@@ -387,7 +387,9 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
 void applyKnobStep(Settings& st, int knob, int dir) {
     switch (knob) {
         case 6: st.autoLog = st.autoLog ? 0 : 1; break;   // AUTOLOG: a toggle
-        case 8: st.bleBridge = uint8_t((int(st.bleBridge) + dir + 3) % 3); break;
+        case 8: st.bleBridge = st.bleBridge ? 0 : st.bridgeApp; break;
+        case 9: st.bridgeApp = st.bridgeApp==1 ? 2 : 1;
+                if(st.bleBridge)st.bleBridge=st.bridgeApp; break;
         case 7: flipOrient(st); break;                     // ORIENT
         default: adjust(st, knob, dir); break;             // 0..5 map 1:1 to adjust()
     }
@@ -401,6 +403,7 @@ void clampSettings(Settings& s) {
     if (s.bright > 100) s.bright = 100;
     if (s.dwellMs < 100) s.dwellMs = 100;
     if (s.dwellMs > 600) s.dwellMs = 600;
+    if (s.bridgeApp<1 || s.bridgeApp>2)s.bridgeApp=1;
     if (s.bleBridge > 2) s.bleBridge = 0;
     if (s.bleDuty > 100) s.bleDuty = 100;
     if (s.bands > 2)     s.bands = 0;
@@ -428,7 +431,7 @@ bool portraitAllowed() { return g_portraitOk; }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
     return a.alertMin == b.alertMin && a.bright  == b.bright  &&
-           a.bleBridge == b.bleBridge && a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
+           a.bridgeApp == b.bridgeApp && a.bleBridge == b.bleBridge && a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
            a.labels   == b.labels   && a.alertStyle == b.alertStyle &&

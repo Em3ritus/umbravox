@@ -1,11 +1,34 @@
 #include "../device/ble_bridge_protocol.h"
+#include "../device/ble_bridge_init.h"
 #include "../ui/nav.h"
 #include "../ui/project.h"
 #include <cassert>
 #include <string>
 #include <cstdio>
 using namespace bridgewire;
+struct FakeScanner {
+    bool active=true,stopOk=true,startOk=true;int stops=0,starts=0;
+    bool isScanning(){return active;}
+    bool stop(){++stops;if(stopOk)active=false;return stopOk;}
+    bool start(int,decltype(nullptr),bool){++starts;active=startOk;return startOk;}
+};
 int main(){
+    {
+        FakeScanner s;bool called=false;
+        auto r=bridgeinit::configure(s,[&]{called=true;assert(!s.active);return true;});
+        assert(called && r.configured && r.paused && r.resumed && s.active && s.stops==1 && s.starts==1);
+        s={};s.active=false;
+        r=bridgeinit::configure(s,[&]{assert(!s.active);return true;});
+        assert(r.configured && !r.paused && !s.stops && !s.starts && !s.active);
+        s={};s.stopOk=false;called=false;
+        r=bridgeinit::configure(s,[&]{called=true;return true;});
+        assert(!r.configured && !called && !s.starts);
+        s={};r=bridgeinit::configure(s,[&]{assert(!s.active);return false;});
+        assert(!r.configured && r.resumed && s.active && s.starts==1);
+        s={};s.startOk=false;r=bridgeinit::configure(s,[&]{return true;});
+        assert(r.configured && !r.resumed && !s.active);
+    }
+
     assert(!strcmp(FW_VERSION,"99.99.99"));
     assert(strstr(WD_CAPS,"fw=99.99.99 ") && strstr(WD_CAPS,"ota=0 "));
     assert(strstr(WD_CAPS,"board_name=Umbravox_WS_C5_35"));
@@ -75,16 +98,30 @@ int main(){
     q.clear();assert(!q.count);
     ui::Settings settings;assert(!settings.bleBridge);
     ui::applyKnobStep(settings,8,1);assert(settings.bleBridge==WARDRIVEGO);
-    ui::applyKnobStep(settings,8,1);assert(settings.bleBridge==BISCUIT);
     ui::applyKnobStep(settings,8,1);assert(settings.bleBridge==OFF);
+    ui::applyKnobStep(settings,9,1);assert(settings.bridgeApp==BISCUIT && !settings.bleBridge);
+    ui::applyKnobStep(settings,8,1);assert(settings.bleBridge==BISCUIT);
     settings.bleBridge=255;ui::clampSettings(settings);assert(!settings.bleBridge);
-    char label[16],value[32];settings.bleBridge=1;
+    char label[16],value[32];settings.bleBridge=1;settings.bridgeApp=1;
     uiproj::attuneKnob(settings,8,label,sizeof label,value,sizeof value);
-    assert(!strcmp(label,"BRIDGE") && !strcmp(value,"WARDRIVEGO"));
+    assert(!strcmp(label,"BRIDGE APP") && !strcmp(value,"WARDRIVEGO"));
     for(int h:{240,320}){
+        const int w=h==240?320:480;
+        const auto layout=uieng::scan(w,h);assert(layout.bridge.w>=44 && layout.bridge.h>=44);
+        const auto scanHits=uieng::scanHits(w,h,{});bool toggle=false;
+        for(int i=0;i<scanHits.count;++i)if(scanHits.items[i].slot && !strcmp(scanHits.items[i].slot,"bridge")){
+            assert(scanHits.items[i].rect==layout.bridge && scanHits.items[i].payload==9);toggle=true;
+        }
+        assert(toggle);
+        scanpres::SceneStore store;ui::State uiState;uiproj::Chrome chrome;
+        uiState.set.bleBridge=1;uiproj::scan(store,uiState,chrome);assert(store.scene().bridgeOn);
+        const auto on=store.scene();uiState.set.bleBridge=0;uiproj::scan(store,uiState,chrome);
+        bool status=false,body=false,field=false;scanpres::sceneDirty(w,h,on,store.scene(),status,body,&field);
+        assert(body && !field);
+
         const int per=uieng::attuneRowsPerPage(h),page=8/per;
         const auto hits=uieng::attuneHits(h==240?320:480,h,page);
-        bool found=false;for(int i=0;i<hits.count;++i)if(hits.items[i].action==uieng::Action::SettingStep && hits.items[i].payload==9)found=true;
+        bool found=false;for(int i=0;i<hits.count;++i)if(hits.items[i].action==uieng::Action::SettingStep && hits.items[i].payload==10)found=true;
         assert(found);
     }
     puts("bridge protocol, bounds, fragmentation, packet retry, queues and UI: PASS");

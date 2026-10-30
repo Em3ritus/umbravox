@@ -1611,7 +1611,10 @@ void loop() {
     if (set.dwellMs != applied.dwellMs) cap::setDwell(set.dwellMs);
     if (set.bands   != applied.bands)   cap::setBands(set.bands);
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
-    if (set.bleBridge != applied.bleBridge) blebridge::setMode(set.bleBridge);
+    if (set.bleBridge != applied.bleBridge) {
+        blebridge::setMode(set.bleBridge);
+        set.bleBridge=blebridge::mode(); // failed startup must not leave a false ON label
+    }
     applied = set;
     { const uint32_t t=micros(); prefs::tick(set, millis()); bootStall("prefs tick",t); }
 

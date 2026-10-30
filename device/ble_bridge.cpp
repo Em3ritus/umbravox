@@ -1,6 +1,7 @@
 #include "ble_bridge.h"
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
 #include "ble_bridge_protocol.h"
+#include "ble_bridge_init.h"
 #include "capture.h"
 #include <Arduino.h>
 #include <BLEDevice.h>
@@ -77,13 +78,17 @@ class Callbacks:public BLECharacteristicCallbacks {
 bool init(){
     if(server)return server->isStarted();
     if(!BLEDevice::getInitialized())return false; // blescan owns init
-    void* p=heap_caps_malloc(sizeof(State),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-    if(!p)return false;
-    st=new(p)State{};
+    if(!st){
+        void* p=heap_caps_malloc(sizeof(State),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+        if(!p)return false;
+        st=new(p)State{};
+    }
     BLEDevice::setMTU(247);
     auto addr=BLEDevice::getAddress();const uint8_t* mac=addr.getNative();
     snprintf(name,sizeof name,"Umbravox-%02X%02X",mac[4],mac[5]);
-    server=BLEDevice::createServer();server->setCallbacks(&serverCallbacks);server->advertiseOnDisconnect(false);
+    auto* scanner=BLEDevice::getScan();
+    const auto result=bridgeinit::configure(*scanner,[&]() {
+    server=BLEDevice::createServer();if(!server)return false;server->setCallbacks(&serverCallbacks);server->advertiseOnDisconnect(false);
     auto* wd=server->createService(WD_SERVICE);
     wdTx=wd->createCharacteristic(WD_TX,BLECharacteristic::PROPERTY_NOTIFY);wdTx->setCallbacks(&callbacks);
     for(const char* uuid:{WD_RX,WD_CTRL})wd->createCharacteristic(uuid,BLECharacteristic::PROPERTY_WRITE|BLECharacteristic::PROPERTY_WRITE_NR)->setCallbacks(&callbacks);
@@ -100,6 +105,10 @@ bool init(){
     if(!info->start())return false;
     server->start();
     return server->isStarted();
+    });
+    if(!result.configured)Serial.println("bridge: GATT initialization failed; bridge remains off");
+    if(!result.resumed)Serial.println("bridge: BLE scan resume failed; scanner recovery remains active");
+    return result.configured && result.resumed;
 }
 void advertise(){
     auto* adv=BLEDevice::getAdvertising();adv->stop();
@@ -204,8 +213,9 @@ void tick(uint32_t now){
         st->diagAt=now;Serial.printf("[bridge] mode %u stream %u queued %lu queue %u rx-drop %lu tx-retry %lu heap %u\n",unsigned(selected.load()),unsigned(streaming.load()),(unsigned long)st->sent,st->out.count,(unsigned long)st->rxDrops,(unsigned long)st->notifyFails,unsigned(ESP.getFreeHeap()));
     }
 }
+uint8_t mode(){return selected.load();}
 const char* status(){return selected==OFF?"OFF":streaming?"STREAMING":connection!=NO_CONN?"CONNECTED":"ADVERTISING";}
 }
 #else
-namespace blebridge {void setMode(uint8_t){} void tick(uint32_t){} const char* status(){return "UNAVAILABLE";}}
+namespace blebridge {uint8_t mode(){return 0;} void setMode(uint8_t){} void tick(uint32_t){} const char* status(){return "UNAVAILABLE";}}
 #endif
