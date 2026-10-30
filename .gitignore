@@ -91,3 +91,6 @@ sim/test_mesh_engine
 sim/test_omens_present
 sim/test_omens_render
 sim/test_omens_engine
+sim/test_echoes_present
+sim/test_echoes_render
+sim/test_echoes_engine
