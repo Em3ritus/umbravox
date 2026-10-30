@@ -13,6 +13,14 @@
 // The demo settles 10 ms before each step. The module clock-stretches, so
 // 3 ms is enough and keeps the stall short; a cycle that comes back empty
 // costs nothing, a long loop stall costs touch.
+//
+// Touch is polled once per loop, so the WHOLE cycle below must stay short --
+// it is one atomic bus transaction (held across its steps; touch must never
+// grab the bus mid-sequence), so the fix is to make the atomic cycle short,
+// never to split it. Two knobs bound it: CHUNK caps the warm transfer, and a
+// TIGHT TIMEOUT_MS makes a cold/clock-stretched step FAIL FAST and drain next
+// cycle instead of freezing the loop (the 2.5 s cold stalls seen on glass were
+// a 1 KB cold read stretching under the old 300 ms per-step budget).
 
 namespace gpsi2c {
 namespace {
@@ -20,10 +28,14 @@ namespace {
 constexpr uint8_t  CR_ADDR   = 0x50;   // command/register writes
 constexpr uint8_t  RD_ADDR   = 0x54;   // data reads
 constexpr uint8_t  WR_ADDR   = 0x58;   // data writes (wake)
-constexpr uint32_t CHUNK     = 1024;   // most read per cycle; bounds the stall
+constexpr uint32_t CHUNK     = 512;    // most read per cycle; bounds the warm transfer
+                                       // (~46ms @100kHz) while out-draining NMEA
+                                       // at PERIOD_MS (1 KB/s); the rest drains next cycle
 constexpr uint32_t PERIOD_MS = 500;    // at most two cycles a second
-constexpr uint32_t STEP_MS   = 3;
-constexpr uint16_t TIMEOUT_MS = 300;   // generous: the module clock-stretches
+constexpr uint32_t STEP_MS   = 3;      // per-step settle (clock-stretch is the real settle)
+constexpr uint16_t TIMEOUT_MS = 100;   // fail-fast: a healthy step answers in a few ms, so
+                                       // 100ms still covers real clock-stretch but a cold/
+                                       // non-answering step fails fast instead of blocking 300ms
 constexpr uint32_t WAKE_AFTER = 8;     // empty cycles in a row before a wake
 // With no module on the bus every cycle fails, and the core logs each failed
 // transfer. After this many failures in a row, drop to one quiet presence
