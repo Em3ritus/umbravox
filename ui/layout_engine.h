@@ -406,4 +406,66 @@ inline HitList logHits(int W, int H) {        // chrome only; the list is a scro
 inline HitList omensHits(int W, int H)  { return logHits(W, H); }
 inline HitList echoesHits(int W, int H) { return logHits(W, H); }
 
+// --- ATTUNE: paginated knob rows + a pager/CLEAR footer ----------------------
+// The shipped settings pack seven short rows, but the engine honours the >=44px
+// touch rule: each knob row is 44px with a [-][+] stepper pair, so only
+// floor((bodyH-44)/44) knobs fit per page (3 @480, 2 @320) above a 44px footer
+// (PAGE n/m + CLEAR). The eight knobs paginate; the page COUNT therefore adapts
+// to the profile. No geometry.json oracle; regions asserted vs these rules.
+static constexpr int kAttuneKnobs = 8;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT
+inline int attuneRowsPerPage(int H) {
+    const Chrome c = chrome(320, H);     // body height is width-independent
+    int n = (c.body.h - 44) / 44; if (n < 1) n = 1; if (n > 4) n = 4;
+    return n;
+}
+inline int attunePages(int H) {
+    const int per = attuneRowsPerPage(H);
+    return (kAttuneKnobs + per - 1) / per;
+}
+struct AttuneLayout {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect rows[4], minus[4], plus[4];     // per visible knob row
+    Rect footer, pager, clear;
+    int  nRows = 0;
+};
+inline AttuneLayout attune(int W, int H) {
+    const Chrome c = chrome(W, H);
+    AttuneLayout a;
+    a.status = c.status; a.nav = c.nav; a.body = c.body;
+    for (int i = 0; i < 4; i++) { a.statusCells[i] = c.statusCells[i]; a.navCells[i] = c.navCells[i]; }
+    a.nRows = attuneRowsPerPage(H);
+    for (int i = 0; i < a.nRows; i++) {
+        const int y = c.body.y + i * 44;
+        a.rows[i]  = {c.body.x, y, c.body.w, 44};
+        a.minus[i] = {c.body.x + c.body.w - 92, y, 44, 44};
+        a.plus[i]  = {c.body.x + c.body.w - 44, y, 44, 44};
+    }
+    const int fy = c.body.y + c.body.h - 44;
+    a.footer = {c.body.x, fy, c.body.w, 44};
+    a.pager  = {c.body.x, fy, 88, 44};
+    a.clear  = {c.body.x + c.body.w - 88, fy, 88, 44};
+    return a;
+}
+// ATTUNE hits for a given page. A stepper's payload encodes the GLOBAL knob
+// index and direction as +/-(knob+1): dispatch reads dir = sign, knob =
+// abs(payload)-1. The pager cycles pages (payload = next page); CLEAR resets.
+inline HitList attuneHits(int W, int H, int page) {
+    const AttuneLayout a = attune(W, H);
+    const int per = a.nRows, pages = attunePages(H);
+    if (page < 0) page = 0; else if (page >= pages) page = pages - 1;
+    HitList h;
+    addChromeHits(h, a.statusCells, a.navCells);
+    static const char* const mslot[4] = {"knob0-", "knob1-", "knob2-", "knob3-"};
+    static const char* const pslot[4] = {"knob0+", "knob1+", "knob2+", "knob3+"};
+    for (int i = 0; i < per; i++) {
+        const int knob = page * per + i;
+        if (knob >= kAttuneKnobs) break;
+        h.add(mslot[i], a.minus[i], Action::SettingStep, -(knob + 1), nullptr, "Step this setting down");
+        h.add(pslot[i], a.plus[i],  Action::SettingStep, +(knob + 1), nullptr, "Step this setting up");
+    }
+    h.add("pager", a.pager, Action::SettingPage, (page + 1) % pages, nullptr, "Cycle settings pages");
+    h.add("clear", a.clear, Action::SettingReset, 0, nullptr, "Reset settings to defaults");
+    return h;
+}
+
 }  // namespace uieng

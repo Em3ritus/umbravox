@@ -94,3 +94,6 @@ sim/test_omens_engine
 sim/test_echoes_present
 sim/test_echoes_render
 sim/test_echoes_engine
+sim/test_attune_present
+sim/test_attune_render
+sim/test_attune_engine
