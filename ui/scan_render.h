@@ -266,6 +266,11 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     frame(s, fld.x, fld.y, fld.w, fld.h, pal::EDGE);
     if (fr>6) {
         drawArtwork(s, sc.theme, fcx, fcy, fr);
+        // design #1: a static sweep ray (centre -> 0.8r, -0.35r) and a bright
+        // centre cross (+/-5px) over the seal.
+        line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
+        box(s, fcx-5, fcy, 11, 1, pal::BRIGHT);
+        box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
