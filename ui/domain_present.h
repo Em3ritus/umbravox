@@ -132,7 +132,7 @@ inline void sceneDirty(const DomainScene& a, const DomainScene& b, bool& status,
                    && !__builtin_strcmp(a.rows[i].key ? a.rows[i].key : "", b.rows[i].key ? b.rows[i].key : "")
                    && !__builtin_strcmp(a.rows[i].label ? a.rows[i].label : "", b.rows[i].label ? b.rows[i].label : "");
 
-    body = !mapSame || !listSame;
+    body = !mapSame || !listSame || scanr::gpsState(a.gps)!=scanr::gpsState(b.gps);
 }
 
 // --- open decision #5: freeze the list order under a touch -------------------

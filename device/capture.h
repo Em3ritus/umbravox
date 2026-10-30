@@ -22,7 +22,8 @@ void fill(ui::State& s, uint32_t nowMs);
 
 // Fill the codex rows, newest first, starting `offset` rows down.
 // `only5` restricts to the 5GHz band, which is what the 5 GHZ tile opens.
-void fillSights(ui::State& s, int offset, bool only5);
+void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly=false);
+void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs);
 uint16_t sightCount(bool only5);
 
 // Everything known about the device at `index` in that filtered list.
@@ -48,7 +49,7 @@ uint16_t foundBy(uint8_t src);
 // window. A flood is the one finding here that is measured rather than
 // matched.
 // Project located devices onto the territory map at the given scale.
-void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix);
+void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix, int mapRadius=42);
 
 // Probe requests: clients calling out for networks they have joined before.
 void fillEchoes(ui::State& s, int offset, uint32_t nowMs);

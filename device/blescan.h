@@ -26,6 +26,7 @@ void fill(ui::State& s, uint32_t nowMs);
 void fillSights(ui::State& s, int offset);
 uint16_t sightCount();
 void fillDetail(ui::State& s, int index, uint32_t nowMs);
+void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs);
 
 // 0 hands the whole radio to the WiFi sniffer.
 bool lastAlert(ui::AlertRec& out);

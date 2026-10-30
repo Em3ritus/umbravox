@@ -16,6 +16,7 @@ namespace ui {
 
 enum Screen : uint8_t { SCR_SCAN = 0, SCR_CODEX, SCR_DETAIL, SCR_DOMAIN, SCR_MESH, SCR_OMENS, SCR_ECHOES, SCR_GRIMOIRE, SCR_ATTUNE, SCR_ASPECT, SCR_FILES, SCR_COUNT };
 enum Filter : uint8_t { F_WIFI = 0, F_5G, F_BLE, F_COUNT };
+constexpr uint8_t F_LOCATED = 3; // native engine: located Wi-Fi observations
 
 struct Nav {
     uint8_t screen = SCR_SCAN;
@@ -28,6 +29,7 @@ struct Nav {
     int16_t startX = 0, startY = 0;
     int16_t lastX = 0, lastY = 0;
     int16_t dragAccum = 0;      // leftover finger pixels, below one row
+    char detailKey[20] = {};  // native detail selection survives new arrivals
     uint16_t selected = 0;      // which codex row the detail screen is showing
     uint8_t  rangeIdx = 1;      // territory map scale
     uint8_t  setPage = 0;       // settings page (0-based, < SET_PAGES); back to 0 on leaving

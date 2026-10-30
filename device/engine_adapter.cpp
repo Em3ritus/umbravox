@@ -130,15 +130,18 @@ void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, in
     }
 }
 
-// Build the current screen's device-detail key list + display order, so a CODEX
-// row tap maps back to the device list index (nav.selected). Mirrors the CODEX
-// projection's ordering exactly.
-int codexWindowIndexForRow(const ui::State& s, int row) {
-    const int n = s.nSights;
-    domr::LocRec rec[ui::MAX_SIGHTS]; char keys[ui::MAX_SIGHTS][20];
-    for (int i = 0; i < n; i++) { uiproj::contactKey(keys[i], 20, s.sights[i].band, s.sights[i].mac); rec[i] = { keys[i], s.sights[i].rssi }; }
-    int idx[ui::MAX_SIGHTS]; domr::orderLocated(rec, n, idx);
-    return (row >= 0 && row < n) ? idx[row] : 0;
+// Bind taps to the rows actually presented, not the next live collection.
+char visibleKeys_[ui::MAX_SIGHTS][20]{};
+int visibleRows_=0;
+void saveVisibleRows() {
+    visibleRows_=0;
+    if(cur_==uinav::Screen::Codex){const auto& sc=eCodex_.scene();
+        for(int i=0;i<sc.nRows && i<ui::MAX_SIGHTS;++i)
+            snprintf(visibleKeys_[visibleRows_++],20,"%s",sc.rows[i].key);
+    } else if(cur_==uinav::Screen::Domain){const auto& sc=eDomain_.scene();
+        for(int i=0;i<sc.nRows && i<ui::MAX_SIGHTS;++i)
+            snprintf(visibleKeys_[visibleRows_++],20,"%s",sc.rows[i].key);
+    }
 }
 
 }  // namespace
@@ -247,8 +250,8 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
     uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now;
     switch (cur_) {
         case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c); eScan_.back().animate(true); eScan_.commit();   break;
-        case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c); eDomain_.commit(); break;
-        case uinav::Screen::Codex:  uiproj::codex(eCodex_.back(), s, c);   eCodex_.commit();  break;
+        case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c, W_, H_); eDomain_.commit(); break;
+        case uinav::Screen::Codex:  uiproj::codex(eCodex_.back(), s, c, W_, H_);   eCodex_.commit();  break;
         case uinav::Screen::Menu:   uiproj::menu(eMenu_.back(), s, c);     eMenu_.commit();   break;
         case uinav::Screen::Mesh:   uiproj::mesh(eMesh_.back(), s, c);     eMesh_.commit();   break;
         case uinav::Screen::Omens:  uiproj::omens(eOmens_.back(), s, c);   eOmens_.commit();  break;
@@ -307,6 +310,7 @@ bool service(int budgetStrips) {
     const uint32_t diff=sliceCompareUs_+micros()-presentationStart-(sliceTransferUs_-earlyTransfer);
     metrics_.work(compose,diff,sliceTransferUs_);
     if (done) {
+        saveVisibleRows();
         stagedY0_=H_;stagedY1_=0;
         if(entryTiming_) {
             const uint32_t age=millis()-entryAt_;
@@ -324,7 +328,16 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
 
     // build the current screen's hit set, with the ctx its rows/threat need
     uieng::HitCtx ctx;
-    char codexKeys[ui::MAX_SIGHTS][20]; const char* codexPtr[ui::MAX_SIGHTS];
+    const char* rowKeys[ui::MAX_SIGHTS]{};
+    int rowCount=visibleRows_;
+    for(int i=0;i<rowCount;++i)rowKeys[i]=visibleKeys_[i];
+    if(!acceptsTouch()) { // entry presses defer against the incoming scene
+        rowCount=0;
+        if(cur_==uinav::Screen::Codex){const auto& sc=eCodex_.scene();rowCount=sc.nRows;
+            for(int i=0;i<rowCount;++i)rowKeys[i]=sc.rows[i].key;}
+        if(cur_==uinav::Screen::Domain){const auto& sc=eDomain_.scene();rowCount=sc.nRows;
+            for(int i=0;i<rowCount;++i)rowKeys[i]=sc.rows[i].key;}
+    }
     static const char* const kAlert = "alert";
     uieng::HitList h;
     switch (cur_) {
@@ -333,19 +346,12 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             h = uieng::scanHits(W_, H_, ctx);
             break;
         case uinav::Screen::Domain:
-            ctx.hasFix = s.gpsFix;                 // located list has no State source yet -> no rows
-            h = uieng::domainHits(W_, H_, ctx);
-            break;
-        case uinav::Screen::Codex: {
-            const int n = s.nSights;
-            domr::LocRec rec[ui::MAX_SIGHTS];
-            for (int i = 0; i < n; i++) { uiproj::contactKey(codexKeys[i], 20, s.sights[i].band, s.sights[i].mac); rec[i] = { codexKeys[i], s.sights[i].rssi }; }
-            int idx[ui::MAX_SIGHTS]; domr::orderLocated(rec, n, idx);
-            for (int r = 0; r < n; r++) codexPtr[r] = codexKeys[idx[r]];
-            ctx.rowKeys = codexPtr; ctx.nRowKeys = n;
-            h = uieng::codexHits(W_, H_, ctx);
-            break;
-        }
+            ctx.hasFix = rowCount>0; // historic located rows remain usable without a current fix
+            ctx.rowKeys=rowKeys;ctx.nRowKeys=rowCount;
+            h=uieng::domainHits(W_,H_,ctx);break;
+        case uinav::Screen::Codex:
+            ctx.rowKeys=rowKeys;ctx.nRowKeys=rowCount;
+            h=uieng::codexHits(W_,H_,ctx);break;
         case uinav::Screen::Menu:   h = uieng::menuHits(W_, H_); break;
         case uinav::Screen::Mesh:   h = uieng::meshHits(W_, H_); break;
         case uinav::Screen::Omens:  h = uieng::omensHits(W_, H_); break;
@@ -376,12 +382,16 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
 
         switch (hit.action) {
             case uieng::Action::CodexFilter:       nav.filter = (uint8_t)hit.payload; nav.scroll = 0; break;
-            case uieng::Action::OpenLocatedCodex:  nav.scroll = 0; break;
+            case uieng::Action::OpenLocatedCodex:  nav.filter=ui::F_LOCATED; nav.scroll = 0; break;
+            case uieng::Action::CodexPage: {
+                const int n=uieng::codex(W_,H_).nRows;
+                nav.scroll=uiproj::pageOffset(s.totalSights,nav.scroll+(hit.payload<0?-n:n),n);
+                break;
+            }
             case uieng::Action::OpenDeviceDetail:
             case uieng::Action::OpenThreatDetail: {
-                if (cur_ == uinav::Screen::Codex)
-                    nav.selected = (uint16_t)(nav.scroll + codexWindowIndexForRow(s, hit.payload));
-                break;   // DETAIL fill is the collector's job, keyed by nav.selected
+                snprintf(nav.detailKey,sizeof nav.detailKey,"%s",hit.key?hit.key:"");
+                break;   // DETAIL fill resolves the address, never a shifting list index
             }
             case uieng::Action::RangeStep: {
                 const int ni = (int)nav.rangeIdx + (hit.payload < 0 ? -1 : 1);

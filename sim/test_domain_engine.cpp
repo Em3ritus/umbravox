@@ -63,7 +63,7 @@ static void testDirty(){
     sceneDirty(a, base, st, bd); expect(!st && !bd, "diff: identical scenes -> nothing dirty");
 
     domr::DomainScene g = domfix::demo(2,true); g.gps = {true,3,12,30000};   // -> STALE
-    sceneDirty(a, g, st, bd); expect(st && !bd, "diff: GPS change -> status only");
+    sceneDirty(a, g, st, bd); expect(st && bd, "diff: GPS freshness changes status and map");
 
     domr::DomainScene r = domfix::demo(2,true); r.rangeM = 500;
     sceneDirty(a, r, st, bd); expect(!st && bd, "diff: range change -> body only");
@@ -120,7 +120,7 @@ static void testEngineIntegration(){
     const int statusBand = ((statusBottom + 15) / 16) * 16;
     int rows=0; bool withinStatus=true;
     while (e.pending()){ StripScheduler::Slice sl=e.nextSlice(100); rows+=sl.y1-sl.y0; if(sl.y1>statusBand) withinStatus=false; }
-    expect(withinStatus && rows==statusBand && statusBand<H, "engine: GPS-only change repaints just the status band");
+    expect(!withinStatus && rows>=H-44, "engine: stale GPS repaints map as well as status");
 
     // STEADY: an unchanged scene queues no repaint.
     fill(e.back(), g); e.commit();

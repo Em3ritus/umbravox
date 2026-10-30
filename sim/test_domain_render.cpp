@@ -87,14 +87,14 @@ int main(){
         snprintf(m,sizeof m,"%dx%d range step actually changes pixels (sanity)",W,H);
         expect(changed, m);
 
-        // GPS change repaints only the status band and matches a full repaint
-        const uieng::Rect gcell = L.statusCells[0];
+        // Freshness changes repaint status and map, erasing stale markers.
+
         DomainScene stl = sc; stl.gps = {true,3,12,30000};   // fresh -> stale label
         FbSink gf(W,H); comp.renderFull(W,H,stl,gf);
         FbSink gr(W,H); comp.renderFull(W,H,sc,gr);
-        comp.renderRegion(W,H,stl,gcell,gr);
+        comp.renderRegion(W,H,stl,{0,0,W,H-44},gr);
         bool gmatch=true; for(int i=0;i<W*H;i++) if(gr.fb[i]!=gf.fb[i]){ gmatch=false; break; }
-        snprintf(m,sizeof m,"%dx%d GPS fresh->stale: GPS cell region == full (old label erased)",W,H);
+        snprintf(m,sizeof m,"%dx%d GPS fresh->stale: status and map repaint == full (stale markers erased)",W,H);
         expect(gmatch, m);
     }
 

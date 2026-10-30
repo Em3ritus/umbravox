@@ -26,6 +26,7 @@
 #include "palette.h"
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 
 namespace uiproj {
 
@@ -68,40 +69,43 @@ inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) 
     }
 }
 
-// --- DOMAIN ------------------------------------------------------------------
-// Map dots + track come pre-projected in ui::Plot (dx,dy from the map centre).
-// The located-contacts LIST has no labelled source in State yet, so the wide
-// column projects zero rows (header + "0-0 / total") until the device publishes
-// a located-contact list; the map, counts and range all project live.
-inline void domain(dompres::DomainStore& st, const ui::State& s, const Chrome& c) {
-    st.begin(s.set.theme, c.now);
-    st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec);
-    st.counts(s.nPlots, s.plotTotal, s.plotBeyond, s.rangeM);
-    for (int i = 0; i < s.nPlots; i++) st.addDot(s.plots[i].dx, s.plots[i].dy, s.plots[i].band, s.plots[i].threat != ui::TH_NONE);
-    for (int i = 0; i < s.nTrack; i++) st.addTrack(s.track[i].dx, s.track[i].dy);
-    st.page(0, 0, s.plotTotal);
+// --- DOMAIN / CODEX ----------------------------------------------------------
+// Page sizes come from native geometry. Preserve the collector's newest-first
+// order: sorting only a fetched window creates a misleading global order.
+inline int pageOffset(int total, int offset, int perPage) {
+    if(total<=0 || perPage<=0)return 0;
+    return std::max(0,std::min(offset,((total-1)/perPage)*perPage));
 }
-
-// --- CODEX -------------------------------------------------------------------
-// Present the device's visible window of sightings, ordered by decision #5
-// (strongest first, ties by key) via the shared helper. The device already
-// filtered by band and chose the scroll window; we order it and page it.
-inline void codex(codpres::CodexStore& st, const ui::State& s, const Chrome& c) {
-    st.begin(s.set.theme, c.now);
-    st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec);
-    st.filter(s.filter);
-    const int n = s.nSights;
-    domr::LocRec rec[ui::MAX_SIGHTS]; char keys[ui::MAX_SIGHTS][20];
-    for (int i = 0; i < n; i++) { contactKey(keys[i], 20, s.sights[i].band, s.sights[i].mac); rec[i] = { keys[i], s.sights[i].rssi }; }
-    int idx[ui::MAX_SIGHTS]; domr::orderLocated(rec, n, idx);
-    for (int r = 0; r < n; r++) {
-        const ui::Sighting& g = s.sights[idx[r]];
-        st.addRow(keys[idx[r]], g.ssid[0] ? g.ssid : "", g.band, g.rssi, g.chan,
-                  /*threat*/ false);
+inline bool decodeContactKey(const char* key, bool& ble, uint8_t* mac) {
+    if(!key || std::strlen(key)!=14 || key[1]!=':' || (key[0]!='w' && key[0]!='b'))return false;
+    auto hex=[](char c){return c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:-1;};
+    for(int i=0;i<6;++i){int a=hex(key[2+2*i]),b=hex(key[3+2*i]);if(a<0||b<0)return false;mac[i]=(a<<4)|b;}
+    ble=key[0]=='b';return true;
+}
+inline void domain(dompres::DomainStore& st, const ui::State& s, const Chrome& c, int W=480, int H=320) {
+    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec);
+    const auto layout=uieng::domain(W,H);
+    const int radius=domr::radarGeom(layout.map).r;
+    auto scale=[&](int x){if(!s.plotRadius || s.plotRadius==radius)return x;
+        const int v=x*radius;return (v+(v<0?-(int)s.plotRadius/2:(int)s.plotRadius/2))/s.plotRadius;};
+    const bool fresh=scanr::gpsState(c.gps)==scanr::GpsState::Fresh;
+    st.counts(fresh?s.nPlots:0,s.plotTotal,fresh?s.plotBeyond:0,s.rangeM);
+    if(fresh) {
+        for(int i=0;i<s.nPlots;++i)st.addDot(scale(s.plots[i].dx),scale(s.plots[i].dy),s.plots[i].band,s.plots[i].threat!=ui::TH_NONE);
+        for(int i=0;i<s.nTrack;++i)st.addTrack(scale(s.track[i].dx),scale(s.track[i].dy));
     }
-    st.page(s.totalSights ? s.scroll + 1 : 0, s.scroll + n, s.totalSights);
+    const int limit=layout.wide ? std::max(0,uieng::domainRowBands(layout)-1) : 0;
+    const int n=std::min((int)s.nSights,limit);
+    for(int i=0;i<n;++i){const auto& row=s.sights[i];char key[20];contactKey(key,sizeof key,row.band,row.mac);
+        st.addRow(key,row.ssid[0]?row.ssid:"<HIDDEN>",row.band);}
+    st.page(n?1:0,n,s.totalSights);
+}
+inline void codex(codpres::CodexStore& st, const ui::State& s, const Chrome& c, int W=480, int H=320) {
+    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec);st.filter(s.filter);
+    const int n=std::min((int)s.nSights,uieng::codex(W,H).nRows);
+    for(int i=0;i<n;++i){const auto& row=s.sights[i];char key[20];contactKey(key,sizeof key,row.band,row.mac);
+        st.addRow(key,row.ssid,row.band,row.rssi,row.chan,false);}
+    st.page(n?s.scroll+1:0,n?s.scroll+n:0,s.totalSights);
 }
 
 // --- MENU --------------------------------------------------------------------

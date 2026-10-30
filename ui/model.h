@@ -285,6 +285,7 @@ struct State {
     uint8_t  nContacts = 0;
 
     // codex
+    uint16_t plotRadius = 42; // coordinate radius used for plots and track
     Sighting sights[MAX_SIGHTS];
     uint8_t  nSights = 0;
     uint16_t totalSights = 0;     // everything known, for the scrollbar

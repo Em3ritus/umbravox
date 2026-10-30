@@ -134,7 +134,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           OpenLocatedCodex, OpenDeviceDetail, OpenThreatDetail,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
-                          ThemeStep, OrientToggle, Back,
+                          ThemeStep, OrientToggle, Back, CodexPage,
                           FileSelect, FileDelete, FileConfirmYes, FileConfirmNo };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
@@ -266,7 +266,7 @@ inline HitList domainHits(int W, int H, const HitCtx& ctx) {
 struct CodexLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
     Rect filterBar, filters[4];
-    Rect list, rows[8];
+    Rect list, rows[8], previous, next;
     int  nRows = 0;
 };
 inline CodexLayout codex(int W, int H) {
@@ -281,8 +281,10 @@ inline CodexLayout codex(int W, int H) {
         x.filters[i] = {c.body.x + i * fw, c.body.y, i < 3 ? fw : c.body.w - 3 * fw, 44};
 
     const int RH = 44;
-    x.list = {c.body.x, c.body.y + 44, c.body.w, c.body.h - 44};
-    x.nRows = x.list.h / RH; if (x.nRows > 8) x.nRows = 8;
+    x.list = {c.body.x, c.body.y + 44, c.body.w - 84, c.body.h - 44};
+    x.previous = {x.list.x+x.list.w+8, x.list.y, 76, 44};
+    x.next = {x.previous.x, x.list.y+x.list.h-44, 76, 44};
+    x.nRows = x.list.h / RH; if (x.nRows > 6) x.nRows = 6; // 8 chrome + 4 filters + 2 pager + 6 rows fits HitList
     for (int i = 0; i < x.nRows; i++) x.rows[i] = {x.list.x, x.list.y + i * RH, x.list.w, RH};
     return x;
 }
@@ -302,6 +304,8 @@ inline HitList codexHits(int W, int H, const HitCtx& ctx) {
     for (int i = 0; i < 3; i++) h.add(flab[i], x.filters[i], Action::CodexFilter, i, nullptr, fdesc[i]);
     h.add(flab[3], x.filters[3], Action::OpenLocatedCodex, 0, nullptr, "Scope to located devices");
 
+    h.add("previous",x.previous,Action::CodexPage,-1,nullptr,"Previous page");
+    h.add("next",x.next,Action::CodexPage,1,nullptr,"Next page");
     static const char* const rslot[8] = {"codex-0","codex-1","codex-2","codex-3",
                                           "codex-4","codex-5","codex-6","codex-7"};
     for (int b = 0; b < x.nRows; ++b) {

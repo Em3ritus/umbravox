@@ -104,9 +104,15 @@ inline void composeStrip(scanr::S& s, int W, int H, const CodexScene& sc) {
             txt(s, r.x + r.w - 4 - Font::width(ch, 1), r.y + 6, ch, 1, pal::DIM);
             if (g.threat) frame(s, r.x + 1, r.y + 1, r.w - 2, r.h - 2, pal::RED);
         }
-        // pager "lo-hi / total" in the list's bottom slack, right-aligned
-        char pg[40]; snprintf(pg, sizeof pg, "%d-%d / %d", sc.pageLo, sc.pageHi, sc.listTotal);
-        txt(s, lst.x + lst.w - 2 - Font::width(pg, 1), lst.y + lst.h - 8, pg, 1, pal::DIM);
+    }
+    const uieng::Rect buttons[2]={L.previous,L.next};
+    for(int i=0;i<2;++i){const auto r=buttons[i];
+        const bool enabled=i==0?sc.pageLo>1:sc.pageHi<sc.listTotal;
+        box(s,r.x,r.y,r.w,r.h,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);
+        centered(s,r.x+r.w/2,r.y+6,i==0?"PREV":"NEXT",1,enabled?pal::TEXT:pal::DIM);
+        char pg[24];if(i==0)snprintf(pg,sizeof pg,"%d-%d",sc.pageLo,sc.pageHi);
+        else snprintf(pg,sizeof pg,"/ %d",sc.listTotal);
+        centered(s,r.x+r.w/2,r.y+25,pg,1,pal::TEXT);
     }
 
     // nav bar + STOP/REC drawn by scanr::drawChrome above (shared design-1 chrome).

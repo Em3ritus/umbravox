@@ -29,6 +29,7 @@
 #include "meshlive.h"
 #include "perflog.h"
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+#include "../ui/project.h"
 #include "engine_adapter.h"   // WS cutover: the whole UI engine, all screens
 #endif
 #include "alertlog.h"
@@ -1546,11 +1547,15 @@ void loop() {
     const uint16_t rows = nav.screen == ui::SCR_FILES ? nav.filesN
                         : nav.screen == ui::SCR_ECHOES ? cap::echoCount()
                         : nav.screen == ui::SCR_OMENS ? alertlog::count()
+                        : nav.filter == ui::F_LOCATED ? cap::locatedCount()
                         : nav.filter == ui::F_BLE ? blescan::sightCount()
                         : cap::sightCount(nav.filter == ui::F_5G);
-    const int visible = nav.screen == ui::SCR_FILES  ? ui::FILE_VIS
+    int visible = nav.screen == ui::SCR_FILES  ? ui::FILE_VIS
                       : nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
                       : nav.screen == ui::SCR_ECHOES ? ui::MAX_ECHO_ROWS : ui::ROWS;
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    if(nav.screen==ui::SCR_CODEX)visible=uieng::codex(board::PANEL_W,board::PANEL_H).nRows;
+#endif
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
     bool switched;
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
@@ -1738,8 +1743,13 @@ void loop() {
     s.scroll = nav.scroll;
     s.setPage = nav.setPage;
     if (nav.screen == ui::SCR_CODEX) {
-        if (nav.filter == ui::F_BLE) blescan::fillSights(s, nav.scroll);
-        else                         cap::fillSights(s, nav.scroll, nav.filter == ui::F_5G);
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        const int total=nav.filter==ui::F_LOCATED?cap::locatedCount():nav.filter==ui::F_BLE?blescan::sightCount():cap::sightCount(nav.filter==ui::F_5G);
+        nav.scroll=uiproj::pageOffset(total,nav.scroll,uieng::codex(board::PANEL_W,board::PANEL_H).nRows);
+        s.scroll=nav.scroll;
+#endif
+        if (nav.filter == ui::F_BLE) blescan::fillSights(s,nav.scroll);
+        else cap::fillSights(s,nav.scroll,nav.filter==ui::F_5G,nav.filter==ui::F_LOCATED);
     } else if (nav.screen == ui::SCR_ECHOES) {
         cap::fillEchoes(s, nav.scroll, millis());
     } else if (nav.screen == ui::SCR_OMENS) {
@@ -1747,20 +1757,26 @@ void loop() {
         s.omenScroll = nav.scroll;
     } else if (nav.screen == ui::SCR_DOMAIN) {
         const ui::Gnss::Fix& fx = ui::Gnss::fix();
+        int mapRadius=ui::MAP_R;
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        mapRadius=domr::radarGeom(uieng::domain(board::PANEL_W,board::PANEL_H).map).r;
+        cap::fillSights(s,0,false,true); // same located Wi-Fi scope as DOMAIN's map
+#endif
+        s.nTrack=0;
         cap::fillPlots(s, ui::RANGES[nav.rangeIdx % ui::RANGE_N],
-                       fx.lat7, fx.lon7, ui::Gnss::fresh(millis()));
+                       fx.lat7, fx.lon7, ui::Gnss::fresh(millis()), mapRadius);
         if (ui::Gnss::fresh(millis())) {
             const float latDeg = (float)fx.lat7 / 1e7f;
             const float mLat = 111320.0f;
             const float mLon = 111320.0f * cosf(latDeg * 3.14159265f / 180.0f);
-            const float pxPerM = (float)ui::MAP_R / (float)s.rangeM;
+            const float pxPerM = (float)mapRadius / (float)s.rangeM;
             int n = 0;
             for (int i = 0; i < gpstrack::count() && n < ui::MAX_TRACK; i++) {
                 int32_t la, lo;
                 if (!gpstrack::sample(i, la, lo)) continue;
                 const int px = (int)lrintf(((float)(lo - fx.lon7) / 1e7f) * mLon * pxPerM);
                 const int py = (int)lrintf(-((float)(la - fx.lat7) / 1e7f) * mLat * pxPerM);
-                if (px * px + py * py > ui::MAP_R * ui::MAP_R) continue;
+                if (px * px + py * py > mapRadius * mapRadius) continue;
                 s.track[n].dx = (int16_t)px;
                 s.track[n].dy = (int16_t)py;
                 n++;
@@ -1770,8 +1786,17 @@ void loop() {
     } else if (nav.screen == ui::SCR_FILES) {
         if (files::L) ui::filesPublish(s, nav, *files::L);
     } else if (nav.screen == ui::SCR_DETAIL) {
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        bool ble=false;uint8_t mac[6];
+        s.detail=ui::Detail{};
+        if(uiproj::decodeContactKey(nav.detailKey,ble,mac)) {
+            if(ble)blescan::fillDetailByAddress(s,mac,millis());
+            else cap::fillDetailByAddress(s,mac,millis());
+        }
+#else
         if (nav.filter == ui::F_BLE) blescan::fillDetail(s, nav.selected, millis());
         else cap::fillDetail(s, nav.selected, nav.filter == ui::F_5G, millis());
+#endif
     }
 
     s.touchDown = tpDown;

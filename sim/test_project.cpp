@@ -74,14 +74,43 @@ int main(){
     { dompres::DomainStore st; domain(st, s, c); const auto& o=st.scene();
       expect(o.nDots==4 && o.dots[0].threat && !o.dots[1].threat, "domain: dots + threat ring on plot 0");
       expect(o.plotShown==4 && o.plotTotal==9 && o.plotBeyond==3 && o.rangeM==250, "domain: counts/range");
-      expect(o.nTrack==3 && o.nRows==0, "domain: track carried; located list empty (no State source yet)"); }
+      expect(o.nTrack==3 && o.nRows==2, "domain: track and two located rows supplied"); }
 
     { codpres::CodexStore st; codex(st, s, c); const auto& o=st.scene();
       expect(o.nRows==3, "codex: all window rows projected");
-      expect(o.rows[0].rssi==-48, "codex: ordered strongest-first (-48 leads)");
-      expect(o.rows[2].rssi==-80, "codex: weakest last");
+      expect(o.rows[0].rssi==-80, "codex: preserves collector order");
+      expect(o.rows[2].rssi==-63, "codex: third source record stays third");
       expect(o.pageLo==1 && o.pageHi==3 && o.listTotal==9, "codex: page 1-3 / 9");
       expect(o.rows[0].key[0]=='w' || o.rows[0].key[0]=='b', "codex: key carries record type"); }
+
+    for(int W:{480,320}) {
+        const int H=W==480?320:240, pageSize=uieng::codex(W,H).nRows;
+        ui::State many=s; many.nSights=8;many.totalSights=8;many.scroll=0;
+        for(int i=0;i<8;++i){many.sights[i]={};many.sights[i].mac[5]=i;many.sights[i].rssi=-80+i;}
+        codpres::CodexStore store;codex(store,many,c,W,H);
+        expect(store.scene().nRows==pageSize && store.scene().pageHi==pageSize,"geometry limits visible rows and pager together");
+        int seen=0;
+        for(int offset=0;offset<8;offset+=pageSize){
+            many.scroll=offset;many.nSights=std::min(8-offset,ui::MAX_SIGHTS);
+            for(int i=0;i<many.nSights;++i)many.sights[i].mac[5]=offset+i;
+            codex(store,many,c,W,H);
+            expect(store.scene().pageLo==offset+1 && store.scene().pageHi==std::min(8,offset+pageSize),"last page reports exactly visible records");
+            for(int i=0;i<store.scene().nRows;++i){bool ble;uint8_t mac[6];
+                expect(decodeContactKey(store.scene().rows[i].key,ble,mac)&&!ble&&mac[5]==seen++,"every record remains reachable by exact identity");}
+        }
+        expect(seen==8 && pageOffset(8,999,pageSize)==((8-1)/pageSize)*pageSize && pageOffset(0,99,pageSize)==0,"page bounds cover all eight records without duplication");
+        auto maps=s;maps.plotRadius=domr::radarGeom(uieng::domain(W,H).map).r;
+        maps.nPlots=2;maps.plots[0].dx=maps.plotRadius;maps.plots[0].dy=0;
+        maps.plots[1].dx=0;maps.plots[1].dy=-maps.plotRadius;
+        dompres::DomainStore domainStore;domain(domainStore,maps,c,W,H);
+        expect(domainStore.scene().dots[0].dx==maps.plotRadius && domainStore.scene().dots[1].dy==-maps.plotRadius,"native east/north rim positions preserve correct geographic scale");
+        auto stale=c;stale.gps.ageMs=5000;domain(domainStore,maps,stale,W,H);
+        expect(domainStore.scene().nDots==0 && domainStore.scene().nTrack==0,"stale GPS never presents old positions as current");
+        expect(domainStore.scene().nRows==(W==480?2:0) && domainStore.scene().listTotal==9,"located rows or compact summary remain available without live fix");
+    }
+    {bool ble;uint8_t mac[6];
+        expect(decodeContactKey("b:001122aabbff",ble,mac)&&ble&&mac[5]==255,"BLE address decodes independently of current filter");
+        expect(!decodeContactKey("alert",ble,mac)&&!decodeContactKey("w:001122aabbxz",ble,mac)&&!decodeContactKey("w:0011",ble,mac),"invalid and truncated identities cannot select another record");}
 
     { menpres::MenuStore st; menu(st, s, c); expect(st.scene().plain, "menu: plain label mode from Settings"); }
 

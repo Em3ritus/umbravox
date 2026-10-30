@@ -112,6 +112,7 @@ uint8_t*  logBits_ = nullptr;
 struct Blip { uint16_t angle; uint8_t dist, band; uint32_t lastMs; bool live; };
 Blip recent_[RECENT];
 
+volatile uint32_t nLocated = 0;
 volatile uint32_t nFrames = 0, nLocal = 0, nUnique24 = 0, nUnique5 = 0;
 // Bumped whenever the table is cleared, so caches built from it (the map)
 // know to rebuild.
@@ -414,6 +415,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         if (gpstrack::at(millis(), ageMs, la, lo)) {
             table_[slot].lat7 = la;
             table_[slot].lon7 = lo;
+            if(!table_[slot].located)++nLocated;
             table_[slot].located = true;
             table_[slot].bestRssi = rssi;
         }
@@ -698,14 +700,9 @@ void fill(ui::State& s, uint32_t nowMs) {
     s.nContacts = (uint8_t)n;
 }
 
-void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
-    s.detail = ui::Detail{};
-    int seen = 0;
-    for (int i = (int)nOrder - 1; i >= 0; i--) {
-        const Node& nd = table_[order_[i]];
-        if (only5 && nd.band != ui::BAND_5) continue;
-        if (seen++ != index) continue;
-
+static void fillDetailSlot(ui::State& s, int slot, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    const Node& nd=table_[slot];
         ui::Detail& d = s.detail;
         d.valid = true;
         for (int k = 0; k < ui::SSID_MAX; k++) d.ssid[k] = nd.ssid[k];
@@ -722,7 +719,14 @@ void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
         const int start = nd.histN < ui::HIST_N ? 0 : nd.histN % ui::HIST_N;
         for (int k = 0; k < n; k++) d.hist[k] = nd.hist[(start + k) % ui::HIST_N];
         d.histN = (uint8_t)n;
-        return;
+}
+void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    int seen=0;
+    for(int i=(int)nOrder-1;i>=0;--i){
+        const int slot=order_[i];
+        if(only5 && table_[slot].band!=ui::BAND_5)continue;
+        if(seen++==index){fillDetailSlot(s,slot,nowMs);return;}
     }
 }
 
@@ -735,13 +739,21 @@ uint16_t sightCount(bool only5) {
     return (uint16_t)(c > 65535 ? 65535 : c);
 }
 
-void fillSights(ui::State& s, int offset, bool only5) {
-    s.totalSights = sightCount(only5);
+void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    const auto hit=dedup::find(hashMac(mac),TABLE,nUsed,INSERT_LIMIT,maxProbe_,
+        [](uint32_t i){return used_[i];},[mac](uint32_t i){return macEq(table_[i].mac,mac);});
+    if(hit.kind==dedup::FOUND)fillDetailSlot(s,hit.slot,nowMs);
+}
+
+void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {
+    s.totalSights = locatedOnly ? locatedCount() : sightCount(only5);
     int n = 0, skipped = 0;
     // Newest first: that is the order you care about while moving.
     for (int i = (int)nOrder - 1; i >= 0 && n < ui::MAX_SIGHTS; i--) {
         const Node& nd = table_[order_[i]];
         if (only5 && nd.band != ui::BAND_5) continue;
+        if (locatedOnly && !nd.located) continue;
         if (skipped < offset) { skipped++; continue; }
         ui::Sighting& g = s.sights[n++];
         int k = 0;
@@ -785,13 +797,16 @@ uint8_t  nPlotsC = 0;
 uint16_t plotTotalC = 0, plotBeyondC = 0;
 }
 
-void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix) {
+void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix, int mapRadius) {
+    s.plotRadius = mapRadius;
     s.rangeM = (uint16_t)rangeM;
     const uint32_t now = millis();
-    if (plotproj::stale(plotCache, now, rangeM, haveFix, tableGen)) {
+    static int cachedRadius=0;
+    if (cachedRadius != mapRadius || plotproj::stale(plotCache, now, rangeM, haveFix, tableGen)) {
+        cachedRadius=mapRadius;
         nPlotsC = 0; plotTotalC = 0; plotBeyondC = 0;
         if (haveFix && rangeM > 0) {
-            const plotproj::Proj p = plotproj::make(rangeM, myLat7, myLon7, ui::MAP_R);
+            const plotproj::Proj p = plotproj::make(rangeM, myLat7, myLon7, mapRadius);
             for (uint32_t i = 0; i < nOrder; i++) {
                 const Node& nd = table_[order_[i]];
                 if (!nd.located) continue;
@@ -940,9 +955,8 @@ uint32_t exportRows(Print& out, uint32_t& skipped) {
 }
 
 uint16_t locatedCount() {
-    uint32_t c = 0;
-    for (uint32_t i = 0; i < nOrder; i++) if (table_[order_[i]].located) c++;
-    return (uint16_t)(c > 65535 ? 65535 : c);
+    const uint32_t c=nLocated;
+    return (uint16_t)(c>65535?65535:c);
 }
 
 void setDwell(uint16_t ms)  { dwellMs = ms < 20 ? 20 : ms; }
@@ -969,7 +983,7 @@ void reset() {
     for (int i = 0; i < TABLE; i++) used_[i] = false;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; }
-    nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
+    nLocated = 0; nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
     (*twinF).clear(); (*twinR) = twinbudget::DeferRing{}; twinJob.active = false;
     nTwinDeferred = 0;
@@ -989,7 +1003,7 @@ void reset() {
 void rollover() {
     portENTER_CRITICAL(&mux);
     memset(used_, 0, sizeof(bool) * TABLE);
-    nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
+    nLocated = 0; nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0;                  // an empty table has no probe chains
     (*twinF).clear();             // no SSIDs; queued checks die with tableGen
     twinJob.active = false;

@@ -168,6 +168,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
             if (x % 8 == 0 && y % 8 == 0) pt(s, x, y, pal::GRID);
 
     const RadarGeom g = radarGeom(m);
+    const bool fresh=scanr::gpsState(sc.gps)==scanr::GpsState::Fresh;
     // the dial must read even at 0 contacts; EDGE on the dark map is too faint,
     // so the rings + crosshair use the brighter EDGE_LIT seal tone (geometry
     // unchanged -- rings still at g.r*k/3 = 30/60/91 @480).
@@ -177,12 +178,12 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
     }
     txt(s, g.cx - 2, m.y + 3, "N", 1, pal::DIM);
 
-    for (int i = 0; i < sc.nTrack; i++) {                           // your track, older fades
+    for (int i = 0; fresh && i < sc.nTrack; i++) {                           // your track, older fades
         const int x = g.cx + sc.track[i].dx, y = g.cy + sc.track[i].dy;
         const int lum = 70 + (185 * i) / (sc.nTrack > 1 ? sc.nTrack - 1 : 1);
         pt(s, x, y, ui::Canvas::mix(pal::VOID, pal::WITCH, lum, 255));
     }
-    for (int i = 0; i < sc.nDots; i++) {                            // located sightings
+    for (int i = 0; fresh && i < sc.nDots; i++) {                            // located sightings
         const MapDot& p = sc.dots[i];
         const int x = g.cx + p.dx, y = g.cy + p.dy;
         box(s, x - 2, y - 2, 4, 4, bandColor(p.band));              // design #1: 4x4 square markers
@@ -198,22 +199,22 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
     char buf[40];
     snprintf(buf, sizeof buf, "%dM", sc.rangeM);
     txt(s, m.x + 4, m.y + m.h - 9, buf, 1, pal::DIM);
-    snprintf(buf, sizeof buf, "%d/%d", sc.plotShown, sc.plotTotal);
-    txt(s, m.x + m.w - 4 - Font::width(buf, 1), m.y + m.h - 9, buf, 1, pal::TEXT);
-    if (sc.plotBeyond) { snprintf(buf, sizeof buf, "%d BEYOND", sc.plotBeyond);
-        txt(s, m.x + m.w - 4 - Font::width(buf, 1), m.y + 3, buf, 1, pal::EDGE_LIT); }
-    if (sc.plotTotal == 0)
-        centered(s, g.cx, g.cy + 14, "NO FIXES YET", 1, pal::DIM);
+    if(fresh)snprintf(buf,sizeof buf,"%d SHOWN",sc.plotShown);
+    else snprintf(buf,sizeof buf,"%s",scanr::gpsState(sc.gps)==scanr::GpsState::Stale?"GPS STALE":"GPS WAIT");
+    txt(s,m.x+m.w-4-Font::width(buf,1),m.y+m.h-9,buf,1,fresh?pal::TEXT:pal::AMBER);
+    if(fresh){snprintf(buf,sizeof buf,"%d IN RANGE",std::max(0,sc.plotTotal-sc.plotBeyond));
+        txt(s,m.x+4,m.y+3,buf,1,pal::DIM);}
+    if(fresh && sc.plotTotal==0)centered(s,g.cx,g.cy+14,"NO LOCATIONS",1,pal::DIM);
 
     // --- contacts column: wide list, or compact summary ----------------------
     const uieng::Rect cc = L.contacts;
     if (L.wide) {
         // header band carries the list title + the 1-based page label
         box(s, cc.x, cc.y, cc.w, 44, pal::PANEL); frame(s, cc.x, cc.y, cc.w, 44, pal::EDGE);
-        txt(s, cc.x + 8, cc.y + 7, "LOCATED", 1, pal::DIM);
+        txt(s, cc.x + 8, cc.y + 7, "LOCATED WIFI", 1, pal::DIM);
         snprintf(buf, sizeof buf, "%d-%d / %d", sc.pageLo, sc.pageHi, sc.listTotal);
         txt(s, cc.x + 8, cc.y + 22, buf, fitScale(buf, cc.w - 16, 2), pal::TEXT);
-        for (int b = 0; b < sc.nRows; b++) {                        // rows below the header
+        for (int b = 0; b < sc.nRows && b < uieng::domainRowBands(L)-1; b++) {                        // rows below the header
             const int ry = cc.y + (b + 1) * 44;
             box(s, cc.x, ry, cc.w, 44, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2));
             frame(s, cc.x, ry, cc.w, 44, pal::EDGE);
@@ -223,7 +224,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
         }
     } else {
         box(s, cc.x, cc.y, cc.w, cc.h, pal::PANEL); frame(s, cc.x, cc.y, cc.w, cc.h, pal::EDGE);
-        txt(s, cc.x + 8, cc.y + 8, "LOCATED", 1, pal::DIM);
+        txt(s, cc.x + 8, cc.y + 8, "LOCATED WIFI", 1, pal::DIM);
         snprintf(buf, sizeof buf, "%d", sc.listTotal);
         centered(s, cc.x + cc.w / 2, cc.y + 24, buf, fitScale(buf, cc.w - 12, 3), pal::BRIGHT);
         centered(s, cc.x + cc.w / 2, cc.y + cc.h - 16, "OPEN LIST", 1, pal::DIM);

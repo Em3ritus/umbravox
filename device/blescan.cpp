@@ -322,11 +322,8 @@ namespace {
 const char* HEXDIG = "0123456789ABCDEF";
 }
 
-void fillDetail(ui::State& s, int index, uint32_t nowMs) {
-    s.detail = ui::Detail{};
-    if (index < 0 || (uint32_t)index >= nOrder) return;
-    const uint16_t slot = order_[nOrder - 1 - index];
-
+static void fillDetailSlot(ui::State& s, int slot, uint32_t nowMs) {
+    s.detail=ui::Detail{};
     ui::Detail& d = s.detail;
     d.valid = true;
     for (int k = 0; k < 6; k++) d.mac[k] = addrs[slot][k];
@@ -339,6 +336,18 @@ void fillDetail(ui::State& s, int index, uint32_t nowMs) {
     d.histN = 0;
     d.firstAgoS = d.lastAgoS = 0;
     (void)nowMs;
+}
+void fillDetail(ui::State& s, int index, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    if(index<0 || (uint32_t)index>=nOrder)return;
+    fillDetailSlot(s,order_[nOrder-1-index],nowMs);
+}
+
+void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    const auto hit=dedup::find(hashAddr(mac),TABLE,nUsed,INSERT_LIMIT,maxProbe_,
+        [](uint32_t i){return used_[i];},[mac](uint32_t i){return memcmp(addrs[i],mac,6)==0;});
+    if(hit.kind==dedup::FOUND)fillDetailSlot(s,hit.slot,nowMs);
 }
 
 uint16_t sightCount() { return (uint16_t)(nOrder > 65535 ? 65535 : nOrder); }
