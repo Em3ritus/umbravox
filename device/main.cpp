@@ -1912,22 +1912,10 @@ void loop() {
             const pmu::Batt b = pmu::read(millis());
             { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis()); bootStall("engine snapshot", _s); }
         }
-        // Curtain fix: strips paint straight to visible panel RAM, so a screen
-        // entry would reveal top-to-bottom. Blank the backlight across the
-        // (brief, ~2-pass) ENTRY render and restore after its final strip, so
-        // the new screen appears whole -- a brief blank, not a wipe. Only a full
-        // entry blanks (not an ordinary touch-burst); a 300ms cap guarantees the
-        // panel is never left dark. Strips stay bounded; no full-frame push.
-        static bool     entryBlank = false;
-        static uint32_t entryBlankMs = 0;
-        if (engineadapter::entering() && !entryBlank) { setBacklight(0); entryBlank = true; entryBlankMs = millis(); }
         const uint32_t tD = millis();
         engineadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
         engineadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
         perflog::frame(millis() - tD, 0);
-        if (entryBlank && (!engineadapter::entering() || millis() - entryBlankMs > 300)) {
-            setBacklight(pwmNow); entryBlank = false;     // entry complete (or capped): reveal
-        }
 
         static uint32_t engLogAt = 0;
         if (millis() - engLogAt >= 10000) {
@@ -1954,6 +1942,13 @@ void loop() {
                            && tp2.panelY >= 0 && tp2.panelY < PANEL_H;
             engineadapter::dispatchTouch(nav, set, s, tp2.any && !wasDimmed && inB2, tp2.panelX, tp2.panelY);
         }
+        // If that post-render dispatch navigated, establish the new screen's
+        // entry THIS pass rather than next loop. Otherwise next loop's
+        // top-of-loop sample would dispatch against a screen whose entry has not
+        // run (the composed screen is still the old one) -- an ordering hazard.
+        // engPrev is this pass's rendered screen, so a post-render navigation
+        // shows as a difference here; the new screen's strips render next pass.
+        if (nav.screen != engPrev) { engineadapter::enter(nav.screen); engPrev = nav.screen; }
         frame++;
         return;
     }

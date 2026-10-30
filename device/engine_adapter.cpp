@@ -41,10 +41,6 @@ scanpres::TouchGate gate_;
 // it clears when the frame completes, so idle/animation falls back to the
 // steady slice and the single core's capture time is not starved continuously.
 bool burst_ = false;
-// A screen ENTRY full-repaint in progress (enter/wake/theme, NOT a touch-burst):
-// the loop blanks the backlight across it so the new screen appears whole -- a
-// brief blank instead of a curtain. Cleared when the entry's final strip lands.
-bool entering_ = false;
 scanpres::PresentMetrics metrics_;         // adapter-level render timing (for /perf)
 
 // one engine per screen -- just scheduler/transition/double Store, no compositor
@@ -152,17 +148,17 @@ void enter(uint8_t uiScreen) {
         case uinav::Screen::Files:  eFiles_.enter(); break;
     }
     gate_.reset();
-    burst_ = true; entering_ = true;            // paint the entered screen fast, blanked, as a whole
+    burst_ = true;                              // paint the entered screen fast (2-pass burst)
 }
-void wake() { eScan_.wake(); gate_.reset(); burst_ = true; entering_ = true; }   // only SCAN animates/dims; others re-enter on switch
+void wake() { eScan_.wake(); gate_.reset(); burst_ = true; }   // only SCAN animates/dims; others re-enter on switch
 void themeChanged() {
     // a theme change repaints whatever is current
     switch (cur_) {
         case uinav::Screen::Scan:   eScan_.themeChanged(); break;
         case uinav::Screen::Aspect: eAspect_.themeChanged(); break;
-        default: enter(fromNav(cur_)); break;   // force a full repaint via re-enter (sets burst_/entering_)
+        default: enter(fromNav(cur_)); break;   // force a full repaint via re-enter (sets burst_)
     }
-    burst_ = true; entering_ = true;
+    burst_ = true;
 }
 void leave() {
     switch (cur_) {
@@ -262,11 +258,9 @@ bool service(int budgetStrips) {
     const uint32_t total = micros() - t0;
     const uint32_t compose = total > sliceTransferUs_ ? total - sliceTransferUs_ : 0;
     metrics_.slice(compose, sliceTransferUs_);
-    if (done) { metrics_.frameDone(); burst_ = false; entering_ = false; }   // repaint delivered; back to steady slices + visible
+    if (done) { metrics_.frameDone(); burst_ = false; }   // interaction repaint delivered; back to steady slices
     return done;
 }
-
-bool entering() { return entering_; }
 
 bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s,
                    bool contact, int panelX, int panelY) {

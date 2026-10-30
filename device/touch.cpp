@@ -230,8 +230,11 @@ Point read() {
     if (!present) return p;
 
     uint16_t nx, ny;
-    const uint32_t now = millis();
     const Sampled sm = sample(nx, ny);
+    // Timestamp AFTER the (possibly blocking) retries: a failed read's bridge age
+    // must be measured from when the failure RETURNED, not when the read began,
+    // or a slow-failing read can hand back a contact older than DROPOUT_MS.
+    const uint32_t now = millis();
     if (sm == Sampled::Touch) {
         lastX = nx; lastY = ny; lastOk = now;
     } else if (sm == Sampled::Lift) {
