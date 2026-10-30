@@ -95,7 +95,9 @@ inline DomainLayout domain(int W, int H) {
 enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           Nav, CodexFilter, RangeStep,
                           OpenLocatedCodex, OpenDeviceDetail, OpenThreatDetail,
-                          ToggleLabels };
+                          ToggleLabels, MeshEnroll, MeshResetNet,
+                          SettingStep, SettingPage, SettingReset,
+                          ThemeStep, OrientToggle };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -319,6 +321,54 @@ inline HitList menuHits(int W, int H) {
     };
     for (int i = 0; i < 8; i++) h.add(tiles[i].slot, m.cells[i], Action::Nav, (int)tiles[i].id, nullptr, tiles[i].desc);
     h.add("labels", m.cells[8], Action::ToggleLabels, 0, nullptr, "Toggle brand/plain labels");
+    return h;
+}
+
+// --- deeper MENU destinations: shared body split for a titled sub-screen ------
+// The hub launches into these; they carry the same chrome (status + nav bar,
+// no tab lit) with a title band at the body top and the screen's own content
+// below. No geometry.json oracle exists for any of them, so regions are
+// asserted against these rules + structural invariants at both profiles.
+struct SubChrome {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect title;   // body-top heading band
+};
+inline SubChrome subChrome(int W, int H) {
+    const Chrome c = chrome(W, H);
+    SubChrome s;
+    s.status = c.status; s.nav = c.nav; s.body = c.body;
+    for (int i = 0; i < 4; i++) { s.statusCells[i] = c.statusCells[i]; s.navCells[i] = c.navCells[i]; }
+    s.title = {c.body.x, c.body.y, c.body.w, 20};
+    return s;
+}
+
+// --- MESH: Core/loss header + node list + ENROLL/RESET control row ------------
+struct MeshLayout {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect title, header, list, enroll, reset;
+};
+inline MeshLayout mesh(int W, int H) {
+    const SubChrome c = subChrome(W, H);
+    MeshLayout m;
+    m.status = c.status; m.nav = c.nav; m.body = c.body;
+    for (int i = 0; i < 4; i++) { m.statusCells[i] = c.statusCells[i]; m.navCells[i] = c.navCells[i]; }
+    m.title = c.title;
+    const int ctrlH = 44, by = c.body.y, bh = c.body.h;
+    m.header = {c.body.x, by + 20, c.body.w, 24};                  // CORE/COORD + LOSS
+    m.list   = {c.body.x, by + 44, c.body.w, bh - 44 - ctrlH};     // node rows (display only)
+    const int ctrlY = by + bh - ctrlH, halfW = (c.body.w - 8) / 2;
+    m.enroll = {c.body.x, ctrlY, halfW, ctrlH};
+    m.reset  = {c.body.x + c.body.w - halfW, ctrlY, halfW, ctrlH};
+    return m;
+}
+// MESH hits: the two network-control buttons (nodes are display-only). ENROLL
+// opens the pairing window; RESET returns the fleet to the open network.
+inline HitList meshHits(int W, int H) {
+    const MeshLayout m = mesh(W, H);
+    HitList h;
+    addChromeHits(h, m.statusCells, m.navCells);
+    h.add("enroll", m.enroll, Action::MeshEnroll,   0, nullptr, "Open a pairing window (adopt open nodes)");
+    h.add("reset",  m.reset,  Action::MeshResetNet, 0, nullptr, "Return the fleet to the open network");
     return h;
 }
 

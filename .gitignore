@@ -85,3 +85,6 @@ sim/test_codex_engine
 sim/test_menu_present
 sim/test_menu_render
 sim/test_menu_engine
+sim/test_mesh_present
+sim/test_mesh_render
+sim/test_mesh_engine
