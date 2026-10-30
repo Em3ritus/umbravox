@@ -2,6 +2,7 @@
 #include "ws_c5_pmu.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include "ws_c5_bus.h"
 #define XPOWERS_CHIP_AXP2101
 #include <XPowersLib.h>
 #include "board.h"
@@ -18,6 +19,8 @@ constexpr uint32_t PERIOD_MS = 2000;
 
 void sample() {
     Batt b;
+    {
+    wsbus::Guard guard;
     b.ok   = true;
     b.usb  = axp.isVbusIn();
     b.cell = axp.isBatteryConnect();
@@ -27,6 +30,7 @@ void sample() {
         b.pct = (uint8_t)(p < 0 ? 0 : (p > 100 ? 100 : p));
         b.mv  = axp.getBattVoltage();
     }
+    } // release the shared bus before any possibly blocking console output
     // Log transitions, not samples: plugging a cable in or out is the event
     // worth seeing on the console.
     if (!primed || b.usb != cur.usb || b.cell != cur.cell || b.charging != cur.charging) {

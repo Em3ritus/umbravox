@@ -136,6 +136,7 @@ Point read() {
 
 #if defined(WS_C5_35)
 #include <Wire.h>
+#include "ws_c5_bus.h"
 #include "ws_c5_expander.h"
 
 namespace touch {
@@ -181,6 +182,7 @@ bool readRegs(uint8_t reg, uint8_t* buf, uint8_t len) {
 // the controller is re-opened, so it is re-opened on every read. Verified on
 // this board; do not remove.
 Sampled sample(uint16_t& nx, uint16_t& ny) {
+    wsbus::Guard guard;
     for (int attempt = 0; attempt < 3; attempt++) {
         Wire.end();
         Wire.begin(board::PIN_SDA, board::PIN_SCL, 100000u);
@@ -222,7 +224,7 @@ void begin() {
     Wire.endTransmission();
 }
 
-Point read() {
+static Point readSensor() {
     static uint16_t lastX = 0, lastY = 0;
     static uint32_t lastOk = 0;
 
@@ -267,6 +269,73 @@ Point read() {
     p.y = (int16_t)cy;
     return p;
 }
+
+#if defined(UMBRAVOX_SCAN_ENGINE)
+namespace {
+portMUX_TYPE eventMux = portMUX_INITIALIZER_UNLOCKED;
+inputevents::PressQueue presses;
+Point latest;
+bool sampling = false;
+uint32_t sampleGapMax = 0, deadlineMisses = 0;
+void sampler(void*) {
+    inputevents::Deadline deadline;
+    uint32_t last = millis();
+    for (;;) {
+        portENTER_CRITICAL(&eventMux);
+        const uint32_t epoch = presses.epoch();
+        portEXIT_CRITICAL(&eventMux);
+        const Point p = readSensor();
+        const uint32_t now = millis();
+        portENTER_CRITICAL(&eventMux);
+        latest = p;
+        presses.sample(p.any, p.panelX, p.panelY, epoch);
+        if (now - last > sampleGapMax) sampleGapMax = now - last;
+        const uint32_t wait = deadline.complete(now);
+        deadlineMisses = deadline.missed();
+        portEXIT_CRITICAL(&eventMux);
+        last = now;
+        vTaskDelay(pdMS_TO_TICKS(wait) ? pdMS_TO_TICKS(wait) : 1);
+    }
+}
+}
+bool startSampling() {
+    if (sampling) return true;
+    (void)wsbus::mutex();
+    sampling = xTaskCreate(sampler, "touch", 4096, nullptr, 3, nullptr) == pdPASS;
+    return sampling;
+}
+Point read() {
+    if (!sampling) {
+        const Point p = readSensor();
+        portENTER_CRITICAL(&eventMux);
+        presses.sample(p.any, p.panelX, p.panelY, presses.epoch());
+        portEXIT_CRITICAL(&eventMux);
+        return p; // explicit degraded polling fallback if task allocation failed
+    }
+    portENTER_CRITICAL(&eventMux);
+    Point p = latest;
+    inputevents::Press queued;
+    // A completed tap still wakes a dimmed screen and holds off the next GPS
+    // cycle. Raw release/edge detection stays exclusively in the sampler.
+    if (!p.any && presses.peek(queued)) {
+        p.any = true; p.panelX = queued.x; p.panelY = queued.y;
+    }
+    portEXIT_CRITICAL(&eventMux);
+    return p;
+}
+bool takePress(inputevents::Press& p) {
+    portENTER_CRITICAL(&eventMux); const bool ok = presses.pop(p); portEXIT_CRITICAL(&eventMux); return ok;
+}
+void newScreen() { portENTER_CRITICAL(&eventMux); presses.navigate(); portEXIT_CRITICAL(&eventMux); }
+void cancelPresses() { portENTER_CRITICAL(&eventMux); presses.cancel(); portEXIT_CRITICAL(&eventMux); }
+void samplingStats(uint32_t& gap, uint32_t& missed, uint32_t& dropped) {
+    portENTER_CRITICAL(&eventMux);
+    gap = sampleGapMax; missed = deadlineMisses; dropped = presses.dropped();
+    portEXIT_CRITICAL(&eventMux);
+}
+#else
+Point read() { return readSensor(); }
+#endif
 
 } // namespace touch
 #endif // WS_C5_35

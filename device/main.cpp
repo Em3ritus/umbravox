@@ -1,3 +1,4 @@
+#include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
 // This is the whole device side. Everything visual lives in ui/, compiled
@@ -386,7 +387,9 @@ void reassignAll(int only = -1) {
         a.collectChan = COLLECT_CHAN;
         a.nChan = sl[i].nChan > mesh::MAX_SLICE ? mesh::MAX_SLICE : sl[i].nChan;
         for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[i].chans[k];
+#if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+#endif
     }
 }
 
@@ -497,7 +500,9 @@ void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[c].chans[k];
     a.camp = 0;
     a.phaseMs = (uint16_t)mesh_phase::offset(ord, total, mesh::REPORT_MS);
+#if !UMBRAVOX_PASSIVE_ONLY
     esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+#endif
 }
 
 } // namespace
@@ -733,6 +738,9 @@ void setup() {
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
     // Theme packs: after the card and the log (skips are logged), and before
     // loop()'s first prefs::load(), so a saved pack name finds its pack.
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    if (!touch::startSampling()) Serial.println("touch: sampler creation FAILED");
+#endif
     themeload::scan();
         logging::begin(prefs::loggingWas(), logwire::hooks(), millis(), ui::Gnss::utcEpoch(millis()));
 #if defined(WS_C5_35)
@@ -900,7 +908,9 @@ void tick(uint32_t nowMs) {
     const bool adopting = win.mode == enrollwin::ADOPT;
     e.h.netId = adopting ? mesh::netId : oldNet;
     e.reset   = adopting ? 0 : 1;
+#if !UMBRAVOX_PASSIVE_ONLY
     esp_now_send(bcast, (const uint8_t*)&e, sizeof e);
+#endif
 }
 } // namespace enroll
 
@@ -1221,13 +1231,8 @@ void loop() {
     const uint32_t loopGap = prevLoopMs ? t0 - prevLoopMs : 0;
     prevLoopMs = t0;
 
-    // Poll touch FIRST, before any GPS/I2C or render work can open a
-    // touch-blind window. A capacitive tap is only ~50-150ms of contact, so a
-    // single poll per pass must land at the TOP of every pass, not after the
-    // GPS cycle and the render. Recording the contact here also lets the
-    // GPS-quiet gate below skip the LC76G cycle on THIS pass (not one late), so
-    // an interaction never competes with the bus. tp feeds the dimming +
-    // dispatch block further down.
+    // Engine builds read the periodic sampler's cache; completed presses are
+    // retained separately. Other boards continue synchronous polling here.
     const touch::Point tp = touch::read();
 #if defined(WS_C5_35)
     if (tp.any) lastContactMs = millis();
@@ -1254,7 +1259,7 @@ void loop() {
         }
     }
 #else
-    // One short synchronous LC76G cycle, at most twice a second, and never
+    // One bounded synchronous LC76G cycle (engine: 128 B / 125 ms), never
     // while the panel is being touched. See ws_c5_gps.h.
     if (millis() - lastContactMs >= GPS_TOUCH_QUIET_MS) { const uint32_t _s = micros(); gpsi2c::tick(gnssSink, millis()); bootStall("gps tick", _s); }
 #endif
@@ -1550,12 +1555,10 @@ void loop() {
         // controls lie OUTSIDE the 2x canvas, where touch::read leaves
         // down=false -- so hit-test in PANEL coordinates on any in-bounds
         // contact, not tp.down. The wake tap (wasDimmed) is suppressed, and the
-        // pure gate consumes transition and held presses. Routing goes through
+        // sampler owns edges and retains completed taps. Routing goes through
         // uinav::Router inside the adapter and writes nav/set.
-        const bool inBounds = tp.panelX >= 0 && tp.panelX < PANEL_W
-                           && tp.panelY >= 0 && tp.panelY < PANEL_H;
-        const bool engContact = tp.any && !wasDimmed && inBounds;
-        switched = engineadapter::dispatchTouch(nav, set, s, engContact, tp.panelX, tp.panelY);
+        if (wasDimmed) engineadapter::cancelInput();
+        switched = engineadapter::dispatchTouch(nav, set, s);
     }
 #else
     switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
@@ -1896,6 +1899,7 @@ void loop() {
         // panel, so this external paint must force a full native repaint even
         // for an unchanged scene -- and the flag is consumed here.
         const bool extPaint = animDirtied;
+        if (extPaint) engineadapter::invalidatePanel();
         if (switched || engPrev != nav.screen) engineadapter::enter(nav.screen);  // entry / screen change
         else if (engWoke)                      engineadapter::wake();             // incl. OFF/ANIM wake
         else if (extPaint)                     engineadapter::enter(nav.screen);  // external paint while dark
@@ -1925,23 +1929,16 @@ void loop() {
                  (unsigned)m.frames, (unsigned)m.slices,
                  (unsigned long)m.composeUs, (unsigned long)m.transferUs,
                  (unsigned long)m.maxSliceUs, (unsigned long)m.renderPerMille(iv));
+            uint32_t gap, missed, dropped;
+            touch::samplingStats(gap, missed, dropped);
+            logf("[touch] maxgap %lums deadline-misses %lu dropped %lu\n",
+                 (unsigned long)gap, (unsigned long)missed, (unsigned long)dropped);
             engineadapter::clearMetrics();
         }
         engPrev = nav.screen;
-        // Bound the touch sample interval (not just the strip count): the render
-        // just above is the longest blind stretch in a pass, so sample + dispatch
-        // ONCE MORE after it. A tap whose press/release fell during the render is
-        // caught THIS pass instead of waiting for -- or being missed by -- the
-        // next top-of-loop sample. The edge gate dedupes a still-held press, so
-        // this never double-fires; a navigation from here lands next pass
-        // (engPrev was just captured, so it differs). wasDimmed is this pass's.
-        {
-            const touch::Point tp2 = touch::read();
-            if (tp2.any) lastContactMs = millis();
-            const bool inB2 = tp2.panelX >= 0 && tp2.panelX < PANEL_W
-                           && tp2.panelY >= 0 && tp2.panelY < PANEL_H;
-            engineadapter::dispatchTouch(nav, set, s, tp2.any && !wasDimmed && inB2, tp2.panelX, tp2.panelY);
-        }
+        // Drain observed press events after presentation too. A full tap during
+        // composition survives in the sampler queue even when the finger is up.
+        if (!wasDimmed) engineadapter::dispatchTouch(nav, set, s);
         // If that post-render dispatch navigated, establish the new screen's
         // entry THIS pass rather than next loop. Otherwise next loop's
         // top-of-loop sample would dispatch against a screen whose entry has not

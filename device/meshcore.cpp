@@ -1,3 +1,4 @@
+#include "radio_policy.h"
 #include "meshcore.h"
 #include <Arduino.h>
 #include <WiFi.h>
@@ -176,6 +177,9 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
 } // namespace
 
 void begin() {
+#if UMBRAVOX_PASSIVE_ONLY
+    return; // no ESP-NOW initialization, peers, assignments, or radio ACK service
+#endif
     for (int i = 0; i < MAX_NODES; i++) nodes_[i] = NodeRec{};
     esp_read_mac(selfMac, ESP_MAC_WIFI_STA);
 
@@ -252,7 +256,9 @@ void assignAll(uint32_t nowMs) {
         a.camp = p.n > 0 && p.camp;
         a.phaseMs = (uint16_t)mesh_phase::offset(slot - 1, live, mesh::REPORT_MS);
 
+#if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+#endif
         nodes_[i].nChan = p.n;
         nodes_[i].camp  = a.camp;
         for (int k = 0; k < p.n && k < 10; k++) nodes_[i].chans[k] = p.ch[k];

@@ -2,6 +2,7 @@
 #include "ws_c5_expander.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include "ws_c5_bus.h"
 #include "board.h"
 
 namespace exio {
@@ -91,6 +92,7 @@ bool begin() {
 }
 
 void backlight(uint8_t duty) {
+    wsbus::Guard guard;
     if (ready) write(PWM_REG, duty);
 }
 

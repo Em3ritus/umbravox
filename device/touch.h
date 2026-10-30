@@ -50,3 +50,14 @@ Point read();
 void setRotation(uint8_t r);
 
 } // namespace touch
+
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+#include "../ui/input_events.h"
+namespace touch {
+bool startSampling(); // after all setup-time Wire initialization
+bool takePress(inputevents::Press& p);
+void newScreen();
+void cancelPresses();
+void samplingStats(uint32_t& maxGapMs, uint32_t& missed, uint32_t& dropped);
+}
+#endif

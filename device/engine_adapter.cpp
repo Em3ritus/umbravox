@@ -7,6 +7,10 @@
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
+#include "touch.h"
+#include "../ui/pending_hit.h"
+#include "../ui/frame_present.h"
 #include <Arduino_GFX_Library.h>
 #include "../ui/layout_engine.h"
 #include "../ui/router.h"
@@ -33,11 +37,14 @@ uint16_t     buf_[480 * 16];               // ONE shared strip buffer for every 
 uint32_t     sliceTransferUs_ = 0;
 uinav::Screen cur_ = uinav::Screen::Scan;  // the screen currently composed
 uinav::Router router_;                     // navigation authority (remembers DETAIL origin)
-scanpres::TouchGate gate_;
+inputevents::PendingHit pendingHit_;
+uint32_t inputEpoch_ = 0;
+framepresent::Frame frame_;
+bool buffered_ = false;
 // Interaction burst: a screen enter/change, a wake, a theme change, or a touch
 // that dispatched a hit all produce a NEW state the user is waiting to see. For
-// that one repaint, service() widens its strip budget so the new state paints
-// in a single pass (snappy touch) instead of trickling in 4 strips per loop;
+// that one repaint, service() widens its composition budget. The staged frame
+// stays invisible until composition completes, then changed regions transfer;
 // it clears when the frame completes, so idle/animation falls back to the
 // steady slice and the single core's capture time is not starved continuously.
 bool burst_ = false;
@@ -104,9 +111,9 @@ template <class Scene>
 void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, int, const Scene&)) {
     for (int sy = y0; sy < y1; sy += 16) {
         const int sh = (sy + 16 > y1) ? (y1 - sy) : 16;
-        scanr::S s{ buf_, W_, sy, sh };
+        scanr::S s{ buffered_ ? frame_.rows(sy) : buf_, W_, sy, sh };
         cs(s, W_, H_, sc);
-        sink_.strip(0, sy, W_, sh, buf_);
+        if (!buffered_) sink_.strip(0, sy, W_, sh, buf_);
     }
 }
 
@@ -125,6 +132,11 @@ int codexWindowIndexForRow(const ui::State& s, int row) {
 
 void begin(Arduino_TFT* gfx, int W, int H) {
     gfx_ = gfx; W_ = W; H_ = H;
+    auto* front = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
+    auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
+    buffered_ = front && back;
+    if (buffered_) frame_.begin(front, back, W, H);
+    else { free(front); free(back); Serial.println("ui: frame allocation failed; progressive fallback"); }
     eScan_.reset(W, H); eDomain_.reset(W, H); eCodex_.reset(W, H); eMenu_.reset(W, H);
     eMesh_.reset(W, H); eOmens_.reset(W, H); eEchoes_.reset(W, H); eAttune_.reset(W, H);
     eAspect_.reset(W, H); eDetail_.reset(W, H); eFiles_.reset(W, H);
@@ -147,10 +159,10 @@ void enter(uint8_t uiScreen) {
         case uinav::Screen::Detail: eDetail_.enter(); break;
         case uinav::Screen::Files:  eFiles_.enter(); break;
     }
-    gate_.reset();
+    pendingHit_.cancel(); ++inputEpoch_; touch::newScreen();
     burst_ = true;                              // paint the entered screen fast (2-pass burst)
 }
-void wake() { eScan_.wake(); gate_.reset(); burst_ = true; }   // only SCAN animates/dims; others re-enter on switch
+void wake() { frame_.invalidate(); enter(fromNav(cur_)); }   // wake the current screen, including MENU and sub-screens
 void themeChanged() {
     // a theme change repaints whatever is current
     switch (cur_) {
@@ -160,6 +172,9 @@ void themeChanged() {
     }
     burst_ = true;
 }
+void cancelInput() { pendingHit_.cancel(); touch::cancelPresses(); }
+void invalidatePanel() { frame_.invalidate(); }
+
 void leave() {
     switch (cur_) {
         case uinav::Screen::Scan:   eScan_.leave(); break;
@@ -174,7 +189,8 @@ void leave() {
         case uinav::Screen::Detail: eDetail_.leave(); break;
         case uinav::Screen::Files:  eFiles_.leave(); break;
     }
-    gate_.reset();
+    pendingHit_.cancel(); ++inputEpoch_; touch::newScreen();
+    frame_.invalidate();
     if (gfx_) gfx_->fillScreen(RGB565_BLACK);
 }
 
@@ -231,13 +247,9 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
 
 bool service(int budgetStrips) {
     if (!pending()) return false;
-    // interaction burst: paint the new state FAST -- but NOT in one giant
-    // blocking pass (that opens a touch-blind window and drops taps). Cover the
-    // panel in ~2 passes (half the strips each); burst_ stays set until the
-    // frame completes (see below), and touch is polled at the TOP of every loop
-    // pass, so the panel fills in 2 quick chunks with a touch read in between --
-    // snappy and curtain-free without freezing input. Animation keeps the steady
-    // 4-strip slice (burst_ is only set on an interaction).
+    // Compose in bounded slices without exposing an incomplete frame. Only
+    // the completed frame is presented; the periodic touch task runs throughout.
+    // SPI still updates visible GRAM progressively: this is NOT a page flip.
     if (burst_) budgetStrips = H_ / 32 + 2;    // ~half the panel per pass -> ~2 passes
     const uint32_t t0 = micros();
     sliceTransferUs_ = 0;
@@ -258,13 +270,28 @@ bool service(int budgetStrips) {
     const uint32_t total = micros() - t0;
     const uint32_t compose = total > sliceTransferUs_ ? total - sliceTransferUs_ : 0;
     metrics_.slice(compose, sliceTransferUs_);
+    if (done && buffered_) {
+        frame_.present(cur_ == uinav::Screen::Menu, [](uieng::Rect r, const uint16_t* px, int stride) {
+            const uint32_t t = micros();
+            gfx_->startWrite();
+            gfx_->writeAddrWindow(r.x, r.y, r.w, r.h);
+            // Fully composed rectangle, one window; no intervening loop/GPS.
+            for (int y=r.y; y<r.y+r.h; ++y) {
+                // GFX's C5 SPI writer reads pairs even for an odd pixel count.
+                // Pad the internal bounce row; never over-read the PSRAM frame.
+                memcpy(buf_, px+y*stride+r.x, r.w*sizeof(uint16_t));
+                buf_[r.w] = 0;
+                gfx_->writePixels(buf_, r.w);
+            }
+            gfx_->endWrite();
+            metrics_.slice(0, micros()-t);
+        });
+    }
     if (done) { metrics_.frameDone(); burst_ = false; }   // interaction repaint delivered; back to steady slices
     return done;
 }
 
-bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s,
-                   bool contact, int panelX, int panelY) {
-    if (!gate_.edge(contact, acceptsTouch())) return false;
+bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     router_.setScreen(toNav(nav.screen));
     cur_ = toNav(nav.screen);
 
@@ -306,11 +333,14 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s,
         }
     }
 
+    if (!pendingHit_.pending()) {
+        inputevents::Press p;
+        if (touch::takePress(p) && p.epoch == inputEpoch_)
+            pendingHit_.observe(h, p.x, p.y, p.epoch);
+    }
     const uint8_t before = nav.screen;
-    for (int i = 0; i < h.count; i++) {
-        const uieng::Rect r = h.items[i].rect;
-        if (panelX < r.x || panelX >= r.x + r.w || panelY < r.y || panelY >= r.y + r.h) continue;
-        const uieng::Hit hit = h.items[i];
+    uieng::Hit hit{};
+    if (pendingHit_.take(acceptsTouch(), inputEpoch_, h, hit)) {
         const uinav::Requests rq = router_.dispatch(hit);
 
         // screen first (covers Nav, filter->Codex, located, detail open, Back, OpenMesh)

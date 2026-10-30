@@ -28,6 +28,8 @@ void begin(Arduino_TFT* gfx, int W, int H);
 void enter(uint8_t uiScreen);
 void wake();
 void themeChanged();
+void cancelInput();
+void invalidatePanel();
 void leave();                      // left the engine (to legacy/animation): clear panel
 
 bool acceptsTouch();
@@ -42,12 +44,11 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
 // frame just completed.
 bool service(int budgetStrips);
 
-// Native touch against the current screen's reviewed hit geometry, in panel
+// Drain retained press events against the current screen's hit geometry, in panel
 // coordinates. Routes through uinav::Router and writes the result back into
 // nav + set + the request flags the device loop already consumes. Returns true
 // when the screen changed.
-bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s,
-                   bool contact, int panelX, int panelY);
+bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s);
 
 void sampleCapture(uint32_t capFrames, uint32_t capUniq, uint32_t bleReports);
 const scanpres::PresentMetrics& metrics();

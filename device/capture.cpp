@@ -1,7 +1,10 @@
+#include "radio_policy.h"
 #include "capture.h"
 #include <new>
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_event.h>
+#include <esp_netif.h>
 #include <esp_wifi.h>
 #include <esp_heap_caps.h>
 #include "signatures.h"
@@ -537,11 +540,25 @@ void begin() {
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     Serial.printf("capture: %d probe slots\n", probes ? PROBE_TABLE : 0);
 
+#if UMBRAVOX_PASSIVE_ONLY
+    // Initialize directly in NULL mode: never start a station or AP, even briefly.
+    ESP_ERROR_CHECK(esp_netif_init());
+    const esp_err_t eventErr = esp_event_loop_create_default();
+    if (eventErr != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(eventErr);
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
+    ESP_ERROR_CHECK(esp_wifi_start());
+#else
     WiFi.mode(WIFI_MODE_STA);
+#endif
     // With the radio on, esp_random() is the hardware RNG. Before any frame
     // can reach insert() (the promiscuous callback is registered below).
     hashSeed = esp_random();
+#if !UMBRAVOX_PASSIVE_ONLY
     WiFi.disconnect();
+#endif
     delay(100);
 
     // AUTO is what makes esp_wifi_set_band() legal later; in a single-band
