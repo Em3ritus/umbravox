@@ -10,7 +10,13 @@
 class Print;
 namespace applog { struct Source; }
 
+namespace bridgewire { struct Ap; }
+
 namespace cap {
+// Bounded bridge iterator: at most 32 records examined per call; no table sorting.
+// Returns 1 record, 0 more work, -1 end. Cursor generation resets on rollover.
+void bridgePlan(char* out, unsigned cap);
+int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint32_t now);
 
 void begin();
 

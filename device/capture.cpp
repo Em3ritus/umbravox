@@ -1,3 +1,4 @@
+#include "ble_bridge_protocol.h"
 #include "sight_order.h"
 #include "radio_policy.h"
 #include "capture.h"
@@ -747,6 +748,31 @@ void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs) {
     const auto hit=dedup::find(hashMac(mac),TABLE,nUsed,INSERT_LIMIT,maxProbe_,
         [](uint32_t i){return used_[i];},[mac](uint32_t i){return macEq(table_[i].mac,mac);});
     if(hit.kind==dedup::FOUND)fillDetailSlot(s,hit.slot,nowMs);
+}
+
+void bridgePlan(char* out, unsigned cap) {
+    if(!cap)return;
+    out[0]=0;unsigned used=0;
+    for(int i=0;i<N_CHAN;++i){
+        if(!chanOk[i] || (bandMode==1 && i>=ui::CH24) || (bandMode==2 && i<ui::CH24))continue;
+        const int n=snprintf(out+used,cap-used,"%s%d",used?",":"",chanAt(i));
+        if(n<0 || unsigned(n)>=cap-used){out[0]=0;return;}
+        used+=unsigned(n);
+    }
+}
+
+int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint32_t now) {
+    if(generation!=tableGen){generation=tableGen;cursor=0;}
+    for(int examined=0;examined<32;++examined){
+        portENTER_CRITICAL(&mux);
+        if(cursor>=nOrder){portEXIT_CRITICAL(&mux);return -1;}
+        const Node& nd=table_[order_[cursor++]];
+        if(uint32_t(now-nd.lastMs)>60000){portEXIT_CRITICAL(&mux);continue;}
+        memcpy(out.mac,nd.mac,6);memcpy(out.ssid,nd.ssid,32);out.ssid[32]=0;
+        out.rssi=nd.rssi;out.channel=nd.chan;out.auth=nd.auth;out.at=nd.lastMs;
+        portEXIT_CRITICAL(&mux);return 1;
+    }
+    return 0;
 }
 
 void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {

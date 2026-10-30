@@ -25,6 +25,7 @@ void write(const ui::Settings& s) {
     nvs.putUChar("bright",  s.bright);
     nvs.putUShort("dwell",  s.dwellMs);
     nvs.putUChar("bleduty", s.bleDuty);
+    nvs.putUChar("blebridge", s.bleBridge);
     nvs.putUChar("bands",   s.bands);
     nvs.putUChar("alertmin", s.alertMin);
     nvs.putUChar("idle",    s.idleIdx);
@@ -70,6 +71,7 @@ bool load(ui::Settings& s) {
     in.bright  = nvs.getUChar("bright",  s.bright);
     in.dwellMs = nvs.getUShort("dwell",  s.dwellMs);
     in.bleDuty = nvs.getUChar("bleduty", s.bleDuty);
+    in.bleBridge = nvs.getUChar("blebridge", s.bleBridge);
     in.bands   = nvs.getUChar("bands",   s.bands);
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);

@@ -455,9 +455,9 @@ inline HitList echoesHits(int W, int H) { return logHits(W, H); }
 // The shipped settings pack seven short rows, but the engine honours the >=44px
 // touch rule: each knob row is 44px with a [-][+] stepper pair, so only
 // floor((bodyH-44)/44) knobs fit per page (3 @480, 2 @320) above a 44px footer
-// (PAGE n/m + CLEAR). The eight knobs paginate; the page COUNT therefore adapts
+// (PAGE n/m + CLEAR). The nine knobs paginate; the page COUNT therefore adapts
 // to the profile. No geometry.json oracle; regions asserted vs these rules.
-static constexpr int kAttuneKnobs = 8;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT
+static constexpr int kAttuneKnobs = 9;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT BRIDGE
 inline int attuneRowsPerPage(int H) {
     const Chrome c = chrome(320, H);     // body height is width-independent
     int n = (c.body.h - 44) / 44; if (n < 1) n = 1; if (n > 4) n = 4;

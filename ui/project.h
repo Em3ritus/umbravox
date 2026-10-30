@@ -149,7 +149,7 @@ inline void echoes(echpres::EchoStore& st, const ui::State& s, const Chrome& c) 
     }
 }
 
-// --- ATTUNE (compact knob formatters; 8 knobs in engine order) ---------------
+// --- ATTUNE (compact knob formatters; 9 knobs in engine order) ---------------
 inline int attuneActiveChannels(const ui::Settings& st) { return st.bands == 1 ? ui::CH24 : st.bands == 2 ? ui::CH5 : (ui::CH24 + ui::CH5); }
 inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char* val, int vn) {
     switch (knob) {
@@ -165,6 +165,7 @@ inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char
                   else { char u[16]; if (v < 60) snprintf(u,sizeof u,"%uS",(unsigned)v); else snprintf(u,sizeof u,"%uM",(unsigned)(v/60));
                          snprintf(val,vn,"%s %s", u, st.idleMode==ui::IDLE_OFF?"OFF":st.idleMode==ui::IDLE_ANIM?"ANIM":"DIM"); }
                   break; }
+        case 8: snprintf(lbl,ln,"BRIDGE"); snprintf(val,vn,"%s",st.bleBridge==1?"WARDRIVEGO":st.bleBridge==2?"BISCUIT":"OFF"); break;
         case 6: snprintf(lbl,ln,"AUTOLOG"); snprintf(val,vn,"%s", st.autoLog?"ON":"OFF"); break;
         default: snprintf(lbl,ln,"ORIENT"); snprintf(val,vn,"%s", st.orient==ui::ORIENT_PORTRAIT?"PORTRAIT":"LANDSCAPE"); break;
     }

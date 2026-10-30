@@ -1,3 +1,4 @@
+#include "ble_bridge.h"
 #include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
@@ -1006,7 +1007,9 @@ bool pollConsole() {
             if (a == sdcmd::HANDLED) { Serial.println(reply); continue; }
         }
         {
-            if (!strncmp(line, "TEST", 4)) {
+            if (!strcmp(line,"BRIDGE")) {
+                Serial.printf("bridge: %s\n",blebridge::status());
+            } else if (!strncmp(line, "TEST", 4)) {
                 testStep = 0;
                 testAt   = millis();
                 Serial.printf("test alert: %d steps, %d ms each\n", TEST_N, (int)TEST_STEP_MS);
@@ -1294,6 +1297,7 @@ void loop() {
     { const uint32_t _s = micros(); collector::tick(millis()); bootStall("collector tick", _s); }
     { const uint32_t _s = micros(); enroll::tick(millis()); bootStall("enroll tick", _s); }
     { const uint32_t _s = micros(); blescan::tick(millis()); bootStall("blescan tick", _s); }
+    { const uint32_t _s=micros(); blebridge::tick(millis()); bootStall("bridge tick",_s); }
     { const uint32_t _s = micros(); logging::tick(millis(), ui::Gnss::utcEpoch(millis())); bootStall("logging tick", _s); }
 
     // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
@@ -1607,6 +1611,7 @@ void loop() {
     if (set.dwellMs != applied.dwellMs) cap::setDwell(set.dwellMs);
     if (set.bands   != applied.bands)   cap::setBands(set.bands);
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
+    if (set.bleBridge != applied.bleBridge) blebridge::setMode(set.bleBridge);
     applied = set;
     { const uint32_t t=micros(); prefs::tick(set, millis()); bootStall("prefs tick",t); }
 

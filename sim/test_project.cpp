@@ -147,9 +147,9 @@ int main(){
 
     { atnpres::AttuneStore st; attune(st, s, c, /*page*/0, /*rowsPerPage*/3); const auto& o=st.scene();
       expect(o.nRows==3 && !strcmp(o.rows[0].label,"ALERT") && !strcmp(o.rows[0].value,"MED"), "attune: ALERT=MED");
-      expect(o.nPages==3, "attune: 8 knobs / 3 per page -> 3 pages"); }
+      expect(o.nPages==3, "attune: 9 knobs / 3 per page -> 3 pages"); }
     { atnpres::AttuneStore st; attune(st, s, c, /*page*/2, /*rowsPerPage*/3); const auto& o=st.scene();
-      expect(o.nRows==2 && !strcmp(o.rows[0].label,"AUTOLOG") && !strcmp(o.rows[1].label,"ORIENT"), "attune: page 2 continues knob index (AUTOLOG, ORIENT)"); }
+      expect(o.nRows==3 && !strcmp(o.rows[0].label,"AUTOLOG") && !strcmp(o.rows[1].label,"ORIENT") && !strcmp(o.rows[2].label,"BRIDGE"), "attune: page 2 continues knob index (AUTOLOG, ORIENT, BRIDGE)"); }
 
     { asppres::AspectStore st; aspect(st, s, c); const auto& o=st.scene();
       expect(!strcmp(o.sweepName,"PULSE") && o.alertLive && o.packsSkipped==2, "aspect: sweep name + COSMIC alertLive + skipped"); }

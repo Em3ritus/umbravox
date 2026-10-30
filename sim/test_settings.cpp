@@ -65,7 +65,8 @@ int main() {
     // Still 14 with orient (portrait mode): it took the reserved `spare`
     // byte, as model.h asked the next setting to. No padding was added and
     // none removed; the next setting after orient widens the struct.
-    static_assert(sizeof(Settings) == 14,
+    // Bridge adds a two-byte field, keeping the struct padding-free at 16 bytes.
+    static_assert(sizeof(Settings) == 16,
                   "Settings changed size -- see the padding note above, and "
                   "confirm every field has a default member initializer");
 
@@ -104,6 +105,7 @@ int main() {
         for (int th = 0; th < pal::themeCount(); th++) {
             Settings base;
             base.theme = (uint8_t)th;
+            base.bleBridge = 1; // high-byte corruption clamps to OFF, a detectable change
             clampSettings(base);
             for (size_t off = 0; off < sizeof(Settings); off++) {
                 if (z[off] != f[off]) continue;     // padding, not a field

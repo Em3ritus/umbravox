@@ -103,11 +103,12 @@ struct Settings {
     // Which way up the panel is driven: ORIENT_LANDSCAPE (the default, and
     // what every older store reads as) or ORIENT_PORTRAIT, the tall 120x160
     // canvas (ui/portrait_layout.h). ATTUNE page 2. This took the reserved
-    // byte autoLog left (it used to be `spare`), so Settings is still 14 bytes
-    // with no padding; the NEXT setting widens the struct and updates the
-    // static_assert in sim/test_settings.cpp. clampSettings pulls unknown
+    // byte autoLog left (it used to be `spare`). The BLE bridge setting later
+    // widened Settings to 16 bytes; NVS stores named fields, not this layout.
+    // clampSettings pulls unknown
     // values -- and PORTRAIT on a board that cannot show it -- to LANDSCAPE.
     uint8_t  orient = 0;      // Orientation
+    uint16_t bleBridge = 0;   // 0 OFF, 1 WarDriveGo, 2 Biscuit; fills aligned extension
 };
 
 // Settings.orient. Unknown values clamp to LANDSCAPE.
