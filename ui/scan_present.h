@@ -205,9 +205,15 @@ public:
     void reset() { armed_ = false; }                   // consume the current press, if any
     bool edge(bool contact, bool accepts) {
         if (!contact) { armed_ = true; return false; } // released -> re-arm
-        if (!armed_)  return false;                    // held, or already consumed
-        armed_ = false;                                // this press is consumed either way
-        return accepts;                                // fire only if accepted right now
+        if (!armed_)  return false;                    // held across a transition (reset), or already fired
+        // A NEW press (armed) that arrives while dispatch is NOT accepted (a
+        // screen entry in progress) must not be silently eaten: DEFER it --
+        // leave it armed so it fires the moment entry completes. Only the
+        // originating press that navigated in stays unarmed (reset above), so
+        // the click-through protection still holds.
+        if (!accepts) return false;                    // defer, keep armed_
+        armed_ = false;                                // accepted -> consume and fire exactly once
+        return true;
     }
     bool armed() const { return armed_; }
 private:

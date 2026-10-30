@@ -202,17 +202,22 @@ static void testTouchGate(){
     g.edge(false,true);
     expect(g.edge(true,true)==true,  "touch: press after release fires again");
 
-    // a press that begins gated is consumed: it must NOT fire when the gate opens mid-hold
+    // a NEW press that arrives during a transition is DEFERRED, not eaten: it
+    // stays armed and fires the moment the gate opens (entry completes).
     TouchGate g2;
-    expect(g2.edge(true,false)==false, "touch: press during transition is swallowed");
-    expect(g2.edge(true,true)==false,  "touch: same press does not fire when the gate opens (held)");
+    expect(g2.edge(true,false)==false, "touch: new press during transition does not fire yet (deferred)");
+    expect(g2.edge(true,true)==true,   "touch: deferred press fires once the gate opens (entry done)");
+    expect(g2.edge(true,true)==false,  "touch: then stays consumed while held");
     g2.edge(false,true);
     expect(g2.edge(true,true)==true,   "touch: a new press after release fires normally");
 
-    // reset() consumes an in-progress press (entry/exit): held finger must not click through
+    // reset() consumes the ORIGINATING press (the tap that navigated in, still
+    // held at entry): it must NOT click through onto the new screen, even once
+    // the gate opens -- only a fresh press after a release fires.
     TouchGate g3;
     g3.reset();                                   // a finger is already down at entry
-    expect(g3.edge(true,true)==false,  "touch: reset() swallows a finger held from before (no click-through)");
+    expect(g3.edge(true,false)==false, "touch: originating held press is gated during entry");
+    expect(g3.edge(true,true)==false,  "touch: reset() held finger does not click through when the gate opens");
     g3.edge(false,true);
     expect(g3.edge(true,true)==true,   "touch: after that finger lifts, a new press fires");
 }

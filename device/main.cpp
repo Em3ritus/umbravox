@@ -1940,6 +1940,20 @@ void loop() {
             engineadapter::clearMetrics();
         }
         engPrev = nav.screen;
+        // Bound the touch sample interval (not just the strip count): the render
+        // just above is the longest blind stretch in a pass, so sample + dispatch
+        // ONCE MORE after it. A tap whose press/release fell during the render is
+        // caught THIS pass instead of waiting for -- or being missed by -- the
+        // next top-of-loop sample. The edge gate dedupes a still-held press, so
+        // this never double-fires; a navigation from here lands next pass
+        // (engPrev was just captured, so it differs). wasDimmed is this pass's.
+        {
+            const touch::Point tp2 = touch::read();
+            if (tp2.any) lastContactMs = millis();
+            const bool inB2 = tp2.panelX >= 0 && tp2.panelX < PANEL_W
+                           && tp2.panelY >= 0 && tp2.panelY < PANEL_H;
+            engineadapter::dispatchTouch(nav, set, s, tp2.any && !wasDimmed && inB2, tp2.panelX, tp2.panelY);
+        }
         frame++;
         return;
     }

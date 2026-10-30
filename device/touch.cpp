@@ -151,11 +151,18 @@ constexpr uint8_t ID_G_CIPHER  = 0xA3; // chip id
 constexpr int NATIVE_W = 320;
 constexpr int NATIVE_H = 480;
 
-// A finger held still occasionally reads back as no points for one poll.
-// Bridge a gap this short so a press does not read as a lift and re-press.
+// A read can FAIL (bus glitch / short read): bridge a gap this short so a
+// momentary read failure does not read as a lift and re-press. A *successful*
+// read that reports zero fingers is NOT bridged -- it is a real release (see
+// Sampled below), reported at once so the edge detector rearms for the next tap.
 constexpr uint32_t DROPOUT_MS = 90;
 
 bool present = false;
+
+// Outcome of one sensor read, kept distinct so release-smoothing covers ONLY a
+// read failure: Touch = valid coords; Lift = a valid read reporting no finger
+// (a genuine release); Fail = the read itself failed/garbage after retries.
+enum class Sampled : uint8_t { Touch, Lift, Fail };
 
 // Register read with a STOP between the address write and the read, not a
 // repeated start. The bus is shared with the expander and the PMU, and on
@@ -173,20 +180,21 @@ bool readRegs(uint8_t reg, uint8_t* buf, uint8_t len) {
 // Wire.begin(), reads stop completing (writes ACK, reads come back 0) until
 // the controller is re-opened, so it is re-opened on every read. Verified on
 // this board; do not remove.
-bool sample(uint16_t& nx, uint16_t& ny) {
+Sampled sample(uint16_t& nx, uint16_t& ny) {
     for (int attempt = 0; attempt < 3; attempt++) {
         Wire.end();
         Wire.begin(board::PIN_SDA, board::PIN_SCL, 100000u);
         uint8_t d[5];
-        if (!readRegs(TD_STATUS, d, sizeof d)) continue;
+        if (!readRegs(TD_STATUS, d, sizeof d)) continue;   // the read FAILED -> retry
         const uint8_t n = d[0] & 0x0F;
-        if (n == 0) return false;               // a clean "nobody there"
-        if (n > 2) continue;                    // garbage; try again
+        if (n == 0) return Sampled::Lift;       // a valid read, zero fingers -> a real release
+        if (n > 2) continue;                    // garbage count; try again
         nx = (uint16_t)(((d[1] & 0x0F) << 8) | d[2]);
         ny = (uint16_t)(((d[3] & 0x0F) << 8) | d[4]);
-        if (nx < NATIVE_W && ny < NATIVE_H) return true;
+        if (nx < NATIVE_W && ny < NATIVE_H) return Sampled::Touch;
+        // coords out of range -> try again
     }
-    return false;
+    return Sampled::Fail;                       // reads failed/garbage every attempt
 }
 
 // Native portrait -> the landscape frame the display is drawn in. The panel
@@ -223,12 +231,16 @@ Point read() {
 
     uint16_t nx, ny;
     const uint32_t now = millis();
-    if (sample(nx, ny)) {
+    const Sampled sm = sample(nx, ny);
+    if (sm == Sampled::Touch) {
         lastX = nx; lastY = ny; lastOk = now;
+    } else if (sm == Sampled::Lift) {
+        lastOk = 0;                            // a real release: report it NOW so the edge rearms
+        return p;                              // (no bridge -- the finger is genuinely up)
     } else if (!(lastOk && now - lastOk < DROPOUT_MS)) {
-        lastOk = 0;
+        lastOk = 0;                            // a read FAILURE, and the bridge window has passed
         return p;
-    }
+    }                                          // else: read failure within the bridge -> hold last contact
 
     int sx, sy;
     rotate(lastX, lastY, sx, sy);
