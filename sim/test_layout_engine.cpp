@@ -46,7 +46,7 @@ static void testLayout() {
     ckRect("hero480",     scan(480,320).hero,   156,52,308,216);
     ckRect("tile2_480",   scan(480,320).tiles[2], 16,192,132,62);
     ckRect("stop480",     scan(480,320).stop, 398,276,82,44);
-    ckRect("wordmark480", scan(480,320).wordmark, 8,0,128,44);
+    ckRect("wordmark480", scan(480,320).wordmark, 8,0,176,44);
     ckRect("counts320",   scan(320,240).counts, 8,52,88,136);
     ckRect("hero320",     scan(320,240).hero,   104,52,208,136);
     ckRect("tile2_320",   scan(320,240).tiles[2], 8,142,88,46);

@@ -43,22 +43,22 @@ inline Chrome chrome(int W, int H) {
     c.body   = {8, 52, W - 16, H - 104};   // 52 = 44 status + 8 gap; 104 = that + 44 nav + 8 gap
     const int ny = H - 44;
     if (wide) {
-        c.wordmark = {8, 0, 128, 44};
-        c.statusCells[0] = {136, 0, 68, 44};
-        c.statusCells[1] = {204, 0, 60, 44};
-        c.bridge = {264, 0, 112, 44};
+        c.wordmark = {8, 0, 176, 44};
+        c.statusCells[0] = {184, 0, 68, 44};
+        c.statusCells[1] = {252, 0, 60, 44};
+        c.bridge = {312, 0, 64, 44};
         c.statusCells[2] = {376, 0, W-384, 44};
-        c.statusCells[3] = {0, 0, 136, 44};
+        c.statusCells[3] = {0, 0, 184, 44};
         c.navCells[0] = {0,   ny, 99, 44}; c.navCells[1] = {99,  ny,  99, 44};
         c.navCells[2] = {198, ny, 99, 44}; c.navCells[3] = {297, ny, 101, 44};
         c.stop = {398, ny, 82, 44};
     } else {
-        c.wordmark = {8, 0, 96, 44};
-        c.statusCells[0] = {104, 0, 52, 44};
+        c.wordmark = {8, 0, 128, 44};
+        c.statusCells[0] = {136, 0, 52, 44};
         c.statusCells[1] = {}; // Mesh remains available through MENU.
-        c.bridge = {156, 0, 92, 44};
+        c.bridge = {188, 0, 60, 44};
         c.statusCells[2] = {248, 0, W-256, 44};
-        c.statusCells[3] = {0, 0, 104, 44};
+        c.statusCells[3] = {0, 0, 136, 44};
         c.navCells[0] = {0,   ny, 65, 44}; c.navCells[1] = {65,  ny, 65, 44};
         c.navCells[2] = {130, ny, 65, 44}; c.navCells[3] = {195, ny, 65, 44};
         c.stop = {260, ny, 60, 44};

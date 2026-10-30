@@ -278,9 +278,12 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
         centered(s,c.statusCells[1].x+c.statusCells[1].w/2,23,hb,1,pal::TEXT);
     }
     const auto bt=c.bridge;
-    frame(s,bt.x+3,4,bt.w-6,34,st.bridgeOn?pal::WITCH_HI:pal::EDGE_LIT);
-    centered(s,bt.x+bt.w/2,9,"BRIDGE",1,pal::DIM);
-    centered(s,bt.x+bt.w/2,25,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::WITCH_HI:pal::TEXT);
+    centered(s,bt.x+bt.w/2,7,"BRIDGE",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
+    centered(s,bt.x+bt.w/2,23,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
+    if(st.bridgeOn) {
+        const int width=Font::width("BRIDGE",1);
+        box(s,bt.x+(bt.w-width)/2,34,width,2,pal::WITCH_HI);
+    }
     const bool level=st.hasCell && st.batt>=0 && st.batt<=100;
     centered(s,c.statusCells[2].x+c.statusCells[2].w/2,7,level&&st.charging?"CHG":"BAT",1,pal::DIM);
     if(level) snprintf(hb,sizeof hb,"%d%%",st.batt);

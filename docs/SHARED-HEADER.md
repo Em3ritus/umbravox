@@ -4,13 +4,13 @@ The header is composed from each screen's stable scene snapshot. Bridge, PMU ava
 
 | Region | 480 wide (x, width) | 320 wide (x, width) |
 |---|---|---|
-| Theme title | 8, 128 | 8, 96 |
-| GPS | 136, 68 | 104, 52 |
-| Mesh | 204, 60 | MENU → MESH |
-| Bridge | 264, 112 | 156, 92 |
+| Theme title | 8, 176 | 8, 128 |
+| GPS | 184, 68 | 136, 52 |
+| Mesh | 252, 60 | MENU → MESH |
+| Bridge | 312, 64 | 188, 60 |
 | Battery | 376, 96 | 248, 64 |
 
-All controls have 44-pixel-high hit regions. The bridge's inset outline is visual only; its whole cell toggles the selected bridge app on/off on every native screen. App selection remains in SETTINGS. There is no SCAN-body bridge button.
+All controls have 44-pixel-high hit regions. The bridge uses bright text and a theme-accent underline when ON, muted text without an underline when OFF. Its whole cell toggles the selected bridge app on/off on every native screen. App selection remains in SETTINGS. There is no SCAN-body bridge button.
 
 The title follows `pal::themeName(theme)`: UMBRAVOX, BAPH0MAU5, COSMIC MUFFIN and SD theme names. Integer font scaling fits the fixed title area; names exceeding its one-times capacity end with an ellipsis. Controls never move. SLICK is reserved as a future theme name, not registered as a duplicate theme or assigned invented artwork.
 
