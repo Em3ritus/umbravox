@@ -27,7 +27,7 @@ struct Sink {
 
 // --- presentation inputs: caller-supplied scene data (no embedded fixtures) ---
 enum class GpsState : uint8_t { Acquiring, Fresh, Stale };   // never render Stale as Fresh
-enum class Rec : uint8_t { Off, On, NoCard };
+enum class Rec : uint8_t { Off, On, NoCard, Saving, Incomplete };
 
 struct GnssFix {                 // raw receiver state; projected to a label below
     bool     valid = false;      // a position has been fixed (ui::Gnss::Fix::valid)
@@ -135,9 +135,11 @@ inline uint16_t gpsLabel(const GnssFix& f, char* buf, int n) {     // text -> bu
 }
 inline uint16_t recLabel(const ScanScene& s, char* buf, int n) {
     switch (s.rec) {
-        case Rec::On:     snprintf(buf,n,"REC");   return pal::RED;
+        case Rec::On:     snprintf(buf,n,"STOP");   return pal::RED;
+        case Rec::Incomplete: snprintf(buf,n,"RECORD"); return pal::AMBER;
+        case Rec::Saving: snprintf(buf,n,"SAVING"); return pal::AMBER;
         case Rec::NoCard: snprintf(buf,n,"NO SD"); return pal::AMBER;
-        default:          snprintf(buf,n,"STOP");  return pal::DIM;
+        default:          snprintf(buf,n,"RECORD");  return pal::DIM;
     }
 }
 
@@ -260,12 +262,13 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
     if (gst==GpsState::Fresh)
         snprintf(hb, sizeof hb, "GPS %s", st.gps.mode==3?"3D":st.gps.mode==2?"2D":"FIX");
-    else { char gb[16]; gpsLabel(st.gps, gb, sizeof gb); snprintf(hb, sizeof hb, "GPS %s", gb); }
+    else snprintf(hb, sizeof hb, "%s", gst==GpsState::Stale ? "GPS STALE" : "GPS WAIT");
     txt(s, c.statusCells[0].x+2, 16, hb, 1, gcol);
     snprintf(hb, sizeof hb, "MESH %d", st.nodes);
     txt(s, c.statusCells[1].x+2, 16, hb, 1, pal::TEXT);
-    if (st.hasCell) snprintf(hb, sizeof hb, "BAT %d%%", st.batt); else snprintf(hb, sizeof hb, "BAT N/A");
-    txt(s, c.statusCells[2].x+2, 13, hb, (W >= 400) ? 2 : 1, st.hasCell ? pal::TEXT : pal::DIM);
+    if (st.hasCell) snprintf(hb, sizeof hb, "BAT %d%%", std::max(0,std::min(100,st.batt)));
+    else snprintf(hb, sizeof hb, "BAT N/A");
+    txt(s, c.statusCells[2].x+2, 16, hb, 1, st.hasCell ? pal::TEXT : pal::DIM);
 
     // nav: four tabs (activeTab lit + underlined) at the design-1 label positions
     static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
@@ -277,18 +280,20 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
         txt(s, lx, H-30, nav[i], ns, on?pal::BRIGHT:pal::DIM);
         if (on){ const int lw=Font::width(nav[i],ns); box(s, lx, H-8, lw, 2, pal::WITCH_HI); }
     }
-    // STOP / REC: a red record control (the design's bottom-right button). The
+    // RECORD / STOP actions, SAVING feedback, and an unwritten-row warning. The
     // palette has no dedicated STOP role yet, so map to the theme's red (closest
     // theme-as-data, swaps with theme); a NO-SD state reads amber.
     const uieng::Rect stp = c.stop;
     const int bbw = stp.w < 56 ? stp.w : 56, bbh = 30;
     const int bx = stp.x + (stp.w - bbw)/2, by = stp.y + (stp.h - bbh)/2;
     ScanScene tmp; tmp.rec = st.rec;
-    char rb2[16]; recLabel(tmp, rb2, sizeof rb2);     // "REC"/"STOP"/"NO SD"
-    const uint16_t ink = (st.rec==Rec::NoCard) ? pal::AMBER : pal::RED;
+    char rb2[16]; recLabel(tmp, rb2, sizeof rb2);     // action or saving/card status
+    const uint16_t ink = (st.rec==Rec::NoCard || st.rec==Rec::Saving || st.rec==Rec::Incomplete) ? pal::AMBER : pal::RED;
     box(s, bx, by, bbw, bbh, pal::PANEL);
     frame(s, bx, by, bbw, bbh, ink);
-    centered(s, bx + bbw/2, by + bbh/2 - 3, rb2, 1, ink);
+    centered(s, bx + bbw/2 + (st.rec==Rec::On ? 3 : 0), by + (st.rec==Rec::Incomplete ? 5 : bbh/2 - 3), rb2, 1, ink);
+    if (st.rec==Rec::Incomplete) centered(s, bx+bbw/2, by+18, "UNSAVED", 1, pal::AMBER);
+    if (st.rec==Rec::On) box(s, bx+5, by+13, 3, 3, ink);
 }
 
 // --- compose one strip completely from the scene ------------------------------

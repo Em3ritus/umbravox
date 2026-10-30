@@ -757,6 +757,45 @@ int main() {
               files.count(fileName()) && occurrences(files[fileName()], "\nW") == 2);
     }
 
+    printf("UI stop drains incrementally without blocking the request:\n");
+    fresh(); begin(false, hooks(), 0, T0); start(0,T0);
+    wifi.add(300);
+    const std::string asyncFile=fileName(); const int beforeStop=opens;
+    requestStop(100);
+    check("request has no card I/O and disables auto-start", opens==beforeStop && saving() && !wantsActive() && transitioning());
+    tick(349,T0);
+    check("acknowledgement interval has no I/O", opens==beforeStop);
+    tick(350,T0);
+    check("one small batch per tick", opens==beforeStop+1 && lastRows()==STOP_BATCH_ROWS && saving());
+    toggle(351,T0); requestStop(351);
+    check("repeated stop does not restart or cancel", saving() && !wantsActive());
+    for(uint32_t t=400;saving() && t<1000;t+=50) tick(t,T0);
+    check("all rows saved once and then idle", !saving() && state()==IDLE && occurrences(files[asyncFile],"\nW")==300 && !transitioning());
+
+    fresh(); begin(false,hooks(),0,T0); start(0,T0); wifi.add(300);
+    requestStop(0xfffffff0u); tick(0x20u,T0);
+    check("ack interval handles clock wrap", saving());
+    tick(0xfffffff0u+STOP_DRAIN_MAX_MS,T0);
+    check("deadline reports every unwritten row", !saving() && state()==IDLE && stopLost==300 && lastStopLoss()==300 && stopReports==1);
+
+    fresh(); begin(false,hooks(),0,T0); start(0,T0); wifi.add(300);
+    requestStop(10); failWrites=true; tick(260,T0);
+    check("write failure ends saving and reports loss", !saving() && state()==IDLE && stopLost==300 && lastStopLoss()==300 && stopReports==1);
+
+    fresh(); begin(false,hooks(),0,T0); start(0,T0); wifi.add(300);
+    requestStop(10); cardPresent=false; tick(260,T0);
+    check("card removal ends saving without auto resume", !saving() && state()==IDLE && !wantsActive() && stopLost==300);
+
+    fresh(); begin(false,hooks(),0,T0); start(0,T0); wifi.add(300);
+    requestStop(10); resetTables(clearTables,20,T0);
+    check("reset waits for the saving session", !wifi.v.empty() && transitioning());
+    for(uint32_t t=260;saving() && t<1000;t+=50) tick(t,T0);
+    check("reset applies after drain", wifi.v.empty() && !saving() && !transitioning());
+
+    fresh(); begin(false,hooks(),0,T0); start(0,T0); wifi.add(300);
+    requestStop(10); stop(20);
+    check("reboot can synchronously finish a pending stop", !saving() && state()==IDLE && lastRows()==300);
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

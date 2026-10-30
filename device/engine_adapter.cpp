@@ -34,9 +34,10 @@ namespace {
 Arduino_TFT* gfx_ = nullptr;
 int          W_ = 0, H_ = 0;
 uint16_t     buf_[480 * 16];               // ONE shared strip buffer for every screen
-uint32_t     sliceTransferUs_ = 0;
+uint32_t     sliceTransferUs_ = 0, sliceCompareUs_ = 0;
 uinav::Screen cur_ = uinav::Screen::Scan;  // the screen currently composed
 uinav::Router router_;                     // navigation authority (remembers DETAIL origin)
+scanr::Rec sceneRec_ = scanr::Rec::Off;
 inputevents::PendingHit pendingHit_;
 uint32_t inputEpoch_ = 0;
 framepresent::Frame frame_;
@@ -120,7 +121,11 @@ void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, in
         // to PSRAM. Never expose the partially composed frame to the panel.
         scanr::S s{ buf_, W_, sy, sh };
         cs(s, W_, H_, sc);
-        if (buffered_) memcpy(frame_.rows(sy),buf_,W_*sh*sizeof(uint16_t));
+        if (buffered_) {
+            const uint32_t t=micros();
+            frame_.stage(sy,buf_,sh);
+            sliceCompareUs_ += micros()-t;
+        }
         else sink_.strip(0, sy, W_, sh, buf_);
     }
 }
@@ -238,6 +243,7 @@ bool pending() {
 
 void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
               scanr::Rec rec, bool hasCell, int batt, uint32_t now) {
+    sceneRec_ = rec;
     uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now;
     switch (cur_) {
         case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c); eScan_.back().animate(true); eScan_.commit();   break;
@@ -261,7 +267,7 @@ bool service(int budgetStrips) {
     // SPI still updates visible GRAM progressively: this is NOT a page flip.
     if (burst_) budgetStrips = H_ / 32 + 2;    // ~half the panel per pass -> ~2 passes
     const uint32_t t0 = micros();
-    sliceTransferUs_ = 0;
+    sliceTransferUs_ = sliceCompareUs_ = 0;
     bool done = false;
     switch (cur_) {
         case uinav::Screen::Scan:   { auto sl = eScan_.nextSlice(budgetStrips);   if (sl.y1 > sl.y0) renderSliceT<scanr::ScanScene>(eScan_.scene(), sl.y0, sl.y1, &scanr::composeStrip); done = sl.done; break; }
@@ -277,7 +283,8 @@ bool service(int budgetStrips) {
         case uinav::Screen::Files:  { auto sl = eFiles_.nextSlice(budgetStrips);  if (sl.y1 > sl.y0) renderSliceT<flsr::FilesScene>(eFiles_.scene(), sl.y0, sl.y1, &flsr::composeStrip); done = sl.done; break; }
     }
     const uint32_t total = micros() - t0;
-    const uint32_t compose = total > sliceTransferUs_ ? total - sliceTransferUs_ : 0;
+    const uint32_t other = sliceTransferUs_ + sliceCompareUs_;
+    const uint32_t compose = total > other ? total - other : 0;
     const uint32_t presentationStart=micros();
     const uint32_t earlyTransfer=sliceTransferUs_;
     if (done && buffered_) {
@@ -297,7 +304,7 @@ bool service(int budgetStrips) {
             sliceTransferUs_ += micros()-t;
         },stagedY0_,stagedY1_);
     }
-    const uint32_t diff=micros()-presentationStart-(sliceTransferUs_-earlyTransfer);
+    const uint32_t diff=sliceCompareUs_+micros()-presentationStart-(sliceTransferUs_-earlyTransfer);
     metrics_.work(compose,diff,sliceTransferUs_);
     if (done) {
         stagedY0_=H_;stagedY1_=0;
@@ -353,6 +360,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         }
     }
 
+    scanpres::recordingHits(h, sceneRec_);
     if (!pendingHit_.pending()) {
         inputevents::Press p;
         if (touch::takePress(p) && p.epoch == inputEpoch_)

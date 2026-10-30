@@ -109,6 +109,16 @@ int main(){
         snprintf(m,sizeof m,"%dx%d rec Off->On: STOP region repaint == full (old label erased)",W,H);
         expect(match, m);
 
+        // Every recording state can replace every other without stale glyphs.
+        for(Rec from:{Rec::Off,Rec::On,Rec::Saving,Rec::Incomplete,Rec::NoCard})
+            for(Rec to:{Rec::Off,Rec::On,Rec::Saving,Rec::Incomplete,Rec::NoCard}) {
+                auto a=sc,b=sc;a.rec=from;b.rec=to;
+                FbSink expected(W,H),partial(W,H);
+                comp.renderFull(W,H,a,partial);comp.renderFull(W,H,b,expected);
+                comp.renderRegion(W,H,b,L.stop,partial);
+                expect(partial.fb==expected.fb,"recording-state transition repaints without stale pixels");
+            }
+
         // GPS transitions acquiring->fresh->stale: repaint only the GPS cell,
         // compare to a full repaint (old label pixels must be erased).
         const uieng::Rect gcell = L.statusCells[0];

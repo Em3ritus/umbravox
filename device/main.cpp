@@ -1594,7 +1594,14 @@ void loop() {
 
     if (nav.logToggleRequested) {
         const bool wasWanted = logging::wantsActive();
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        if (!logging::saving()) {
+            if (logging::state() == logging::IDLE) logging::start(millis(), ui::Gnss::utcEpoch(millis()));
+            else logging::requestStop(millis());
+        }
+#else
         logging::toggle(millis(), ui::Gnss::utcEpoch(millis()));
+#endif
         prefs::setLogging(logging::wantsActive());
         // A tap that ended a session is the owner's STOP: AUTO LOG must not
         // start another this boot (until the setting is turned OFF and ON).
@@ -1917,8 +1924,10 @@ void loop() {
             const ui::Gnss::Fix& fx = ui::Gnss::fix();
             gf.valid = fx.valid; gf.mode = ui::Gnss::status().mode;
             gf.sats  = fx.used;  gf.ageMs = millis() - fx.atMs;
-            const scanr::Rec rc = logging::state() == logging::ACTIVE  ? scanr::Rec::On
+            const scanr::Rec rc = logging::saving() ? scanr::Rec::Saving
+                                : logging::state() == logging::ACTIVE  ? scanr::Rec::On
                                 : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
+                                : logging::lastStopLoss() ? scanr::Rec::Incomplete
                                 :                                        scanr::Rec::Off;
             const uint32_t pmuStart=micros();
             const pmu::Batt b = pmu::read(millis());

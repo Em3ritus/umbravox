@@ -28,6 +28,16 @@ using scanr::ScanScene;
 using scanr::GnssFix;
 using scanr::Rec;
 
+// SAVING is feedback, not a second toggle. Remove only that action so a
+// press during the drain cannot be deferred into a new recording session.
+inline void recordingHits(uieng::HitList& hits, Rec rec) {
+    if (rec != Rec::Saving) return;
+    int n=0;
+    for(int i=0;i<hits.count;++i)
+        if(hits.items[i].action != uieng::Action::ToggleLogging) hits.items[n++]=hits.items[i];
+    hits.count=n;
+}
+
 // --- stable scene snapshot ----------------------------------------------------
 // Everything the scene points at lives here, so the scene handed to the
 // compositor stays valid and unchanging for the whole (sliced) redraw even if

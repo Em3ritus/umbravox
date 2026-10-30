@@ -13,6 +13,8 @@ namespace {
 State    st = IDLE;
 Hooks    hk;
 bool     want = false;
+bool     saving_ = false;
+uint32_t stopAt = 0, stopLoss = 0;
 uint32_t startedMs = 0;
 uint32_t nextFlushMs = 0;
 uint32_t rows = 0, skipped = 0;
@@ -113,9 +115,9 @@ void newFile(uint32_t nowEpoch) {
 // with the card still there is retried at the next interval.
 // `final` releases rows held for a better position (applog::holdVerdict):
 // STOP, RESET and a due rollover pass it, so nothing held is cleared unwritten.
-applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch, bool final = false) {
+applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch, bool final = false, uint32_t limit = applog::BATCH_ROWS) {
     applog::Result r = applog::appendBatch(name, fst, sink, header, srcs, curs, nSrc,
-                                           applog::BATCH_ROWS, pend, nowMs, final || rollWaiting);
+                                           limit, pend, nowMs, final || rollWaiting);
     if (r.ok) {
         rows += r.rows;
         skipped = r.waiting;
@@ -215,12 +217,29 @@ void checkRoll(uint32_t nowMs, uint32_t nowEpoch, Flushed f) {
         forceRoll(nowMs, nowEpoch);
 }
 
+void finishStop(bool wasActive, uint32_t lost) {
+    if (wasActive) stopLoss = lost;
+    const bool hadReset = resetClear != nullptr;
+    want = false;
+    saving_ = false;
+    st = IDLE;
+    name[0] = 0;
+    rollWaiting = false;
+    if (resetClear) {                     // a RESET was still draining: apply it
+        resetClear();
+        resetClear = nullptr;
+        resetCursors();
+    }
+    if (wasActive && lost && hk.onStopLoss) hk.onStopLoss(lost, hadReset);
+}
+
 } // namespace
 
 void start(uint32_t nowMs, uint32_t nowEpoch) {
     noteEpoch(nowMs, nowEpoch);
     if (st != IDLE) return;
     want = true;
+    stopLoss = 0;
     newFile(nowEpoch);
     startedMs = nowMs;
     nextFlushMs = nowMs + FLUSH_MS;
@@ -228,6 +247,16 @@ void start(uint32_t nowMs, uint32_t nowEpoch) {
     if (sdlog::present()) flushOnce(nowMs, nowEpoch);   // creates the file; may demote
     else st = NO_CARD;
 }
+
+void requestStop(uint32_t nowMs) {
+    if (saving_) return;
+    want = false;
+    if (st != ACTIVE) { finishStop(false, 0); return; }
+    saving_ = true;
+    stopAt = nowMs;
+}
+bool saving() { return saving_; }
+uint32_t lastStopLoss() { return stopLoss; }
 
 void stop(uint32_t nowMs) {
     uint32_t lost = 0;
@@ -246,20 +275,11 @@ void stop(uint32_t nowMs) {
         }
         lost = applog::pendingRows(srcs, curs, nSrc, nowMs, true);
     }
-    const bool hadReset = resetClear != nullptr;
-    want = false;
-    st = IDLE;
-    name[0] = 0;
-    rollWaiting = false;
-    if (resetClear) {                     // a RESET was still draining: apply it
-        resetClear();
-        resetClear = nullptr;
-        resetCursors();
-    }
-    if (wasActive && lost && hk.onStopLoss) hk.onStopLoss(lost, hadReset);
+    finishStop(wasActive, lost);
 }
 
 void toggle(uint32_t nowMs, uint32_t nowEpoch) {
+    if (saving_) return;
     if (st == IDLE) start(nowMs, nowEpoch);
     else stop(nowMs);
 }
@@ -273,6 +293,8 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
     HeaderSink hs;
     ui_wigle::header(hs);
     st = IDLE;
+    saving_ = false;
+    stopLoss = 0;
     want = false;
     name[0] = 0;
     prevName[0] = 0;
@@ -289,6 +311,19 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
 
 void tick(uint32_t nowMs, uint32_t nowEpoch) {
     noteEpoch(nowMs, nowEpoch);
+    if (saving_) {
+        // Keep the acknowledgement visible briefly before the first SD batch.
+        const uint32_t age = nowMs - stopAt;
+        if (age < 250) return;
+        if (age >= STOP_DRAIN_MAX_MS) {
+            finishStop(true, applog::pendingRows(srcs, curs, nSrc, nowMs, true));
+            return;
+        }
+        const auto r = flushOnce(nowMs, nowEpoch, true, STOP_BATCH_ROWS);
+        if ((r.ok && !r.more) || (!r.ok && !r.clash && !r.shrunk) || st != ACTIVE)
+            finishStop(true, applog::pendingRows(srcs, curs, nSrc, nowMs, true));
+        return; // no rollover/second batch in the same pass
+    }
     // Notice a due roll before this tick's flush, so that flush is already
     // final (releases held rows) and can count as the drain.
     if (st == ACTIVE && thresholdDue()) armRoll(nowMs);
@@ -306,6 +341,7 @@ void tick(uint32_t nowMs, uint32_t nowEpoch) {
 
 void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
     noteEpoch(nowMs, nowEpoch);
+    if (saving_) { resetClear = clear; return; }
     if (st != ACTIVE) {
         if (clear) clear();
         resetCursors();
@@ -321,7 +357,7 @@ void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
 
 State       state()                 { return st; }
 bool        wantsActive()           { return want; }
-bool        transitioning()         { return rollWaiting || resetClear != nullptr; }
+bool        transitioning()         { return saving_ || rollWaiting || resetClear != nullptr; }
 const char* fileName()              { return name; }
 uint32_t    lastRows()              { return rows; }
 uint32_t    lastSkipped()           { return skipped; }

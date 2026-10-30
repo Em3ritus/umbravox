@@ -67,9 +67,11 @@ int main(){
 
     // recording state is explicit
     { ScanScene s; char b[16];
-      s.rec=Rec::On;     uint16_t c=recLabel(s,b,16); expect(!strcmp(b,"REC")   && c==pal::RED,   "rec on -> REC, red");
+      s.rec=Rec::On;     uint16_t c=recLabel(s,b,16); expect(!strcmp(b,"STOP")   && c==pal::RED,   "rec on -> STOP, red");
       s.rec=Rec::NoCard; c=recLabel(s,b,16);          expect(!strcmp(b,"NO SD") && c==pal::AMBER, "rec no-card -> NO SD, amber");
-      s.rec=Rec::Off;    c=recLabel(s,b,16);          expect(!strcmp(b,"STOP")  && c==pal::DIM,   "rec off -> STOP, dim"); }
+      s.rec=Rec::Off;    c=recLabel(s,b,16);          expect(!strcmp(b,"RECORD") && c==pal::DIM,   "rec off -> RECORD, dim");
+      s.rec=Rec::Saving; c=recLabel(s,b,16); expect(!strcmp(b,"SAVING") && c==pal::AMBER,"saving -> SAVING, amber");
+      s.rec=Rec::Incomplete; c=recLabel(s,b,16); expect(!strcmp(b,"RECORD") && c==pal::AMBER,"incomplete save retains record action, amber"); }
 
     printf("\n%s  %d/%d checks passed\n", fails?"FAILED":"PASSED", checks-fails, checks);
     return fails?1:0;

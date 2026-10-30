@@ -63,10 +63,45 @@ static void profile(int w,int h,int theme,uint64_t expected) {
     const auto nextPixels=draw(w,h,next);std::copy(nextPixels.begin(),nextPixels.end(),back.begin());
     f.present(false,sink,r.y,r.y+r.h);assert(panel==back);
 }
+static void stagedPresentation(int w,int h,bool menu) {
+    std::vector<uint16_t> front(w*h),back(w*h),panel(w*h),source(w*h,0x1234);
+    framepresent::Frame f;f.begin(front.data(),back.data(),w,h);
+    int sends=0;int sentPixels=0;
+    auto sink=[&](uieng::Rect r,const uint16_t* px,int stride){
+        assert(r.x>=0 && r.y>=0 && r.x+r.w<=w && r.y+r.h<=h);
+        ++sends;sentPixels+=r.w*r.h;
+        for(int y=r.y;y<r.y+r.h;++y)std::copy_n(px+y*stride+r.x,r.w,panel.data()+y*w+r.x);
+    };
+    for(int iteration=0;iteration<100;++iteration) {
+        if(iteration==50)f.invalidate();
+        if(iteration) {
+            for(int j=0;j<11;++j) {
+                int x=(iteration*17+j*43)%w,y=(iteration*29+j*61)%h;
+                source[y*w+x]^=0x7fff;
+            }
+        }
+        for(int y=0;y<h;y+=16)f.stage(y,source.data()+y*w,std::min(16,h-y));
+        f.present(menu,sink);
+        assert(panel==source && front==source);
+    }
+    sends=sentPixels=0;
+    for(int y=0;y<h;y+=16)f.stage(y,source.data()+y*w,std::min(16,h-y));
+    f.present(menu,sink);assert(sends==0);
+    source[100*w+100]^=1;
+    f.stage(96,source.data()+96*w,16);f.present(menu,sink,96,112);
+    assert(panel==source && sends==1 && sentPixels==1);
+}
+
 int main() {
     geometry();
-    const uint64_t golden[2][3]={{0x2e1a0def75b5ca6eull,0xf7523998baf95599ull,0x05ce089cd868f6e5ull},
-        {0xfa6999397f89e695ull,0x1c0a0cf0858756b6ull,0x5f60898d90c7ad6eull}};
+    auto hits=uieng::scanHits(480,320,{});const int count=hits.count;
+    scanpres::recordingHits(hits,scanr::Rec::On);assert(hits.count==count);
+    scanpres::recordingHits(hits,scanr::Rec::Saving);assert(hits.count==count-1);
+    for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
+    for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
+    // Updated only for the approved recording/header chrome changes.
+    const uint64_t golden[2][3]={{0x118e6874398a3569ull,0x966c95869aaa3862ull,0xf26d9609895fc2f1ull},
+        {0xe282fc6fba3b343dull,0x3e6cd902fe9d5c26ull,0xa62e0abdf8d7008aull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();
