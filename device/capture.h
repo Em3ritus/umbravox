@@ -20,7 +20,8 @@ void tick(uint32_t nowMs);
 // Publish counts, per-channel load and the contact field into `s`.
 void fill(ui::State& s, uint32_t nowMs);
 
-// Fill the codex rows, newest first, starting `offset` rows down.
+// Fill codex rows starting `offset` rows down. WS native uses a cached global
+// strongest-RSSI-first order; legacy retains newest-first/index-based detail.
 // `only5` restricts to the 5GHz band, which is what the 5 GHZ tile opens.
 void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly=false);
 void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs);

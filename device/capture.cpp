@@ -1,3 +1,4 @@
+#include "sight_order.h"
 #include "radio_policy.h"
 #include "capture.h"
 #include <new>
@@ -750,19 +751,54 @@ void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs) {
 
 void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {
     s.totalSights = locatedOnly ? locatedCount() : sightCount(only5);
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    static sightorder::Cache ranking;
+    if (!ranking.rows) {
+        ranking.rows = static_cast<sightorder::Entry*>(heap_caps_malloc(
+            TABLE * sizeof(sightorder::Entry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!ranking.rows) { s.nSights = 0; s.totalSights = 0; return; }
+    }
+    const uint32_t now = millis();
+    const int filter = (only5 ? 1 : 0) | (locatedOnly ? 2 : 0);
+    if (ranking.due(now, filter, tableGen)) {
+        ranking.count = 0;
+        const uint32_t count = nOrder;
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint16_t slot = order_[i];
+            if (only5 && table_[slot].band != ui::BAND_5) continue;
+            if (locatedOnly && !table_[slot].located) continue;
+            ranking.rows[ranking.count++] = {slot, table_[slot].rssi};
+        }
+        sightorder::sort(ranking.rows, ranking.count);
+        ranking.at = now; ranking.filter = filter; ranking.generation = tableGen;
+    }
+    s.totalSights = ranking.count;
+#endif
+
     int n = 0, skipped = 0;
-    // Newest first: that is the order you care about while moving.
+    // Native lists use the global RSSI snapshot; legacy keeps its index contract.
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    (void)skipped;
+    for (uint32_t i = offset < 0 ? 0u : (uint32_t)offset; i < ranking.count && n < ui::MAX_SIGHTS; ++i) {
+        const uint16_t slot = ranking.rows[i].slot;
+        const Node& nd = table_[slot];
+#else
     for (int i = (int)nOrder - 1; i >= 0 && n < ui::MAX_SIGHTS; i--) {
         const Node& nd = table_[order_[i]];
         if (only5 && nd.band != ui::BAND_5) continue;
         if (locatedOnly && !nd.located) continue;
         if (skipped < offset) { skipped++; continue; }
+#endif
         ui::Sighting& g = s.sights[n++];
         int k = 0;
         for (; k < ui::AP_SSID_MAX - 1 && nd.ssid[k]; k++) g.ssid[k] = nd.ssid[k];
         g.ssid[k] = 0;
         for (int m = 0; m < 6; m++) g.mac[m] = nd.mac[m];
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        g.rssi = ranking.rows[i].rssi;
+#else
         g.rssi = nd.rssi;
+#endif
         g.band = nd.band;
         g.chan = nd.chan;
     }

@@ -1,3 +1,4 @@
+#include "sight_order.h"
 #include "blescan.h"
 #include <Arduino.h>
 #include <BLEDevice.h>
@@ -359,10 +360,39 @@ uint16_t sightCount() { return (uint16_t)(nOrder > 65535 ? 65535 : nOrder); }
 
 void fillSights(ui::State& s, int offset) {
     s.totalSights = sightCount();
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    static sightorder::Cache ranking;
+    if (!ranking.rows) {
+        ranking.rows = static_cast<sightorder::Entry*>(heap_caps_malloc(
+            TABLE * sizeof(sightorder::Entry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!ranking.rows) { s.nSights = 0; s.totalSights = 0; return; }
+    }
+    const uint32_t now = millis();
+    const int filter = 0;
+    if (ranking.due(now, filter)) {
+        ranking.count = 0;
+        const uint32_t count = nOrder;
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint16_t slot = order_[i];
+
+            ranking.rows[ranking.count++] = {slot, rssis[slot]};
+        }
+        sightorder::sort(ranking.rows, ranking.count);
+        ranking.at = now; ranking.filter = filter;
+    }
+    s.totalSights = ranking.count;
+#endif
+
     int n = 0, skipped = 0;
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    (void)skipped;
+    for (uint32_t i = offset < 0 ? 0u : (uint32_t)offset; i < ranking.count && n < ui::MAX_SIGHTS; ++i) {
+        const uint16_t slot = ranking.rows[i].slot;
+#else
     for (int i = (int)nOrder - 1; i >= 0 && n < ui::MAX_SIGHTS; i--) {
         if (skipped < offset) { skipped++; continue; }
         const uint16_t slot = order_[i];
+#endif
         ui::Sighting& g = s.sights[n++];
 
         // BLE addresses are frequently randomised, so the OUI is often
@@ -384,7 +414,11 @@ void fillSights(ui::State& s, int offset) {
             g.ssid[k] = 0;
         }
         for (int m = 0; m < 6; m++) g.mac[m] = a[m];
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        g.rssi = ranking.rows[i].rssi;
+#else
         g.rssi = rssis[slot];
+#endif
         g.band = ui::BAND_BLE;
         g.chan = 0;
     }

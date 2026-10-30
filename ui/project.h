@@ -70,7 +70,7 @@ inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) 
 }
 
 // --- DOMAIN / CODEX ----------------------------------------------------------
-// Page sizes come from native geometry. Preserve the collector's newest-first
+// Page sizes come from native geometry. Preserve the collector's source-ranked
 // order: sorting only a fetched window creates a misleading global order.
 inline int pageOffset(int total, int offset, int perPage) {
     if(total<=0 || perPage<=0)return 0;

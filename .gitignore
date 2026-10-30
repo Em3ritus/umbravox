@@ -113,3 +113,5 @@ sim/test_input_presentation
 
 sim/test_scan_latency
 sim/bench_scan
+
+sim/test_sight_order

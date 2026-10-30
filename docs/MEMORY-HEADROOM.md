@@ -48,3 +48,19 @@ against the baseline under WiFi+BLE discovery, recording and screen navigation.
 Check that BLE unique/advertisement counts continue increasing, idle animation
 still works, and heap reaches a stable range during a sustained run. NM runtime
 performance and hardware compatibility remain for its own board validation.
+
+## RSSI list ranking
+
+The native Waveshare lists now rank globally by descending snapshot RSSI before
+pagination (WiFi, 5 GHz, BLE and located WiFi). Equal values use stable table-slot
+order. Refresh is at most once per second for the current filter; a filter change
+or WiFi table generation change refreshes immediately. Displayed RSSI comes from
+the same ranking snapshot; details continue resolving by address, not row index.
+NM retains its legacy list/detail ordering contract.
+
+Ranking buffers allocate lazily in PSRAM: 128 KiB for 32,768 WiFi slots and 16 KiB
+for 4,096 BLE slots. They do not fall back to internal RAM. Allocation failure
+produces an empty list rather than dereferencing a null buffer. Ranking uses
+immutable copied scores, so live callback updates cannot invalidate the sort
+comparator. Full-capacity ordering is host-tested; on-device sort latency and
+scroll/tap behavior still need validation after flashing.
