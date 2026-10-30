@@ -203,6 +203,7 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
 // spectrum separation and no-intrusion invariants are host-testable. The channel
 // plan is FIXED (count is size-independent); bar width/pitch adapt.
 static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz
+static constexpr int kSpecBars = 36, kSpecPink = 14;   // design #1 spectrum: 36 bars, first 14 pink
 struct HeroSub { uieng::Rect field, spectrum; int barBase, barMax; };
 inline HeroSub heroSub(uieng::Rect hr) {
     const int hdrH = 30, specH = 40;               // header clears the readout (text max y+26)
@@ -264,38 +265,52 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
 
     const HeroSub hs = heroSub(hr);
     const uieng::Rect fld = hs.field;
-    const int fcx=fld.x+fld.w/2, fcy=fld.y+fld.h/2;
-    const int fr=((fld.w<fld.h?fld.w:fld.h)/2) - 6;
-    frame(s, fld.x, fld.y, fld.w, fld.h, pal::EDGE);
+    // design #1 radar is centred (311,143) r69 at 480 (pixel-exact); 320 derives.
+    const int fcx = (W>=400) ? 311 : (fld.x+fld.w/2);
+    const int fcy = (W>=400) ? 143 : (fld.y+fld.h/2);
+    const int fr  = (W>=400) ? 69  : (((fld.w<fld.h?fld.w:fld.h)/2) - 6);
+    // design #1: a CIRCULAR radar -- NO bounding box. Three thin 1px rings at
+    // radii 23/46/69 (scaled to fr) in the chrome tone, a DELICATE heptagram in
+    // the seal tone (EDGE_LIT = #574465) at 0.72r with verts from east, a sweep
+    // ray, and a bright centre cross.
     if (fr>6) {
-        drawArtwork(s, sc.theme, fcx, fcy, fr);
-        // design #1: a static sweep ray (centre -> 0.8r, -0.35r) and a bright
-        // centre cross (+/-5px) over the seal.
-        line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
-        box(s, fcx-5, fcy, 11, 1, pal::BRIGHT);
-        box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);
+        for (int k=1;k<=3;k++){ const int rr=fr*(k*23)/69;
+            for (int a=0;a<1440;a++){ const double t=a*3.14159265/720.0;
+                pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); } }
+        const themepack::Emblem* e = pal::emblem(sc.theme);
+        if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM) {
+            emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
+        } else {
+            const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east
+            for (int i=0;i<7;i++){ const double t=i*2.0*3.14159265/7.0;
+                vx[i]=fcx+(int)(h7*std::cos(t)); vy[i]=fcy+(int)(h7*std::sin(t)); }
+            int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
+        }
+        line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);     // sweep ray
+        box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
-            if (m.shown && m.band>=0 && m.band<3) {    // proposal: small SQUARE markers, not round dots
+            if (m.shown && m.band>=0 && m.band<3) {    // small SQUARE markers, not round dots
                 const int sq = m.sizePx; box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
             }
         }
     }
 
-    // spectrum: caller-supplied channel activity on a FIXED channel plan (count
-    // is size-independent); bar width/pitch adapt. Bars stay in the spectrum band.
-    const int sx0=hs.spectrum.x, availW=hs.spectrum.w;
-    // Proposal mockup: THIN bars with a clear gap -- about half the pitch, not
-    // pitch-2. Bar starts at the same column (sx0 + i*pitch) so the fixed plan
-    // and the oracle-aligned spectrum band are unchanged.
-    const int pitch=availW/kChannels, bw=pitch>=4 ? pitch/2 : (pitch>1?pitch-1:1);
+    // spectrum (design #1): kSpecBars bars, 4px wide + 4px gap (8px pitch) from
+    // x=172 at 480; first 14 pink, the rest cyan. Live heights, resampled from
+    // the fixed 21-channel plan. At 320 the cadence scales to the spectrum band.
+    const int sx0   = (W>=400) ? 172 : hs.spectrum.x;
+    const int pitch = (W>=400) ? 8   : ((hs.spectrum.w/kSpecBars>=2) ? hs.spectrum.w/kSpecBars : 2);
+    const int bw    = (W>=400) ? 4   : (pitch>1?pitch-1:1);
     if (sc.channels && sc.nChannels==kChannels)
-        for (int i=0;i<kChannels;i++){ int a=sc.channels[i]; a=a<0?0:(a>100?100:a);
+        for (int i=0;i<kSpecBars;i++){ int a=sc.channels[i*kChannels/kSpecBars]; a=a<0?0:(a>100?100:a);
             const int x=sx0+i*pitch, hgt=a*hs.barMax/100;
-            box(s, x, hs.barBase-hgt, bw, hgt, i<kCh24 ? pal::MAGENTA : pal::ICE); }
-    txt(s, sx0, hr.y+hr.h-8, "2.4 GHz", 1, pal::DIM);
-    txt(s, sx0+availW-Font::width("5 GHz",1), hr.y+hr.h-8, "5 GHz", 1, pal::DIM);
+            box(s, x, hs.barBase-hgt, bw, hgt, i<kSpecPink ? pal::MAGENTA : pal::ICE); }
+    const int labY = hr.y+hr.h-8;
+    txt(s, sx0, labY, "2.4 GHZ", 1, pal::DIM);
+    { const char* r5="5 GHZ"; const int rx=(W>=400)?396:(sx0+kSpecBars*pitch-Font::width(r5,1));
+      txt(s, rx, labY, r5, 1, pal::DIM); }
 
     // nav bar (design #1): four tabs (SCAN active, underlined) left-aligned at
     // the design positions, + the STOP / REC record control at the far right.

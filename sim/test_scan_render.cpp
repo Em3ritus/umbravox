@@ -44,11 +44,13 @@ static void expect(bool c,const char* m){ ++checks; if(!c){++fails; printf("  FA
 static int renderedBars(const FbSink& fb, int W, int H) {
     const uieng::Rect hr = uieng::scan(W,H).hero;
     const HeroSub hs = heroSub(hr);
-    const int availW=hs.spectrum.w, pitch=availW/kChannels;
+    // match the compositor's design-1 spectrum geometry (36 bars @8px from 172)
+    const int sx0=(W>=400)?172:hs.spectrum.x;
+    const int pitch=(W>=400)?8:((hs.spectrum.w/kSpecBars>=2)?hs.spectrum.w/kSpecBars:2);
     int n=0;
-    for (int i=0;i<kChannels;i++){
-        const uint16_t want = i<kCh24 ? pal::MAGENTA : pal::ICE;
-        const int x=hs.spectrum.x+i*pitch, y=hs.barBase-1;
+    for (int i=0;i<kSpecBars;i++){
+        const uint16_t want = i<kSpecPink ? pal::MAGENTA : pal::ICE;
+        const int x=sx0+i*pitch, y=hs.barBase-1;
         if (x>=0&&x<W&&y>=0&&y<H && fb.at(x,y)==want) ++n;
     }
     return n;
@@ -82,9 +84,9 @@ int main(){
         snprintf(m,sizeof m,"%dx%d tallest spectrum bar stays below the field (no intrusion)",W,H);
         expect(hs.barBase - hs.barMax >= hs.field.y+hs.field.h, m);
 
-        // rendered coverage: the fixture's channels actually paint kChannels bars
-        snprintf(m,sizeof m,"%dx%d spectrum renders all %d channel bars (rendered coverage)",W,H,kChannels);
-        expect(renderedBars(fb,W,H)==kChannels, m);
+        // rendered coverage: the compositor paints all kSpecBars design-1 bars
+        snprintf(m,sizeof m,"%dx%d spectrum renders all %d bars (design #1)",W,H,kSpecBars);
+        expect(renderedBars(fb,W,H)==kSpecBars, m);
 
         // empty data: no contacts, no channels -> still tiles cleanly, no oob
         ScanScene empty; empty.theme=pal::TH_UMBRAVOX;      // all pointers null, counts 0
