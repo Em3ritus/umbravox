@@ -251,11 +251,13 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         int ns = fitScale(num, t.w-16, t.h>=60?3:2);
         txt(s, t.x+12, t.y + (t.h>=60?28:22), num, ns, pal::BRIGHT); }
 
-    // hero: readout / framed field (theme artwork + contacts) / labelled spectrum
+    // hero: readout / framed field (theme artwork + contacts) / labelled spectrum.
+    // Proposal mockup (scan page): "LIVE FIELD" at the left, the channel at the
+    // right -- no "SCANNING" / band line. "LIVE FIELD" is the contract rev-3 name
+    // for this view.
     const uieng::Rect hr = L.hero;
-    txt(s, hr.x+4, hr.y+4,  "SCANNING", 1, pal::DIM);
-    txt(s, hr.x+4, hr.y+12, sc.ch, 2, pal::BRIGHT);             // ends y+26
-    txt(s, hr.x+4+Font::width(sc.ch,2)+8, hr.y+18, sc.chBand, 1, pal::DIM);  // ends y+25
+    txt(s, hr.x+4, hr.y+6, "LIVE FIELD", 1, pal::DIM);
+    txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,2), hr.y+4, sc.ch, 2, pal::BRIGHT);  // channel, right
 
     const HeroSub hs = heroSub(hr);
     const uieng::Rect fld = hs.field;
@@ -267,14 +269,19 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
-            if (m.shown && m.band>=0 && m.band<3) disc(s, fcx+m.dx, fcy+m.dy, m.sizePx, band[m.band]);
+            if (m.shown && m.band>=0 && m.band<3) {    // proposal: small SQUARE markers, not round dots
+                const int sq = m.sizePx; box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
+            }
         }
     }
 
     // spectrum: caller-supplied channel activity on a FIXED channel plan (count
     // is size-independent); bar width/pitch adapt. Bars stay in the spectrum band.
     const int sx0=hs.spectrum.x, availW=hs.spectrum.w;
-    const int pitch=availW/kChannels, bw=pitch>3?pitch-2:pitch;
+    // Proposal mockup: THIN bars with a clear gap -- about half the pitch, not
+    // pitch-2. Bar starts at the same column (sx0 + i*pitch) so the fixed plan
+    // and the oracle-aligned spectrum band are unchanged.
+    const int pitch=availW/kChannels, bw=pitch>=4 ? pitch/2 : (pitch>1?pitch-1:1);
     if (sc.channels && sc.nChannels==kChannels)
         for (int i=0;i<kChannels;i++){ int a=sc.channels[i]; a=a<0?0:(a>100?100:a);
             const int x=sx0+i*pitch, hgt=a*hs.barMax/100;
