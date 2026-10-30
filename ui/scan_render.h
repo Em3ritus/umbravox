@@ -7,6 +7,7 @@
 // element clipped into it), then handed to a Sink once. No full framebuffer, no
 // animation. Host and device compilable (no Arduino deps).
 #pragma once
+#include "poi_state.h"
 #include "radar_geometry.h"
 #include "layout_engine.h"
 #include "palette.h"
@@ -61,6 +62,7 @@ struct ScanScene {
     GnssFix  gps;                 // GNSS receiver state (projected by gpsLabel)
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
+    ui::PoiStatus poi = ui::PoiStatus::Ready;
     bool pmuOk = false, charging = false;
     Rec      rec = Rec::Off;
     // counts
@@ -246,6 +248,7 @@ struct ChromeState {
     Rec     rec     = Rec::Off;
     uint8_t theme = 0;
     bool bridgeOn = false, pmuOk = false, charging = false;
+    ui::PoiStatus poi = ui::PoiStatus::Ready;
 };
 inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
                        const ChromeState& st, int activeTab) {
@@ -265,7 +268,8 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     if ((int)strlen(title)>maxChars && maxChars>=3) {
         title[maxChars]=0; title[maxChars-1]='.'; title[maxChars-2]='.'; title[maxChars-3]='.';
     }
-    centered(s,c.wordmark.x+c.wordmark.w/2,(44-7*titleScale)/2,title,titleScale,pal::BRIGHT);
+    centered(s,c.wordmark.x+c.wordmark.w/2,(30-7*titleScale)/2,title,titleScale,pal::BRIGHT);
+    centered(s,c.wordmark.x+c.wordmark.w/2,29,"HOME",1,activeTab==0?pal::WITCH_HI:pal::DIM);
     char hb[24];
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
@@ -290,30 +294,35 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     else snprintf(hb,sizeof hb,"%s",st.pmuOk&&!st.hasCell?"NO BAT":"N/A");
     centered(s,c.statusCells[2].x+c.statusCells[2].w/2,23,hb,1,level?pal::TEXT:pal::DIM);
 
-    // nav: four tabs (activeTab lit + underlined) at the design-1 label positions
-    static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
-    static const int navX480[4] = {16,112,226,328};
-    for (int i=0;i<4;i++){
-        const int ns = (W>=400) ? 2 : fitScale(nav[i], c.navCells[i].w-6, 2);
-        const int lx = (W>=400) ? navX480[i] : c.navCells[i].x + 4;
-        const bool on = (i==activeTab);
-        txt(s, lx, H-30, nav[i], ns, on?pal::BRIGHT:pal::DIM);
-        if (on){ const int lw=Font::width(nav[i],ns); box(s, lx, H-8, lw, 2, pal::WITCH_HI); }
+    // Three destinations, POI action, recording action. Header title is Home.
+    static const char* const nav[3]={"DOMAIN","CODEX","MENU"};
+    for(int i=0;i<3;++i){
+        const auto r=c.navCells[i];
+        const int ns=fitScale(nav[i],r.w-8,2), width=Font::width(nav[i],ns);
+        const int lx=r.x+(r.w-width)/2;
+        const bool on=activeTab==i+1;
+        txt(s,lx,H-30,nav[i],ns,on?pal::BRIGHT:pal::DIM);
+        if(on)box(s,lx,H-8,width,2,pal::WITCH_HI);
     }
-    // RECORD / STOP actions, SAVING feedback, and an unwritten-row warning. The
-    // palette has no dedicated STOP role yet, so map to the theme's red (closest
-    // theme-as-data, swaps with theme); a NO-SD state reads amber.
-    const uieng::Rect stp = c.stop;
-    const int bbw = stp.w < 56 ? stp.w : 56, bbh = 30;
-    const int bx = stp.x + (stp.w - bbw)/2, by = stp.y + (stp.h - bbh)/2;
-    ScanScene tmp; tmp.rec = st.rec;
-    char rb2[16]; recLabel(tmp, rb2, sizeof rb2);     // action or saving/card status
-    const uint16_t ink = (st.rec==Rec::NoCard || st.rec==Rec::Saving || st.rec==Rec::Incomplete) ? pal::AMBER : pal::RED;
-    box(s, bx, by, bbw, bbh, pal::PANEL);
-    frame(s, bx, by, bbw, bbh, ink);
-    centered(s, bx + bbw/2 + (st.rec==Rec::On ? 3 : 0), by + (st.rec==Rec::Incomplete ? 5 : bbh/2 - 3), rb2, 1, ink);
-    if (st.rec==Rec::Incomplete) centered(s, bx+bbw/2, by+18, "UNSAVED", 1, pal::AMBER);
-    if (st.rec==Rec::On) box(s, bx+5, by+13, 3, 3, ink);
+    const auto mark=c.navCells[3];
+    const bool feedback=st.poi!=ui::PoiStatus::Ready;
+    const uint16_t poiInk=st.poi==ui::PoiStatus::Saved?pal::GREEN:pal::AMBER;
+    centered(s,mark.x+mark.w/2,H-(feedback?36:30),"POI",2,feedback?poiInk:pal::TEXT);
+    if(feedback)centered(s,mark.x+mark.w/2,H-16,ui::poiLabel(st.poi),1,poiInk);
+
+    const auto record=c.stop;
+    ScanScene tmp;tmp.rec=st.rec;
+    char label[16];recLabel(tmp,label,sizeof label);
+    if(st.rec==Rec::Off)snprintf(label,sizeof label,"REC");
+    const bool on=st.rec==Rec::On;
+    const bool warning=st.rec==Rec::NoCard || st.rec==Rec::Saving || st.rec==Rec::Incomplete;
+    const uint16_t ink=on?pal::RED:warning?pal::AMBER:pal::DIM;
+    const int scale=fitScale(label,record.w-8,2),width=Font::width(label,scale);
+    const int x=record.x+(record.w-width)/2;
+    txt(s,x,H-30,label,scale,ink);
+    if(on || st.rec==Rec::Saving)box(s,x,H-8,width,2,ink);
+    if(st.rec==Rec::Incomplete)centered(s,record.x+record.w/2,H-12,"UNSAVED",1,ink);
+
 }
 
 // --- compose one strip completely from the scene ------------------------------
@@ -324,7 +333,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
 
     // shared design-1 chrome: header (wordmark + GPS/MESH/BAT) + nav (SCAN lit)
     // + the STOP/REC record control. SCAN passes its own 16px body for the dividers.
-    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging}, 0);
+    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi}, 0);
 
     // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};

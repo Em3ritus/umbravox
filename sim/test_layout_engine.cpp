@@ -74,6 +74,7 @@ static Expect expectFor(const char* id, Rect r) {
     if(!strcmp(id,"stop"))        return E(Action::ToggleLogging);   // SCAN design #1: REC/STOP on the nav
     if(!strcmp(id,"WIFI"))        return E(Action::CodexFilter,true,0);
     if(!strcmp(id,"5 GHZ"))       return E(Action::CodexFilter,true,1);
+    if(!strcmp(id,"mark-poi")) return E(Action::MarkPoi,true,0);
     if(!strcmp(id,"bridge"))      return E(Action::SettingStep,true,9);
     if(!strcmp(id,"BLE"))         return E(Action::CodexFilter,true,2);
     if(!strcmp(id,"range-minus")) return E(Action::RangeStep,true,-1);
@@ -186,7 +187,7 @@ static void testNegative() {
       expect(boundCount(h,c) < c.n, "neg: wrong threat key not detected"); }
     // NULL keys: no fix/match -> no device or threat targets
     { HitCtx c; HitList h=domainHits(480,320,c);   // all defaults null
-      expect(deviceCount(h)==0 && threatCount(h)==0 && h.count==12, "neg: null keys fabricate targets"); }
+      expect(deviceCount(h)==0 && threatCount(h)==0 && h.count==13, "neg: null keys fabricate targets"); }
     // EMPTY keys: empty strings must not create targets
     { static const char* const EMPTY[2]={"",""}; HitCtx c; c.hasFix=true; c.rowKeys=EMPTY; c.nRowKeys=2; c.matchKey="";
       HitList hd=domainHits(480,320,c); HitList hs=scanHits(480,320,c);

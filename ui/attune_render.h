@@ -28,6 +28,7 @@ struct AttuneScene {
     GnssFix  gps;
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
+    ui::PoiStatus poi = ui::PoiStatus::Ready;
     bool pmuOk = false, charging = false;
     bool bridgeOn = false;
     Rec      rec = Rec::Off;
@@ -48,7 +49,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
     using scanr::box; using scanr::txt; using scanr::frame; using scanr::centered; using scanr::fitScale;
     const uieng::AttuneLayout L = uieng::attune(W, H);
     // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
-    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging}, -1);
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi}, -1);
 
     // knob rows: label + value + [-][+]
     for (int i = 0; i < sc.nRows && i < L.nRows; i++) {

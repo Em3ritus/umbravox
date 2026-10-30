@@ -19,3 +19,5 @@ GPS shows 3D, 2D, FIX, STALE or ACQ using the existing validity/age contract. Ba
 Verification includes both hit-oracle sizes, every native screen's bridge target, battery and bridge transitions compared against a full repaint, and previous SCAN body/navigation pixel goldens. The latter exclude the removed body button and the deliberately changed header. Both firmware targets are compile checks; the 320 native mockup does not enable the engine in the legacy NM firmware.
 
 No flashing is part of this change. Bridge startup, phone connection and battery hardware checks remain pending.
+
+The title now has a HOME hint and its full cell returns to SCAN. Footer order is DOMAIN / CODEX / MENU / POI / REC; active recording uses red STOP with an underline, not an outline. See POI.md for marker storage and feedback.

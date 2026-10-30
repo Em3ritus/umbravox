@@ -34,8 +34,8 @@ int main(){
         // alertLive -> 6 stepper hits; not live -> 4 (ALERT omitted)
         HitList hl = aspectHits(W,H,true);
         HitList hn = aspectHits(W,H,false);
-        expect(hl.count==(W>=400?9:8)+6, "alertLive: chrome + THEME/SWEEP/ALERT steppers");
-        expect(hn.count==(W>=400?9:8)+4, "not live: ALERT steppers omitted (not a dead target)");
+        expect(hl.count==(W>=400?10:9)+6, "alertLive: chrome + THEME/SWEEP/ALERT steppers");
+        expect(hn.count==(W>=400?10:9)+4, "not live: ALERT steppers omitted (not a dead target)");
 
         auto find=[&](HitList&h,const char* s)->const Hit*{ for(int j=0;j<h.count;j++) if(!strcmp(h.items[j].slot,s)) return &h.items[j]; return nullptr; };
         const Hit* tm=find(hl,"theme-"); const Hit* tp=find(hl,"theme+");

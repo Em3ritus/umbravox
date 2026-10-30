@@ -64,6 +64,7 @@ public:
     void animate(bool enabled) { sc_.animateSweep = enabled; }
     void gps(const GnssFix& f)                    { sc_.gps = f; }
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
+    void poi(ui::PoiStatus value) { sc_.poi=value; }
     void status(int nodes, bool hasCell, int batt, Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
     }
@@ -350,7 +351,7 @@ public:
             char ra[16], rb[16];
             scanr::recLabel(store_[cur_].scene(), ra, 16);
             scanr::recLabel(nw, rb, 16);
-            if (__builtin_strcmp(ra, rb)) sched_.invalidate(navTop, H_);
+            if (__builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi) sched_.invalidate(navTop, H_);
         }
         cur_ ^= 1; haveFront_ = true; forceFull_ = false;
     }

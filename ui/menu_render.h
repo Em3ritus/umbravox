@@ -8,6 +8,7 @@
 // and final typography are the separate visual-fidelity milestone). Host +
 // device compilable (no Arduino deps).
 #pragma once
+#include "poi_state.h"
 #include "scan_render.h"      // scanr:: primitives + GnssFix/gpsLabel/recLabel/Sink/S
 #include "layout_engine.h"
 #include "palette.h"
@@ -37,6 +38,7 @@ struct MenuScene {
     GnssFix  gps;
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
+    ui::PoiStatus poi = ui::PoiStatus::Ready;
     bool pmuOk = false, charging = false;
     bool bridgeOn = false;
     Rec      rec = Rec::Off;
@@ -53,7 +55,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
 
     box(s, 0, 0, W, H, pal::VOID);
     // shared design-1 chrome: header + nav (MENU lit, index 3) + STOP/REC control
-    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging}, 3);
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi}, 3);
 
     // the grid: eight launcher tiles + a LABELS toggle. Design #1 is muted
     // chrome -- the old WITCH (bright violet) tile accents clashed on hardware,

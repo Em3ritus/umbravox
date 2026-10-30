@@ -46,7 +46,7 @@ int main(){
             for(int k=0;k<j;k++){ if(!strcmp(h.items[j].slot,h.items[k].slot)) ok=false;
                                   if(overlap(r,h.items[k].rect)) ok=false; } }
         expect(ok, "menu hits: in-bounds, >=44px, distinct slots, non-overlapping");
-        expect(h.count==(W>=400?9:8)+8+1, "menu hits: 8 chrome + 8 launchers + 1 labels");
+        expect(h.count==(W>=400?10:9)+8+1, "menu hits: 8 chrome + 8 launchers + 1 labels");
 
         // bindings: each launcher -> Nav(ScreenId); labels -> ToggleLabels
         auto find=[&](const char* slot)->const Hit*{
@@ -61,6 +61,8 @@ int main(){
         for(int i=0;i<8;i++){ const Hit* t=find(want[i].slot);
             if(!t||t->action!=Action::Nav||t->payload!=(int)want[i].id) bind=false; }
         expect(bind, "menu: 8 launcher tiles bind Nav -> correct ScreenId payload");
+        const Hit* poi=find("mark-poi");
+        expect(poi && poi->action==Action::MarkPoi,"footer saves POI");
         const Hit* lab=find("labels");
         expect(lab && lab->action==Action::ToggleLabels, "menu: LABELS tile -> ToggleLabels");
     }

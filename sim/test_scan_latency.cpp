@@ -25,12 +25,12 @@ static std::vector<uint16_t> draw(int w,int h,const scanr::ScanScene& sc) {
 static void profile(int w,int h,int theme,uint64_t expected) {
     pal::setTheme(theme);auto sc=scanfix::demo(theme);
     auto old=draw(w,h,sc);uint64_t hash=14695981039346656037ull;
-    // Preserve the previous body/nav golden, excluding the old body toggle.
-    // Header changes are tested separately, including partial repaints.
+    // Preserve the previous body golden, excluding the old body toggle.
+    // Header/footer changes are tested separately, including partial repaints.
     const auto button=uieng::chrome(w,h).bridge;
     const auto hero=uieng::scan(w,h).hero;
     const uieng::Rect former{hero.x+4,hero.y+48,w>=400?76:68,44};
-    for(int y=44;y<h;++y)for(int x=0;x<w;++x){
+    for(int y=44;y<h-44;++y)for(int x=0;x<w;++x){
         auto px=(x>=former.x && x<former.x+former.w && y>=former.y && y<former.y+former.h)?pal::VOID:old[y*w+x];
         hash^=px;hash*=1099511628211ull;
     }
@@ -117,7 +117,7 @@ int main() {
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
     // Updated only for the approved recording/header chrome changes.
-    const uint64_t golden[2][3]={{0xeca3327840892174ull,0x340efa6080574fb9ull,0xf99e3ce6ebaf5ac9ull},{0x2cc08412119264a5ull,0x48a66ca959e5e56cull,0x1e8e1e9835eaf2baull}};
+    const uint64_t golden[2][3]={{0x58ce70f943f88c98ull,0x2facd2c9a82266e1ull,0x2d574e101854efd3ull},{0x1dafe803a7ec8e39ull,0xf07e4058c4908280ull,0x2c4c147f6423c210ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

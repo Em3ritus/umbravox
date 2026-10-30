@@ -33,7 +33,7 @@ namespace uiproj {
 using scanr::GnssFix;
 using scanr::Rec;
 
-struct Chrome { GnssFix gps; Rec rec = Rec::Off; bool hasCell = false; int batt = 0; uint32_t now = 0; bool pmuOk = false, charging = false; };
+struct Chrome { GnssFix gps; Rec rec = Rec::Off; bool hasCell = false; int batt = 0; uint32_t now = 0; bool pmuOk = false, charging = false; ui::PoiStatus poi = ui::PoiStatus::Ready; };
 
 // --- small, self-contained formatters (no legacy screen deps) ----------------
 inline void agoStr(char* o, int n, uint32_t s) {
@@ -57,7 +57,7 @@ inline void contactKey(char* o, int n, uint8_t band, const uint8_t* m) {
 inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     st.bridge(s.set.bleBridge!=0);
     st.counts(s.nets24, s.nets5, s.ble);
     char ch[16]; snprintf(ch, sizeof ch, "CH %02u", (unsigned)s.chan);
@@ -84,7 +84,7 @@ inline bool decodeContactKey(const char* key, bool& ble, uint8_t* mac) {
     ble=key[0]=='b';return true;
 }
 inline void domain(dompres::DomainStore& st, const ui::State& s, const Chrome& c, int W=480, int H=320) {
-    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     const auto layout=uieng::domain(W,H);
     const int radius=domr::radarGeom(layout.map).r;
     auto scale=[&](int x){if(!s.plotRadius || s.plotRadius==radius)return x;
@@ -103,7 +103,7 @@ inline void domain(dompres::DomainStore& st, const ui::State& s, const Chrome& c
     st.page(n?1:0,n,s.totalSights);
 }
 inline void codex(codpres::CodexStore& st, const ui::State& s, const Chrome& c, int W=480, int H=320) {
-    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);st.filter(s.filter);
+    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.filter(s.filter);
     const int n=std::min((int)s.nSights,uieng::codex(W,H).nRows);
     for(int i=0;i<n;++i){const auto& row=s.sights[i];char key[20];contactKey(key,sizeof key,row.band,row.mac);
         st.addRow(key,row.ssid,row.band,row.rssi,row.chan,false);}
@@ -114,7 +114,7 @@ inline void codex(codpres::CodexStore& st, const ui::State& s, const Chrome& c, 
 inline void menu(menpres::MenuStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     st.labels(s.set.labels != 0);
 }
 
@@ -122,7 +122,7 @@ inline void menu(menpres::MenuStore& st, const ui::State& s, const Chrome& c) {
 inline void mesh(mshpres::MeshStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     st.header(s.meshCoords, s.coreCamping, s.coreChan, s.meshLossPct, s.netId, s.enrollSecs);
     for (int i = 0; i < s.nNodes && i < ui::MAX_NODE_ROWS; i++)
         st.addNode(s.nodes[i].id, s.nodes[i].ageS, s.nodes[i].lossPct, s.nodes[i].live);
@@ -132,7 +132,7 @@ inline void mesh(mshpres::MeshStore& st, const ui::State& s, const Chrome& c) {
 inline void omens(omnpres::OmenStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     st.total(s.omenTotal);
     for (int i = 0; i < s.nOmens; i++)
         st.addRow(ui::threatName(s.omens[i].threat), s.omens[i].name, s.omens[i].conf, s.omens[i].agoS, s.omens[i].located);
@@ -142,7 +142,7 @@ inline void omens(omnpres::OmenStore& st, const ui::State& s, const Chrome& c) {
 inline void echoes(echpres::EchoStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     st.totals(s.echoTotal, s.echoClients);
     for (int i = 0; i < s.nEchoes; i++) {
         char who[8]; macTail(who, s.echoes[i].mac);
@@ -176,7 +176,7 @@ inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char
 inline void attune(atnpres::AttuneStore& st, const ui::State& s, const Chrome& c, int page, int rowsPerPage) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     if (rowsPerPage < 1) rowsPerPage = 1;
     const int pages = (uieng::kAttuneKnobs + rowsPerPage - 1) / rowsPerPage;
     if (page < 0) page = 0; else if (page >= pages) page = pages - 1;
@@ -206,7 +206,7 @@ inline const char* alertStyleName(uint8_t theme, uint8_t style) {
 inline void aspect(asppres::AspectStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     const bool live = (s.set.theme == pal::TH_COSMICMUFFIN);
     st.appearance(pal::themeName(s.set.theme), sweepName(s.set.sweep),
                   alertStyleName(s.set.theme, s.set.alertStyle), live, s.packsSkipped);
@@ -216,7 +216,7 @@ inline void aspect(asppres::AspectStore& st, const ui::State& s, const Chrome& c
 inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     const ui::Detail& v = s.detail;
     if (!v.valid) { st.device(false, "", "", "", 0, 0, "", false, "", 0, "", "", ""); return; }
     char mac[18]; macStr(mac, v.mac);
@@ -243,7 +243,7 @@ inline void fmtBytes(char* o, int n, uint32_t b) {
 inline void files(flspres::FilesStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging);
+    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     const int visSel = (s.fileSel >= s.fileScroll && s.fileSel < s.fileScroll + s.nFileRows) ? (s.fileSel - s.fileScroll) : -1;
     const bool deletable = (s.fileSel >= 0 && s.fileSel != s.fileActive);
     st.list(s.fileCard, s.fileTotal, s.fileScroll, visSel, deletable);

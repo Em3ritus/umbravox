@@ -31,7 +31,7 @@ int main(){
 
         // normal mode, a deletable selection: chrome + rows + DELETE
         HitList h = filesHits(W,H,/*confirm*/false,/*deletable*/true,/*nVisible*/f.nRows);
-        expect(h.count == (W>=400?9:8) + f.nRows + 1, "normal: chrome + rows + DELETE");
+        expect(h.count == (W>=400?10:9) + f.nRows + 1, "normal: chrome + rows + DELETE");
         bool ok=true; int sel=0; const Hit* del=nullptr;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;
@@ -45,7 +45,7 @@ int main(){
         // not deletable: DELETE omitted
         HitList hnd = filesHits(W,H,false,false,f.nRows);
         bool noDel=true; for(int j=0;j<hnd.count;j++) if(hnd.items[j].action==Action::FileDelete) noDel=false;
-        expect(hnd.count==(W>=400?9:8)+f.nRows && noDel, "not deletable: no DELETE hit");
+        expect(hnd.count==(W>=400?10:9)+f.nRows && noDel, "not deletable: no DELETE hit");
 
         // confirm mode: chrome + YES + NO only (rows + DELETE suppressed)
         HitList hc = filesHits(W,H,/*confirm*/true,true,f.nRows);
@@ -54,7 +54,7 @@ int main(){
             if(a==Action::FileSelect||a==Action::FileDelete) rowsGone=false;
             if(a==Action::FileConfirmYes) yes=&hc.items[j];
             if(a==Action::FileConfirmNo)  no=&hc.items[j]; }
-        expect(hc.count==(W>=400?9:8)+2 && rowsGone, "confirm: only chrome + YES + NO (list behind modal is inert)");
+        expect(hc.count==(W>=400?10:9)+2 && rowsGone, "confirm: only chrome + YES + NO (list behind modal is inert)");
         expect(yes && no, "confirm: YES -> FileConfirmYes, NO -> FileConfirmNo");
     }
     printf("\n%s  %d/%d checks passed\n", fails?"FAILED":"PASSED", checks-fails, checks);

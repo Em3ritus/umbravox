@@ -32,6 +32,7 @@ static constexpr int kCodexLocated = 3;
 // One-shot side effects a dispatch raised. The caller performs them against the
 // radios/card/Settings and then discards this -- none persists in the router.
 struct Requests {
+    bool markPoi = false;
     bool logToggle   = false;   // ToggleLogging: flip the logger
     bool openGps     = false;   // OpenGps: open GPS diagnostics (no engine screen yet)
     bool powerDetail = false;   // PowerDetail: power detail (NM: sensing unavailable)
@@ -132,6 +133,7 @@ public:
             case A::OpenGps:        r.openGps = true; break;
             case A::OpenMesh:       scr_ = Screen::Mesh; break;
             case A::PowerDetail:    r.powerDetail = true; break;
+            case A::MarkPoi: r.markPoi = true; break;
             case A::ToggleLogging:  r.logToggle = true; break;
         }
         return r;

@@ -1,4 +1,5 @@
 #include "ble_bridge.h"
+#include "poi.h"
 #include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
@@ -1300,6 +1301,9 @@ void loop() {
     { const uint32_t _s = micros(); blescan::tick(millis()); bootStall("blescan tick", _s); }
     { const uint32_t _s=micros(); blebridge::tick(millis()); bootStall("bridge tick",_s); }
     { const uint32_t _s = micros(); logging::tick(millis(), ui::Gnss::utcEpoch(millis())); bootStall("logging tick", _s); }
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    poi::service(millis());
+#endif
 
     // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
     // low-heap warnings at 40, 24 and 16 KB (each re-armed 8 KB above it) so a

@@ -20,7 +20,7 @@ int main(){
         expect(g.title.y==g.body.y && g.header.y==g.body.y+20 && g.list.y==g.body.y+32, "title/header/list stack");
         expect(g.list.y+g.list.h==g.body.y+g.body.h, "list fills to body bottom");
         HitList h = echoesHits(W,H);
-        expect(h.count==(W>=400?9:8), "echoes hits: chrome nav only (log is scroll, not taps)");
+        expect(h.count==(W>=400?10:9), "echoes hits: chrome nav only (log is scroll, not taps)");
         bool ok=true; int nav=0;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;

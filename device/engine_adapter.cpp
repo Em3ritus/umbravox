@@ -7,6 +7,8 @@
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
 
 #include <Arduino.h>
+#include "poi.h"
+#include "logging.h"
 #include <esp_heap_caps.h>
 #include "touch.h"
 #include "../ui/pending_hit.h"
@@ -247,7 +249,7 @@ bool pending() {
 void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
               scanr::Rec rec, bool hasCell, int batt, uint32_t now, bool pmuOk, bool charging) {
     sceneRec_ = rec;
-    uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now; c.pmuOk = pmuOk; c.charging = charging;
+    uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now; c.pmuOk = pmuOk; c.charging = charging; c.poi = poi::status(now);
     switch (cur_) {
         case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c); eScan_.back().animate(true); eScan_.commit();   break;
         case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c, W_, H_); eDomain_.commit(); break;
@@ -406,6 +408,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             default: break;
         }
         // one-shot side effects + settings steps the router raised
+        if (rq.markPoi) { const uint32_t now=millis(); poi::request(ui::Gnss::fix(),now,ui::Gnss::utcEpoch(now),logging::fileName()); }
         if (rq.logToggle)    nav.logToggleRequested = true;
         if (rq.meshEnroll)   nav.enrollRequested    = true;
         if (rq.meshReset)    nav.resetNetRequested  = true;

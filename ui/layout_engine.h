@@ -137,7 +137,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -154,7 +154,7 @@ struct Hit {
     const char* desc;    // human-readable (docs only)
 };
 struct HitList {
-    Hit items[21];
+    Hit items[22];
     int count = 0;
     void add(const char* slot, Rect r, Action a, int payload, const char* key, const char* desc) {
         items[count++] = {slot, r, a, payload, key, desc};
@@ -191,9 +191,11 @@ inline void addChromeHits(HitList& h, int W, int H) {
     if (c.statusCells[1].w) h.add("mesh",  c.statusCells[1], Action::OpenMesh,    0, nullptr, "Open Mesh");
     h.add("power", c.statusCells[2], Action::PowerDetail, 0, nullptr, "Power detail (NM: sensing unavailable)");
     h.add("bridge",c.bridge,Action::SettingStep,9,nullptr,"Toggle BLE bridge");
-    static const char* const nslot[4] = {"nav-scan","nav-domain","nav-codex","nav-menu"};
-    static const char* const ndesc[4] = {"Open SCAN","Open DOMAIN","Open CODEX","Open MENU"};
-    for (int i = 0; i < 4; i++) h.add(nslot[i], c.navCells[i], Action::Nav, i, nullptr, ndesc[i]);
+    h.add("nav-scan",c.statusCells[3],Action::Nav,0,nullptr,"Home: return to SCAN");
+    static const char* const nslot[3] = {"nav-domain","nav-codex","nav-menu"};
+    static const char* const ndesc[3] = {"Open DOMAIN","Open CODEX","Open MENU"};
+    for (int i=0;i<3;++i) h.add(nslot[i],c.navCells[i],Action::Nav,i+1,nullptr,ndesc[i]);
+    h.add("mark-poi",c.navCells[3],Action::MarkPoi,0,nullptr,"Save current GPS point of interest");
     h.add("stop", c.stop, Action::ToggleLogging, 0, nullptr, "Toggle logging; the REC/STOP record control");
 }
 

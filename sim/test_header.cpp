@@ -13,12 +13,15 @@ int main(){
  for(int w:{480,320}){
   int h=w==480?320:240;auto ch=uieng::chrome(w,h);
   const auto hits={uieng::scanHits(w,h,{}),uieng::domainHits(w,h,{}),uieng::codexHits(w,h,{}),uieng::menuHits(w,h),uieng::meshHits(w,h),uieng::omensHits(w,h),uieng::echoesHits(w,h),uieng::attuneHits(w,h,0),uieng::aspectHits(w,h,true),uieng::detailHits(w,h),uieng::filesHits(w,h,false,false,0)};
-  for(const auto& list:hits){int bridges=0,meshes=0;
+  for(const auto& list:hits){int bridges=0,meshes=0,home=0,poi=0;
    for(int i=0;i<list.count;++i){const auto& a=list.items[i];
     assert(a.rect.w>=44 && a.rect.h>=44 && a.rect.x>=0 && a.rect.x+a.rect.w<=w);
     if(!strcmp(a.slot,"bridge")){++bridges;assert(a.rect==ch.bridge && a.action==uieng::Action::SettingStep && a.payload==9);}
     if(!strcmp(a.slot,"mesh"))++meshes;
-   }assert(bridges==1 && meshes==(w==480?1:0));
+    if(!strcmp(a.slot,"nav-scan")){++home;assert(a.rect==ch.statusCells[3] && a.payload==0);uinav::Router r;r.setScreen(uinav::Screen::Detail);r.dispatch(a);assert(r.screen()==uinav::Screen::Scan);}
+    if(a.action==uieng::Action::MarkPoi){++poi;assert(a.rect==ch.navCells[3]);}
+
+   }assert(home==1 && poi==1 && bridges==1 && meshes==(w==480?1:0));
   }
   for(auto screen:{uinav::Screen::Scan,uinav::Screen::Domain,uinav::Screen::Codex,uinav::Screen::Menu,uinav::Screen::Aspect}){
    uinav::Router router;router.setScreen(screen);auto list=uieng::scanHits(w,h,{});
@@ -41,6 +44,13 @@ int main(){
    auto full=draw(w,h,next),partial=before;
    for(int y=0;y<48;y+=16){S strip{partial.data()+y*w,w,y,16};composeStrip(strip,w,h,next);}
    assert(full!=before && full==partial);
+  }
+  for(int i=0;i<7;++i){auto next=sc;
+   if(i<5)next.poi=static_cast<ui::PoiStatus>(i+1);
+   else next.rec=i==5?Rec::On:Rec::Saving;
+   auto full=draw(w,h,next),partial=before;
+   for(int y=h-44;y<h;y+=16){S strip{partial.data()+y*w,w,y,std::min(16,h-y)};composeStrip(strip,w,h,next);}
+   assert(full!=before && partial==full);
   }
   // Every theme changes its name within the fixed box, leaving control geometry stable.
   for(int theme=0;theme<3;++theme){sc.theme=theme;pal::setTheme(theme);assert(strlen(pal::themeName(theme))>0);assert(draw(w,h,sc).size()==size_t(w*h));}
