@@ -34,6 +34,13 @@ uint32_t     sliceTransferUs_ = 0;
 uinav::Screen cur_ = uinav::Screen::Scan;  // the screen currently composed
 uinav::Router router_;                     // navigation authority (remembers DETAIL origin)
 scanpres::TouchGate gate_;
+// Interaction burst: a screen enter/change, a wake, a theme change, or a touch
+// that dispatched a hit all produce a NEW state the user is waiting to see. For
+// that one repaint, service() widens its strip budget so the new state paints
+// in a single pass (snappy touch) instead of trickling in 4 strips per loop;
+// it clears when the frame completes, so idle/animation falls back to the
+// steady slice and the single core's capture time is not starved continuously.
+bool burst_ = false;
 scanpres::PresentMetrics metrics_;         // adapter-level render timing (for /perf)
 
 // one engine per screen -- just scheduler/transition/double Store, no compositor
@@ -141,15 +148,17 @@ void enter(uint8_t uiScreen) {
         case uinav::Screen::Files:  eFiles_.enter(); break;
     }
     gate_.reset();
+    burst_ = true;                              // paint the entered screen in one pass
 }
-void wake() { eScan_.wake(); gate_.reset(); }   // only SCAN animates/dims; others re-enter on switch
+void wake() { eScan_.wake(); gate_.reset(); burst_ = true; }   // only SCAN animates/dims; others re-enter on switch
 void themeChanged() {
     // a theme change repaints whatever is current
     switch (cur_) {
         case uinav::Screen::Scan:   eScan_.themeChanged(); break;
         case uinav::Screen::Aspect: eAspect_.themeChanged(); break;
-        default: enter(fromNav(cur_)); break;   // force a full repaint via re-enter
+        default: enter(fromNav(cur_)); break;   // force a full repaint via re-enter (sets burst_)
     }
+    burst_ = true;
 }
 void leave() {
     switch (cur_) {
@@ -222,6 +231,10 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
 
 bool service(int budgetStrips) {
     if (!pending()) return false;
+    // interaction burst: paint the whole new state in this pass, not 4 strips at
+    // a time, so a tab switch / button press / screen change reacts at once. One
+    // frame only -- cleared below when done, so animation keeps the steady slice.
+    if (burst_) budgetStrips = H_ / 16 + 2;    // strips to cover the panel (16px each)
     const uint32_t t0 = micros();
     sliceTransferUs_ = 0;
     bool done = false;
@@ -241,7 +254,7 @@ bool service(int budgetStrips) {
     const uint32_t total = micros() - t0;
     const uint32_t compose = total > sliceTransferUs_ ? total - sliceTransferUs_ : 0;
     metrics_.slice(compose, sliceTransferUs_);
-    if (done) metrics_.frameDone();
+    if (done) { metrics_.frameDone(); burst_ = false; }   // interaction repaint delivered; back to steady slices
     return done;
 }
 
@@ -331,6 +344,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s,
         if (rq.sweepStep)    ui::applyAspectStep(set, 1, rq.sweepStep);
         if (rq.alertStep)    ui::applyAspectStep(set, 2, rq.alertStep);
 
+        burst_ = true;        // a hit was dispatched -> burst the resulting repaint (snappy touch)
         return nav.screen != before;
     }
     return false;
