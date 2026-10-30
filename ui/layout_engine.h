@@ -97,7 +97,8 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           OpenLocatedCodex, OpenDeviceDetail, OpenThreatDetail,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
-                          ThemeStep, OrientToggle, Back };
+                          ThemeStep, OrientToggle, Back,
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -541,6 +542,53 @@ inline HitList detailHits(int W, int H) {
     HitList h;
     addChromeHits(h, d.statusCells, d.navCells);
     h.add("back", d.back, Action::Back, 0, nullptr, "Return to the list, preserving scope and scroll");
+    return h;
+}
+
+// --- FILES: the SD log list + a DELETE control with a YES/NO confirm modal ----
+// Log rows are the touch targets, so they are 44px -- the list therefore shows
+// floor((bodyH-44)/44) of them (3 @480, 2 @320) above a 44px action bar, and
+// the rest page by scroll. DELETE opens a confirm modal; while it is up the row
+// and DELETE hits are suppressed (input never reaches a control behind the
+// modal) and the bar band carries YES / NO. No geometry.json oracle.
+struct FilesLayout {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect list, rows[4], bar, del, yes, no;
+    int  nRows = 0;
+};
+inline FilesLayout files(int W, int H) {
+    const Chrome c = chrome(W, H);
+    FilesLayout f;
+    f.status = c.status; f.nav = c.nav; f.body = c.body;
+    for (int i = 0; i < 4; i++) { f.statusCells[i] = c.statusCells[i]; f.navCells[i] = c.navCells[i]; }
+    const int barY = c.body.y + c.body.h - 44;
+    f.list = {c.body.x, c.body.y, c.body.w, c.body.h - 44};
+    f.nRows = f.list.h / 44; if (f.nRows > 4) f.nRows = 4;
+    for (int i = 0; i < f.nRows; i++) f.rows[i] = {c.body.x, c.body.y + i * 44, c.body.w, 44};
+    f.bar = {c.body.x, barY, c.body.w, 44};
+    f.del = {c.body.x + c.body.w - 120, barY, 120, 44};
+    const int half = (c.body.w - 8) / 2;
+    f.yes = {c.body.x, barY, half, 44};
+    f.no  = {c.body.x + c.body.w - half, barY, half, 44};
+    return f;
+}
+// FILES hits. In confirm mode: chrome + YES + NO only. Otherwise: chrome + a
+// FileSelect per visible row (payload = visible index; caller adds scroll) +
+// DELETE only when a deletable log is selected.
+inline HitList filesHits(int W, int H, bool confirm, bool deletable, int nVisible) {
+    const FilesLayout f = files(W, H);
+    HitList h;
+    addChromeHits(h, f.statusCells, f.navCells);
+    if (confirm) {
+        h.add("yes", f.yes, Action::FileConfirmYes, 0, nullptr, "Confirm delete (cannot undo)");
+        h.add("no",  f.no,  Action::FileConfirmNo,  0, nullptr, "Cancel the delete");
+        return h;
+    }
+    if (nVisible > f.nRows) nVisible = f.nRows;
+    static const char* const rslot[4] = {"file0", "file1", "file2", "file3"};
+    for (int i = 0; i < nVisible; i++)
+        h.add(rslot[i], f.rows[i], Action::FileSelect, i, nullptr, "Select this log");
+    if (deletable) h.add("delete", f.del, Action::FileDelete, 0, nullptr, "Delete the selected log");
     return h;
 }
 

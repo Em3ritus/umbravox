@@ -103,3 +103,6 @@ sim/test_aspect_engine
 sim/test_detail_present
 sim/test_detail_render
 sim/test_detail_engine
+sim/test_files_present
+sim/test_files_render
+sim/test_files_engine
