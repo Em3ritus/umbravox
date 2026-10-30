@@ -231,10 +231,14 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
 
 bool service(int budgetStrips) {
     if (!pending()) return false;
-    // interaction burst: paint the whole new state in this pass, not 4 strips at
-    // a time, so a tab switch / button press / screen change reacts at once. One
-    // frame only -- cleared below when done, so animation keeps the steady slice.
-    if (burst_) budgetStrips = H_ / 16 + 2;    // strips to cover the panel (16px each)
+    // interaction burst: paint the new state FAST -- but NOT in one giant
+    // blocking pass (that opens a touch-blind window and drops taps). Cover the
+    // panel in ~2 passes (half the strips each); burst_ stays set until the
+    // frame completes (see below), and touch is polled at the TOP of every loop
+    // pass, so the panel fills in 2 quick chunks with a touch read in between --
+    // snappy and curtain-free without freezing input. Animation keeps the steady
+    // 4-strip slice (burst_ is only set on an interaction).
+    if (burst_) budgetStrips = H_ / 32 + 2;    // ~half the panel per pass -> ~2 passes
     const uint32_t t0 = micros();
     sliceTransferUs_ = 0;
     bool done = false;

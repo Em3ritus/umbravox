@@ -1211,6 +1211,18 @@ void loop() {
     const uint32_t loopGap = prevLoopMs ? t0 - prevLoopMs : 0;
     prevLoopMs = t0;
 
+    // Poll touch FIRST, before any GPS/I2C or render work can open a
+    // touch-blind window. A capacitive tap is only ~50-150ms of contact, so a
+    // single poll per pass must land at the TOP of every pass, not after the
+    // GPS cycle and the render. Recording the contact here also lets the
+    // GPS-quiet gate below skip the LC76G cycle on THIS pass (not one late), so
+    // an interaction never competes with the bus. tp feeds the dimming +
+    // dispatch block further down.
+    const touch::Point tp = touch::read();
+#if defined(WS_C5_35)
+    if (tp.any) lastContactMs = millis();
+#endif
+
 #if !defined(WS_C5_35)
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
     // under 100 bytes, so this never blocks long enough to matter.
@@ -1425,7 +1437,7 @@ void loop() {
                       mesh::netId == 0 ? " (open -- ENROLL to make a private net)" : "");
     }
 
-    const touch::Point tp = touch::read();
+    // tp was read at the TOP of the loop (before GPS/render); consumed here.
 
     // --- idle dimming ---------------------------------------------------
     //
