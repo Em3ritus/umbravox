@@ -95,14 +95,15 @@ int main(){
         snprintf(m,sizeof m,"%dx%d empty scene paints no spectrum bars",W,H);
         expect(renderedBars(ef,W,H)==0, m);
 
-        // state transition: rec Off -> On, repaint only the LOG status cell region
+        // state transition: rec Off -> On. Design #1 puts REC/STOP on the NAV
+        // bar, so repaint the STOP region (not a status cell) and compare to full.
         const uieng::ScanLayout L = uieng::scan(W,H);
         ScanScene on = sc; on.rec = Rec::On;
         FbSink full(W,H); comp.renderFull(W,H,on,full);        // reference: full render, rec On
         FbSink reg(W,H);  comp.renderFull(W,H,sc,reg);         // start from rec Off
-        comp.renderRegion(W,H,on,L.statusCells[3],reg);        // repaint only the LOG cell strips
+        comp.renderRegion(W,H,on,L.stop,reg);                  // repaint only the STOP strips
         bool match=true; for(int i=0;i<W*H;i++) if(reg.fb[i]!=full.fb[i]){ match=false; break; }
-        snprintf(m,sizeof m,"%dx%d rec Off->On: region repaint == full repaint (old label erased)",W,H);
+        snprintf(m,sizeof m,"%dx%d rec Off->On: STOP region repaint == full (old label erased)",W,H);
         expect(match, m);
 
         // GPS transitions acquiring->fresh->stale: repaint only the GPS cell,

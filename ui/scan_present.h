@@ -318,6 +318,13 @@ public:
             const int navTop       = L.navCells[0].y;
             if (st) sched_.invalidate(0, statusBottom);
             if (bd) sched_.invalidate(statusBottom, navTop);
+            // design #1 SCAN carries the REC/STOP control on the NAV bar, which
+            // is otherwise static: repaint the nav band only when the recording
+            // state actually changes (not on every GPS/batt status tick).
+            char ra[16], rb[16];
+            scanr::recLabel(store_[cur_].scene(), ra, 16);
+            scanr::recLabel(nw, rb, 16);
+            if (__builtin_strcmp(ra, rb)) sched_.invalidate(navTop, H_);
         }
         cur_ ^= 1; haveFront_ = true; forceFull_ = false;
     }

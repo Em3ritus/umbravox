@@ -220,24 +220,27 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const uint16_t band[3] = { pal::MAGENTA, pal::ICE, pal::GREEN };
     box(s, 0, 0, W, H, pal::VOID);                                   // body
 
-    // chrome surfaces: status + nav get their own fill + divider
-    box(s, 0, 0, W, 44, pal::PANEL);   box(s, 0, 43, W, 1, pal::EDGE);
-    box(s, 0, H-44, W, 44, pal::PANEL); box(s, 0, H-44, W, 1, pal::EDGE);
+    // chrome surfaces: status + nav panels + the design #1 inset dividers
+    box(s, 0, 0, W, 44, pal::PANEL);
+    box(s, 0, H-44, W, 44, pal::PANEL);
+    box(s, L.body.x, 38, L.body.w, 1, pal::EDGE);
+    box(s, L.body.x, H-46, L.body.w, 1, pal::EDGE);
 
-    // status bar: quiet label over an emphasised value, from scene state
-    static const char* const slab[4] = {"GPS","MESH","BATT","LOG"};
-    char gbuf[16], rbuf[16], mbuf[16], bbuf[16];
-    const uint16_t gcol = gpsLabel(sc.gps, gbuf, sizeof gbuf);
-    const uint16_t rcol = recLabel(sc, rbuf, sizeof rbuf);
-    snprintf(mbuf, sizeof mbuf, "%d NODES", sc.nodes);
-    if (sc.hasCell) snprintf(bbuf, sizeof bbuf, "%d%%", sc.battPct); else snprintf(bbuf, sizeof bbuf, "N/A");
-    const char* sval[4] = { gbuf, mbuf, bbuf, rbuf };
-    const uint16_t scol[4] = { gcol, pal::TEXT, sc.hasCell?pal::TEXT:pal::DIM, rcol };
-    for (int i=0;i<4;i++){ const uieng::Rect c=L.statusCells[i];
-        if (i) box(s, c.x, c.y+9, 1, 26, pal::EDGE);                  // cell divider
-        txt(s, c.x+8, c.y+7,  slab[i], 1, pal::DIM);
-        int vs = fitScale(sval[i], c.w-12, 2);
-        txt(s, c.x+8, c.y+19, sval[i], vs, scol[i]); }
+    // header (design #1): UMBRAVOX wordmark + single-line GPS / MESH / BAT
+    // readouts. The GPS readout is compacted to "GPS 3D" here (SCAN-local, so
+    // the shared gpsLabel is untouched); stale/acquiring fall back to its text.
+    txt(s, L.wordmark.x, L.wordmark.y, "UMBRAVOX", (W>=400)?2:1, pal::BRIGHT);
+    char hb[24];
+    const GpsState gst = gpsState(sc.gps);
+    const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
+    if (gst==GpsState::Fresh)
+        snprintf(hb, sizeof hb, "GPS %s", sc.gps.mode==3?"3D":sc.gps.mode==2?"2D":"FIX");
+    else { char gb[16]; gpsLabel(sc.gps, gb, sizeof gb); snprintf(hb, sizeof hb, "GPS %s", gb); }
+    txt(s, L.statusCells[0].x+2, 16, hb, 1, gcol);
+    snprintf(hb, sizeof hb, "MESH %d", sc.nodes);
+    txt(s, L.statusCells[1].x+2, 16, hb, 1, pal::TEXT);
+    if (sc.hasCell) snprintf(hb, sizeof hb, "BAT %d%%", sc.battPct); else snprintf(hb, sizeof hb, "BAT N/A");
+    txt(s, L.statusCells[2].x+2, 13, hb, (W>=400)?2:1, sc.hasCell?pal::TEXT:pal::DIM);
 
     // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};
@@ -294,13 +297,24 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     txt(s, sx0, hr.y+hr.h-8, "2.4 GHz", 1, pal::DIM);
     txt(s, sx0+availW-Font::width("5 GHz",1), hr.y+hr.h-8, "5 GHz", 1, pal::DIM);
 
-    // nav bar
+    // nav bar (design #1): four tabs (SCAN active, underlined) left-aligned at
+    // the design positions, + the STOP / REC record control at the far right.
     static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
-    for (int i=0;i<4;i++){ const uieng::Rect c=L.navCells[i];
-        if (i) box(s, c.x, c.y+11, 1, 22, pal::EDGE);
-        int ns = fitScale(nav[i], c.w-8, 2);
-        centered(s, c.x+c.w/2, c.y+14, nav[i], ns, i==0?pal::BRIGHT:pal::DIM);
-        if (i==0){ int lw=Font::width(nav[i],ns); box(s, c.x+c.w/2-lw/2, H-8, lw, 2, pal::WITCH_HI); } }
+    static const int navX480[4] = {16,112,226,328};
+    for (int i=0;i<4;i++){
+        const int ns = (W>=400) ? 2 : fitScale(nav[i], L.navCells[i].w-6, 2);
+        const int lx = (W>=400) ? navX480[i] : L.navCells[i].x + 4;
+        txt(s, lx, H-30, nav[i], ns, i==0?pal::BRIGHT:pal::DIM);
+        if (i==0){ const int lw=Font::width(nav[i],ns); box(s, lx, H-8, lw, 2, pal::WITCH_HI); }
+    }
+    // STOP / REC: a red record control (the design's bottom-right button).
+    const uieng::Rect stp = L.stop;
+    const int bbw = stp.w < 56 ? stp.w : 56, bbh = 30;
+    const int bx = stp.x + (stp.w - bbw)/2, by = stp.y + (stp.h - bbh)/2;
+    char rb2[16]; const uint16_t rcol = recLabel(sc, rb2, sizeof rb2);   // "REC"/"STOP"/"NO SD"
+    box(s, bx, by, bbw, bbh, pal::PANEL);
+    frame(s, bx, by, bbw, bbh, rcol);
+    centered(s, bx + bbw/2, by + bbh/2 - 3, rb2, 1, rcol);
 }
 
 // --- strip compositor: small buffer, compose-then-emit ------------------------

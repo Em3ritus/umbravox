@@ -40,26 +40,54 @@ inline Chrome chrome(int W, int H) {
     return c;
 }
 
-// --- SCAN: counts rail (3 tiles) + hero (LIVE FIELD) --------------------------
+// --- SCAN: design #1 (WS35 full-design-scan) ----------------------------------
+// This intentionally rewrites SCAN's geometry from design #2 (the old
+// geometry.json oracle) to design #1 (the ratified proposal mockup): a wordmark
+// header with GPS/MESH/BAT readouts, three count tiles, a LIVE FIELD hero, and a
+// nav bar whose record control is a STOP button at the far right. Both approved
+// profiles via one function; every hit >=44px (STOP draws ~56x30 but its touch
+// rect is >=44). statusCells[0..2] = GPS/MESH/POWER readout hits (cell 3 is the
+// wordmark area, not a control); navCells[0..3] = the four tabs; `stop` is the
+// fifth nav hit. `wordmark` is draw-only.
 struct ScanLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
     Rect counts, hero, tiles[3];
+    Rect wordmark, stop;
 };
 inline ScanLayout scan(int W, int H) {
-    const Chrome c = chrome(W, H);
-    ScanLayout s;
-    s.status = c.status; s.nav = c.nav; s.body = c.body;
-    for (int i = 0; i < 4; i++) { s.statusCells[i] = c.statusCells[i]; s.navCells[i] = c.navCells[i]; }
+    ScanLayout s{};
+    const bool wide = (W >= 400);
+    const int M = wide ? 16 : 8;                 // design #1 margin: 16 @480, 8 @320
+    s.status = {0, 0, W, 44};
+    s.nav    = {0, H - 44, W, 44};
+    s.body   = {M, 52, W - 2 * M, H - 104};
+    const int ny = H - 44;
 
-    const int bw = c.body.w, bh = c.body.h;
-    const int countsW = std::max(88, iround(0.24 * bw));   // proportional, 88px floor (reviewer-verified)
-    s.counts = {c.body.x, c.body.y, countsW, bh};
-    const int th = bh / 3;                                 // integer division; last tile takes remainder
-    for (int i = 0; i < 3; i++) {
-        const int hh = (i < 2) ? th : bh - 2 * th;
-        s.tiles[i] = {c.body.x, c.body.y + i * th, countsW, hh};
+    if (wide) {
+        s.wordmark       = {16, 13, 96, 16};          // UMBRAVOX @2x (draw)
+        s.statusCells[0] = {130, 0,  92, 44};         // GPS 3D   (readout ~186)
+        s.statusCells[1] = {222, 0,  94, 44};         // MESH 3   (readout ~258)
+        s.statusCells[2] = {316, 0, 164, 44};         // BAT 78%  (readout ~375)
+        s.statusCells[3] = {0, 0, 130, 44};           // wordmark area (not a control)
+        for (int i = 0; i < 3; i++) s.tiles[i] = {16, 52 + i * 70, 132, 62};
+        s.hero = {156, 52, W - 156 - M, H - 104};
+        s.navCells[0] = {0, ny, 99, 44};   s.navCells[1] = {99, ny, 99, 44};
+        s.navCells[2] = {198, ny, 99, 44}; s.navCells[3] = {297, ny, 101, 44};
+        s.stop = {398, ny, 82, 44};
+    } else {
+        s.wordmark       = {8, 8, 48, 8};             // UMBRAVOX @1x (draw)
+        s.statusCells[0] = {70, 0, 60, 44};
+        s.statusCells[1] = {130, 0, 70, 44};
+        s.statusCells[2] = {200, 0, 120, 44};
+        s.statusCells[3] = {0, 0, 70, 44};
+        const int th = (H - 104) / 3;
+        for (int i = 0; i < 3; i++) s.tiles[i] = {8, 52 + i * th, 88, (i < 2) ? th : (H - 104 - 2 * th)};
+        s.hero = {104, 52, W - 104 - 8, H - 104};
+        s.navCells[0] = {0, ny, 65, 44};   s.navCells[1] = {65, ny, 65, 44};
+        s.navCells[2] = {130, ny, 65, 44}; s.navCells[3] = {195, ny, 65, 44};
+        s.stop = {260, ny, 60, 44};
     }
-    s.hero = {c.body.x + countsW + 8, c.body.y, bw - countsW - 8, bh};
+    s.counts = {s.tiles[0].x, s.tiles[0].y, s.tiles[0].w, H - 104};
     return s;
 }
 
@@ -155,7 +183,16 @@ inline void addChromeHits(HitList& h, const Rect sc[4], const Rect nv[4]) {
 inline HitList scanHits(int W, int H, const HitCtx& ctx) {
     const ScanLayout s = scan(W, H);
     HitList h;
-    addChromeHits(h, s.statusCells, s.navCells);
+    // header readouts (wordmark area is not a control)
+    h.add("gps",   s.statusCells[0], Action::OpenGps,       0, nullptr, "Open GPS diagnostics");
+    h.add("mesh",  s.statusCells[1], Action::OpenMesh,      0, nullptr, "Open Mesh");
+    h.add("power", s.statusCells[2], Action::PowerDetail,   0, nullptr, "Power detail (NM: sensing unavailable)");
+    // nav tabs + the STOP record control (design #1 moves logging to the nav bar)
+    static const char* const nslot[4] = {"nav-scan","nav-domain","nav-codex","nav-menu"};
+    static const char* const ndesc[4] = {"Open SCAN","Open DOMAIN","Open CODEX","Open MENU"};
+    for (int i = 0; i < 4; i++) h.add(nslot[i], s.navCells[i], Action::Nav, i, nullptr, ndesc[i]);
+    h.add("stop", s.stop, Action::ToggleLogging, 0, nullptr, "Toggle logging; the REC/STOP control");
+    // count tiles
     static const char* const tslot[3] = {"WIFI","5 GHZ","BLE"};
     static const char* const tdesc[3] = {"Open Codex filtered to WIFI",
                                          "Open Codex filtered to 5 GHZ",

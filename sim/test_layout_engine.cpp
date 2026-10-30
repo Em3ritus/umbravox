@@ -33,21 +33,24 @@ static void ckRect(const char* tag, Rect g, int x,int y,int w,int h) {
     expect(g==Rect{x,y,w,h}, "%-12s got (%d,%d,%d,%d) exp (%d,%d,%d,%d)", tag,g.x,g.y,g.w,g.h,x,y,w,h);
 }
 static void testLayout() {
+    // SCAN is design #1 now: status/nav bands full-width, a 16px body margin at
+    // 480 (8 at 320), and the design-1 tiles/hero/STOP (not 4 equal chrome cells).
     for (int P=0; P<2; ++P) {
-        const int W=P?320:480, H=P?240:320, cw=W/4;
+        const int W=P?320:480, H=P?240:320;
         ScanLayout s = scan(W,H);
         ckRect("status", s.status, 0,0,W,44);
         ckRect("nav", s.nav, 0,H-44,W,44);
-        ckRect("body", s.body, 8,52,W-16,H-104);
-        for (int i=0;i<4;i++){ ckRect("sCell",s.statusCells[i],i*cw,0,cw,44);
-                               ckRect("nCell",s.navCells[i],i*cw,H-44,cw,44); }
+        ckRect("body", s.body, P?8:16, 52, P?304:448, H-104);
     }
-    ckRect("counts480", scan(480,320).counts, 8,52,111,216);
-    ckRect("hero480",   scan(480,320).hero,   127,52,345,216);
-    ckRect("tile2_480", scan(480,320).tiles[2], 8,196,111,72);
-    ckRect("counts320", scan(320,240).counts, 8,52,88,136);
-    ckRect("hero320",   scan(320,240).hero,   104,52,208,136);
-    ckRect("tile2_320", scan(320,240).tiles[2], 8,142,88,46);
+    ckRect("counts480",   scan(480,320).counts, 16,52,132,216);
+    ckRect("hero480",     scan(480,320).hero,   156,52,308,216);
+    ckRect("tile2_480",   scan(480,320).tiles[2], 16,192,132,62);
+    ckRect("stop480",     scan(480,320).stop, 398,276,82,44);
+    ckRect("wordmark480", scan(480,320).wordmark, 16,13,96,16);
+    ckRect("counts320",   scan(320,240).counts, 8,52,88,136);
+    ckRect("hero320",     scan(320,240).hero,   104,52,208,136);
+    ckRect("tile2_320",   scan(320,240).tiles[2], 8,142,88,46);
+    ckRect("stop320",     scan(320,240).stop, 260,196,60,44);
     ckRect("Dmap480",   domain(480,320).map, 8,52,312,216);
     ckRect("Dcon480",   domain(480,320).contacts, 328,52,144,168);
     ckRect("Dplus480",  domain(480,320).plus, 428,224,44,44);
@@ -68,6 +71,7 @@ static Expect expectFor(const char* id, Rect r) {
     if(!strcmp(id,"nav-domain"))  return E(Action::Nav,true,1);
     if(!strcmp(id,"nav-codex"))   return E(Action::Nav,true,2);
     if(!strcmp(id,"nav-menu"))    return E(Action::Nav,true,3);
+    if(!strcmp(id,"stop"))        return E(Action::ToggleLogging);   // SCAN design #1: REC/STOP on the nav
     if(!strcmp(id,"WIFI"))        return E(Action::CodexFilter,true,0);
     if(!strcmp(id,"5 GHZ"))       return E(Action::CodexFilter,true,1);
     if(!strcmp(id,"BLE"))         return E(Action::CodexFilter,true,2);

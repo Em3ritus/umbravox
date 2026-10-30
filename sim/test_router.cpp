@@ -32,7 +32,7 @@ int main(){
     // SCAN count tile -> CODEX pre-filtered; status cells -> side effects / MESH
     { Router r; HitList h=scanHits(W,H,HitCtx{});
       r.dispatch(*slot(h,"5 GHZ")); expect(r.screen()==Screen::Codex && r.codexScope()==1, "count tile 5GHZ -> CODEX scope 1");
-      auto rq=r.dispatch(*slot(h,"logging")); expect(rq.logToggle, "LOG cell -> logToggle request");
+      auto rq=r.dispatch(*slot(h,"stop")); expect(rq.logToggle, "STOP (nav) -> logToggle request");
       rq=r.dispatch(*slot(h,"gps")); expect(rq.openGps, "GPS cell -> openGps request");
       r.dispatch(*slot(h,"mesh")); expect(r.screen()==Screen::Mesh, "MESH cell -> MESH screen"); }
 
