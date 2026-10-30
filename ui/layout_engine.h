@@ -372,4 +372,38 @@ inline HitList meshHits(int W, int H) {
     return h;
 }
 
+// --- a read-only log body (OMENS / ECHOES): title + column header + list ------
+// Both are records you read and scroll, not tap: an Omen carries no stable
+// device key and a probe is a sighting, so neither row navigates. The whole
+// list is one drag-to-scroll region (a gesture, not a discrete hit), so the hit
+// set is the chrome only -- the same way SCAN/DOMAIN/CODEX never emitted a
+// scroll hit. Compact rows (not 44px touch targets, since they are not hits).
+struct LogLayout {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect title, header, list;
+    int  rowH = 14, nRows = 0;   // visible compact rows
+};
+inline LogLayout logBody(int W, int H) {
+    const SubChrome c = subChrome(W, H);
+    LogLayout g;
+    g.status = c.status; g.nav = c.nav; g.body = c.body;
+    for (int i = 0; i < 4; i++) { g.statusCells[i] = c.statusCells[i]; g.navCells[i] = c.navCells[i]; }
+    g.title  = c.title;
+    g.header = {c.body.x, c.body.y + 20, c.body.w, 12};
+    g.list   = {c.body.x, c.body.y + 32, c.body.w, c.body.h - 32};
+    g.rowH   = 14;
+    g.nRows  = g.list.h / g.rowH;
+    return g;
+}
+inline LogLayout omens(int W, int H)  { return logBody(W, H); }
+inline LogLayout echoes(int W, int H) { return logBody(W, H); }
+inline HitList logHits(int W, int H) {        // chrome only; the list is a scroll gesture
+    const LogLayout g = logBody(W, H);
+    HitList h;
+    addChromeHits(h, g.statusCells, g.navCells);
+    return h;
+}
+inline HitList omensHits(int W, int H)  { return logHits(W, H); }
+inline HitList echoesHits(int W, int H) { return logHits(W, H); }
+
 }  // namespace uieng
