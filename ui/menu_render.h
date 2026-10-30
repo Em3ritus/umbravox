@@ -53,19 +53,23 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
     // shared design-1 chrome: header + nav (MENU lit, index 3) + STOP/REC control
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, 3);
 
-    // the grid: eight launcher tiles + a LABELS toggle
+    // the grid: eight launcher tiles + a LABELS toggle. Design #1 is muted
+    // chrome -- the old WITCH (bright violet) tile accents clashed on hardware,
+    // so the per-tile top bar is EDGE (a quiet member of the chrome family).
     for (int i = 0; i < 8; i++) { const uieng::Rect t = L.cells[i];
         box(s, t.x, t.y, t.w, t.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 2, 3));
         frame(s, t.x, t.y, t.w, t.h, pal::EDGE);
-        box(s, t.x, t.y, t.w, 3, pal::WITCH);                 // top accent
+        box(s, t.x, t.y, t.w, 3, pal::EDGE_LIT);             // top accent (design-1 seal tone)
         const char* lbl = sc.plain ? kMenuEntries[i].plain : kMenuEntries[i].brand;
         centered(s, t.x + t.w / 2, t.y + t.h / 2 - 3, lbl, fitScale(lbl, t.w - 10, 2), pal::TEXT); }
 
-    // LABELS control tile (ninth cell): a live edge marks it as a control
+    // LABELS control tile (ninth cell): the lit EDGE_LIT edge (design-1's live-
+    // control edge, per subr::stepBtn) marks it as a control, not a launcher --
+    // no WITCH purple on the hub.
     { const uieng::Rect t = L.cells[8];
       box(s, t.x, t.y, t.w, t.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 2, 3));
-      frame(s, t.x, t.y, t.w, t.h, pal::WITCH);
-      centered(s, t.x + t.w / 2, t.y + 6, "LABELS", fitScale("LABELS", t.w - 10, 2), pal::WITCH_HI);
+      frame(s, t.x, t.y, t.w, t.h, pal::EDGE_LIT);
+      centered(s, t.x + t.w / 2, t.y + 6, "LABELS", fitScale("LABELS", t.w - 10, 2), pal::BRIGHT);
       const char* mode = sc.plain ? "PLAIN" : "BRAND";
       centered(s, t.x + t.w / 2, t.y + t.h - 14, mode, fitScale(mode, t.w - 10, 2), sc.plain ? pal::GREEN : pal::DIM); }
 
