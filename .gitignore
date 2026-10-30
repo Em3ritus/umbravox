@@ -107,3 +107,4 @@ sim/test_files_present
 sim/test_files_render
 sim/test_files_engine
 sim/test_router
+sim/test_project

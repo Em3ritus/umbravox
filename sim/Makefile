@@ -209,7 +209,7 @@ ENGINE_HDR = ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
              ../ui/aspect_render.h ../ui/aspect_present.h \
              ../ui/detail_render.h ../ui/detail_present.h \
              ../ui/files_render.h ../ui/files_present.h \
-             ../ui/router.h ../ui/gnss.h ../ui/model.h
+             ../ui/router.h ../ui/project.h ../ui/gnss.h ../ui/model.h
 
 test_layout_engine: test_layout_engine.cpp ../ui/layout_engine.h oracle_hits.inc
 	$(CXX) $(CXXFLAGS) -o $@ test_layout_engine.cpp -lm
@@ -318,7 +318,12 @@ test_files_engine: test_files_engine.cpp files_fixture.h $(ENGINE_HDR) $(PAL_DEP
 test_router: test_router.cpp ../ui/router.h ../ui/layout_engine.h
 	$(CXX) $(CXXFLAGS) -o $@ test_router.cpp -lm
 
-TESTS = test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router
+# The State->Store projections. Needs the theme model + the signature/auth name
+# tables (ui/signatures.cpp, ui/wifi_auth.cpp) on top of PAL_DEPS.
+test_project: test_project.cpp ../ui/project.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_project.cpp $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+
+TESTS = test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
