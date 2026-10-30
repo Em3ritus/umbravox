@@ -1202,6 +1202,16 @@ bool testAlert(ui::State& s, uint32_t nowMs) {
 
 } // namespace
 
+// P3 boot-stall finder (diagnostic, remove once the culprit is deferred): the
+// ~2.5s one-time freeze at ~5s uptime is a single loop section doing blocking
+// SD / init work. We cannot profile from the build host, so the device names it
+// -- any wrapped section that blocks longer than the threshold logs once via
+// elog ("stall: <what> blocked N ms"). Two micros() reads per wrapped call.
+static inline void bootStall(const char* what, uint32_t startUs) {
+    const uint32_t ms = (micros() - startUs) / 1000;
+    if (ms > 250) elog::event(elog::WARN, "stall", "%s blocked %lu ms", what, (unsigned long)ms);
+}
+
 void loop() {
     static uint32_t frame = 0;
     static ui::Dirty dirty;
@@ -1246,19 +1256,19 @@ void loop() {
 #else
     // One short synchronous LC76G cycle, at most twice a second, and never
     // while the panel is being touched. See ws_c5_gps.h.
-    if (millis() - lastContactMs >= GPS_TOUCH_QUIET_MS) gpsi2c::tick(gnssSink, millis());
+    if (millis() - lastContactMs >= GPS_TOUCH_QUIET_MS) { const uint32_t _s = micros(); gpsi2c::tick(gnssSink, millis()); bootStall("gps tick", _s); }
 #endif
 
-    cap::tick(millis());
+    { const uint32_t _s = micros(); cap::tick(millis()); bootStall("cap tick", _s); }
     // While a coordinator is live the CYD is a pure collector: its Core stops
     // handing out assignments so it never re-claims a node the collector has
     // placed on a coordinator (which would otherwise fight the redirect).
     meshcore::setAssigning(!collector::active());
-    meshcore::tick(millis());
-    collector::tick(millis());
-    enroll::tick(millis());
-    blescan::tick(millis());
-    logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
+    { const uint32_t _s = micros(); meshcore::tick(millis()); bootStall("meshcore tick", _s); }
+    { const uint32_t _s = micros(); collector::tick(millis()); bootStall("collector tick", _s); }
+    { const uint32_t _s = micros(); enroll::tick(millis()); bootStall("enroll tick", _s); }
+    { const uint32_t _s = micros(); blescan::tick(millis()); bootStall("blescan tick", _s); }
+    { const uint32_t _s = micros(); logging::tick(millis(), ui::Gnss::utcEpoch(millis())); bootStall("logging tick", _s); }
 
     // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
     // low-heap warnings at 40, 24 and 16 KB (each re-armed 8 KB above it) so a
@@ -1900,7 +1910,7 @@ void loop() {
                                 : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
                                 :                                        scanr::Rec::Off;
             const pmu::Batt b = pmu::read(millis());
-            engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis());
+            { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis()); bootStall("engine snapshot", _s); }
         }
         const uint32_t tD = millis();
         engineadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
