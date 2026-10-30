@@ -23,7 +23,9 @@ public:
             }
         return x1>x0 && y1>y0 ? uieng::Rect{x0,y0,x1-x0,y1-y0} : uieng::Rect{};
     }
-    template<class Sink> void present(bool menu, Sink&& send) {
+    template<class Sink> void present(bool menu, Sink&& send, int y0=0, int y1=-1) {
+        compareY0_ = valid_ ? y0 : 0;
+        compareY1_ = valid_ && y1>=0 ? y1 : h_;
         // The whole frame is ready. No application/GPS pass between regions.
         emit({0,0,w_,44},send);
         if (menu) {
@@ -41,11 +43,15 @@ public:
     }
 private:
     template<class Sink> void emit(uieng::Rect region, Sink& send) {
+        const int y0=std::max(region.y,compareY0_), y1=std::min(region.y+region.h,compareY1_);
+        if(y1<=y0)return;
+        region.y=y0;region.h=y1-y0;
         const auto r=changed(region); if(!r.w)return;
         send(r,back_,w_);
         for(int y=r.y;y<r.y+r.h;++y)
             std::memcpy(front_+y*w_+r.x,back_+y*w_+r.x,r.w*sizeof(uint16_t));
     }
+    int compareY0_=0,compareY1_=0;
     uint16_t *front_=nullptr,*back_=nullptr; int w_=0,h_=0; bool valid_=false;
 };
 }

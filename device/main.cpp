@@ -1230,10 +1230,14 @@ void loop() {
     static uint32_t prevLoopMs = 0;
     const uint32_t loopGap = prevLoopMs ? t0 - prevLoopMs : 0;
     prevLoopMs = t0;
+    static uint32_t loopGapMax = 0;
+    if(loopGap>loopGapMax)loopGapMax=loopGap;
 
     // Engine builds read the periodic sampler's cache; completed presses are
     // retained separately. Other boards continue synchronous polling here.
+    const uint32_t touchStart=micros();
     const touch::Point tp = touch::read();
+    bootStall("touch read",touchStart);
 #if defined(WS_C5_35)
     if (tp.any) lastContactMs = millis();
 #endif
@@ -1441,7 +1445,7 @@ void loop() {
     static ui::Settings set;
     static bool loaded = false;
     if (!loaded) {
-        prefs::load(set);
+        { const uint32_t t=micros(); prefs::load(set); bootStall("prefs load",t); }
         loaded = true;
         // Touch hit-testing reads the theme's geometry (dial, spectrum), and
         // the first navTouch runs before the draw-time apply below. Same
@@ -1583,7 +1587,7 @@ void loop() {
     if (set.bands   != applied.bands)   cap::setBands(set.bands);
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
     applied = set;
-    prefs::tick(set, millis());
+    { const uint32_t t=micros(); prefs::tick(set, millis()); bootStall("prefs tick",t); }
 
     // AUTO LOG's latch lives for this boot: a reboot is what clears a STOP.
     static autolog::Latch autoLatch;
@@ -1825,8 +1829,11 @@ void loop() {
         // suspended passes in bounded slices -- no NEW snapshot started asleep,
         // and never while the animation owns the panel -- until coverage
         // completes, then quiet suspension resumes on its own.
-        if (scanpres::serviceWhileSuspended(engineadapter::pending(), animOn))
+        if (scanpres::serviceWhileSuspended(engineadapter::pending(), animOn)) {
+            const uint32_t renderStart=micros();
             engineadapter::service(/*budgetStrips*/4);
+            bootStall("engine suspend service",renderStart);
+        }
 #endif
 
         // ANIM: a dot breathing at <= 2 fps, one small blit per frame. On
@@ -1913,11 +1920,15 @@ void loop() {
             const scanr::Rec rc = logging::state() == logging::ACTIVE  ? scanr::Rec::On
                                 : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
                                 :                                        scanr::Rec::Off;
+            const uint32_t pmuStart=micros();
             const pmu::Batt b = pmu::read(millis());
+            bootStall("pmu read",pmuStart);
             { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis()); bootStall("engine snapshot", _s); }
         }
         const uint32_t tD = millis();
+        const uint32_t renderStart=micros();
         engineadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
+        bootStall("engine service",renderStart);
         engineadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
         perflog::frame(millis() - tD, 0);
 
@@ -1925,10 +1936,13 @@ void loop() {
         if (millis() - engLogAt >= 10000) {
             const uint32_t iv = millis() - engLogAt; engLogAt = millis();
             const scanpres::PresentMetrics& m = engineadapter::metrics();
-            logf("[eng] fr %u sl %u compose %luus xfer %luus maxsl %luus rpm %lu\n",
+            logf("[eng] fr %u sl %u compose %luus xfer %luus maxsl %luus rpm %lu diff %luus entry %lums gap %lums wifi %lu ble %lu\n",
                  (unsigned)m.frames, (unsigned)m.slices,
                  (unsigned long)m.composeUs, (unsigned long)m.transferUs,
-                 (unsigned long)m.maxSliceUs, (unsigned long)m.renderPerMille(iv));
+                 (unsigned long)m.maxSliceUs, (unsigned long)m.renderPerMille(iv),
+                 (unsigned long)m.diffUs,(unsigned long)m.entryMaxMs,(unsigned long)loopGapMax,
+                 (unsigned long)m.capFrames,(unsigned long)m.bleReports);
+            loopGapMax=0;
             uint32_t gap, missed, dropped;
             touch::samplingStats(gap, missed, dropped);
             logf("[touch] maxgap %lums deadline-misses %lu dropped %lu\n",

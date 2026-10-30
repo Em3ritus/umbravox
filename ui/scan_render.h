@@ -7,6 +7,7 @@
 // element clipped into it), then handed to a Sink once. No full framebuffer, no
 // animation. Host and device compilable (no Arduino deps).
 #pragma once
+#include "radar_geometry.h"
 #include "layout_engine.h"
 #include "palette.h"
 #include "themepack.h"
@@ -68,6 +69,7 @@ struct ScanScene {
     uint32_t            now = 0;                                 // clock for contact age
     // theme
     uint8_t  theme = 0;          // pal::ThemeId; drives artwork selection
+    bool animateSweep = false; // caller opt-in; static fixtures retain their exact pixels
 };
 
 // --- projections (pure, host-testable): scene data -> draw-ready values --------
@@ -151,6 +153,7 @@ inline void box(S& s, int rx, int ry, int rw, int rh, uint16_t c) {
     for (int y=y0; y<y1; y++){ uint16_t* r=s.px+(y-s.y0)*s.W; for (int x=x0;x<x1;x++) r[x]=c; }
 }
 inline void txt(S& s, int gx, int gy, const char* t, int sc, uint16_t fg) {
+    if (gy >= s.y0+s.h || gy+Font::H*sc <= s.y0) return;
     for (int i=0;t[i];i++) for (int ry=0;ry<Font::H;ry++){ uint8_t b=Font::row(t[i],ry);
         for (int cx=0;cx<Font::W;cx++){ if(!(b&(0x10>>cx))) continue;
             for (int ky=0;ky<sc;ky++) for (int kx=0;kx<sc;kx++)
@@ -170,7 +173,7 @@ inline void centered(S& s, int cx, int gy, const char* t, int sc, uint16_t c) {
 
 // --- field artwork (follows the theme's selection) ----------------------------
 inline void disc(S& s, int cx, int cy, int r, uint16_t c) {
-    for (int y=cy-r;y<=cy+r;y++) for (int x=cx-r;x<=cx+r;x++)
+    for (int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++) for (int x=cx-r;x<=cx+r;x++)
         if ((x-cx)*(x-cx)+(y-cy)*(y-cy) <= r*r) pt(s,x,y,c);
 }
 inline void frame(S& s, int x, int y, int w, int h, uint16_t c) {
@@ -185,7 +188,7 @@ inline void heptaInto(S& s, int cx, int cy, int r, uint16_t ring, uint16_t star)
 inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px) return;
     const int d=2*r;
-    for (int y=cy-r;y<=cy+r;y++){ const int dy=y-cy;
+    for (int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++){ const int dy=y-cy;
         for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(dx*dx+dy*dy>r*r) continue;
             int sx=(x-(cx-r))*e.w/d, sy=(y-(cy-r))*e.h/d;
             if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
@@ -213,6 +216,16 @@ inline HeroSub heroSub(uieng::Rect hr) {
     h.barMax   = specH-16;                          // tallest fixture bar == barMax (24)
     return h;
 }
+
+// Shared geometry for drawing and narrow animation invalidation.
+inline uieng::Rect radarBounds(int W, int H) {
+    const auto f = heroSub(uieng::scan(W,H).hero).field;
+    const int cx = W>=400 ? 311 : f.x+f.w/2;
+    const int cy = W>=400 ? 143 : f.y+f.h/2;
+    const int r = W>=400 ? 69 : std::min(f.w,f.h)/2-6;
+    return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
+}
+inline uint32_t sweepPhase(uint32_t now) { return (now / 50u) % 72u; } // 20 Hz, 3.6 s turn
 
 // --- shared design-1 chrome (header + nav): composed by EVERY engine screen ---
 // The UMBRAVOX wordmark + single-line GPS/MESH/BAT readouts, the four nav tabs
@@ -318,20 +331,39 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // radii 23/46/69 (scaled to fr) in the chrome tone, a DELICATE heptagram in
     // the seal tone (EDGE_LIT = #574465) at 0.72r with verts from east, a sweep
     // ray, and a bright centre cross.
-    if (fr>6) {
+    if (fr>6 && fcy+fr >= s.y0 && fcy-fr < s.y0+s.h) {
         for (int k=1;k<=3;k++){ const int rr=fr*(k*23)/69;
-            for (int a=0;a<1440;a++){ const double t=a*3.14159265/720.0;
-                pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); } }
+            int count=0;
+            const auto* ring=radargeometry::ring(rr,count);
+            if (ring) {
+                for (int i=0;i<count;++i) {
+                    if (fcy+ring[i].y < s.y0) continue;
+                    if (fcy+ring[i].y >= s.y0+s.h) break; // sorted rows
+                    pt(s,fcx+ring[i].x,fcy+ring[i].y,pal::EDGE);
+                }
+            } else { // other logical sizes retain the original geometry
+                for (int a=0;a<1440;a++){ const double t=a*3.14159265/720.0;
+                    pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
+            }
+        }
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
         } else {
             const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east
-            for (int i=0;i<7;i++){ const double t=i*2.0*3.14159265/7.0;
-                vx[i]=fcx+(int)(h7*std::cos(t)); vy[i]=fcy+(int)(h7*std::sin(t)); }
+            const auto* star = h7==49 ? radargeometry::star49 : h7==19 ? radargeometry::star19 : nullptr;
+            for (int i=0;i<7;i++) {
+                if (star) { vx[i]=fcx+star[i].x; vy[i]=fcy+star[i].y; }
+                else { const double t=i*2.0*3.14159265/7.0;
+                    vx[i]=fcx+(int)(h7*std::cos(t)); vy[i]=fcy+(int)(h7*std::sin(t)); }
+            }
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
         }
-        line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);     // sweep ray
+        if (sc.animateSweep) {
+            const double angle = ((int)sweepPhase(sc.now)*5-90)*3.14159265/180.0;
+            const int length = fr*4/5;
+            line(s,fcx,fcy,fcx+(int)(length*std::cos(angle)),fcy+(int)(length*std::sin(angle)),pal::WITCH);
+        } else line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
         box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];

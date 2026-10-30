@@ -198,7 +198,7 @@ sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp 
 # in each test's header; wiring them here puts the engine lane under `make test`.
 # The oracle test is header-only; the render/present/engine tests need the theme
 # model + font (PAL_DEPS), same as the other draw tests.
-ENGINE_HDR = ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
+ENGINE_HDR = ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
              ../ui/domain_render.h ../ui/domain_present.h \
              ../ui/codex_render.h ../ui/codex_present.h \
              ../ui/menu_render.h ../ui/menu_present.h \
@@ -323,7 +323,7 @@ test_router: test_router.cpp ../ui/router.h ../ui/layout_engine.h
 test_project: test_project.cpp ../ui/project.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp
 	$(CXX) $(CXXFLAGS) -o $@ test_project.cpp $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
 
-TESTS = test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
+TESTS = test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -385,3 +385,10 @@ bench: bench_draw
 # Input retention and off-screen presentation, with exact fake-panel comparisons.
 test_input_presentation: test_input_presentation.cpp ../device/i2c_budget.h ../ui/input_events.h ../ui/pending_hit.h ../ui/frame_present.h $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_input_presentation.cpp $(PAL_DEPS) -lm
+
+# Exact raster parity and animated-field restoration at both native profiles.
+test_scan_latency: test_scan_latency.cpp scan_fixture.h ../ui/frame_present.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_scan_latency.cpp $(PAL_DEPS) -lm
+
+bench_scan: bench_scan.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ bench_scan.cpp $(PAL_DEPS) -lm

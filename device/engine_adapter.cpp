@@ -41,6 +41,9 @@ inputevents::PendingHit pendingHit_;
 uint32_t inputEpoch_ = 0;
 framepresent::Frame frame_;
 bool buffered_ = false;
+int stagedY0_=0, stagedY1_=0;
+bool entryTiming_=false;
+uint32_t entryAt_=0;
 // Interaction burst: a screen enter/change, a wake, a theme change, or a touch
 // that dispatched a hit all produce a NEW state the user is waiting to see. For
 // that one repaint, service() widens its composition budget. The staged frame
@@ -109,11 +112,16 @@ uint8_t fromNav(uinav::Screen s) {
 // Compose one screen's dirty rows into the shared buffer and push them.
 template <class Scene>
 void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, int, const Scene&)) {
+    if(y0<stagedY0_)stagedY0_=y0;
+    if(y1>stagedY1_)stagedY1_=y1;
     for (int sy = y0; sy < y1; sy += 16) {
         const int sh = (sy + 16 > y1) ? (y1 - sy) : 16;
-        scanr::S s{ buffered_ ? frame_.rows(sy) : buf_, W_, sy, sh };
+        // Compose hot drawing primitives in internal SRAM, then copy sequentially
+        // to PSRAM. Never expose the partially composed frame to the panel.
+        scanr::S s{ buf_, W_, sy, sh };
         cs(s, W_, H_, sc);
-        if (!buffered_) sink_.strip(0, sy, W_, sh, buf_);
+        if (buffered_) memcpy(frame_.rows(sy),buf_,W_*sh*sizeof(uint16_t));
+        else sink_.strip(0, sy, W_, sh, buf_);
     }
 }
 
@@ -131,7 +139,7 @@ int codexWindowIndexForRow(const ui::State& s, int row) {
 }  // namespace
 
 void begin(Arduino_TFT* gfx, int W, int H) {
-    gfx_ = gfx; W_ = W; H_ = H;
+    gfx_ = gfx; W_ = W; H_ = H; stagedY0_=H; stagedY1_=0;
     auto* front = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
     auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
     buffered_ = front && back;
@@ -144,6 +152,7 @@ void begin(Arduino_TFT* gfx, int W, int H) {
 }
 
 void enter(uint8_t uiScreen) {
+    entryTiming_=true; entryAt_=millis();
     cur_ = toNav(uiScreen);
     router_.setScreen(cur_);
     switch (cur_) {
@@ -231,7 +240,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
               scanr::Rec rec, bool hasCell, int batt, uint32_t now) {
     uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now;
     switch (cur_) {
-        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c);     eScan_.commit();   break;
+        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c); eScan_.back().animate(true); eScan_.commit();   break;
         case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c); eDomain_.commit(); break;
         case uinav::Screen::Codex:  uiproj::codex(eCodex_.back(), s, c);   eCodex_.commit();  break;
         case uinav::Screen::Menu:   uiproj::menu(eMenu_.back(), s, c);     eMenu_.commit();   break;
@@ -269,7 +278,8 @@ bool service(int budgetStrips) {
     }
     const uint32_t total = micros() - t0;
     const uint32_t compose = total > sliceTransferUs_ ? total - sliceTransferUs_ : 0;
-    metrics_.slice(compose, sliceTransferUs_);
+    const uint32_t presentationStart=micros();
+    const uint32_t earlyTransfer=sliceTransferUs_;
     if (done && buffered_) {
         frame_.present(cur_ == uinav::Screen::Menu, [](uieng::Rect r, const uint16_t* px, int stride) {
             const uint32_t t = micros();
@@ -284,10 +294,20 @@ bool service(int budgetStrips) {
                 gfx_->writePixels(buf_, r.w);
             }
             gfx_->endWrite();
-            metrics_.slice(0, micros()-t);
-        });
+            sliceTransferUs_ += micros()-t;
+        },stagedY0_,stagedY1_);
     }
-    if (done) { metrics_.frameDone(); burst_ = false; }   // interaction repaint delivered; back to steady slices
+    const uint32_t diff=micros()-presentationStart-(sliceTransferUs_-earlyTransfer);
+    metrics_.work(compose,diff,sliceTransferUs_);
+    if (done) {
+        stagedY0_=H_;stagedY1_=0;
+        if(entryTiming_) {
+            const uint32_t age=millis()-entryAt_;
+            if(age>metrics_.entryMaxMs)metrics_.entryMaxMs=age;
+            entryTiming_=false;
+        }
+        metrics_.frameDone(); burst_ = false;
+    }   // interaction repaint delivered; back to steady slices
     return done;
 }
 
@@ -384,7 +404,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     return false;
 }
 
-void sampleCapture(uint32_t, uint32_t, uint32_t) { /* reserved: per-screen capture accounting */ }
+void sampleCapture(uint32_t frames, uint32_t uniques, uint32_t ble) { metrics_.capture(frames,uniques,ble); }
 const scanpres::PresentMetrics& metrics() { return metrics_; }
 void clearMetrics() { metrics_.clear(); }
 

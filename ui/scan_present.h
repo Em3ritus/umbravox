@@ -50,6 +50,7 @@ public:
         ch_buf_[0] = 0; band_buf_[0] = 0;
         sc_.ch = ch_buf_; sc_.chBand = band_buf_;
     }
+    void animate(bool enabled) { sc_.animateSweep = enabled; }
     void gps(const GnssFix& f)                    { sc_.gps = f; }
     void status(int nodes, bool hasCell, int batt, Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
@@ -87,10 +88,7 @@ private:
 // The field radius the compositor draws markers within, from the layout (same
 // derivation as composeStrip), so the diff can project markers exactly.
 inline int fieldRadius(int W, int H) {
-    const uieng::Rect hr = uieng::scan(W, H).hero;
-    const scanr::HeroSub hs = scanr::heroSub(hr);
-    const uieng::Rect f = hs.field;
-    return ((f.w < f.h ? f.w : f.h) / 2) - 6;
+    return (scanr::radarBounds(W,H).w - 5) / 2;
 }
 
 // --- scene diff: which display bands changed ---------------------------------
@@ -101,7 +99,7 @@ inline int fieldRadius(int W, int H) {
 // fades or expires over time repaints even with no new packets, while a clock
 // tick that changes nothing visible does not. Pure.
 inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
-                       bool& status, bool& body) {
+                       bool& status, bool& body, bool* fieldOnly = nullptr) {
     char la[16], lb[16];
     const bool gpsSame = scanr::gpsLabel(a.gps, la, 16) == scanr::gpsLabel(b.gps, lb, 16)
                          && !__builtin_strcmp(la, lb);
@@ -128,7 +126,10 @@ inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
                    && (!ma.shown || (ma.dx == mb.dx && ma.dy == mb.dy
                                      && ma.sizePx == mb.sizePx && ma.band == mb.band));
     }
-    body = !countSame || !chSame || !chanSame || !markSame;
+    const bool sweepSame = a.animateSweep == b.animateSweep &&
+        (!b.animateSweep || scanr::sweepPhase(a.now) == scanr::sweepPhase(b.now));
+    body = !countSame || !chSame || !chanSame || !markSame || !sweepSame;
+    if (fieldOnly) *fieldOnly = body && countSame && chSame && chanSame;
 }
 
 // --- resumable, bounded strip scheduler --------------------------------------
@@ -225,13 +226,17 @@ private:
 // and rolls it up per interval for /perf or a console line.
 struct PresentMetrics {
     uint32_t composeUs = 0, transferUs = 0, renderUs = 0;   // sums over the window
+    uint32_t diffUs = 0, entryMaxMs = 0;
     uint32_t maxSliceUs = 0;                                 // worst single slice
     uint32_t slices = 0, frames = 0;
     uint32_t capFrames = 0, capUniq = 0, bleReports = 0;     // ACCUMULATED deltas this window
 
     void slice(uint32_t composeUs_, uint32_t transferUs_) {
-        composeUs += composeUs_; transferUs += transferUs_;
-        const uint32_t s = composeUs_ + transferUs_;
+        work(composeUs_, 0, transferUs_);
+    }
+    void work(uint32_t composeUs_, uint32_t diffUs_, uint32_t transferUs_) {
+        composeUs += composeUs_; diffUs += diffUs_; transferUs += transferUs_;
+        const uint32_t s = composeUs_ + diffUs_ + transferUs_;
         renderUs += s; slices++;
         if (s > maxSliceUs) maxSliceUs = s;
     }
@@ -267,7 +272,7 @@ struct PresentMetrics {
     // End of a reporting window: zero the window sums but KEEP the capture
     // baseline + primed state so cross-window deltas stay continuous.
     void clear() {
-        composeUs = transferUs = renderUs = maxSliceUs = 0;
+        composeUs = diffUs = transferUs = renderUs = maxSliceUs = entryMaxMs = 0;
         slices = frames = capFrames = capUniq = bleReports = 0;
     }
 
@@ -317,13 +322,16 @@ public:
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
         } else {
-            bool st = false, bd = false;
-            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd);
+            bool st = false, bd = false, fieldOnly = false;
+            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly);
             const uieng::ScanLayout L = uieng::scan(W_, H_);
             const int statusBottom = L.statusCells[0].y + L.statusCells[0].h;
             const int navTop       = L.navCells[0].y;
             if (st) sched_.invalidate(0, statusBottom);
-            if (bd) sched_.invalidate(statusBottom, navTop);
+            if (bd) {
+                if (fieldOnly) { const auto r=scanr::radarBounds(W_,H_); sched_.invalidate(r.y,r.y+r.h); }
+                else sched_.invalidate(statusBottom, navTop);
+            }
             // design #1 SCAN carries the REC/STOP control on the NAV bar, which
             // is otherwise static: repaint the nav band only when the recording
             // state actually changes (not on every GPS/batt status tick).

@@ -110,3 +110,6 @@ sim/test_router
 sim/test_project
 
 sim/test_input_presentation
+
+sim/test_scan_latency
+sim/bench_scan
