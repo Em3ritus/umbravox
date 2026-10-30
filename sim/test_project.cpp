@@ -123,7 +123,7 @@ int main(){
         detpres::DetailStore detailStore;detail(detailStore,full,c);
         const auto& ds=detailStore.scene();
         expect(!strcmp(ds.name,name),"detail preserves every byte of full 32-character SSID");
-        expect(strstr(ds.auth,"EAP") && strstr(ds.auth,"CCMP"),"detail exposes captured enterprise AKM and cipher");
+        expect(strstr(ds.auth,"ENT") && !strcmp(ds.cipher,"CCMP"),"detail exposes captured enterprise AKM and cipher");
         expect(ds.located && ds.bestRssi==-37 && !strcmp(ds.coordinates,"-0.1234567, -87.6321234"),"location retains sign and seven decimal places");
         for(int W:{480,320}) {
             dompres::DomainStore dom;domain(dom,full,c,W,W==480?320:240);
@@ -154,9 +154,21 @@ int main(){
     { asppres::AspectStore st; aspect(st, s, c); const auto& o=st.scene();
       expect(!strcmp(o.sweepName,"PULSE") && o.alertLive && o.packsSkipped==2, "aspect: sweep name + COSMIC alertLive + skipped"); }
 
+    {
+      auto value=s; value.detail.auth=0;
+      detpres::DetailStore unknown;detail(unknown,value,c);
+      expect(!unknown.scene().authOpen && !strcmp(unknown.scene().cipher,"NOT REPORTED"),"unknown security is not declared open");
+      value.detail.auth=ui::AUTH_WPA2|ui::AUTH_PSK|ui::AUTH_CCMP;
+      detpres::DetailStore first;detail(first,value,c);
+      value.detail.auth=ui::AUTH_WPA2|ui::AUTH_PSK|ui::AUTH_TKIP;
+      detpres::DetailStore second;detail(second,value,c);
+      bool status=false,body=false;detpres::sceneDirty(first.scene(),second.scene(),status,body);
+      expect(!status && body,"cipher-only change invalidates detail body");
+    }
     { detpres::DetailStore st; detail(st, s, c); const auto& o=st.scene();
       expect(o.valid && !strcmp(o.name,"FLOCK-CAM") && o.rssi==-58, "detail: identity");
       expect(!strcmp(o.bandChan,"2.4GHZ CH6") && !strcmp(o.threat, ui::threatName(ui::TH_FLOCK)), "detail: band/chan + threat");
+      expect(!strcmp(o.cipher,"NOT REPORTED"), "detail: absent cipher never inferred from WPA2");
       expect(o.histN==6 && o.hist[0]==-80, "detail: RSSI history carried");
       ui::State gone=s; gone.detail.valid=false; detpres::DetailStore st2; detail(st2, gone, c);
       expect(!st2.scene().valid, "detail: invalid selection -> GONE"); }

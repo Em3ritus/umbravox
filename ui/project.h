@@ -223,12 +223,13 @@ inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c
     char bc[24];
     if (v.band == ui::BAND_BLE) snprintf(bc, sizeof bc, "BLE");
     else snprintf(bc, sizeof bc, "%s CH%u", v.band == ui::BAND_5 ? "5GHZ" : "2.4GHZ", (unsigned)v.chan);
-    const bool open = (v.band != ui::BAND_BLE) && !(v.auth & (ui::AUTH_WPA | ui::AUTH_WPA2 | ui::AUTH_WPA3 | ui::AUTH_WEP));
+    const bool open = (v.band != ui::BAND_BLE) && (v.auth & (ui::AUTH_ESS|ui::AUTH_IBSS)) && !(v.auth & (ui::AUTH_PRIVACY|ui::AUTH_WPA|ui::AUTH_WPA2|ui::AUTH_WPA3|ui::AUTH_WEP|ui::AUTH_OWE));
     char auth[112] = {};
-    if(v.band != ui::BAND_BLE && v.auth) ui::authString(v.auth,auth,sizeof auth);
+    if(v.band != ui::BAND_BLE && v.auth) ui::authSummary(v.auth,auth,sizeof auth);
     char first[8], last[8]; agoStr(first, sizeof first, v.firstAgoS); agoStr(last, sizeof last, v.lastAgoS);
     const char* threat = v.threat != ui::TH_NONE ? ui::threatName(v.threat) : "";
     st.device(true, v.ssid, mac, bc, v.band, v.rssi, auth, open, threat, v.conf, v.why, first, last);
+    st.cipher(v.band==ui::BAND_BLE?"":ui::cipherSummary(v.auth));
     st.location(v.located,v.lat7,v.lon7,v.bestRssi);
     if (v.histN) st.history(v.hist, v.histN);
 }

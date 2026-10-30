@@ -42,6 +42,7 @@ struct DetailScene {
     uint8_t  band = 0;           // for the chart ink
     int      rssi = 0;           // dBm
     const char* auth = "";       // "WPA2" / "OPEN" / "" (BLE)
+    const char* cipher = ""; // Observed pairwise ciphers; not group cipher or negotiated security.
     bool     authOpen = false;   // open network -> amber
     const char* threat = "";     // threat name, "" if none
     uint8_t  conf = 0;           // 0 LOW 1 MED 2 HIGH
@@ -84,21 +85,23 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     const char* name=(sc.name && sc.name[0])?sc.name:"<HIDDEN>";
     const int ns=scanr::fitScale(name,hd.w-8,2);
     txt(s,hd.x+4,hd.y+2,name,ns,pal::BRIGHT);
-    txt(s,hd.x+4,hd.y+20,sc.mac?sc.mac:"",1,pal::TEXT);
+    char address[32]; snprintf(address,sizeof address,"%s %s",sc.band==ui::BAND_BLE?"ADDR":"BSSID",sc.mac?sc.mac:"");
+    txt(s,hd.x+4,hd.y+20,address,1,pal::TEXT);
     txt(s,hd.x+4,hd.y+33,sc.bandChan?sc.bandChan:"",1,bc);
     char rb[40];snprintf(rb,sizeof rb,"%d dBm",sc.rssi);
     txt(s,hd.x+hd.w-4-Font::width(rb,1),hd.y+33,rb,1,pal::BRIGHT);
 
     const auto st=L.stats;
     const int scale=W>=400?2:1, step=W>=400?18:10;
-    const int x=st.x+4, y=st.y+3, cols=(st.w-8)/(6*scale);
-    // Security is the parsed capability string, including AKM and cipher bits.
-    // Two lines preserve the complete supported string even on the compact panel.
-    char sec[120];snprintf(sec,sizeof sec,"SEC %s",sc.auth&&sc.auth[0]?sc.auth:"NOT REPORTED");
+    const int x=st.x+4, y=st.y+3;
+    // Separate observed authentication and pairwise cipher capabilities.
+    // Fit each complete line independently; do not clip a mixed-mode network.
+    char sec[128];
     for(int row=0;row<2;++row) {
-        char part[80]={}; const int len=std::strlen(sec), off=row*cols;
-        if(off<len)std::snprintf(part,sizeof part,"%.*s",cols,sec+off);
-        txt(s,x,y+row*step,part,scale,sc.authOpen?pal::AMBER:pal::TEXT);
+        const char* value=row?sc.cipher:sc.auth;
+        if(sc.band==ui::BAND_BLE) value="N/A (WIFI ONLY)";
+        snprintf(sec,sizeof sec,"%s %s",row?"CIPHER":"AUTH",value&&value[0]?value:"NOT REPORTED");
+        txt(s,x,y+row*step,sec,scanr::fitScale(sec,st.w-8,scale),sc.authOpen?pal::AMBER:pal::TEXT);
     }
     char info[96];
     if(sc.located) {

@@ -407,3 +407,6 @@ bench_scan: bench_scan.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
 
 bridge_png: bridge_png.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
 	$(CXX) $(CXXFLAGS) -o $@ bridge_png.cpp $(PAL_DEPS) ../ui/signatures.cpp -lm
+
+ui_review_png: ui_review_png.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -o $@ ui_review_png.cpp $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm

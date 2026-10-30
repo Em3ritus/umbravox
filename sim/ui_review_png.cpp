@@ -9,13 +9,13 @@ int main(int argc,char** argv) {
  for(int w:{480,320}) {
   int h=w==480?320:240;
   ui::State s;s.nSights=3;s.totalSights=115;s.plotTotal=115;s.plotBeyond=40;s.nPlots=5;s.plotRadius=42;
-  const char* names[]={"KATY AND HANNAH WIFI - GUEST","LAFAYETTE_LN",""};
+  const char* names[]={"KATY AND HANNAH WIFI - GUEST 12345","LAFAYETTE_LN",""};
   for(int i=0;i<3;++i){snprintf(s.sights[i].ssid,sizeof s.sights[i].ssid,"%s",names[i]);
    uint8_t mac[]={0xA0,0xB1,0xC2,0xD3,0xE4,(uint8_t)(0xF0+i)};
    std::copy_n(mac,6,s.sights[i].mac);s.sights[i].band=i%2;s.sights[i].rssi=-43-i*9;s.sights[i].chan=i%2?48:6;}
   s.plots[0]={42,0,0,0};s.plots[1]={0,-42,1,0};s.plots[2]={-21,0,0,0};s.plots[3]={0,30,1,0};s.plots[4]={12,-12,0,0};
   s.detail.valid=true;snprintf(s.detail.ssid,sizeof s.detail.ssid,"%s",names[0]);std::copy_n(s.sights[0].mac,6,s.detail.mac);
-  s.detail.band=0;s.detail.chan=6;s.detail.rssi=-43;s.detail.auth=ui::AUTH_WPA2|ui::AUTH_PSK|ui::AUTH_CCMP|ui::AUTH_ESS;
+  s.detail.band=0;s.detail.chan=6;s.detail.rssi=-43;s.detail.auth=ui::AUTH_WPA2|ui::AUTH_WPA3|ui::AUTH_PSK|ui::AUTH_SAE|ui::AUTH_CCMP|ui::AUTH_ESS;
   s.detail.located=true;s.detail.lat7=418812345;s.detail.lon7=-876321234;s.detail.bestRssi=-38;s.detail.firstAgoS=243;s.detail.lastAgoS=2;
   s.detail.histN=28;for(int i=0;i<28;++i)s.detail.hist[i]=-82+i+(i%5);
   s.set.labels=1;

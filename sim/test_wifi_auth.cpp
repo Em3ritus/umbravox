@@ -113,6 +113,21 @@ int main() {
     a = parseAuth(b.data(), 4);                           // shorter than fixed params
     check("short body is safe", a == 0);
 
+    char summary[64];
+    authSummary(AUTH_ESS|AUTH_WPA2|AUTH_WPA3|AUTH_PSK|AUTH_SAE|AUTH_CCMP,summary,sizeof summary);
+    eq("detail transition",summary,"WPA2/WPA3 PSK/SAE");
+    authSummary(AUTH_WPA2|AUTH_EAP|AUTH_CCMP,summary,sizeof summary);
+    eq("detail enterprise",summary,"WPA2 ENT");
+    authSummary(AUTH_WPA2|AUTH_WPA3|AUTH_SAE,summary,sizeof summary);
+    eq("detail SAE",summary,"WPA3 SAE");
+    authSummary(AUTH_WPA2|AUTH_OWE,summary,sizeof summary);eq("detail OWE",summary,"OWE");
+    authSummary(0,summary,sizeof summary);eq("detail unknown",summary,"NOT REPORTED");
+    authSummary(AUTH_ESS,summary,sizeof summary);eq("detail open",summary,"OPEN");
+    eq("missing cipher",cipherSummary(AUTH_WPA2|AUTH_PSK),"NOT REPORTED");
+    eq("mixed ciphers",cipherSummary(AUTH_TKIP|AUTH_CCMP),"TKIP/CCMP");
+    eq("open cipher",cipherSummary(AUTH_ESS),"NONE");
+    char tiny[2]={'X','X'};authSummary(AUTH_WPA2|AUTH_PSK,tiny,sizeof tiny);check("summary bounded",tiny[1]==0);
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }
