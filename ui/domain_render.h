@@ -121,13 +121,21 @@ struct DomainScene {
 };
 
 // --- radar geometry inside the rectangular map (exposed for tests) -----------
-// North-up circular radar centred in the map rect, with an 8px margin so the N
-// marker and range readout have somewhere to sit above/below the dial.
+// Design #1 sizing (Rick flagged the old centred-in-map dial as "sizes off"):
+// at 480 the north-up dial is pixel-fixed at centre (147,157) r91, so its three
+// rings land at 30/60/91 (r*k/3). At 320 it derives -- centred in the map rect
+// with an 8px margin -- the same way SCAN's field derives its compact profile.
+// Either way the circle stays inside the map rect (the render test asserts it).
 struct RadarGeom { int cx, cy, r; };
 inline RadarGeom radarGeom(uieng::Rect map) {
-    const int d = map.w < map.h ? map.w : map.h;
-    RadarGeom g; g.cx = map.x + map.w / 2; g.cy = map.y + map.h / 2;
-    g.r = d / 2 - 8; if (g.r < 0) g.r = 0;
+    RadarGeom g;
+    if (map.w >= 300) {                        // 480 profile (map is 312 wide)
+        g.cx = 147; g.cy = 157; g.r = 91;      // design #1: rings = r*k/3 = 30/60/91
+    } else {                                   // 320: centre in the map, fit with margin
+        const int d = map.w < map.h ? map.w : map.h;
+        g.cx = map.x + map.w / 2; g.cy = map.y + map.h / 2;
+        g.r = d / 2 - 8; if (g.r < 0) g.r = 0;
+    }
     return g;
 }
 
@@ -174,10 +182,10 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
     for (int i = 0; i < sc.nDots; i++) {                            // located sightings
         const MapDot& p = sc.dots[i];
         const int x = g.cx + p.dx, y = g.cy + p.dy;
-        box(s, x, y, 2, 2, bandColor(p.band));
+        box(s, x - 2, y - 2, 4, 4, bandColor(p.band));              // design #1: 4x4 square markers
         if (p.threat) {                                             // signature match -> ring
             for (int a = 0; a < 360; a += 30) { const double t = a * 3.14159265 / 180.0;
-                pt(s, x + (int)(3 * std::cos(t)), y + (int)(3 * std::sin(t)), pal::RED); }
+                pt(s, x + (int)(4 * std::cos(t)), y + (int)(4 * std::sin(t)), pal::RED); }
         }
     }
     box(s, g.cx - 3, g.cy, 7, 1, pal::WITCH_HI);                    // you, last and brightest
