@@ -114,13 +114,13 @@ inline void composeStrip(scanr::S& s, int W, int H, const CodexScene& sc) {
             const int lit = codexBars(g.rssi), bw = 5, gap = 1, bx0 = r.x + r.w - 44;
             for (int i = 0; i < 4; i++) { const int bh = 4 + i * 4;
                 box(s, bx0 + i * (bw + gap), r.y + r.h - 6 - bh, bw, bh, i < lit ? bc : pal::EDGE); }
-            char ch[8];
+            char ch[16];
             if (g.band == 2) snprintf(ch, sizeof ch, "BLE"); else snprintf(ch, sizeof ch, "CH%d", g.chan);
             txt(s, r.x + r.w - 4 - Font::width(ch, 1), r.y + 6, ch, 1, pal::DIM);
             if (g.threat) frame(s, r.x + 1, r.y + 1, r.w - 2, r.h - 2, pal::RED);
         }
         // pager "lo-hi / total" in the list's bottom slack, right-aligned
-        char pg[24]; snprintf(pg, sizeof pg, "%d-%d / %d", sc.pageLo, sc.pageHi, sc.listTotal);
+        char pg[40]; snprintf(pg, sizeof pg, "%d-%d / %d", sc.pageLo, sc.pageHi, sc.listTotal);
         txt(s, lst.x + lst.w - 2 - Font::width(pg, 1), lst.y + lst.h - 8, pg, 1, pal::DIM);
     }
 

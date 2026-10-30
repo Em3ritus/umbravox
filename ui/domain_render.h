@@ -200,7 +200,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
     box(s, g.cx, g.cy - 3, 1, 7, pal::WITCH_HI);
     pt(s, g.cx, g.cy, pal::BRIGHT);
 
-    char buf[24];
+    char buf[40];
     snprintf(buf, sizeof buf, "%dM", sc.rangeM);
     txt(s, m.x + 4, m.y + m.h - 9, buf, 1, pal::DIM);
     snprintf(buf, sizeof buf, "%d/%d", sc.plotShown, sc.plotTotal);

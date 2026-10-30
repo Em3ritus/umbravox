@@ -379,6 +379,21 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
 
 } // namespace
 
+// Engine-adapter entry points. The WS engine path routes a settings step
+// through these so it mutates Settings EXACTLY as the legacy screens do (via
+// the same anon-namespace adjust/adjustAspect/flipOrient), keeping the engine
+// and NM in lock-step. Knob order matches uieng ATTUNE: 0 ALERT, 1 DWELL,
+// 2 BLE, 3 BANDS, 4 BRIGHT, 5 IDLE, 6 AUTOLOG, 7 ORIENT.
+void applyKnobStep(Settings& st, int knob, int dir) {
+    switch (knob) {
+        case 6: st.autoLog = st.autoLog ? 0 : 1; break;   // AUTOLOG: a toggle
+        case 7: flipOrient(st); break;                     // ORIENT
+        default: adjust(st, knob, dir); break;             // 0..5 map 1:1 to adjust()
+    }
+}
+// row 0 THEME, 1 SWEEP, 2 ALERT (matches uieng ASPECT / adjustAspect).
+void applyAspectStep(Settings& st, int row, int dir) { adjustAspect(st, row, dir); }
+
 void clampSettings(Settings& s) {
     if (s.alertMin > CONF_OFF) s.alertMin = CONF_MED;
     if (s.bright < 1)   s.bright = 1;

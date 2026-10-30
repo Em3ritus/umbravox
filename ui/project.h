@@ -58,7 +58,7 @@ inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) 
     st.gps(c.gps);
     st.status(s.nNodes, c.hasCell, c.batt, c.rec);
     st.counts(s.nets24, s.nets5, s.ble);
-    char ch[12]; snprintf(ch, sizeof ch, "CH %02u", (unsigned)s.chan);
+    char ch[16]; snprintf(ch, sizeof ch, "CH %02u", (unsigned)s.chan);
     st.channel(ch, s.on5 ? "5 GHz" : "2.4 GHz");
     for (int i = 0; i < ui::CH24; i++) st.setChannel(i, s.load24[i]);
     for (int i = 0; i < ui::CH5;  i++) st.setChannel(ui::CH24 + i, s.load5[i]);
@@ -157,7 +157,7 @@ inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char
         case 5: { const uint16_t v = ui::IDLE_S[st.idleIdx % ui::IDLE_N];
                   snprintf(lbl,ln,"IDLE");
                   if (!v) snprintf(val,vn,"NEVER");
-                  else { char u[12]; if (v < 60) snprintf(u,sizeof u,"%uS",(unsigned)v); else snprintf(u,sizeof u,"%uM",(unsigned)(v/60));
+                  else { char u[16]; if (v < 60) snprintf(u,sizeof u,"%uS",(unsigned)v); else snprintf(u,sizeof u,"%uM",(unsigned)(v/60));
                          snprintf(val,vn,"%s %s", u, st.idleMode==ui::IDLE_OFF?"OFF":st.idleMode==ui::IDLE_ANIM?"ANIM":"DIM"); }
                   break; }
         case 6: snprintf(lbl,ln,"AUTOLOG"); snprintf(val,vn,"%s", st.autoLog?"ON":"OFF"); break;
@@ -176,7 +176,7 @@ inline void attune(atnpres::AttuneStore& st, const ui::State& s, const Chrome& c
     for (int i = 0; i < rowsPerPage; i++) {
         const int knob = page * rowsPerPage + i;
         if (knob >= uieng::kAttuneKnobs) break;
-        char lbl[16], val[24]; attuneKnob(s.set, knob, lbl, sizeof lbl, val, sizeof val);
+        char lbl[16], val[32]; attuneKnob(s.set, knob, lbl, sizeof lbl, val, sizeof val);
         st.addRow(lbl, val);
     }
     st.paging(page, pages);
@@ -213,7 +213,7 @@ inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c
     const ui::Detail& v = s.detail;
     if (!v.valid) { st.device(false, "", "", "", 0, 0, "", false, "", 0, "", "", ""); return; }
     char mac[18]; macStr(mac, v.mac);
-    char bc[16];
+    char bc[24];
     if (v.band == ui::BAND_BLE) snprintf(bc, sizeof bc, "BLE");
     else snprintf(bc, sizeof bc, "%s CH%u", v.band == ui::BAND_5 ? "5GHZ" : "2.4GHZ", (unsigned)v.chan);
     const bool open = (v.band != ui::BAND_BLE) && !(v.auth & (ui::AUTH_WPA | ui::AUTH_WPA2 | ui::AUTH_WPA3 | ui::AUTH_WEP));

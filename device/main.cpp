@@ -28,7 +28,7 @@
 #include "meshlive.h"
 #include "perflog.h"
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
-#include "scan_adapter.h"
+#include "engine_adapter.h"   // WS cutover: the whole UI engine, all screens
 #endif
 #include "alertlog.h"
 #include "meshcore.h"
@@ -683,9 +683,10 @@ void setup() {
     gfx->fillScreen(RGB565_BLACK);
 
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
-    // The native-resolution SCAN engine composes the whole 480x320 panel in
-    // bounded strips (no 2x canvas, no letterbox). Opt-in only.
-    scanadapter::begin(gfx, PANEL_W, PANEL_H);
+    // The native-resolution engine composes the whole 480x320 panel in bounded
+    // strips for EVERY screen (no 2x canvas, no letterbox). Opt-in only; the
+    // default WS build and NM keep the legacy canvas renderer + screens.
+    engineadapter::begin(gfx, PANEL_W, PANEL_H);
 #endif
 
     // Arduino core 3.x LEDC. The old ledcSetup()/ledcAttachPin() pair is gone,
@@ -1522,27 +1523,20 @@ void loop() {
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
     bool switched;
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
-    // A finger held across an engine->legacy exit must not click through to the
-    // arriving legacy screen: swallow its taps until it actually lifts.
-    static bool heldFromEngine = false;
-    if (heldFromEngine) { if (!tp.any) heldFromEngine = false; else tpDown = false; }
-    const uint8_t screenBefore = nav.screen;
-    if (nav.screen == ui::SCR_SCAN) {
-        // Native engine screen: the status strip and side tiles lie OUTSIDE the
-        // 2x canvas, where touch::read leaves down=false -- so hit-test in PANEL
-        // coordinates on any in-bounds contact, not tp.down. The wake tap
-        // (wasDimmed) is suppressed, and the pure gate consumes transition and
-        // held presses.
+    {
+        // The engine composes EVERY screen natively; its status strip and side
+        // controls lie OUTSIDE the 2x canvas, where touch::read leaves
+        // down=false -- so hit-test in PANEL coordinates on any in-bounds
+        // contact, not tp.down. The wake tap (wasDimmed) is suppressed, and the
+        // pure gate consumes transition and held presses. Routing goes through
+        // uinav::Router inside the adapter and writes nav/set.
         const bool inBounds = tp.panelX >= 0 && tp.panelX < PANEL_W
                            && tp.panelY >= 0 && tp.panelY < PANEL_H;
         const bool engContact = tp.any && !wasDimmed && inBounds;
-        switched = scanadapter::dispatchTouch(nav, engContact, tp.panelX, tp.panelY);
-    } else
-#endif
+        switched = engineadapter::dispatchTouch(nav, set, s, engContact, tp.panelX, tp.panelY);
+    }
+#else
     switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
-#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
-    if (switched && screenBefore == ui::SCR_SCAN && nav.screen != ui::SCR_SCAN && tp.any)
-        heldFromEngine = true;   // left engine SCAN with a finger down
 #endif
 
     // ORIENTATION: the panel turns the moment the setting does (the ORIENT
@@ -1806,9 +1800,8 @@ void loop() {
         // suspended passes in bounded slices -- no NEW snapshot started asleep,
         // and never while the animation owns the panel -- until coverage
         // completes, then quiet suspension resumes on its own.
-        if (nav.screen == ui::SCR_SCAN
-            && scanpres::serviceWhileSuspended(scanadapter::pending(), animOn))
-            scanadapter::service(/*budgetStrips*/4);
+        if (scanpres::serviceWhileSuspended(engineadapter::pending(), animOn))
+            engineadapter::service(/*budgetStrips*/4);
 #endif
 
         // ANIM: a dot breathing at <= 2 fps, one small blit per frame. On
@@ -1871,57 +1864,50 @@ void loop() {
     // snapshotted + committed once per frame (stable across the sliced redraw);
     // the transfer is sliced so capture keeps the CPU between slices.
     {
+        // The engine owns the whole panel for EVERY screen now: snapshot+commit
+        // a stable frame, service one bounded slice, and return before the
+        // legacy canvas path. (That path still compiles for NM / the default WS
+        // build; it is simply never reached here.)
         static uint8_t engPrev = 0xFF;
-        const bool engScan = (nav.screen == ui::SCR_SCAN);
-        if (engScan) {
-            // animStep.exit can set animDirtied while still dimmed (an ANIM->DIM/OFF
-            // mode change): engWoke is false then, but the animation overwrote the
-            // panel, so this external paint must force a full native repaint even
-            // for an unchanged scene -- and the flag is consumed here.
-            const bool extPaint = animDirtied;
-            if (switched || engPrev != ui::SCR_SCAN) scanadapter::enter();
-            else if (engWoke)                        scanadapter::wake();   // incl. OFF/ANIM wake
-            else if (extPaint)                       scanadapter::enter();  // external paint while dark
-            else if (themeChanged)                   scanadapter::themeChanged();
-            if (extPaint) animDirtied = false;       // consumed in the engine path
-            if (!scanadapter::pending()) {           // snapshot+commit a fresh, stable frame
-                scanr::GnssFix gf;
-                const ui::Gnss::Fix& fx = ui::Gnss::fix();
-                gf.valid = fx.valid; gf.mode = ui::Gnss::status().mode;
-                gf.sats  = fx.used;  gf.ageMs = millis() - fx.atMs;
-                const scanr::Rec rc = logging::state() == logging::ACTIVE  ? scanr::Rec::On
-                                    : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
-                                    :                                        scanr::Rec::Off;
-                const pmu::Batt b = pmu::read(millis());
-                scanadapter::snapshot(s, gf, rc, b.ok && b.cell, (int)b.pct, millis());
-            }
-            const uint32_t tD = millis();
-            scanadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
-            scanadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
-            perflog::frame(millis() - tD, 0);
-
-            static uint32_t engLogAt = 0;
-            if (millis() - engLogAt >= 10000) {
-                const uint32_t iv = millis() - engLogAt; engLogAt = millis();
-                const scanpres::PresentMetrics& m = scanadapter::metrics();
-                logf("[eng] fr %u sl %u compose %luus xfer %luus maxsl %luus rpm %lu "
-                     "| cap +%lu fr +%lu uq +%lu ble\n",
-                     (unsigned)m.frames, (unsigned)m.slices,
-                     (unsigned long)m.composeUs, (unsigned long)m.transferUs,
-                     (unsigned long)m.maxSliceUs, (unsigned long)m.renderPerMille(iv),
-                     (unsigned long)m.capFrames, (unsigned long)m.capUniq,
-                     (unsigned long)m.bleReports);
-                scanadapter::clearMetrics();
-            }
-            engPrev = nav.screen;
-            frame++;
-            return;
+        // animStep.exit can set animDirtied while still dimmed (an ANIM->DIM/OFF
+        // mode change): engWoke is false then, but the animation overwrote the
+        // panel, so this external paint must force a full native repaint even
+        // for an unchanged scene -- and the flag is consumed here.
+        const bool extPaint = animDirtied;
+        if (switched || engPrev != nav.screen) engineadapter::enter(nav.screen);  // entry / screen change
+        else if (engWoke)                      engineadapter::wake();             // incl. OFF/ANIM wake
+        else if (extPaint)                     engineadapter::enter(nav.screen);  // external paint while dark
+        else if (themeChanged)                 engineadapter::themeChanged();
+        if (extPaint) animDirtied = false;     // consumed in the engine path
+        if (!engineadapter::pending()) {       // snapshot+commit a fresh, stable frame
+            scanr::GnssFix gf;
+            const ui::Gnss::Fix& fx = ui::Gnss::fix();
+            gf.valid = fx.valid; gf.mode = ui::Gnss::status().mode;
+            gf.sats  = fx.used;  gf.ageMs = millis() - fx.atMs;
+            const scanr::Rec rc = logging::state() == logging::ACTIVE  ? scanr::Rec::On
+                                : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
+                                :                                        scanr::Rec::Off;
+            const pmu::Batt b = pmu::read(millis());
+            engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis());
         }
-        if (engPrev == ui::SCR_SCAN) {
-            scanadapter::leave();     // drop the frame, clear the panel
-            stripForce();             // the strip cache is stale after fillScreen; redraw it
+        const uint32_t tD = millis();
+        engineadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
+        engineadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
+        perflog::frame(millis() - tD, 0);
+
+        static uint32_t engLogAt = 0;
+        if (millis() - engLogAt >= 10000) {
+            const uint32_t iv = millis() - engLogAt; engLogAt = millis();
+            const scanpres::PresentMetrics& m = engineadapter::metrics();
+            logf("[eng] fr %u sl %u compose %luus xfer %luus maxsl %luus rpm %lu\n",
+                 (unsigned)m.frames, (unsigned)m.slices,
+                 (unsigned long)m.composeUs, (unsigned long)m.transferUs,
+                 (unsigned long)m.maxSliceUs, (unsigned long)m.renderPerMille(iv));
+            engineadapter::clearMetrics();
         }
         engPrev = nav.screen;
+        frame++;
+        return;
     }
 #endif
     // One dispatcher for both orientations (ui/draw.h): the landscape screens

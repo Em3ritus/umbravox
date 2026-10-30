@@ -79,6 +79,12 @@ bool navTouch(Nav& n, Settings& set, bool down, int16_t x, int16_t y);
 // stepping a knob cannot disagree about what is valid.
 void clampSettings(Settings& s);
 
+// Engine-adapter settings stepping: apply an ATTUNE knob step (knob 0..7) or an
+// ASPECT step (row 0 THEME, 1 SWEEP, 2 ALERT) the same way the legacy screens
+// do, so the WS engine path and the NM/legacy path stay in lock-step.
+void applyKnobStep(Settings& st, int knob, int dir);
+void applyAspectStep(Settings& st, int row, int dir);
+
 // Whether this board can show ORIENT_PORTRAIT. True unless the device says
 // otherwise at boot (the Waveshare 3.5" is LANDSCAPE ONLY); clampSettings
 // reads it, and ATTUNE's ORIENT row shows "LANDSCAPE ONLY" when it is false.

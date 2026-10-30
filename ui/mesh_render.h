@@ -57,18 +57,18 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
 
     // title band + NET state
     txt(s, L.title.x, L.title.y + 2, "MESH", 2, pal::BRIGHT);
-    char nb[16]; if (sc.netId) snprintf(nb, sizeof nb, "NET %d", sc.netId); else snprintf(nb, sizeof nb, "NET OPEN");
+    char nb[24]; if (sc.netId) snprintf(nb, sizeof nb, "NET %d", sc.netId); else snprintf(nb, sizeof nb, "NET OPEN");
     txt(s, L.title.x + L.title.w - Font::width(nb,1), L.title.y + 4, nb, 1, sc.netId ? pal::GREEN : pal::DIM);
 
     // header: CORE/COORD + sweep, LOSS on the right
     char hd[24]; if (sc.meshCoords > 0) snprintf(hd, sizeof hd, "%d COORD", sc.meshCoords);
                  else                    snprintf(hd, sizeof hd, "CORE");
-    char hd2[32];
+    char hd2[48];
     if (sc.coreCamping) snprintf(hd2, sizeof hd2, "%s CH%d", hd, sc.coreChan);
     else                snprintf(hd2, sizeof hd2, "%s SWEEP", hd);
     box(s, L.header.x, L.header.y + 2, 3, 6, pal::WITCH_HI);
     txt(s, L.header.x + 6, L.header.y + 2, hd2, 1, pal::BRIGHT);
-    char lb[16]; snprintf(lb, sizeof lb, "LOSS %d%%", sc.meshLossPct);
+    char lb[24]; snprintf(lb, sizeof lb, "LOSS %d%%", sc.meshLossPct);
     txt(s, L.header.x + L.header.w - Font::width(lb,1), L.header.y + 2, lb, 1, lossInk(sc.meshLossPct));
     box(s, L.header.x, L.header.y + L.header.h - 1, L.header.w, 1, pal::EDGE);
 
@@ -84,15 +84,15 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
             const MeshNode& nd = sc.rows[i];
             const int x = colX[i / colRows], y = L.list.y + 4 + (i % colRows) * rowHt;
             box(s, x, y + 1, 3, 6, ageMark(nd.ageS));
-            char id[8]; snprintf(id, sizeof id, "%02X:%02X", nd.id[1], nd.id[2]);
+            char id[20]; snprintf(id, sizeof id, "%02X:%02X", nd.id[1], nd.id[2]);
             txt(s, x + 6, y, id, 1, nd.live ? pal::TEXT : pal::DIM);
-            char ls[8]; snprintf(ls, sizeof ls, "%d%%", nd.lossPct);
+            char ls[16]; snprintf(ls, sizeof ls, "%d%%", nd.lossPct);
             txt(s, x + colW - 2 - Font::width(ls,1), y, ls, 1, lossInk(nd.lossPct));
         }
     }
 
     // control row: ENROLL (or PAIR countdown) + RESET
-    char eb[16];
+    char eb[24];
     if (sc.enrollSecs) snprintf(eb, sizeof eb, "PAIR %dS", sc.enrollSecs); else snprintf(eb, sizeof eb, "ENROLL");
     const uint16_t eInk = sc.enrollSecs ? pal::GREEN : pal::WITCH_HI;
     box(s, L.enroll.x, L.enroll.y, L.enroll.w, 44, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));

@@ -54,7 +54,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
 
     // title + total
     txt(s, L.title.x, L.title.y + 2, "OMENS", 2, pal::BRIGHT);
-    if (sc.total > sc.nRows) { char tb[12]; snprintf(tb, sizeof tb, "%d", sc.total);
+    if (sc.total > sc.nRows) { char tb[24]; snprintf(tb, sizeof tb, "%d", sc.total);
         txt(s, L.title.x + L.title.w - Font::width(tb,1), L.title.y + 4, tb, 1, pal::DIM); }
 
     // column header

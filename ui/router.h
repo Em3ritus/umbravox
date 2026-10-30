@@ -59,6 +59,11 @@ public:
     Screen detailOrigin() const { return detailOrigin_; }
     const char* detailKey() const { return detailKey_; }
 
+    // Sync the router's current screen to an EXTERNAL change (e.g. the device
+    // opened a screen by a path other than a tap). Leaves detailOrigin and the
+    // preserved scope/scroll untouched, so a later Back still returns correctly.
+    void setScreen(Screen s) { scr_ = s; }
+
     // The caller owns the live scroll; it writes it back as the finger drags so
     // the value the router preserves across a DETAIL round-trip is current.
     void setCodexScroll(int s) { codexScroll_ = s < 0 ? 0 : s; }

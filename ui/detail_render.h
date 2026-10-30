@@ -81,7 +81,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
         (sc.name && sc.name[0]) ? pal::BRIGHT : pal::DIM);
     txt(s, hd.x + 4, hd.y + 12, sc.mac ? sc.mac : "", 1, pal::TEXT);
     txt(s, hd.x + 4, hd.y + 24, sc.bandChan ? sc.bandChan : "", 1, bc);
-    char rb[12]; snprintf(rb, sizeof rb, "%dDBM", sc.rssi);
+    char rb[20]; snprintf(rb, sizeof rb, "%dDBM", sc.rssi);
     txt(s, hd.x + hd.w - 4 - Font::width(rb, 1), hd.y + 24, rb, 1, pal::BRIGHT);
     if (sc.auth && sc.auth[0])
         txt(s, hd.x + hd.w - 4 - Font::width(sc.auth, 1), hd.y + 2, sc.auth, 1, sc.authOpen ? pal::AMBER : pal::DIM);

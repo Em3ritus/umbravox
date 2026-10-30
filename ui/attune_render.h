@@ -62,7 +62,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
     }
 
     // footer: PAGE n/m + ATTUNE + CLEAR (CLEAR is the only red: it is destructive)
-    char pg[12]; snprintf(pg, sizeof pg, "PG %d/%d", sc.page + 1, sc.nPages);
+    char pg[32]; snprintf(pg, sizeof pg, "PG %d/%d", sc.page + 1, sc.nPages);
     box(s, L.pager.x, L.pager.y + 1, L.pager.w, 42, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
     frame(s, L.pager.x, L.pager.y + 1, L.pager.w, 42, pal::EDGE_LIT);
     centered(s, L.pager.x + L.pager.w / 2, L.pager.y + 15, pg, fitScale(pg, L.pager.w - 6, 2), pal::WITCH_HI);
