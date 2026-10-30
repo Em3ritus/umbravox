@@ -52,8 +52,8 @@ inline uint16_t ageMark(uint32_t s) { return s < 10 ? pal::GREEN : s < 20 ? pal:
 inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     using scanr::box; using scanr::txt; using scanr::frame; using scanr::centered; using scanr::fitScale;
     const uieng::MeshLayout L = uieng::mesh(W, H);
-    subr::panels(s, W, H);
-    subr::status(s, L.statusCells, sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec);
+    // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, -1);
 
     // title band + NET state
     txt(s, L.title.x, L.title.y + 2, "MESH", 2, pal::BRIGHT);
@@ -103,7 +103,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     frame(s, L.reset.x, L.reset.y, L.reset.w, 44, ui::Canvas::mix(rInk, pal::EDGE, 1, 2));
     centered(s, L.reset.x + L.reset.w / 2, L.reset.y + 15, "RESET", fitScale("RESET", L.reset.w - 8, 2), rInk);
 
-    subr::nav(s, L.navCells);
 }
 
 class Compositor {

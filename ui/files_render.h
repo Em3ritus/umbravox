@@ -53,8 +53,8 @@ inline void button(scanr::S& s, const uieng::Rect& r, const char* label, uint16_
 inline void composeStrip(scanr::S& s, int W, int H, const FilesScene& sc) {
     using scanr::box; using scanr::txt; using scanr::frame; using scanr::centered;
     const uieng::FilesLayout L = uieng::files(W, H);
-    subr::panels(s, W, H);
-    subr::status(s, L.statusCells, sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec);
+    // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, -1);
 
     // list region background
     box(s, L.list.x, L.list.y, L.list.w, L.list.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
@@ -69,7 +69,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const FilesScene& sc) {
         centered(s, cx, L.list.y + 34, line, 1, pal::DIM);
         button(s, L.yes, "YES", pal::RED, pal::RED, ui::Canvas::mix(pal::PANEL, pal::RED, 1, 6));
         button(s, L.no,  "NO",  pal::WITCH_HI, pal::BRIGHT, ui::Canvas::mix(pal::PANEL, pal::WITCH, 1, 2));
-        subr::nav(s, L.navCells);
         return;
     }
 
@@ -109,7 +108,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const FilesScene& sc) {
         button(s, L.del, sc.sel >= 0 ? "IN USE" : "DELETE", pal::EDGE, pal::DIM,
                ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
 
-    subr::nav(s, L.navCells);
 }
 
 class Compositor {

@@ -60,8 +60,8 @@ inline int rssiToY(int rssi, int top, int h) {
 inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     using scanr::box; using scanr::txt; using scanr::frame; using scanr::centered;
     const uieng::DetailLayout L = uieng::detail(W, H);
-    subr::panels(s, W, H);
-    subr::status(s, L.statusCells, sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec);
+    // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, -1);
 
     // BACK button (always present)
     box(s, L.back.x, L.back.y + 1, 44, 42, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
@@ -70,7 +70,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
 
     if (!sc.valid) {
         centered(s, L.body.x + L.body.w / 2, L.body.y + L.body.h / 2 - 3, "GONE", 1, pal::DIM);
-        subr::nav(s, L.navCells);
         return;
     }
 
@@ -125,7 +124,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
         }
     }
 
-    subr::nav(s, L.navCells);
 }
 
 class Compositor {

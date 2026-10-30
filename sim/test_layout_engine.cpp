@@ -164,10 +164,12 @@ static int deviceCount(const HitList& h){ int n=0; for(int j=0;j<h.count;j++) if
 static int threatCount(const HitList& h){ int n=0; for(int j=0;j<h.count;j++) if(h.items[j].action==Action::OpenThreatDetail)++n; return n; }
 
 static void testNegative() {
-    // swapped actions: gps<->logging must break full binding
+    // swapped actions: gps<->nav-scan must break full binding (design #1 chrome
+    // puts the record control on the nav STOP, not a status cell, so item[3] is
+    // nav-scan now; swapping two different-action chrome hits must still bite)
     { const OCase& c=find("scan","active",480); HitList h=hitsFor(c);
       Action a=h.items[0].action; h.items[0].action=h.items[3].action; h.items[3].action=a;
-      expect(boundCount(h,c) < c.n, "neg: swapped gps/logging action not detected"); }
+      expect(boundCount(h,c) < c.n, "neg: swapped gps/nav-scan action not detected"); }
     // wrong payload: mangle nav-domain payload
     { const OCase& c=find("scan","active",480); HitList h=hitsFor(c);
       h.items[5].payload = 99;

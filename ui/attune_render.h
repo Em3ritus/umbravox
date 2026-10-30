@@ -45,8 +45,8 @@ inline void stepBtn(scanr::S& s, const uieng::Rect& r, const char* g) {
 inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
     using scanr::box; using scanr::txt; using scanr::frame; using scanr::centered; using scanr::fitScale;
     const uieng::AttuneLayout L = uieng::attune(W, H);
-    subr::panels(s, W, H);
-    subr::status(s, L.statusCells, sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec);
+    // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, -1);
 
     // knob rows: label + value + [-][+]
     for (int i = 0; i < sc.nRows && i < L.nRows; i++) {
@@ -71,7 +71,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
     frame(s, L.clear.x, L.clear.y + 1, L.clear.w, 42, pal::RED);
     centered(s, L.clear.x + L.clear.w / 2, L.clear.y + 15, "CLEAR", fitScale("CLEAR", L.clear.w - 6, 2), pal::RED);
 
-    subr::nav(s, L.navCells);
 }
 
 class Compositor {

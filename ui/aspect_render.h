@@ -39,8 +39,8 @@ struct AspectScene {
 inline void composeStrip(scanr::S& s, int W, int H, const AspectScene& sc) {
     using scanr::box; using scanr::txt; using scanr::frame; using scanr::centered;
     const uieng::AspectLayout L = uieng::aspect(W, H);
-    subr::panels(s, W, H);
-    subr::status(s, L.statusCells, sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec);
+    // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, -1);
 
     // preview: the theme's own artwork, scaled into the preview box
     const uieng::Rect pv = L.preview;
@@ -70,7 +70,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const AspectScene& sc) {
         subr::stepBtn(s, L.plus[i],  "+", live);
     }
 
-    subr::nav(s, L.navCells);
 }
 
 class Compositor {

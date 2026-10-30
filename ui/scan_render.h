@@ -215,33 +215,79 @@ inline HeroSub heroSub(uieng::Rect hr) {
     return h;
 }
 
+// --- shared design-1 chrome (header + nav): composed by EVERY engine screen ---
+// The UMBRAVOX wordmark + single-line GPS/MESH/BAT readouts, the four nav tabs
+// (activeTab lit + underlined; -1 lights none) and the STOP/REC record control
+// at the far right. Regions come from uieng::chrome(W,H); `body` (passed per
+// screen) drives ONLY the inset dividers, so SCAN keeps its 16px body margin
+// while the sub-screens keep 8px. Single-sourced so a chrome fix lands once.
+struct ChromeState {
+    GnssFix gps;
+    int     nodes   = 0;
+    bool    hasCell = false;
+    int     batt    = 0;
+    Rec     rec     = Rec::Off;
+};
+inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
+                       const ChromeState& st, int activeTab) {
+    const uieng::Chrome c = uieng::chrome(W, H);
+    // lay the full VOID ground (every screen's body sits on this), then the
+    // status/nav surfaces + design #1 inset dividers (body-relative)
+    box(s, 0, 0, W, H, pal::VOID);
+    box(s, 0, 0, W, 44, pal::PANEL);
+    box(s, 0, H - 44, W, 44, pal::PANEL);
+    box(s, body.x, 38, body.w, 1, pal::EDGE);
+    box(s, body.x, H - 46, body.w, 1, pal::EDGE);
+
+    // header: UMBRAVOX wordmark + single-line GPS / MESH / BAT. GPS is compacted
+    // to "GPS 3D" here (so the shared gpsLabel is untouched); stale/acquiring
+    // fall back to its text.
+    txt(s, c.wordmark.x, c.wordmark.y, "UMBRAVOX", (W >= 400) ? 2 : 1, pal::BRIGHT);
+    char hb[24];
+    const GpsState gst = gpsState(st.gps);
+    const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
+    if (gst==GpsState::Fresh)
+        snprintf(hb, sizeof hb, "GPS %s", st.gps.mode==3?"3D":st.gps.mode==2?"2D":"FIX");
+    else { char gb[16]; gpsLabel(st.gps, gb, sizeof gb); snprintf(hb, sizeof hb, "GPS %s", gb); }
+    txt(s, c.statusCells[0].x+2, 16, hb, 1, gcol);
+    snprintf(hb, sizeof hb, "MESH %d", st.nodes);
+    txt(s, c.statusCells[1].x+2, 16, hb, 1, pal::TEXT);
+    if (st.hasCell) snprintf(hb, sizeof hb, "BAT %d%%", st.batt); else snprintf(hb, sizeof hb, "BAT N/A");
+    txt(s, c.statusCells[2].x+2, 13, hb, (W >= 400) ? 2 : 1, st.hasCell ? pal::TEXT : pal::DIM);
+
+    // nav: four tabs (activeTab lit + underlined) at the design-1 label positions
+    static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
+    static const int navX480[4] = {16,112,226,328};
+    for (int i=0;i<4;i++){
+        const int ns = (W>=400) ? 2 : fitScale(nav[i], c.navCells[i].w-6, 2);
+        const int lx = (W>=400) ? navX480[i] : c.navCells[i].x + 4;
+        const bool on = (i==activeTab);
+        txt(s, lx, H-30, nav[i], ns, on?pal::BRIGHT:pal::DIM);
+        if (on){ const int lw=Font::width(nav[i],ns); box(s, lx, H-8, lw, 2, pal::WITCH_HI); }
+    }
+    // STOP / REC: a red record control (the design's bottom-right button). The
+    // palette has no dedicated STOP role yet, so map to the theme's red (closest
+    // theme-as-data, swaps with theme); a NO-SD state reads amber.
+    const uieng::Rect stp = c.stop;
+    const int bbw = stp.w < 56 ? stp.w : 56, bbh = 30;
+    const int bx = stp.x + (stp.w - bbw)/2, by = stp.y + (stp.h - bbh)/2;
+    ScanScene tmp; tmp.rec = st.rec;
+    char rb2[16]; recLabel(tmp, rb2, sizeof rb2);     // "REC"/"STOP"/"NO SD"
+    const uint16_t ink = (st.rec==Rec::NoCard) ? pal::AMBER : pal::RED;
+    box(s, bx, by, bbw, bbh, pal::PANEL);
+    frame(s, bx, by, bbw, bbh, ink);
+    centered(s, bx + bbw/2, by + bbh/2 - 3, rb2, 1, ink);
+}
+
 // --- compose one strip completely from the scene ------------------------------
 inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const uieng::ScanLayout L = uieng::scan(W, H);
     const uint16_t band[3] = { pal::MAGENTA, pal::ICE, pal::GREEN };
     box(s, 0, 0, W, H, pal::VOID);                                   // body
 
-    // chrome surfaces: status + nav panels + the design #1 inset dividers
-    box(s, 0, 0, W, 44, pal::PANEL);
-    box(s, 0, H-44, W, 44, pal::PANEL);
-    box(s, L.body.x, 38, L.body.w, 1, pal::EDGE);
-    box(s, L.body.x, H-46, L.body.w, 1, pal::EDGE);
-
-    // header (design #1): UMBRAVOX wordmark + single-line GPS / MESH / BAT
-    // readouts. The GPS readout is compacted to "GPS 3D" here (SCAN-local, so
-    // the shared gpsLabel is untouched); stale/acquiring fall back to its text.
-    txt(s, L.wordmark.x, L.wordmark.y, "UMBRAVOX", (W>=400)?2:1, pal::BRIGHT);
-    char hb[24];
-    const GpsState gst = gpsState(sc.gps);
-    const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
-    if (gst==GpsState::Fresh)
-        snprintf(hb, sizeof hb, "GPS %s", sc.gps.mode==3?"3D":sc.gps.mode==2?"2D":"FIX");
-    else { char gb[16]; gpsLabel(sc.gps, gb, sizeof gb); snprintf(hb, sizeof hb, "GPS %s", gb); }
-    txt(s, L.statusCells[0].x+2, 16, hb, 1, gcol);
-    snprintf(hb, sizeof hb, "MESH %d", sc.nodes);
-    txt(s, L.statusCells[1].x+2, 16, hb, 1, pal::TEXT);
-    if (sc.hasCell) snprintf(hb, sizeof hb, "BAT %d%%", sc.battPct); else snprintf(hb, sizeof hb, "BAT N/A");
-    txt(s, L.statusCells[2].x+2, 13, hb, (W>=400)?2:1, sc.hasCell?pal::TEXT:pal::DIM);
+    // shared design-1 chrome: header (wordmark + GPS/MESH/BAT) + nav (SCAN lit)
+    // + the STOP/REC record control. SCAN passes its own 16px body for the dividers.
+    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, 0);
 
     // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};
@@ -311,30 +357,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     txt(s, sx0, labY, "2.4 GHZ", 1, pal::DIM);
     { const char* r5="5 GHZ"; const int rx=(W>=400)?396:(sx0+kSpecBars*pitch-Font::width(r5,1));
       txt(s, rx, labY, r5, 1, pal::DIM); }
-
-    // nav bar (design #1): four tabs (SCAN active, underlined) left-aligned at
-    // the design positions, + the STOP / REC record control at the far right.
-    static const char* const nav[4] = {"SCAN","DOMAIN","CODEX","MENU"};
-    static const int navX480[4] = {16,112,226,328};
-    for (int i=0;i<4;i++){
-        const int ns = (W>=400) ? 2 : fitScale(nav[i], L.navCells[i].w-6, 2);
-        const int lx = (W>=400) ? navX480[i] : L.navCells[i].x + 4;
-        txt(s, lx, H-30, nav[i], ns, i==0?pal::BRIGHT:pal::DIM);
-        if (i==0){ const int lw=Font::width(nav[i],ns); box(s, lx, H-8, lw, 2, pal::WITCH_HI); }
-    }
-    // STOP / REC: a red record control (the design's bottom-right button).
-    const uieng::Rect stp = L.stop;
-    const int bbw = stp.w < 56 ? stp.w : 56, bbh = 30;
-    const int bx = stp.x + (stp.w - bbw)/2, by = stp.y + (stp.h - bbh)/2;
-    char rb2[16]; recLabel(sc, rb2, sizeof rb2);   // "REC"/"STOP"/"NO SD"
-    // design #1 STOP: surface #38202b, text #f2a6b5 -- a dark-red control. The
-    // palette has no dedicated STOP role yet, so map to the theme's red (closest
-    // theme-as-data, swaps with theme); a NO-SD state reads amber. A dedicated
-    // stopSurface/stopText role (palette+themepack+web/designer) is the exact path.
-    const uint16_t ink = (sc.rec==Rec::NoCard) ? pal::AMBER : pal::RED;
-    box(s, bx, by, bbw, bbh, pal::PANEL);
-    frame(s, bx, by, bbw, bbh, ink);
-    centered(s, bx + bbw/2, by + bbh/2 - 3, rb2, 1, ink);
+    // nav bar + STOP/REC drawn by drawChrome above (shared design-1 chrome).
 }
 
 // --- strip compositor: small buffer, compose-then-emit ------------------------

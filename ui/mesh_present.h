@@ -88,6 +88,9 @@ public:
             const int statusBottom = L.statusCells[0].y + L.statusCells[0].h, navTop = L.navCells[0].y;
             if (st) sched_.invalidate(0, statusBottom);
             if (bd) sched_.invalidate(statusBottom, navTop);
+            { scanr::ScanScene za; za.rec = store_[cur_].scene().rec; scanr::ScanScene zb; zb.rec = nw.rec;  // design #1: STOP/REC lives on the nav bar now
+              char ra[16], rb[16]; scanr::recLabel(za, ra, 16); scanr::recLabel(zb, rb, 16);
+              if (__builtin_strcmp(ra, rb)) sched_.invalidate(navTop, H_); }
         }
         cur_ ^= 1; haveFront_ = true; forceFull_ = false;
     }

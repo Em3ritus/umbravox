@@ -22,20 +22,44 @@ struct Rect {
 
 inline int iround(double v) { return (int)std::lround(v); }
 
-// --- shared chrome: status bar (top), nav bar (bottom), body, 4 cells each ----
+// --- shared chrome: the ONE design-1 header + nav bar every screen composes ----
+// Single-sourced so a chrome fix lands once and every screen inherits it. The
+// design-1 header is a UMBRAVOX wordmark + single-line GPS/MESH/BAT readouts;
+// the nav bar is the four tabs + a STOP/REC record control at the far right:
+//   statusCells[0..2] = GPS / MESH / POWER readout hits (cell 3 is the wordmark
+//   area, NOT a control); navCells[0..3] = the four tabs; `stop` is the fifth
+//   nav hit (the record control). `wordmark` is draw-only. `body` carries an 8px
+//   margin (SCAN widens its own body to 16 at 480; the bands here are the same).
 struct Chrome {
     Rect status, nav, body;
     Rect statusCells[4], navCells[4];
+    Rect wordmark, stop;
 };
 inline Chrome chrome(int W, int H) {
     Chrome c;
+    const bool wide = (W >= 400);
     c.status = {0, 0, W, 44};
     c.nav    = {0, H - 44, W, 44};
     c.body   = {8, 52, W - 16, H - 104};   // 52 = 44 status + 8 gap; 104 = that + 44 nav + 8 gap
-    const int cw = W / 4;
-    for (int i = 0; i < 4; i++) {
-        c.statusCells[i] = {i * cw, 0, cw, 44};
-        c.navCells[i]    = {i * cw, H - 44, cw, 44};
+    const int ny = H - 44;
+    if (wide) {
+        c.wordmark       = {16, 13, 96, 16};          // UMBRAVOX @2x (draw)
+        c.statusCells[0] = {130, 0,  92, 44};         // GPS 3D
+        c.statusCells[1] = {222, 0,  94, 44};         // MESH n
+        c.statusCells[2] = {316, 0, 164, 44};         // BAT 78%
+        c.statusCells[3] = {0, 0, 130, 44};           // wordmark area (not a control)
+        c.navCells[0] = {0,   ny, 99, 44}; c.navCells[1] = {99,  ny,  99, 44};
+        c.navCells[2] = {198, ny, 99, 44}; c.navCells[3] = {297, ny, 101, 44};
+        c.stop = {398, ny, 82, 44};
+    } else {
+        c.wordmark       = {8, 8, 48, 8};             // UMBRAVOX @1x (draw)
+        c.statusCells[0] = {70,  0, 60,  44};
+        c.statusCells[1] = {130, 0, 70,  44};
+        c.statusCells[2] = {200, 0, 120, 44};
+        c.statusCells[3] = {0,   0, 70,  44};
+        c.navCells[0] = {0,   ny, 65, 44}; c.navCells[1] = {65,  ny, 65, 44};
+        c.navCells[2] = {130, ny, 65, 44}; c.navCells[3] = {195, ny, 65, 44};
+        c.stop = {260, ny, 60, 44};
     }
     return c;
 }
@@ -55,37 +79,22 @@ struct ScanLayout {
     Rect wordmark, stop;
 };
 inline ScanLayout scan(int W, int H) {
+    const Chrome c = chrome(W, H);               // design-1 bands, single-sourced
     ScanLayout s{};
     const bool wide = (W >= 400);
     const int M = wide ? 16 : 8;                 // design #1 margin: 16 @480, 8 @320
-    s.status = {0, 0, W, 44};
-    s.nav    = {0, H - 44, W, 44};
-    s.body   = {M, 52, W - 2 * M, H - 104};
-    const int ny = H - 44;
+    s.status = c.status; s.nav = c.nav;
+    s.body   = {M, 52, W - 2 * M, H - 104};      // SCAN widens the body to the 16px margin
+    for (int i = 0; i < 4; i++) { s.statusCells[i] = c.statusCells[i]; s.navCells[i] = c.navCells[i]; }
+    s.wordmark = c.wordmark; s.stop = c.stop;
 
     if (wide) {
-        s.wordmark       = {16, 13, 96, 16};          // UMBRAVOX @2x (draw)
-        s.statusCells[0] = {130, 0,  92, 44};         // GPS 3D   (readout ~186)
-        s.statusCells[1] = {222, 0,  94, 44};         // MESH 3   (readout ~258)
-        s.statusCells[2] = {316, 0, 164, 44};         // BAT 78%  (readout ~375)
-        s.statusCells[3] = {0, 0, 130, 44};           // wordmark area (not a control)
         for (int i = 0; i < 3; i++) s.tiles[i] = {16, 52 + i * 70, 132, 62};
         s.hero = {156, 52, W - 156 - M, H - 104};
-        s.navCells[0] = {0, ny, 99, 44};   s.navCells[1] = {99, ny, 99, 44};
-        s.navCells[2] = {198, ny, 99, 44}; s.navCells[3] = {297, ny, 101, 44};
-        s.stop = {398, ny, 82, 44};
     } else {
-        s.wordmark       = {8, 8, 48, 8};             // UMBRAVOX @1x (draw)
-        s.statusCells[0] = {70, 0, 60, 44};
-        s.statusCells[1] = {130, 0, 70, 44};
-        s.statusCells[2] = {200, 0, 120, 44};
-        s.statusCells[3] = {0, 0, 70, 44};
         const int th = (H - 104) / 3;
         for (int i = 0; i < 3; i++) s.tiles[i] = {8, 52 + i * th, 88, (i < 2) ? th : (H - 104 - 2 * th)};
         s.hero = {104, 52, W - 104 - 8, H - 104};
-        s.navCells[0] = {0, ny, 65, 44};   s.navCells[1] = {65, ny, 65, 44};
-        s.navCells[2] = {130, ny, 65, 44}; s.navCells[3] = {195, ny, 65, 44};
-        s.stop = {260, ny, 60, 44};
     }
     s.counts = {s.tiles[0].x, s.tiles[0].y, s.tiles[0].w, H - 104};
     return s;
@@ -170,28 +179,25 @@ static const char* const kThreatDesc =
 // is not a device identity and must not create an actionable target.
 inline bool validKey(const char* k) { return k && k[0]; }
 
-inline void addChromeHits(HitList& h, const Rect sc[4], const Rect nv[4]) {
-    h.add("gps",     sc[0], Action::OpenGps,       0, nullptr, "Open GPS diagnostics");
-    h.add("mesh",    sc[1], Action::OpenMesh,      0, nullptr, "Open Mesh");
-    h.add("power",   sc[2], Action::PowerDetail,   0, nullptr, "Power detail (NM: sensing unavailable)");
-    h.add("logging", sc[3], Action::ToggleLogging, 0, nullptr, "Toggle logging; apply existing logger behavior");
+// The shared design-1 chrome hit set, derived from chrome(W,H) so EVERY screen
+// binds the identical header + nav geometry: GPS/MESH/POWER readouts, the four
+// nav tabs, and the STOP/REC record control (design #1 moved logging here from a
+// status cell). The wordmark area (statusCells[3]) is draw-only, not a control.
+inline void addChromeHits(HitList& h, int W, int H) {
+    const Chrome c = chrome(W, H);
+    h.add("gps",   c.statusCells[0], Action::OpenGps,     0, nullptr, "Open GPS diagnostics");
+    h.add("mesh",  c.statusCells[1], Action::OpenMesh,    0, nullptr, "Open Mesh");
+    h.add("power", c.statusCells[2], Action::PowerDetail, 0, nullptr, "Power detail (NM: sensing unavailable)");
     static const char* const nslot[4] = {"nav-scan","nav-domain","nav-codex","nav-menu"};
     static const char* const ndesc[4] = {"Open SCAN","Open DOMAIN","Open CODEX","Open MENU"};
-    for (int i = 0; i < 4; i++) h.add(nslot[i], nv[i], Action::Nav, i, nullptr, ndesc[i]);
+    for (int i = 0; i < 4; i++) h.add(nslot[i], c.navCells[i], Action::Nav, i, nullptr, ndesc[i]);
+    h.add("stop", c.stop, Action::ToggleLogging, 0, nullptr, "Toggle logging; the REC/STOP record control");
 }
 
 inline HitList scanHits(int W, int H, const HitCtx& ctx) {
     const ScanLayout s = scan(W, H);
     HitList h;
-    // header readouts (wordmark area is not a control)
-    h.add("gps",   s.statusCells[0], Action::OpenGps,       0, nullptr, "Open GPS diagnostics");
-    h.add("mesh",  s.statusCells[1], Action::OpenMesh,      0, nullptr, "Open Mesh");
-    h.add("power", s.statusCells[2], Action::PowerDetail,   0, nullptr, "Power detail (NM: sensing unavailable)");
-    // nav tabs + the STOP record control (design #1 moves logging to the nav bar)
-    static const char* const nslot[4] = {"nav-scan","nav-domain","nav-codex","nav-menu"};
-    static const char* const ndesc[4] = {"Open SCAN","Open DOMAIN","Open CODEX","Open MENU"};
-    for (int i = 0; i < 4; i++) h.add(nslot[i], s.navCells[i], Action::Nav, i, nullptr, ndesc[i]);
-    h.add("stop", s.stop, Action::ToggleLogging, 0, nullptr, "Toggle logging; the REC/STOP control");
+    addChromeHits(h, W, H);              // shared design-1 header + nav + STOP
     // count tiles
     static const char* const tslot[3] = {"WIFI","5 GHZ","BLE"};
     static const char* const tdesc[3] = {"Open Codex filtered to WIFI",
@@ -209,7 +215,7 @@ inline int domainRowBands(const DomainLayout& d) { return d.contacts.h / 44; }
 inline HitList domainHits(int W, int H, const HitCtx& ctx) {
     const DomainLayout d = domain(W, H);
     HitList h;
-    addChromeHits(h, d.statusCells, d.navCells);
+    addChromeHits(h, W, H);
     h.add("range-minus", d.minus, Action::RangeStep, -1, nullptr, "Select adjacent existing range; clamp at endpoint");
     h.add("range-plus",  d.plus,  Action::RangeStep, +1, nullptr, "Select adjacent existing range; clamp at endpoint");
 
@@ -288,7 +294,7 @@ inline CodexLayout codex(int W, int H) {
 inline HitList codexHits(int W, int H, const HitCtx& ctx) {
     const CodexLayout x = codex(W, H);
     HitList h;
-    addChromeHits(h, x.statusCells, x.navCells);
+    addChromeHits(h, W, H);
     static const char* const flab[4] = {"WIFI", "5 GHZ", "BLE", "LOCATED"};
     static const char* const fdesc[3] = {"Filter to WIFI (both Wi-Fi bands)",
                                          "Filter to 5 GHZ (a subset of WIFI)",
@@ -345,7 +351,7 @@ inline MenuLayout menu(int W, int H) {
 inline HitList menuHits(int W, int H) {
     const MenuLayout m = menu(W, H);
     HitList h;
-    addChromeHits(h, m.statusCells, m.navCells);
+    addChromeHits(h, W, H);
     struct ME { ScreenId id; const char* slot; const char* desc; };
     static const ME tiles[8] = {
         {ScreenId::Scan,   "menu-scan",   "Open SCAN"},
@@ -404,7 +410,7 @@ inline MeshLayout mesh(int W, int H) {
 inline HitList meshHits(int W, int H) {
     const MeshLayout m = mesh(W, H);
     HitList h;
-    addChromeHits(h, m.statusCells, m.navCells);
+    addChromeHits(h, W, H);
     h.add("enroll", m.enroll, Action::MeshEnroll,   0, nullptr, "Open a pairing window (adopt open nodes)");
     h.add("reset",  m.reset,  Action::MeshResetNet, 0, nullptr, "Return the fleet to the open network");
     return h;
@@ -436,9 +442,8 @@ inline LogLayout logBody(int W, int H) {
 inline LogLayout omens(int W, int H)  { return logBody(W, H); }
 inline LogLayout echoes(int W, int H) { return logBody(W, H); }
 inline HitList logHits(int W, int H) {        // chrome only; the list is a scroll gesture
-    const LogLayout g = logBody(W, H);
     HitList h;
-    addChromeHits(h, g.statusCells, g.navCells);
+    addChromeHits(h, W, H);
     return h;
 }
 inline HitList omensHits(int W, int H)  { return logHits(W, H); }
@@ -492,7 +497,7 @@ inline HitList attuneHits(int W, int H, int page) {
     const int per = a.nRows, pages = attunePages(H);
     if (page < 0) page = 0; else if (page >= pages) page = pages - 1;
     HitList h;
-    addChromeHits(h, a.statusCells, a.navCells);
+    addChromeHits(h, W, H);
     static const char* const mslot[4] = {"knob0-", "knob1-", "knob2-", "knob3-"};
     static const char* const pslot[4] = {"knob0+", "knob1+", "knob2+", "knob3+"};
     for (int i = 0; i < per; i++) {
@@ -540,7 +545,7 @@ inline AspectLayout aspect(int W, int H) {
 inline HitList aspectHits(int W, int H, bool alertLive) {
     const AspectLayout a = aspect(W, H);
     HitList h;
-    addChromeHits(h, a.statusCells, a.navCells);
+    addChromeHits(h, W, H);
     h.add("theme-", a.minus[0], Action::ThemeStep, -1, nullptr, "Previous theme");
     h.add("theme+", a.plus[0],  Action::ThemeStep, +1, nullptr, "Next theme");
     h.add("sweep-", a.minus[1], Action::SettingStep, -2, nullptr, "Previous sweep");
@@ -577,7 +582,7 @@ inline DetailLayout detail(int W, int H) {
 inline HitList detailHits(int W, int H) {
     const DetailLayout d = detail(W, H);
     HitList h;
-    addChromeHits(h, d.statusCells, d.navCells);
+    addChromeHits(h, W, H);
     h.add("back", d.back, Action::Back, 0, nullptr, "Return to the list, preserving scope and scroll");
     return h;
 }
@@ -615,7 +620,7 @@ inline FilesLayout files(int W, int H) {
 inline HitList filesHits(int W, int H, bool confirm, bool deletable, int nVisible) {
     const FilesLayout f = files(W, H);
     HitList h;
-    addChromeHits(h, f.statusCells, f.navCells);
+    addChromeHits(h, W, H);
     if (confirm) {
         h.add("yes", f.yes, Action::FileConfirmYes, 0, nullptr, "Confirm delete (cannot undo)");
         h.add("no",  f.no,  Action::FileConfirmNo,  0, nullptr, "Cancel the delete");

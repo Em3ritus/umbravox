@@ -49,8 +49,8 @@ inline void agoStr(char* out, int n, uint32_t s) {
 inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
     using scanr::box; using scanr::txt; using scanr::centered;
     const uieng::LogLayout L = uieng::omens(W, H);
-    subr::panels(s, W, H);
-    subr::status(s, L.statusCells, sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec);
+    // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec}, -1);
 
     // title + total
     txt(s, L.title.x, L.title.y + 2, "OMENS", 2, pal::BRIGHT);
@@ -82,7 +82,6 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
             if (i) box(s, L.list.x + 4, y, L.list.w - 8, 1, ui::Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
         }
     }
-    subr::nav(s, L.navCells);
 }
 
 class Compositor {
