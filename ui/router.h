@@ -13,6 +13,7 @@
 // radios, the card, or Settings itself.
 #pragma once
 #include "layout_engine.h"
+#include "domain_range.h"
 
 namespace uinav {
 
@@ -72,7 +73,7 @@ public:
 
     // Number of range rungs the clamp is bounded by (kept in sync with the
     // renderer's ladder; see domr::kRanges). Set once at construction.
-    explicit Router(int nRangeRungs = 6) : nRange_(nRangeRungs < 1 ? 1 : nRangeRungs) {}
+    explicit Router(int nRangeRungs = domr::kNRanges) : nRange_(nRangeRungs < 1 ? 1 : nRangeRungs) {}
 
     // --- dispatch a committed tap -------------------------------------------
     Requests dispatch(const uieng::Hit& h) {
@@ -148,12 +149,12 @@ private:
     Screen detailOrigin_ = Screen::Scan;
     char   detailKey_[32] = {0};
     int    codexScope_ = 0, codexScroll_ = 0;
-    int    rangeIdx_ = 1;          // DOMAIN default rung (matches ui::State.rangeM 250)
+    int    rangeIdx_ = 1;          // native DOMAIN default rung: 25m
     int    attunePage_ = 0;
     int    fileSel_ = -1, fileScroll_ = 0;
     bool   labelsPlain_ = false;
     bool   fileConfirm_ = false;
-    int    nRange_ = 6;
+    int    nRange_ = domr::kNRanges;
 };
 
 }  // namespace uinav

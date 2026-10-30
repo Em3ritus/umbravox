@@ -23,7 +23,17 @@ int main() {
     // --- range ladder --------------------------------------------------------
     expect(rangeStep(250, +1) == 500, "range +: 250 -> 500 (next rung)");
     expect(rangeStep(250, -1) == 100, "range -: 250 -> 100 (prev rung)");
-    expect(rangeStep(50,  -1) == 50,  "range -: clamps at the 50m endpoint");
+    expect(rangeStep(10,-1)==10,"range: clamps at 10m minimum");
+    expect(rangeStep(50,-1)==25 && rangeStep(25,-1)==10,"nearby observations have 25m and 10m zoom");
+    expect(rangeAt(1)==25,"native default index is 25m");
+    int idx=0;
+    for(int i=0;i<kNRanges;++i) {
+        expect(rangeAt(idx)==kRanges[i],"input index selects exactly the displayed/projected range");
+        idx=rangeIndexStep(idx,1);
+    }
+    expect(idx==kNRanges-1 && rangeAt(idx)==2000 && rangeAt(999)==2000,"zoom out clamps without modulo wrap");
+    for(int i=0;i<20;++i)idx=rangeIndexStep(idx,-1);
+    expect(idx==0 && rangeAt(idx)==10,"zoom in clamps at 10m");
     expect(rangeStep(2000,+1) == 2000,"range +: clamps at the 2000m endpoint");
     expect(rangeStep(300, -1) == 100 && rangeStep(300,+1) == 500,
            "range: off-ladder 300 snaps to 250 then steps");

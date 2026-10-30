@@ -1758,12 +1758,14 @@ void loop() {
     } else if (nav.screen == ui::SCR_DOMAIN) {
         const ui::Gnss::Fix& fx = ui::Gnss::fix();
         int mapRadius=ui::MAP_R;
+        int mapRange=ui::RANGES[nav.rangeIdx % ui::RANGE_N];
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
         mapRadius=domr::radarGeom(uieng::domain(board::PANEL_W,board::PANEL_H).map).r;
+        mapRange=domr::rangeAt(nav.rangeIdx);
         cap::fillSights(s,0,false,true); // same located Wi-Fi scope as DOMAIN's map
 #endif
         s.nTrack=0;
-        cap::fillPlots(s, ui::RANGES[nav.rangeIdx % ui::RANGE_N],
+        cap::fillPlots(s, mapRange,
                        fx.lat7, fx.lon7, ui::Gnss::fresh(millis()), mapRadius);
         if (ui::Gnss::fresh(millis())) {
             const float latDeg = (float)fx.lat7 / 1e7f;

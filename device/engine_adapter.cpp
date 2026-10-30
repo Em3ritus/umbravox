@@ -394,8 +394,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 break;   // DETAIL fill resolves the address, never a shifting list index
             }
             case uieng::Action::RangeStep: {
-                const int ni = (int)nav.rangeIdx + (hit.payload < 0 ? -1 : 1);
-                nav.rangeIdx = (uint8_t)(ni < 0 ? 0 : ni >= domr::kNRanges ? domr::kNRanges - 1 : ni);
+                nav.rangeIdx = (uint8_t)domr::rangeIndexStep(nav.rangeIdx,hit.payload);
                 break;
             }
             case uieng::Action::ToggleLabels:      set.labels = set.labels ? 0 : 1; break;

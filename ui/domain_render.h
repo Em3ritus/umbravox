@@ -13,6 +13,7 @@
 // recording projections (scanr::gpsLabel/recLabel) -- so the status-bar chrome
 // is identical to SCAN and the fresh/stale/acquiring rule stays single-sourced.
 #pragma once
+#include "domain_range.h"
 #include "scan_render.h"      // scanr:: primitives + GnssFix/gpsLabel/recLabel/Sink/S
 #include "layout_engine.h"
 #include "palette.h"
@@ -34,27 +35,6 @@ inline uint16_t bandColor(uint8_t band) {
         case 1:  return pal::ICE;       // 5 GHz
         default: return pal::GREEN;     // BLE
     }
-}
-
-// --- range ladder: -/+ steps to an ADJACENT EXISTING range, clamped ----------
-// The ranges are discrete (the device only keeps a projection cache per range),
-// so -/+ select the neighbour in this fixed ladder rather than add/subtract an
-// arbitrary metre count. Out-of-ladder stored values snap to the nearest rung.
-static constexpr int kRanges[] = {50, 100, 250, 500, 1000, 2000};
-static constexpr int kNRanges  = (int)(sizeof(kRanges) / sizeof(kRanges[0]));
-
-inline int rangeIndex(int rangeM) {               // nearest existing rung
-    int best = 0, bestd = kRanges[0] > rangeM ? kRanges[0] - rangeM : rangeM - kRanges[0];
-    for (int i = 1; i < kNRanges; i++) {
-        const int d = kRanges[i] > rangeM ? kRanges[i] - rangeM : rangeM - kRanges[i];
-        if (d < bestd) { bestd = d; best = i; }
-    }
-    return best;
-}
-inline int rangeStep(int rangeM, int dir) {        // dir -1/+1; clamp at endpoints
-    int i = rangeIndex(rangeM) + (dir < 0 ? -1 : 1);
-    if (i < 0) i = 0; else if (i >= kNRanges) i = kNRanges - 1;
-    return kRanges[i];
 }
 
 // --- list ordering (open decision #5): strongest signal first ----------------
@@ -244,8 +224,8 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
     frame(s, L.range.x, L.range.y, L.range.w, 44, pal::EDGE);
     frame(s, L.minus.x, L.minus.y, 44, 44, pal::EDGE);
     frame(s, L.plus.x,  L.plus.y,  44, 44, pal::EDGE);
-    centered(s, L.minus.x + 22, L.minus.y + 15, "-", 2, pal::BRIGHT);
-    centered(s, L.plus.x  + 22, L.plus.y  + 15, "+", 2, pal::BRIGHT);
+    centered(s, L.minus.x + 22, L.minus.y + 15, "IN", 2, pal::BRIGHT);
+    centered(s, L.plus.x  + 22, L.plus.y  + 15, "OUT", 2, pal::BRIGHT);
     snprintf(buf, sizeof buf, "%dM", sc.rangeM);
     centered(s, L.map.x + L.map.w / 2, L.map.y + L.map.h - 10, buf,
              1, pal::TEXT);

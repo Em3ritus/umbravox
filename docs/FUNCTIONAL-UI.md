@@ -26,3 +26,9 @@ The C5 Node grows from 92 to 104 bytes: 384 KiB additional PSRAM across 32768 sl
 - New checks: rendered MENU ink centered in both label modes/sizes; full 32-byte names retained through native projections; DOMAIN long names wrap entirely inside their hit row; enterprise/cipher strings and signed coordinates preserved.
 - sim/native-hit-contract.json is the independent expected native hit set. SCAN remains unchanged; DOMAIN expectations intentionally supersede the old narrow-column mockup. Generate with `python3 sim/gen_oracle.py sim/native-hit-contract.json > sim/oracle_hits.inc`.
 - sim/ui_review_png.cpp generates production-compositor previews for DOMAIN, AP detail, CODEX and MENU at both native sizes from explicit fixtures. Render data is illustrative, not a capture from the board.
+
+## Zoom correction after hardware feedback
+
+The native controls previously clamped against a six-entry renderer ladder while main.cpp projected using the five-entry legacy ladder with modulo indexing. This could wrap the outermost step back to the smallest legacy range. Native input, router defaults, and map projection now share ui/domain_range.h: 10, 25, 50, 100, 250, 500, 1000, 2000 metres. Existing initial index 1 now starts at 25m. Legacy canvas builds retain their existing ranges. Native controls read IN (smaller radius) and OUT (larger radius), avoiding ambiguous +/- semantics. No flash performed for this correction.
+
+DOMAIN browsing remains header -> located CODEX -> PREV/NEXT; no swipe gesture is claimed.
