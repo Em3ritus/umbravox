@@ -10,6 +10,7 @@
 #include "layout_engine.h"
 #include "palette.h"
 #include "font5x7.h"
+#include "canvas.h"
 #include <cstdio>
 
 namespace subr {
@@ -41,6 +42,14 @@ inline void status(scanr::S& s, const uieng::Rect sc[4], const scanr::GnssFix& g
         if (i) box(s, c.x, c.y + 9, 1, 26, pal::EDGE);
         txt(s, c.x + 8, c.y + 7, slab[i], 1, pal::DIM);
         txt(s, c.x + 8, c.y + 19, sval[i], fitScale(sval[i], c.w - 12, 2), scol[i]); }
+}
+
+// A framed [-]/[+] stepper button (a >=44px touch target), live or dimmed.
+inline void stepBtn(scanr::S& s, const uieng::Rect& r, const char* glyph, bool live) {
+    using scanr::box; using scanr::frame; using scanr::centered;
+    box(s, r.x, r.y + 1, r.w, r.h - 2, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
+    frame(s, r.x, r.y + 1, r.w, r.h - 2, live ? pal::EDGE_LIT : pal::EDGE);
+    centered(s, r.x + r.w / 2, r.y + r.h / 2 - 5, glyph, 2, live ? pal::WITCH_HI : pal::DIM);
 }
 
 // Bottom nav bar, no tab lit (the sub-screen is reached via MENU, not a tab).

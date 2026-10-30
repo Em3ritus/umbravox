@@ -97,3 +97,6 @@ sim/test_echoes_engine
 sim/test_attune_present
 sim/test_attune_render
 sim/test_attune_engine
+sim/test_aspect_present
+sim/test_aspect_render
+sim/test_aspect_engine

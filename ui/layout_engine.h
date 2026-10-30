@@ -468,4 +468,50 @@ inline HitList attuneHits(int W, int H, int page) {
     return h;
 }
 
+// --- ASPECT: a themed dial preview + THEME / SWEEP / ALERT steppers -----------
+// Appearance, not a capture trade-off, so it is its own screen. The preview is
+// a left column; the three stepper rows stack in a right column so every
+// [-][+] is a >=44px target at both profiles (a preview-on-top layout would
+// crush the rows on the 136px body). The ALERT row is actionable only on a
+// theme with a choice; otherwise its steppers are omitted (not a dead target).
+struct AspectLayout {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect preview, rows[3], minus[3], plus[3];
+    int  nRows = 3;
+};
+inline AspectLayout aspect(int W, int H) {
+    const Chrome c = chrome(W, H);
+    AspectLayout a;
+    a.status = c.status; a.nav = c.nav; a.body = c.body;
+    for (int i = 0; i < 4; i++) { a.statusCells[i] = c.statusCells[i]; a.navCells[i] = c.navCells[i]; }
+    const int previewW = c.body.w * 2 / 5;
+    a.preview = {c.body.x, c.body.y, previewW, c.body.h};
+    const int rx = c.body.x + previewW + 8, rw = c.body.w - previewW - 8;
+    for (int i = 0; i < 3; i++) {
+        const int y = c.body.y + i * 44;
+        a.rows[i]  = {rx, y, rw, 44};
+        a.minus[i] = {rx + rw - 88, y, 44, 44};
+        a.plus[i]  = {rx + rw - 44, y, 44, 44};
+    }
+    return a;
+}
+// ASPECT hits. THEME uses ThemeStep (a theme change forces a full repaint, so
+// dispatch wants it distinct); SWEEP/ALERT use SettingStep with payload
+// +/-(row+1) (row 1 SWEEP, 2 ALERT). The ALERT steppers are emitted only when
+// alertLive -- a theme with an alert-style choice.
+inline HitList aspectHits(int W, int H, bool alertLive) {
+    const AspectLayout a = aspect(W, H);
+    HitList h;
+    addChromeHits(h, a.statusCells, a.navCells);
+    h.add("theme-", a.minus[0], Action::ThemeStep, -1, nullptr, "Previous theme");
+    h.add("theme+", a.plus[0],  Action::ThemeStep, +1, nullptr, "Next theme");
+    h.add("sweep-", a.minus[1], Action::SettingStep, -2, nullptr, "Previous sweep");
+    h.add("sweep+", a.plus[1],  Action::SettingStep, +2, nullptr, "Next sweep");
+    if (alertLive) {
+        h.add("alert-", a.minus[2], Action::SettingStep, -3, nullptr, "Previous alert style");
+        h.add("alert+", a.plus[2],  Action::SettingStep, +3, nullptr, "Next alert style");
+    }
+    return h;
+}
+
 }  // namespace uieng
