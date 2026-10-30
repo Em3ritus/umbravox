@@ -94,8 +94,13 @@ inline DomainLayout domain(int W, int H) {
 // The `desc` is documentation; `action`+`payload`/`key` drive runtime dispatch.
 enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           Nav, CodexFilter, RangeStep,
-                          OpenLocatedCodex, OpenDeviceDetail, OpenThreatDetail };
-enum class ScreenId : int { Scan, Domain, Codex, Menu };   // Nav payload
+                          OpenLocatedCodex, OpenDeviceDetail, OpenThreatDetail,
+                          ToggleLabels };
+// Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
+// the rest are the additional destinations the MENU hub launches into. Scan=0,
+// Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
+enum class ScreenId : int { Scan, Domain, Codex, Menu,
+                            Mesh, Omens, Echoes, Attune, Aspect };
 enum class Band     : int { Wifi, FiveGhz, Ble };          // CodexFilter payload
 
 struct Hit {
@@ -259,6 +264,61 @@ inline HitList codexHits(int W, int H, const HitCtx& ctx) {
             h.add(rslot[b], x.rows[b], Action::OpenDeviceDetail, b, key,
                   "Open device detail by stable identity");
     }
+    return h;
+}
+
+// --- MENU: the hub, a grid of launcher tiles (the old GRIMOIRE) ---------------
+// No geometry.json oracle (scan+domain only), so regions are asserted against
+// these rules + structural invariants. The body holds a resolution-independent
+// 3x3 grid: eight screen launchers plus a LABELS tile that toggles brand/plain
+// naming. Cells tile the body exactly (last col/row take the remainder) and
+// stay >=44px at both approved profiles. The shared nav bar persists with MENU
+// (index 3) lit, so the hub is a peer screen, reachable and leavable like the
+// rest.
+static constexpr int kMenuCols = 3, kMenuRows = 3, kMenuCells = 9;
+
+struct MenuLayout {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect cells[kMenuCells];
+    int  cols = kMenuCols, rows = kMenuRows, nCells = kMenuCells;
+};
+inline MenuLayout menu(int W, int H) {
+    const Chrome c = chrome(W, H);
+    MenuLayout m;
+    m.status = c.status; m.nav = c.nav; m.body = c.body;
+    for (int i = 0; i < 4; i++) { m.statusCells[i] = c.statusCells[i]; m.navCells[i] = c.navCells[i]; }
+
+    const int cw = c.body.w / kMenuCols, rh = c.body.h / kMenuRows;
+    for (int i = 0; i < kMenuCells; i++) {
+        const int col = i % kMenuCols, row = i / kMenuCols;
+        const int x = c.body.x + col * cw, y = c.body.y + row * rh;
+        const int w = (col < kMenuCols - 1) ? cw : c.body.w - (kMenuCols - 1) * cw;
+        const int hh = (row < kMenuRows - 1) ? rh : c.body.h - (kMenuRows - 1) * rh;
+        m.cells[i] = {x, y, w, hh};
+    }
+    return m;
+}
+
+// MENU hit set. Eight tiles navigate (Nav payload = ScreenId); the ninth toggles
+// the label mode. The tile order matches the delivered GRIMOIRE grid so the hit
+// test and the drawing cannot disagree about which cell is which.
+inline HitList menuHits(int W, int H) {
+    const MenuLayout m = menu(W, H);
+    HitList h;
+    addChromeHits(h, m.statusCells, m.navCells);
+    struct ME { ScreenId id; const char* slot; const char* desc; };
+    static const ME tiles[8] = {
+        {ScreenId::Scan,   "menu-scan",   "Open SCAN"},
+        {ScreenId::Codex,  "menu-codex",  "Open CODEX (FOUND)"},
+        {ScreenId::Domain, "menu-domain", "Open DOMAIN (MAP)"},
+        {ScreenId::Echoes, "menu-echoes", "Open ECHOES (PROBES)"},
+        {ScreenId::Mesh,   "menu-mesh",   "Open MESH"},
+        {ScreenId::Omens,  "menu-omens",  "Open OMENS (ALERTS)"},
+        {ScreenId::Attune, "menu-attune", "Open ATTUNE (SETTINGS)"},
+        {ScreenId::Aspect, "menu-aspect", "Open ASPECT (DISPLAY)"},
+    };
+    for (int i = 0; i < 8; i++) h.add(tiles[i].slot, m.cells[i], Action::Nav, (int)tiles[i].id, nullptr, tiles[i].desc);
+    h.add("labels", m.cells[8], Action::ToggleLabels, 0, nullptr, "Toggle brand/plain labels");
     return h;
 }
 

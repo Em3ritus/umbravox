@@ -82,3 +82,6 @@ sim/test_domain_engine
 sim/test_codex_present
 sim/test_codex_render
 sim/test_codex_engine
+sim/test_menu_present
+sim/test_menu_render
+sim/test_menu_engine
