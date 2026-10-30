@@ -141,7 +141,7 @@ inline RadarGeom radarGeom(uieng::Rect map) {
 
 // --- small helpers reusing scanr's strip writer ------------------------------
 inline void dottedRing(scanr::S& s, int cx, int cy, int r, uint16_t c) {
-    for (int a = 0; a < 360; a += 12) {
+    for (int a = 0; a < 360; a += 8) {                  // denser dots: the dial must read even when empty
         const double t = a * 3.14159265 / 180.0;
         scanr::pt(s, cx + (int)(r * std::cos(t)), cy + (int)(r * std::sin(t)), c);
     }
@@ -168,9 +168,12 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
             if (x % 8 == 0 && y % 8 == 0) pt(s, x, y, pal::GRID);
 
     const RadarGeom g = radarGeom(m);
-    for (int k = 1; k <= 3; k++) dottedRing(s, g.cx, g.cy, g.r * k / 3, pal::EDGE);
+    // the dial must read even at 0 contacts; EDGE on the dark map is too faint,
+    // so the rings + crosshair use the brighter EDGE_LIT seal tone (geometry
+    // unchanged -- rings still at g.r*k/3 = 30/60/91 @480).
+    for (int k = 1; k <= 3; k++) dottedRing(s, g.cx, g.cy, g.r * k / 3, pal::EDGE_LIT);
     for (int i = -g.r; i <= g.r; i += 4) {                          // crosshair axes
-        pt(s, g.cx + i, g.cy, pal::EDGE); pt(s, g.cx, g.cy + i, pal::EDGE);
+        pt(s, g.cx + i, g.cy, pal::EDGE_LIT); pt(s, g.cx, g.cy + i, pal::EDGE_LIT);
     }
     txt(s, g.cx - 2, m.y + 3, "N", 1, pal::DIM);
 
