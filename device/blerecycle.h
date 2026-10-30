@@ -1,3 +1,5 @@
+// Retained-cache fallback and stopped-scan recovery. Native NimBLE uses
+// callback-only storage and skips routine recycling.
 // When blescan stops and restarts the BLE scan, as a pure decision so it can
 // be host-tested (sim/test_blerecycle.cpp).
 //
@@ -36,10 +38,11 @@ constexpr uint32_t RESTART_MS  = 5000;    // a stopped scan is retried this ofte
 // of the radio (0 = BLE off: the scan is stopped on purpose, leave it). Elapsed
 // times are unsigned, so this holds across the millis() wrap.
 inline Action shouldRecycle(uint32_t count, uint32_t nowMs, uint32_t lastMs,
-                            bool scanning, uint8_t duty) {
+                            bool scanning, uint8_t duty, bool retainResults = true) {
     if (duty == 0) return NONE;
     const uint32_t since = nowMs - lastMs;
     if (!scanning) return since >= RESTART_MS ? RESTART : NONE;
+    if (!retainResults) return NONE; // still restart a stopped scan above
     if (since >= RECYCLE_MS) return RECYCLE;
     if (count > MAX_RESULTS && since >= MIN_GAP_MS) return RECYCLE;
     return NONE;

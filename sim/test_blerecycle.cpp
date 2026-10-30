@@ -39,6 +39,12 @@ int main() {
     check("never recycles",                         shouldRecycle(900, 100000, 0, true, 0) == NONE);
     check("never restarts a scan it stopped",       shouldRecycle(0, 100000, 0, false, 0) == NONE);
 
+    printf("callback-only storage:\n");
+    check("no periodic stop/start with no retained cache", shouldRecycle(0,100000,0,true,30,false)==NONE);
+    check("no count-triggered recycle in callback-only mode", shouldRecycle(33,100000,0,true,30,false)==NONE);
+    check("unexpected stopped scan still restarts", shouldRecycle(0,5000,0,false,30,false)==RESTART);
+    check("intentional BLE-off remains off", shouldRecycle(0,5000,0,false,0,false)==NONE);
+
     printf("millis wrap:\n");
     check("recycle 12 s after, across the wrap",
           shouldRecycle(0, 0xFFFFF000u + RECYCLE_MS, 0xFFFFF000u, true, 30) == RECYCLE);

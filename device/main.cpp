@@ -108,7 +108,14 @@ static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, board::ROTATION, fals
                                              240, 320);
 #endif
 
-static ui::Canvas canvas;          // 38,400 bytes, internal SRAM by design
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+// Only idle animation/orientation still need the legacy canvas in this build.
+// Allocate after Arduino has initialized PSRAM; never fall back to scarce SRAM.
+static ui::Canvas* canvasStorage = nullptr;
+#define canvas (*canvasStorage)
+#else
+static ui::Canvas canvas;          // NM/default renderer keeps its hot SRAM canvas
+#endif
 // One doubled canvas row: 320 px landscape, 240 px portrait.
 static_assert(2 * ui::W <= PANEL_W && 2 * ui::H <= PANEL_W, "lineBuf holds a doubled row either way");
 static uint16_t   lineBuf[PANEL_W];
@@ -653,6 +660,15 @@ void setup() {
     delay(200);
     Serial.println();
     Serial.println("UMBRAVOX bring-up");
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    void* legacyPixels = heap_caps_malloc(sizeof(ui::Canvas), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!legacyPixels) {
+        Serial.println("ui: FATAL -- no PSRAM for legacy animation canvas");
+        for (;;) delay(1000);
+    }
+    canvasStorage = new (legacyPixels) ui::Canvas{};
+    Serial.println("ui: legacy animation canvas in PSRAM");
+#endif
     Serial.printf("chip  : %s rev %d, %d core(s)\n",
                   ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores());
     Serial.printf("flash : %u bytes\n", (unsigned)ESP.getFlashChipSize());
@@ -1983,6 +1999,12 @@ void loop() {
             touch::samplingStats(gap, missed, dropped);
             logf("[touch] maxgap %lums deadline-misses %lu dropped %lu\n",
                  (unsigned long)gap, (unsigned long)missed, (unsigned long)dropped);
+            logf("[mem] internal %u min %u largest %u dma %u psram %u loop-stack %u bytes\n",
+                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+                 (unsigned)ESP.getFreePsram(),
+                 (unsigned)(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
             engineadapter::clearMetrics();
         }
         engPrev = nav.screen;

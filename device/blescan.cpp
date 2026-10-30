@@ -276,6 +276,11 @@ void begin() {
 
     BLEDevice::init("");
     scan = BLEDevice::getScan();
+#if defined(CONFIG_NIMBLE_ENABLED)
+    // The library releases its temporary advertiser AFTER onResult returns.
+    // Our PSRAM table already owns every retained observation.
+    scan->setMaxResults(0);
+#endif
     // shouldParse stays false: the raw payload is all the signature matcher
     // needs, and parsing leaks.
     scan->setAdvertisedDeviceCallbacks(&cb, /*wantDuplicates=*/true, /*shouldParse=*/false);
@@ -391,7 +396,8 @@ uint32_t lastCycleMs = 0;     // last stop/start, by the recycle or setDuty
 uint32_t nRestarts = 0;       // scans found stopped and started again
 elog::Gate restartGate;
 
-// Bound the library's result map and keep the scan alive (blerecycle.h).
+// Keep the scan alive. Routine cache recycling is only for retained-result
+// backends; NimBLE uses callback-only storage (blerecycle.h).
 // stop() then start(0, nullptr, false) is the sequence setDuty() has always
 // used; is_continue = false is what clears the map. start() runs only after a
 // successful stop(), so the map is never cleared while discovery can still
@@ -399,9 +405,19 @@ elog::Gate restartGate;
 // so it is never part-way through the scan callback when this runs.
 void recycle(uint32_t nowMs) {
     if (!scan) return;
+#if defined(CONFIG_NIMBLE_ENABLED)
+    const uint32_t count = 0; // no need to inspect the host task's temporary map
+#else
     const uint32_t count = (uint32_t)scan->getResults()->getCount();
+#endif
     const blerecycle::Action a =
-        blerecycle::shouldRecycle(count, nowMs, lastCycleMs, scan->isScanning(), duty);
+        blerecycle::shouldRecycle(count, nowMs, lastCycleMs, scan->isScanning(), duty,
+#if defined(CONFIG_NIMBLE_ENABLED)
+                                 false // callback-only: no retained library result cache
+#else
+                                 true
+#endif
+        );
     if (a == blerecycle::NONE) return;
     lastCycleMs = nowMs;
     if (!scan->stop()) return;               // try again next time round

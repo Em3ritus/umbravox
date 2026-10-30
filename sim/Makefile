@@ -339,7 +339,10 @@ sdput-check:
 	 python3 -I ../tools/sdput.py transcript packs/cosmic-clone | cmp - sdput_golden.txt && \
 	 echo "sdput-check: selftest passed, sdput_golden.txt matches tools/sdput.py"
 
-test: $(TESTS) sdcmd_console emblem-check sdput-check
+ble-library-check:
+	@python3 -B -m unittest discover -s ../tools/tests -p test_ble_callback_library.py
+
+test: $(TESTS) sdcmd_console emblem-check sdput-check ble-library-check
 	@rc=0; for t in $(TESTS); do \
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
