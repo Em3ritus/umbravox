@@ -61,7 +61,7 @@ int main() {
     check("cosmic offers every sweep but gaze", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD);
 
     pal::setTheme(99);   // out of range, from a corrupt/stale NVS value
-    check("bad theme id falls back to UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
+    check("bad theme id falls back to UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
 
     printf("built-in descriptors:\n");
     {
@@ -179,7 +179,7 @@ int main() {
               ui::DIAL_H == cDialH && ui::SPEC_H == cSpecH && ui::R_STAR == cRStar);
 
         pal::setTheme(11);   // one past the last pack
-        check("id past the packs falls back to UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
+        check("id past the packs falls back to UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
         check("themeName past the packs is UMBRAVOX", !strcmp(pal::themeName(11), "UMBRAVOX"));
         check("built-ins untouched by packs", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD);
     }
@@ -208,7 +208,7 @@ int main() {
         check("old emblem pointer gone", pal::emblem(4) == nullptr);
         check("old centrepiece gone", pal::centrepiece(4) == pal::CP_HEPTAGRAM);
         pal::setTheme(4);
-        check("old pack id draws UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
+        check("old pack id draws UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
         check("built-ins survive clearing", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD &&
                                             !strcmp(pal::themeName(pal::TH_BAPH0MAU5), "BAPH0MAU5"));
         themepack::Pack again = mkPack("AGAIN", themepack::DIAL_COMPACT, 0x0001, ui::SW_RADAR, 0x5000);
