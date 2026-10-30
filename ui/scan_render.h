@@ -202,8 +202,7 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
 // Hero sub-layout (framed field + spectrum band). Exposed so the header/field/
 // spectrum separation and no-intrusion invariants are host-testable. The channel
 // plan is FIXED (count is size-independent); bar width/pitch adapt.
-static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz
-static constexpr int kSpecBars = 36, kSpecPink = 14;   // design #1 spectrum: 36 bars, first 14 pink
+static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz; one spectrum bar each
 struct HeroSub { uieng::Rect field, spectrum; int barBase, barMax; };
 inline HeroSub heroSub(uieng::Rect hr) {
     const int hdrH = 30, specH = 40;               // header clears the readout (text max y+26)
@@ -343,20 +342,26 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         }
     }
 
-    // spectrum (design #1): kSpecBars bars, 4px wide + 4px gap (8px pitch) from
-    // x=172 at 480; first 14 pink, the rest cyan. Live heights, resampled from
-    // the fixed 21-channel plan. At 320 the cadence scales to the spectrum band.
-    const int sx0   = (W>=400) ? 172 : hs.spectrum.x;
-    const int pitch = (W>=400) ? 8   : ((hs.spectrum.w/kSpecBars>=2) ? hs.spectrum.w/kSpecBars : 2);
-    const int bw    = (W>=400) ? 4   : (pitch>1?pitch-1:1);
-    if (sc.channels && sc.nChannels==kChannels)
-        for (int i=0;i<kSpecBars;i++){ int a=sc.channels[i*kChannels/kSpecBars]; a=a<0?0:(a>100?100:a);
-            const int x=sx0+i*pitch, hgt=a*hs.barMax/100;
-            box(s, x, hs.barBase-hgt, bw, hgt, i<kSpecPink ? pal::MAGENTA : pal::ICE); }
-    const int labY = hr.y+hr.h-8;
-    txt(s, sx0, labY, "2.4 GHZ", 1, pal::DIM);
-    { const char* r5="5 GHZ"; const int rx=(W>=400)?396:(sx0+kSpecBars*pitch-Font::width(r5,1));
-      txt(s, rx, labY, r5, 1, pal::DIM); }
+    // spectrum (design #1, readable): ONE bar per channel, 1:1 with the fixed
+    // 21-channel plan (bar i = channels[i], no resampling/clumping). The colour
+    // split is the TRUE band boundary -- bars 0..kCh24-1 (13) are 2.4 GHz
+    // (MAGENTA), kCh24..20 (8) are 5 GHz (ICE), so the divider lands at bar 13.
+    // Width/pitch derive from the spectrum band so it fits 480 and 320 alike; a
+    // thin divider + a label under each group read it as data, not vibe.
+    const int sx0   = hs.spectrum.x;
+    const int pitch = (hs.spectrum.w / kChannels >= 2) ? hs.spectrum.w / kChannels : 2;
+    const int bw    = (pitch > 2) ? pitch - 2 : 1;             // readable bar, small gap (don't merge)
+    if (sc.channels && sc.nChannels == kChannels)
+        for (int i = 0; i < kChannels; i++) {
+            int a = sc.channels[i]; a = a < 0 ? 0 : (a > 100 ? 100 : a);
+            const int x = sx0 + i * pitch, hgt = a * hs.barMax / 100;
+            box(s, x, hs.barBase - hgt, bw, hgt, i < kCh24 ? pal::MAGENTA : pal::ICE);
+        }
+    const int boundX = sx0 + kCh24 * pitch;                   // 2.4 | 5 GHz split (start of bar 13)
+    box(s, boundX - 1, hs.barBase - hs.barMax, 1, hs.barMax, pal::EDGE);   // thin band divider
+    const int labY = hr.y + hr.h - 8;
+    txt(s, sx0,        labY, "2.4 GHZ", 1, pal::DIM);          // under the 2.4 GHz (pink) group
+    txt(s, boundX + 2, labY, "5 GHZ",   1, pal::DIM);          // under the 5 GHz (cyan) group
     // nav bar + STOP/REC drawn by drawChrome above (shared design-1 chrome).
 }
 
