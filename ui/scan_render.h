@@ -326,10 +326,15 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const uieng::Rect stp = L.stop;
     const int bbw = stp.w < 56 ? stp.w : 56, bbh = 30;
     const int bx = stp.x + (stp.w - bbw)/2, by = stp.y + (stp.h - bbh)/2;
-    char rb2[16]; const uint16_t rcol = recLabel(sc, rb2, sizeof rb2);   // "REC"/"STOP"/"NO SD"
+    char rb2[16]; recLabel(sc, rb2, sizeof rb2);   // "REC"/"STOP"/"NO SD"
+    // design #1 STOP: surface #38202b, text #f2a6b5 -- a dark-red control. The
+    // palette has no dedicated STOP role yet, so map to the theme's red (closest
+    // theme-as-data, swaps with theme); a NO-SD state reads amber. A dedicated
+    // stopSurface/stopText role (palette+themepack+web/designer) is the exact path.
+    const uint16_t ink = (sc.rec==Rec::NoCard) ? pal::AMBER : pal::RED;
     box(s, bx, by, bbw, bbh, pal::PANEL);
-    frame(s, bx, by, bbw, bbh, rcol);
-    centered(s, bx + bbw/2, by + bbh/2 - 3, rb2, 1, rcol);
+    frame(s, bx, by, bbw, bbh, ink);
+    centered(s, bx + bbw/2, by + bbh/2 - 3, rb2, 1, ink);
 }
 
 // --- strip compositor: small buffer, compose-then-emit ------------------------
