@@ -93,7 +93,17 @@ inline void composeStrip(scanr::S& s, int W, int H, const CodexScene& sc) {
             const uint16_t bc = domr::bandColor(g.band);
             if (b) box(s, r.x + 4, r.y, r.w - 8, 1, pal::EDGE);     // row divider
             box(s, r.x, r.y + 2, 3, r.h - 4, bc);                  // band swatch
-            if (g.label && g.label[0]) txt(s, r.x + 10, r.y + 6, g.label, fitScale(g.label, r.w - 100, 2), pal::TEXT);
+            if (g.label && g.label[0]) {
+                const int scale=W>=400?2:1, cols=(r.w-60)/(6*scale);
+                const int split=domr::nameBreak(g.label,cols);
+                char part[40];
+                snprintf(part,sizeof part,"%.*s",split,g.label);
+                txt(s,r.x+10,r.y+6,part,scale,pal::TEXT);
+                if(g.label[split]) {
+                    snprintf(part,sizeof part,"%s",g.label+split+(g.label[split]==' '));
+                    txt(s,r.x+10,r.y+8+7*scale,part,scale,pal::TEXT);
+                }
+            }
             else                       txt(s, r.x + 10, r.y + 6, "<HIDDEN>", 1, pal::DIM);
             // stepped signal meter
             const int lit = codexBars(g.rssi), bw = 5, gap = 1, bx0 = r.x + r.w - 44;

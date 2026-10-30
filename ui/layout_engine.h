@@ -104,7 +104,7 @@ inline ScanLayout scan(int W, int H) {
 struct DomainLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
     Rect map, contacts, range, minus, plus;
-    bool wide = false;   // contacts shown as a list; else collapse to a summary
+    bool wide = false;   // large names / 56px rows; compact uses 44px rows
 };
 inline DomainLayout domain(int W, int H) {
     const Chrome c = chrome(W, H);
@@ -114,16 +114,15 @@ inline DomainLayout domain(int W, int H) {
 
     const int bw = c.body.w, bh = c.body.h;
     d.wide = bw >= 352;                                    // existing collapse threshold
-    // Delivered rule: wide uses a 144px floor on 0.30*bodyW; compact is a fixed
-    // 112px summary column (reviewer-corrected; both approved sizes match).
-    const int contactsW = d.wide ? std::max(144, iround(0.30 * bw)) : 112;
-    const int mapW = bw - contactsW - 8;
-    d.map      = {c.body.x, c.body.y, mapW, bh};
-    d.contacts = {c.body.x + mapW + 8, c.body.y, contactsW, bh - 48};
+    // Observations are primary at both sizes; map is a secondary overview.
+    const int mapW = d.wide ? 144 : 104;
+    const int contactsW = bw - mapW - 8;
+    d.contacts = {c.body.x, c.body.y, contactsW, bh};
+    d.map = {c.body.x + contactsW + 8, c.body.y, mapW, bh - 48};
     const int ry = c.body.y + bh - 44;
-    d.range = {d.contacts.x, ry, contactsW, 44};
-    d.minus = {d.contacts.x, ry, 44, 44};
-    d.plus  = {d.contacts.x + contactsW - 44, ry, 44, 44};
+    d.range = {d.map.x, ry, mapW, 44};
+    d.minus = {d.map.x, ry, 44, 44};
+    d.plus = {d.map.x + mapW - 44, ry, 44, 44};
     return d;
 }
 
@@ -210,7 +209,11 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
     return h;
 }
 
-inline int domainRowBands(const DomainLayout& d) { return d.contacts.h / 44; }
+inline int domainRowHeight(const DomainLayout& d) { return d.wide ? 56 : 44; }
+inline int domainRowBands(const DomainLayout& d) { return 1 + (d.contacts.h-44)/domainRowHeight(d); }
+inline Rect domainRow(const DomainLayout& d,int index) {
+    return {d.contacts.x,d.contacts.y+44+index*domainRowHeight(d),d.contacts.w,domainRowHeight(d)};
+}
 
 inline HitList domainHits(int W, int H, const HitCtx& ctx) {
     const DomainLayout d = domain(W, H);
@@ -231,12 +234,12 @@ inline HitList domainHits(int W, int H, const HitCtx& ctx) {
         return validKey(ctx.rowKeys[rec]) ? ctx.rowKeys[rec] : nullptr;   // empty key -> no row
     };
 
-    if (d.wide) {
+    {
         const int nbands = domainRowBands(d);                 // band 0 = header, 1.. = rows
         h.add("all-contacts", {cx, cy, cw, B}, Action::OpenLocatedCodex, 0, nullptr,
               "Open Codex with located scope");
         for (int b = 1; b < nbands; ++b) {
-            const Rect r{cx, cy + b*B, cw, B};
+            const Rect r=domainRow(d,b-1);
             if (b == 1 && validKey(ctx.matchKey)) {   // threat REPLACES the first row; later rows retained
                 h.add("threat", r, Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
             } else if (const char* key = rowKey(b)) {
@@ -244,11 +247,6 @@ inline HitList domainHits(int W, int H, const HitCtx& ctx) {
                       "Open mapped device detail by stable identity");
             }  // else: empty band, no actionable hit
         }
-    } else if (validKey(ctx.matchKey)) {
-        h.add("threat", {cx, cy, cw, B}, Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
-        h.add("all-contacts", {cx, cy + B, cw, B}, Action::OpenLocatedCodex, 0, nullptr, "Open located Codex");
-    } else {
-        h.add("all-contacts", d.contacts, Action::OpenLocatedCodex, 0, nullptr, "Open Codex with located scope");
     }
     return h;
 }
@@ -578,7 +576,7 @@ inline DetailLayout detail(int W, int H) {
     for (int i = 0; i < 4; i++) { d.statusCells[i] = c.statusCells[i]; d.navCells[i] = c.navCells[i]; }
     d.back   = {c.body.x, c.body.y, 44, 44};
     d.header = {c.body.x + 48, c.body.y, c.body.w - 48, 44};
-    const int sparkH = 44;
+    const int sparkH = W>=400 ? 44 : 16;
     d.stats  = {c.body.x, c.body.y + 44, c.body.w, c.body.h - 44 - sparkH};
     d.spark  = {c.body.x, c.body.y + c.body.h - sparkH, c.body.w, sparkH};
     return d;

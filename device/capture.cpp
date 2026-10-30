@@ -35,8 +35,9 @@ int      campIdx = -1;         // >=0: hold this channel index, do not hop
 
 constexpr int N_CHAN = ui::CH24 + ui::CH5;
 // The dedup table lives in PSRAM, which is what makes this number a real
-// one rather than a budget. A Node is 92 bytes on the C5, so 32768 slots is
-// ~3MB of the ~7MB free, and the table is touched once per packet and never
+// one rather than a budget. The full-SSID table lives in PSRAM; its
+// actual node size and allocation size are reported at boot.
+// The table is touched once per packet and never
 // in the draw path, so the extra latency of external RAM costs nothing that
 // matters.
 //
@@ -56,7 +57,7 @@ constexpr int RECENT = ui::MAX_CONTACTS;
 
 struct Node {
     uint8_t  mac[6];
-    char     ssid[ui::SSID_MAX];
+    char     ssid[ui::AP_SSID_MAX];
     int8_t   rssi;
     uint8_t  band;        // ui::Band
     uint8_t  chan;
@@ -287,9 +288,9 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
 
     // Match before taking the lock -- the tables are const and the matcher
     // touches no shared state.
-    char nameBuf[ui::ALERT_NAME];
+    char nameBuf[ui::AP_SSID_MAX];
     int nb = 0;
-    for (; nb < ui::ALERT_NAME - 1 && nb < ssidLen && ssid; nb++) {
+    for (; nb < ui::AP_SSID_MAX - 1 && nb < ssidLen && ssid; nb++) {
         const char c = (char)ssid[nb];
         nameBuf[nb] = (c >= 32 && c < 127) ? c : '.';
     }
@@ -321,7 +322,7 @@ bool isTwin(const Node& o, const Node* self, const char* name, uint16_t auth,
             const uint8_t* mac) {
     if (&o == self || !o.ssid[0] || !o.auth) return false;
     if (o.auth == auth) return false;
-    for (int k = 0; k < (int)ui::SSID_MAX; k++) {
+    for (int k = 0; k < (int)ui::AP_SSID_MAX; k++) {
         if (o.ssid[k] != name[k]) return false;
         if (!o.ssid[k]) break;
     }
@@ -464,7 +465,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     if (auth) table_[slot].auth = auth;
     if (name && name[0] && table_[slot].ssid[0] == 0) {
         int k = 0;
-        for (; k < (int)ui::SSID_MAX - 1 && name[k]; k++) table_[slot].ssid[k] = name[k];
+        for (; k < (int)ui::AP_SSID_MAX - 1 && name[k]; k++) table_[slot].ssid[k] = name[k];
         table_[slot].ssid[k] = 0;
     }
     // Now that it has a name and security, other APs can be its twin: the
@@ -705,7 +706,8 @@ static void fillDetailSlot(ui::State& s, int slot, uint32_t nowMs) {
     const Node& nd=table_[slot];
         ui::Detail& d = s.detail;
         d.valid = true;
-        for (int k = 0; k < ui::SSID_MAX; k++) d.ssid[k] = nd.ssid[k];
+        for (int k = 0; k < ui::AP_SSID_MAX; k++) d.ssid[k] = nd.ssid[k];
+        d.located = nd.located; d.lat7 = nd.lat7; d.lon7 = nd.lon7; d.bestRssi = nd.bestRssi;
         for (int k = 0; k < 6; k++) d.mac[k] = nd.mac[k];
         d.rssi = nd.rssi;  d.band = nd.band;  d.chan = nd.chan;
         d.threat = nd.threat; d.conf = nd.conf;
@@ -757,7 +759,7 @@ void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {
         if (skipped < offset) { skipped++; continue; }
         ui::Sighting& g = s.sights[n++];
         int k = 0;
-        for (; k < ui::SSID_MAX - 1 && nd.ssid[k]; k++) g.ssid[k] = nd.ssid[k];
+        for (; k < ui::AP_SSID_MAX - 1 && nd.ssid[k]; k++) g.ssid[k] = nd.ssid[k];
         g.ssid[k] = 0;
         for (int m = 0; m < 6; m++) g.mac[m] = nd.mac[m];
         g.rssi = nd.rssi;

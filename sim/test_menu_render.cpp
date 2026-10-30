@@ -42,6 +42,22 @@ int main(){
         snprintf(m,sizeof m,"%dx%d strips tile exactly: every pixel written once",W,H); expect(once,m);
 
         const uieng::MenuLayout L = uieng::menu(W,H);
+        for(bool plain:{false,true}) {
+            auto scene=sc;scene.plain=plain;FbSink rendered(W,H);comp.renderFull(W,H,scene,rendered);
+            for(int i=0;i<9;++i) {
+                const auto t=L.cells[i];int loX=W,hiX=-1,loY=H,hiY=-1;
+                for(int y=t.y+4;y<t.y+t.h-1;++y)for(int x=t.x+1;x<t.x+t.w-1;++x) {
+                    const auto p=rendered.fb[y*W+x];
+                    const bool ink=i<8?p==pal::TEXT:(p==pal::BRIGHT || p==(plain?pal::GREEN:pal::DIM));
+                    if(ink){loX=std::min(loX,x);hiX=std::max(hiX,x);loY=std::min(loY,y);hiY=std::max(hiY,y);}
+                }
+                expect(hiX>=loX && std::abs((loX+hiX)-(2*t.x+t.w-1))<=3,
+                       "menu rendered label/group horizontally centered");
+                expect(hiY>=loY && std::abs((loY+hiY)-(2*t.y+t.h-1))<=2,
+                       "menu rendered label/group vertically centered");
+            }
+        }
+
 
         // label toggle brand -> plain: body region repaint == full repaint
         MenuScene plain = sc; plain.plain = true;

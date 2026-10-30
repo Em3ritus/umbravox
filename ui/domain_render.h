@@ -1,7 +1,8 @@
 // domain_render.h -- static DOMAIN compositor + pure projections.
 //
-// DOMAIN is "where the things are": a rectangular map with a circular, north-up
-// radar centered inside it, a located-contacts column, and a range -/+ control.
+// DOMAIN presents recorded observation locations: a primary AP list and a
+// secondary north-up overview with a range -/+ control. These are reception
+// positions, not inferred transmitter locations.
 // Regions come from uieng::domain(W,H); colors come from the existing theme
 // model (pal::). Like SCAN, the screen is painted as horizontal strips: each
 // strip is composed COMPLETELY from scene state, then handed to a Sink once --
@@ -98,7 +99,7 @@ inline Page paginate(int total, int perPage, int anchor) {
 // PAGINATED by the caller (the policy above); the scene carries only the window.
 struct MapDot  { int dx, dy; uint8_t band; bool threat; };
 struct TrackDot{ int dx, dy; };
-struct DomRow  { const char* key; const char* label; uint8_t band; };
+struct DomRow { const char* key; const char* label; uint8_t band; int rssi=0; int chan=0; const char* mac=""; };
 
 struct DomainScene {
     // status chrome (projected by scanr::gpsLabel / recLabel, same as SCAN)
@@ -113,7 +114,7 @@ struct DomainScene {
     int      plotTotal = 0;        // located APs that exist
     int      plotBeyond = 0;       // located, but outside the range
     int      rangeM = 250;
-    // located list window (wide only); compact collapses to a summary
+    // located list window at both sizes; header opens the full located CODEX
     const DomRow* rows = nullptr; int nRows = 0;        // this page's rows, in order
     int      pageLo = 0, pageHi = 0, listTotal = 0;     // 1-based "lo-hi / total"
     uint8_t  theme = 0;
@@ -121,22 +122,11 @@ struct DomainScene {
 };
 
 // --- radar geometry inside the rectangular map (exposed for tests) -----------
-// Design #1 sizing (Rick flagged the old centred-in-map dial as "sizes off"):
-// at 480 the north-up dial is pixel-fixed at centre (147,157) r91, so its three
-// rings land at 30/60/91 (r*k/3). At 320 it derives -- centred in the map rect
-// with an 8px margin -- the same way SCAN's field derives its compact profile.
-// Either way the circle stays inside the map rect (the render test asserts it).
+// Center the overview in its own region; reserve top/bottom labels.
 struct RadarGeom { int cx, cy, r; };
 inline RadarGeom radarGeom(uieng::Rect map) {
-    RadarGeom g;
-    if (map.w >= 300) {                        // 480 profile (map is 312 wide)
-        g.cx = 147; g.cy = 157; g.r = 91;      // design #1: rings = r*k/3 = 30/60/91
-    } else {                                   // 320: centre in the map, fit with margin
-        const int d = map.w < map.h ? map.w : map.h;
-        g.cx = map.x + map.w / 2; g.cy = map.y + map.h / 2;
-        g.r = d / 2 - 8; if (g.r < 0) g.r = 0;
-    }
-    return g;
+    const int d = std::min(map.w, map.h - 28);
+    return {map.x + map.w/2, map.y + 14 + (map.h-28)/2, std::max(0,d/2-5)};
 }
 
 // --- small helpers reusing scanr's strip writer ------------------------------
@@ -145,6 +135,15 @@ inline void dottedRing(scanr::S& s, int cx, int cy, int r, uint16_t c) {
         const double t = a * 3.14159265 / 180.0;
         scanr::pt(s, cx + (int)(r * std::cos(t)), cy + (int)(r * std::sin(t)), c);
     }
+}
+
+// Wrap names at a space when both lines still fit; otherwise preserve all bytes
+// with a hard split (e.g. a 32-byte name containing no spaces).
+inline int nameBreak(const char* name,int cols) {
+    const int n=(int)__builtin_strlen(name);
+    if(n<=cols)return n;
+    for(int i=cols;i>0;--i)if(name[i]==' ' && n-i-1<=cols)return i;
+    return cols;
 }
 
 // --- compose one strip completely from the scene -----------------------------
@@ -176,15 +175,17 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
     for (int i = -g.r; i <= g.r; i += 4) {                          // crosshair axes
         pt(s, g.cx + i, g.cy, pal::EDGE_LIT); pt(s, g.cx, g.cy + i, pal::EDGE_LIT);
     }
-    txt(s, g.cx - 2, m.y + 3, "N", 1, pal::DIM);
+    txt(s, g.cx - 2, m.y + 16, "N", 1, pal::DIM);
 
     for (int i = 0; fresh && i < sc.nTrack; i++) {                           // your track, older fades
+        if(sc.track[i].dx*sc.track[i].dx+sc.track[i].dy*sc.track[i].dy>g.r*g.r)continue;
         const int x = g.cx + sc.track[i].dx, y = g.cy + sc.track[i].dy;
         const int lum = 70 + (185 * i) / (sc.nTrack > 1 ? sc.nTrack - 1 : 1);
         pt(s, x, y, ui::Canvas::mix(pal::VOID, pal::WITCH, lum, 255));
     }
     for (int i = 0; fresh && i < sc.nDots; i++) {                            // located sightings
         const MapDot& p = sc.dots[i];
+        if(p.dx*p.dx+p.dy*p.dy>g.r*g.r)continue;
         const int x = g.cx + p.dx, y = g.cy + p.dy;
         box(s, x - 2, y - 2, 4, 4, bandColor(p.band));              // design #1: 4x4 square markers
         if (p.threat) {                                             // signature match -> ring
@@ -198,37 +199,45 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
 
     char buf[40];
     snprintf(buf, sizeof buf, "%dM", sc.rangeM);
-    txt(s, m.x + 4, m.y + m.h - 9, buf, 1, pal::DIM);
+
     if(fresh)snprintf(buf,sizeof buf,"%d SHOWN",sc.plotShown);
     else snprintf(buf,sizeof buf,"%s",scanr::gpsState(sc.gps)==scanr::GpsState::Stale?"GPS STALE":"GPS WAIT");
-    txt(s,m.x+m.w-4-Font::width(buf,1),m.y+m.h-9,buf,1,fresh?pal::TEXT:pal::AMBER);
-    if(fresh){snprintf(buf,sizeof buf,"%d IN RANGE",std::max(0,sc.plotTotal-sc.plotBeyond));
+    if(!fresh) centered(s,g.cx,g.cy+12,buf,1,pal::AMBER);
+    if(fresh){snprintf(buf,sizeof buf,"%d/%d PTS",sc.plotShown,std::max(0,sc.plotTotal-sc.plotBeyond));
         txt(s,m.x+4,m.y+3,buf,1,pal::DIM);}
     if(fresh && sc.plotTotal==0)centered(s,g.cx,g.cy+14,"NO LOCATIONS",1,pal::DIM);
 
-    // --- contacts column: wide list, or compact summary ----------------------
+    // Located observations remain inspectable even with a stale/currently absent fix.
     const uieng::Rect cc = L.contacts;
-    if (L.wide) {
-        // header band carries the list title + the 1-based page label
-        box(s, cc.x, cc.y, cc.w, 44, pal::PANEL); frame(s, cc.x, cc.y, cc.w, 44, pal::EDGE);
-        txt(s, cc.x + 8, cc.y + 7, "LOCATED WIFI", 1, pal::DIM);
-        snprintf(buf, sizeof buf, "%d-%d / %d", sc.pageLo, sc.pageHi, sc.listTotal);
-        txt(s, cc.x + 8, cc.y + 22, buf, fitScale(buf, cc.w - 16, 2), pal::TEXT);
-        for (int b = 0; b < sc.nRows && b < uieng::domainRowBands(L)-1; b++) {                        // rows below the header
-            const int ry = cc.y + (b + 1) * 44;
-            box(s, cc.x, ry, cc.w, 44, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2));
-            frame(s, cc.x, ry, cc.w, 44, pal::EDGE);
-            box(s, cc.x, ry, 3, 44, bandColor(sc.rows[b].band));    // band swatch
-            const char* lbl = sc.rows[b].label ? sc.rows[b].label : "";
-            txt(s, cc.x + 10, ry + 15, lbl, fitScale(lbl, cc.w - 16, 2), pal::BRIGHT);
-        }
-    } else {
-        box(s, cc.x, cc.y, cc.w, cc.h, pal::PANEL); frame(s, cc.x, cc.y, cc.w, cc.h, pal::EDGE);
-        txt(s, cc.x + 8, cc.y + 8, "LOCATED WIFI", 1, pal::DIM);
-        snprintf(buf, sizeof buf, "%d", sc.listTotal);
-        centered(s, cc.x + cc.w / 2, cc.y + 24, buf, fitScale(buf, cc.w - 12, 3), pal::BRIGHT);
-        centered(s, cc.x + cc.w / 2, cc.y + cc.h - 16, "OPEN LIST", 1, pal::DIM);
+    box(s,cc.x,cc.y,cc.w,cc.h,pal::PANEL);
+    frame(s,cc.x,cc.y,cc.w,cc.h,pal::EDGE);
+    txt(s,cc.x+8,cc.y+5,"LOCATED APs",2,pal::BRIGHT);
+    snprintf(buf,sizeof buf,"%d APs  /  BROWSE ALL >",sc.listTotal);
+    txt(s,cc.x+8,cc.y+23,buf,1,pal::TEXT);
+    txt(s,cc.x+8,cc.y+35,"Tap an AP for full details",1,pal::DIM);
+    for(int b=0;b<sc.nRows && b<uieng::domainRowBands(L)-1;++b) {
+        const auto rr=uieng::domainRow(L,b);
+        const int ry=rr.y,rh=rr.h;
+        const auto& row=sc.rows[b];
+        frame(s,cc.x,ry,cc.w,rh,pal::EDGE);
+        box(s,cc.x,ry,3,rh,bandColor(row.band));
+        const char* name=row.label?row.label:"<HIDDEN>";
+        const int scale=L.wide?2:1, cols=(cc.w-16)/(6*scale);
+        const int split=nameBreak(name,cols);
+        char title[40];snprintf(title,sizeof title,"%.*s",split,name);
+        txt(s,cc.x+8,ry+4,title,scale,pal::BRIGHT);
+        if(name[split])
+            txt(s,cc.x+8,ry+4+7*scale+2,name+split+(name[split]==' '),scale,pal::BRIGHT);
+        txt(s,cc.x+8,ry+rh-20,row.mac?row.mac:"",1,pal::DIM);
+        snprintf(buf,sizeof buf,"%s CH%d  %d dBm",row.band==1?"5G":"2.4G",row.chan,row.rssi);
+        txt(s,cc.x+8,ry+rh-10,buf,1,bandColor(row.band));
     }
+    if(!sc.nRows) {
+        txt(s,cc.x+8,cc.y+58,"NO LOCATED APs",1,pal::TEXT);
+        txt(s,cc.x+8,cc.y+72,"Capture with a GPS fix.",1,pal::DIM);
+        txt(s,cc.x+8,cc.y+86,"All discoveries: CODEX",1,pal::DIM);
+    }
+
 
     // --- range -/+ control at the column foot --------------------------------
     box(s, L.range.x, L.range.y, L.range.w, 44, pal::PANEL);
@@ -238,8 +247,8 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
     centered(s, L.minus.x + 22, L.minus.y + 15, "-", 2, pal::BRIGHT);
     centered(s, L.plus.x  + 22, L.plus.y  + 15, "+", 2, pal::BRIGHT);
     snprintf(buf, sizeof buf, "%dM", sc.rangeM);
-    centered(s, L.range.x + L.range.w / 2, L.range.y + 15, buf,
-             fitScale(buf, L.range.w - 92, 2), pal::TEXT);
+    centered(s, L.map.x + L.map.w / 2, L.map.y + L.map.h - 10, buf,
+             1, pal::TEXT);
     // nav bar + STOP/REC drawn by scanr::drawChrome above (shared design-1 chrome).
 }
 

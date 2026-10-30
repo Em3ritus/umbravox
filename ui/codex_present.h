@@ -31,7 +31,7 @@ using dompres::FrozenOrder;     // the list-order freeze is shared, not re-made
 class CodexStore {
 public:
     static constexpr int MAXROWS = ui::MAX_SIGHTS;   // 8
-    static constexpr int STRMAX  = ui::SSID_MAX;     // 20
+    static constexpr int STRMAX  = ui::AP_SSID_MAX;     // 33
 
     void begin(uint8_t theme, uint32_t now) {
         nr_ = 0;

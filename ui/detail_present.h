@@ -18,7 +18,7 @@ using scanpres::PresentMetrics;
 
 class DetailStore {
 public:
-    static constexpr int STRMAX = ui::SSID_MAX;   // 20
+    static constexpr int STRMAX = ui::AP_SSID_MAX;   // 33
     static constexpr int HN     = ui::HIST_N;      // 28
 
     void begin(uint8_t theme, uint32_t now) {
@@ -36,9 +36,17 @@ public:
                 const char* firstSeen, const char* lastSeen) {
         sc_.valid = valid; sc_.band = band; sc_.rssi = rssi; sc_.authOpen = authOpen; sc_.conf = conf;
         copy_(name_, STRMAX, name); copy_(mac_, 20, mac); copy_(bc_, 16, bandChan);
-        copy_(auth_, 12, auth); copy_(threat_, STRMAX, threat); copy_(why_, STRMAX, why);
+        copy_(auth_, sizeof auth_, auth); copy_(threat_, STRMAX, threat); copy_(why_, STRMAX, why);
         copy_(first_, 8, firstSeen); copy_(last_, 8, lastSeen);
         wire_();
+    }
+    void location(bool located,int32_t lat7,int32_t lon7,int best) {
+        sc_.located=located;sc_.lat7=lat7;sc_.lon7=lon7;sc_.bestRssi=best;
+        // Format once per snapshot, not floating point conversion per strip.
+        const int64_t lat=lat7<0?-(int64_t)lat7:lat7, lon=lon7<0?-(int64_t)lon7:lon7;
+        snprintf(coordinates_,sizeof coordinates_,"%s%ld.%07ld, %s%ld.%07ld",
+            lat7<0?"-":"",(long)(lat/10000000),(long)(lat%10000000),
+            lon7<0?"-":"",(long)(lon/10000000),(long)(lon%10000000));
     }
     void history(const int8_t* h, int n) {
         if (n < 0) n = 0; if (n > HN) n = HN;
@@ -49,11 +57,12 @@ public:
 
 private:
     void wire_() {
-        sc_.name = name_; sc_.mac = mac_; sc_.bandChan = bc_; sc_.auth = auth_;
+        sc_.coordinates = coordinates_; sc_.name = name_; sc_.mac = mac_; sc_.bandChan = bc_; sc_.auth = auth_;
         sc_.threat = threat_; sc_.why = why_; sc_.firstSeen = first_; sc_.lastSeen = last_;
     }
     static void copy_(char* d, int cap, const char* src){ int k=0; for(;src&&src[k]&&k<cap-1;k++) d[k]=src[k]; d[k]=0; }
-    char name_[STRMAX]={0}, mac_[20]={0}, bc_[16]={0}, auth_[12]={0},
+    char coordinates_[40]={0};
+    char name_[STRMAX]={0}, mac_[20]={0}, bc_[16]={0}, auth_[112]={0},
          threat_[STRMAX]={0}, why_[STRMAX]={0}, first_[8]={0}, last_[8]={0};
     int8_t hist_[HN]={0};
     DetailScene sc_;
@@ -67,7 +76,10 @@ inline void sceneDirty(const DetailScene& a, const DetailScene& b, bool& status,
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct;
 
-    bool same = a.valid == b.valid && a.band == b.band && a.rssi == b.rssi && a.conf == b.conf
+    bool same = a.located==b.located && a.lat7==b.lat7 && a.lon7==b.lon7 && a.bestRssi==b.bestRssi
+        && !__builtin_strcmp(a.auth,b.auth) && !__builtin_strcmp(a.bandChan,b.bandChan)
+        && !__builtin_strcmp(a.why,b.why) && !__builtin_strcmp(a.firstSeen,b.firstSeen)
+        && a.valid == b.valid && a.band == b.band && a.rssi == b.rssi && a.conf == b.conf
         && a.authOpen == b.authOpen && a.histN == b.histN
         && !__builtin_strcmp(a.name?a.name:"", b.name?b.name:"")
         && !__builtin_strcmp(a.mac?a.mac:"", b.mac?b.mac:"")

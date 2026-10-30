@@ -61,7 +61,8 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
         frame(s, t.x, t.y, t.w, t.h, pal::EDGE);
         box(s, t.x, t.y, t.w, 3, pal::EDGE_LIT);             // top accent (design-1 seal tone)
         const char* lbl = sc.plain ? kMenuEntries[i].plain : kMenuEntries[i].brand;
-        centered(s, t.x + t.w / 2, t.y + t.h / 2 - 3, lbl, fitScale(lbl, t.w - 10, 2), pal::TEXT); }
+        const int scale = fitScale(lbl, t.w - 10, 2);
+        centered(s, t.x + t.w / 2, t.y + (t.h - 7*scale)/2, lbl, scale, pal::TEXT); }
 
     // LABELS control tile (ninth cell): the lit EDGE_LIT edge (design-1's live-
     // control edge, per subr::stepBtn) marks it as a control, not a launcher --
@@ -69,9 +70,11 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
     { const uieng::Rect t = L.cells[8];
       box(s, t.x, t.y, t.w, t.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 2, 3));
       frame(s, t.x, t.y, t.w, t.h, pal::EDGE_LIT);
-      centered(s, t.x + t.w / 2, t.y + 6, "LABELS", fitScale("LABELS", t.w - 10, 2), pal::BRIGHT);
       const char* mode = sc.plain ? "PLAIN" : "BRAND";
-      centered(s, t.x + t.w / 2, t.y + t.h - 14, mode, fitScale(mode, t.w - 10, 2), sc.plain ? pal::GREEN : pal::DIM); }
+      const int scale = fitScale("LABELS", t.w - 10, 2), gap = 5;
+      const int y = t.y + (t.h - 14*scale - gap)/2;
+      centered(s, t.x + t.w / 2, y, "LABELS", scale, pal::BRIGHT);
+      centered(s, t.x + t.w / 2, y + 7*scale + gap, mode, scale, sc.plain ? pal::GREEN : pal::DIM); }
 
     // nav bar + STOP/REC drawn by scanr::drawChrome above (shared design-1 chrome).
 }

@@ -1,8 +1,8 @@
 // detail_render.h -- static DETAIL (one device) compositor + scene.
 //
 // Everything known about one device: identity, signature verdict, an RSSI
-// history chart, and first/last-seen. The chart is the reason the screen earns
-// its place -- a climbing line means you are driving toward whatever it is.
+// history chart, and first/last-seen. RSSI history shows changes in observed
+// signal strength; it does not establish direction or transmitter distance.
 // Regions come from uieng::detail(W,H); the caller supplies the identity/
 // signature strings pre-formatted and the raw RSSI history for the chart.
 // Reuses subr:: chrome + domr::bandColor. Host + device compilable.
@@ -17,6 +17,7 @@
 #include "model.h"           // ui::HIST_N (chart sample cap)
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace detr {
 
@@ -31,6 +32,8 @@ struct DetailScene {
     Rec      rec = Rec::Off;
     // the device (invalid -> the selection is gone; render "GONE")
     bool     valid = false;
+    bool located = false; int32_t lat7 = 0, lon7 = 0; int bestRssi = 0;
+    const char* coordinates = "";
     const char* name = "";       // SSID, or "" for hidden
     const char* mac = "";        // "AA:BB:CC:DD:EE:FF"
     const char* bandChan = "";   // "2.4GHZ CH6" / "BLE"
@@ -74,34 +77,43 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     }
 
     const uint16_t bc = domr::bandColor(sc.band);
-    // identity header (right of BACK): name, mac, band/chan + rssi
+    // Full 32-byte printable SSID: 2x when it fits, otherwise 1x, never truncated.
     const uieng::Rect hd = L.header;
-    txt(s, hd.x + 4, hd.y + 2, (sc.name && sc.name[0]) ? sc.name : "<HIDDEN>", 1,
-        (sc.name && sc.name[0]) ? pal::BRIGHT : pal::DIM);
-    txt(s, hd.x + 4, hd.y + 12, sc.mac ? sc.mac : "", 1, pal::TEXT);
-    txt(s, hd.x + 4, hd.y + 24, sc.bandChan ? sc.bandChan : "", 1, bc);
-    char rb[20]; snprintf(rb, sizeof rb, "%dDBM", sc.rssi);
-    txt(s, hd.x + hd.w - 4 - Font::width(rb, 1), hd.y + 24, rb, 1, pal::BRIGHT);
-    if (sc.auth && sc.auth[0])
-        txt(s, hd.x + hd.w - 4 - Font::width(sc.auth, 1), hd.y + 2, sc.auth, 1, sc.authOpen ? pal::AMBER : pal::DIM);
+    const char* name=(sc.name && sc.name[0])?sc.name:"<HIDDEN>";
+    const int ns=scanr::fitScale(name,hd.w-8,2);
+    txt(s,hd.x+4,hd.y+2,name,ns,pal::BRIGHT);
+    txt(s,hd.x+4,hd.y+20,sc.mac?sc.mac:"",1,pal::TEXT);
+    txt(s,hd.x+4,hd.y+33,sc.bandChan?sc.bandChan:"",1,bc);
+    char rb[40];snprintf(rb,sizeof rb,"%d dBm",sc.rssi);
+    txt(s,hd.x+hd.w-4-Font::width(rb,1),hd.y+33,rb,1,pal::BRIGHT);
 
-    // stat block: signature verdict + first/last seen
-    const uieng::Rect st = L.stats;
-    if (sc.threat && sc.threat[0]) {
-        const uint16_t ec = confInk(sc.conf);
-        box(s, st.x, st.y + 4, 2, 11, ec);
-        txt(s, st.x + 6, st.y + 5, sc.threat, 1, ec);
-        const char* cf = sc.conf >= 2 ? "HIGH" : sc.conf == 1 ? "MED" : "LOW";
-        txt(s, st.x + st.w - 4 - Font::width(cf, 1), st.y + 5, cf, 1, ec);
-        if (sc.why && sc.why[0]) txt(s, st.x + 6, st.y + 16, sc.why, 1, pal::DIM);
-    } else {
-        txt(s, st.x + 6, st.y + 5, "NO SIGNATURE MATCH", 1, pal::DIM);
+    const auto st=L.stats;
+    const int scale=W>=400?2:1, step=W>=400?18:10;
+    const int x=st.x+4, y=st.y+3, cols=(st.w-8)/(6*scale);
+    // Security is the parsed capability string, including AKM and cipher bits.
+    // Two lines preserve the complete supported string even on the compact panel.
+    char sec[120];snprintf(sec,sizeof sec,"SEC %s",sc.auth&&sc.auth[0]?sc.auth:"NOT REPORTED");
+    for(int row=0;row<2;++row) {
+        char part[80]={}; const int len=std::strlen(sec), off=row*cols;
+        if(off<len)std::snprintf(part,sizeof part,"%.*s",cols,sec+off);
+        txt(s,x,y+row*step,part,scale,sc.authOpen?pal::AMBER:pal::TEXT);
     }
-    char sb[24];
-    snprintf(sb, sizeof sb, "SEEN %s AGO", sc.lastSeen ? sc.lastSeen : "?");
-    txt(s, st.x + 6, st.y + st.h - 10, sb, 1, pal::DIM);
-    snprintf(sb, sizeof sb, "FIRST %s", sc.firstSeen ? sc.firstSeen : "?");
-    txt(s, st.x + st.w - 4 - Font::width(sb, 1), st.y + st.h - 10, sb, 1, pal::DIM);
+    char info[96];
+    if(sc.located) {
+        snprintf(info,sizeof info,"HEARD HERE / BEST %d dBm",sc.bestRssi);
+        txt(s,x,y+2*step,info,scale,pal::DIM);
+        txt(s,x,y+3*step,sc.coordinates,scale,pal::TEXT);
+    } else {
+        txt(s,x,y+2*step,"NO RECORDED LOCATION",scale,pal::DIM);
+        txt(s,x,y+3*step,"A GPS fix is needed when observed.",scale,pal::DIM);
+    }
+    snprintf(info,sizeof info,"FIRST %s AGO / LAST %s AGO",sc.firstSeen?sc.firstSeen:"?",sc.lastSeen?sc.lastSeen:"?");
+    txt(s,x,y+4*step,info,scale,pal::TEXT);
+    if(sc.threat && sc.threat[0]) {
+        snprintf(info,sizeof info,"%s / %s",sc.threat,sc.conf>=2?"HIGH":sc.conf==1?"MED":"LOW");
+        txt(s,x,y+5*step,info,scale,confInk(sc.conf));
+        txt(s,x,y+6*step,sc.why?sc.why:"",scale,pal::DIM);
+    } else txt(s,x,y+5*step,"NO SIGNATURE MATCH",scale,pal::DIM);
 
     // RSSI history chart: filled bars, reference lines at -50 and -75
     const uieng::Rect ch = L.spark;

@@ -94,10 +94,11 @@ inline void domain(dompres::DomainStore& st, const ui::State& s, const Chrome& c
         for(int i=0;i<s.nPlots;++i)st.addDot(scale(s.plots[i].dx),scale(s.plots[i].dy),s.plots[i].band,s.plots[i].threat!=ui::TH_NONE);
         for(int i=0;i<s.nTrack;++i)st.addTrack(scale(s.track[i].dx),scale(s.track[i].dy));
     }
-    const int limit=layout.wide ? std::max(0,uieng::domainRowBands(layout)-1) : 0;
+    const int limit=std::max(0,uieng::domainRowBands(layout)-1);
     const int n=std::min((int)s.nSights,limit);
     for(int i=0;i<n;++i){const auto& row=s.sights[i];char key[20];contactKey(key,sizeof key,row.band,row.mac);
-        st.addRow(key,row.ssid[0]?row.ssid:"<HIDDEN>",row.band);}
+        char mac[18];macStr(mac,row.mac);
+        st.addRow(key,row.ssid[0]?row.ssid:"<HIDDEN>",row.band,row.rssi,row.chan,mac);}
     st.page(n?1:0,n,s.totalSights);
 }
 inline void codex(codpres::CodexStore& st, const ui::State& s, const Chrome& c, int W=480, int H=320) {
@@ -221,10 +222,12 @@ inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c
     if (v.band == ui::BAND_BLE) snprintf(bc, sizeof bc, "BLE");
     else snprintf(bc, sizeof bc, "%s CH%u", v.band == ui::BAND_5 ? "5GHZ" : "2.4GHZ", (unsigned)v.chan);
     const bool open = (v.band != ui::BAND_BLE) && !(v.auth & (ui::AUTH_WPA | ui::AUTH_WPA2 | ui::AUTH_WPA3 | ui::AUTH_WEP));
-    const char* auth = (v.band == ui::BAND_BLE) ? "" : ui::authShort(v.auth);
+    char auth[112] = {};
+    if(v.band != ui::BAND_BLE && v.auth) ui::authString(v.auth,auth,sizeof auth);
     char first[8], last[8]; agoStr(first, sizeof first, v.firstAgoS); agoStr(last, sizeof last, v.lastAgoS);
     const char* threat = v.threat != ui::TH_NONE ? ui::threatName(v.threat) : "";
     st.device(true, v.ssid, mac, bc, v.band, v.rssi, auth, open, threat, v.conf, v.why, first, last);
+    st.location(v.located,v.lat7,v.lon7,v.bestRssi);
     if (v.histN) st.history(v.hist, v.histN);
 }
 

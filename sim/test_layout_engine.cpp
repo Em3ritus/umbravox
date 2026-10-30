@@ -1,5 +1,5 @@
 // Host test for ui/layout_engine.h. Asserts:
-//  (1) layout regions reproduce geometry.json exactly for both profiles;
+//  (1) layout regions reproduce native-hit-contract.json exactly for both profiles;
 //  (2) the state-aware hit set matches the COMPLETE oracle (oracle_hits.inc) for
 //      every SCAN/DOMAIN state at both sizes -- each hit bound to its action,
 //      payload AND exact record key at its rect, plus bounds / >=44px / distinct
@@ -7,7 +7,7 @@
 //  (3) NEGATIVE checks: swapped actions, wrong payloads, swapped/wrong/empty/null
 //      keys, and a missing/duplicate oracle case all fail.
 // Build + run:
-//   python3 sim/gen_oracle.py <geometry.json> > sim/oracle_hits.inc
+//   python3 sim/gen_oracle.py <native-hit-contract.json> > sim/oracle_hits.inc
 //   g++ -std=c++17 -Wall -I. -Isim sim/test_layout_engine.cpp -o /tmp/tle && /tmp/tle
 #include "../ui/layout_engine.h"
 #include "oracle_hits.inc"
@@ -51,11 +51,11 @@ static void testLayout() {
     ckRect("hero320",     scan(320,240).hero,   104,52,208,136);
     ckRect("tile2_320",   scan(320,240).tiles[2], 8,142,88,46);
     ckRect("stop320",     scan(320,240).stop, 260,196,60,44);
-    ckRect("Dmap480",   domain(480,320).map, 8,52,312,216);
-    ckRect("Dcon480",   domain(480,320).contacts, 328,52,144,168);
+    ckRect("Dmap480",   domain(480,320).map, 328,52,144,168);
+    ckRect("Dcon480",   domain(480,320).contacts, 8,52,312,216);
     ckRect("Dplus480",  domain(480,320).plus, 428,224,44,44);
-    ckRect("Dmap320",   domain(320,240).map, 8,52,184,136);
-    ckRect("Dcon320",   domain(320,240).contacts, 200,52,112,88);
+    ckRect("Dmap320",   domain(320,240).map, 208,52,104,88);
+    ckRect("Dcon320",   domain(320,240).contacts, 8,52,192,136);
     ckRect("Dplus320",  domain(320,240).plus, 268,144,44,44);
 }
 
@@ -80,7 +80,7 @@ static Expect expectFor(const char* id, Rect r) {
     if(!strcmp(id,"all-contacts"))return E(Action::OpenLocatedCodex);
     if(!strcmp(id,"threat"))      return Expect{Action::OpenThreatDetail,false,0,true,MATCH,true};
     if(!strncmp(id,"row",3)) {    // row at band b binds original record b-1
-        const int band = (r.y - CONTACT_Y) / BAND, rec = band - 1;
+        const int rec = (r.y - CONTACT_Y - BAND) / r.h;
         return Expect{Action::OpenDeviceDetail,true,rec,true,(rec>=0&&rec<4)?KEYS[rec]:nullptr,true};
     }
     return Expect{Action::OpenGps,false,0,false,nullptr,false};   // unknown id -> never matches

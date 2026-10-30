@@ -65,6 +65,22 @@ int main(){
         snprintf(m,sizeof m,"%dx%d radar circle inside the map rect",W,H);
         expect(g.cx-g.r>=mp.x && g.cx+g.r<=mp.x+mp.w && g.cy-g.r>=mp.y && g.cy+g.r<=mp.y+mp.h, m);
 
+        {
+            const domr::DomRow longRow{"w:001122334455","0123456789ABCDEFGHIJKLMNOPQRSTUV",0,-57,6,"00:11:22:33:44:55"};
+            auto populated=sc;populated.rows=&longRow;populated.nRows=1;
+            auto emptyRow=longRow;emptyRow.label="";
+            auto without=populated;without.rows=&emptyRow;
+            FbSink actual(W,H),reference(W,H);comp.renderFull(W,H,populated,actual);comp.renderFull(W,H,without,reference);
+            const auto rr=uieng::domainRow(uieng::domain(W,H),0);
+            bool confined=true,changed=false,secondLine=false;
+            const int scale=W==480?2:1;
+            for(int y=0;y<H;++y)for(int x=0;x<W;++x)if(actual.at(x,y)!=reference.at(x,y)) {
+                changed=true;if(x<rr.x || x>=rr.x+rr.w || y<rr.y || y>=rr.y+rr.h)confined=false;
+                if(y>=rr.y+4+7*scale+2 && y<rr.y+4+14*scale+2)secondLine=true;
+            }
+            expect(confined && changed && secondLine,"full 32-character DOMAIN name wraps inside its own touch row");
+        }
+
         // empty data: a no-fix scene still tiles cleanly
         DomainScene empty; empty.theme=pal::TH_UMBRAVOX; empty.rangeM=250;
         FbSink ef(W,H); comp.renderFull(W,H,empty,ef);

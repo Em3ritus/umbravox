@@ -74,7 +74,7 @@ int main(){
     { dompres::DomainStore st; domain(st, s, c); const auto& o=st.scene();
       expect(o.nDots==4 && o.dots[0].threat && !o.dots[1].threat, "domain: dots + threat ring on plot 0");
       expect(o.plotShown==4 && o.plotTotal==9 && o.plotBeyond==3 && o.rangeM==250, "domain: counts/range");
-      expect(o.nTrack==3 && o.nRows==2, "domain: track and two located rows supplied"); }
+      expect(o.nTrack==3 && o.nRows==3, "domain: track and three located rows supplied"); }
 
     { codpres::CodexStore st; codex(st, s, c); const auto& o=st.scene();
       expect(o.nRows==3, "codex: all window rows projected");
@@ -106,12 +106,32 @@ int main(){
         expect(domainStore.scene().dots[0].dx==maps.plotRadius && domainStore.scene().dots[1].dy==-maps.plotRadius,"native east/north rim positions preserve correct geographic scale");
         auto stale=c;stale.gps.ageMs=5000;domain(domainStore,maps,stale,W,H);
         expect(domainStore.scene().nDots==0 && domainStore.scene().nTrack==0,"stale GPS never presents old positions as current");
-        expect(domainStore.scene().nRows==(W==480?2:0) && domainStore.scene().listTotal==9,"located rows or compact summary remain available without live fix");
+        expect(domainStore.scene().nRows==(W==480?3:2) && domainStore.scene().listTotal==9,"located rows remain available without live fix");
     }
     {bool ble;uint8_t mac[6];
         expect(decodeContactKey("b:001122aabbff",ble,mac)&&ble&&mac[5]==255,"BLE address decodes independently of current filter");
         expect(!decodeContactKey("alert",ble,mac)&&!decodeContactKey("w:001122aabbxz",ble,mac)&&!decodeContactKey("w:0011",ble,mac),"invalid and truncated identities cannot select another record");}
 
+
+    {
+        auto full=s;
+        const char* name="0123456789ABCDEFGHIJKLMNOPQRSTUV";
+        static_assert(sizeof(full.detail.ssid)==33,"all 32 SSID bytes fit");
+        strcpy(full.detail.ssid,name);strcpy(full.sights[0].ssid,name);
+        full.detail.valid=true;full.detail.located=true;full.detail.lat7=-1234567;full.detail.lon7=-876321234;full.detail.bestRssi=-37;
+        full.detail.auth=ui::AUTH_WPA2|ui::AUTH_EAP|ui::AUTH_CCMP|ui::AUTH_ESS;
+        detpres::DetailStore detailStore;detail(detailStore,full,c);
+        const auto& ds=detailStore.scene();
+        expect(!strcmp(ds.name,name),"detail preserves every byte of full 32-character SSID");
+        expect(strstr(ds.auth,"EAP") && strstr(ds.auth,"CCMP"),"detail exposes captured enterprise AKM and cipher");
+        expect(ds.located && ds.bestRssi==-37 && !strcmp(ds.coordinates,"-0.1234567, -87.6321234"),"location retains sign and seven decimal places");
+        for(int W:{480,320}) {
+            dompres::DomainStore dom;domain(dom,full,c,W,W==480?320:240);
+            codpres::CodexStore cod;codex(cod,full,c,W,W==480?320:240);
+            expect(!strcmp(dom.scene().rows[0].label,name)&&!strcmp(cod.scene().rows[0].label,name),"native list snapshots preserve full SSID at both sizes");
+            expect(dom.scene().rows[0].rssi==full.sights[0].rssi && dom.scene().rows[0].chan==full.sights[0].chan && strlen(dom.scene().rows[0].mac)==17,"DOMAIN rows carry full BSSID and actual radio data");
+        }
+    }
     { menpres::MenuStore st; menu(st, s, c); expect(st.scene().plain, "menu: plain label mode from Settings"); }
 
     { mshpres::MeshStore st; mesh(st, s, c); const auto& o=st.scene();

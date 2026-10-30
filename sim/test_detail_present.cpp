@@ -20,7 +20,7 @@ int main(){
         expect(d.body==Rect{8,52,W-16,H-104}, P?"320 body":"480 body");
         expect(d.back==Rect{d.body.x,d.body.y,44,44}, "BACK is a 44x44 target, top-left");
         expect(d.header.x==d.body.x+48 && d.header.h==44 && !overlap(d.back,d.header), "header right of BACK, no overlap");
-        expect(d.stats.y==d.body.y+44 && d.spark.y==d.body.y+d.body.h-44, "stats then spark fill the rest");
+        expect(d.stats.y==d.body.y+44 && d.spark.y==d.body.y+d.body.h-d.spark.h && d.stats.h>=76, "stats then spark fill the rest");
         expect(d.spark.y+d.spark.h==d.body.y+d.body.h && !overlap(d.stats,d.spark), "spark at body bottom, clear of stats");
 
         HitList h = detailHits(W,H);

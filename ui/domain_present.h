@@ -48,7 +48,7 @@ public:
     static constexpr int MAXDOTS  = ui::MAX_PLOT;    // 64
     static constexpr int MAXTRACK = ui::MAX_TRACK;   // 24
     static constexpr int MAXROWS  = 8;               // a wide page is 2; headroom for CODEX reuse
-    static constexpr int STRMAX   = ui::SSID_MAX;    // 20
+    static constexpr int STRMAX   = ui::AP_SSID_MAX;    // 33
 
     void begin(uint8_t theme, uint32_t now) {
         nd_ = nt_ = nr_ = 0;
@@ -76,11 +76,12 @@ public:
         track_[nt_++] = TrackDot{ dx, dy }; sc_.nTrack = nt_; return true;
     }
     // Append a located row (key + label copied in). Returns false when full.
-    bool addRow(const char* key, const char* label, uint8_t band) {
+    bool addRow(const char* key, const char* label, uint8_t band, int rssi=0, int chan=0, const char* mac="") {
         if (nr_ >= MAXROWS) return false;
         copy_(keyBuf_[nr_], STRMAX, key);
         copy_(lblBuf_[nr_], STRMAX, label);
-        rows_[nr_] = DomRow{ keyBuf_[nr_], lblBuf_[nr_], band };
+        copy_(macBuf_[nr_], 18, mac);
+        rows_[nr_] = DomRow{ keyBuf_[nr_], lblBuf_[nr_], band, rssi, chan, macBuf_[nr_] };
         nr_++; sc_.nRows = nr_; return true;
     }
 
@@ -95,7 +96,7 @@ private:
     MapDot   dots_[MAXDOTS];
     TrackDot track_[MAXTRACK];
     DomRow   rows_[MAXROWS];
-    char     keyBuf_[MAXROWS][STRMAX], lblBuf_[MAXROWS][STRMAX];
+    char     keyBuf_[MAXROWS][STRMAX], lblBuf_[MAXROWS][STRMAX], macBuf_[MAXROWS][18];
     int      nd_ = 0, nt_ = 0, nr_ = 0;
     DomainScene sc_;
 };
@@ -128,7 +129,8 @@ inline void sceneDirty(const DomainScene& a, const DomainScene& b, bool& status,
     bool listSame = a.nRows == b.nRows && a.pageLo == b.pageLo
                     && a.pageHi == b.pageHi && a.listTotal == b.listTotal;
     for (int i = 0; listSame && i < a.nRows; i++)
-        listSame = a.rows[i].band == b.rows[i].band
+        listSame = a.rows[i].band == b.rows[i].band && a.rows[i].rssi == b.rows[i].rssi && a.rows[i].chan == b.rows[i].chan
+                   && !__builtin_strcmp(a.rows[i].mac, b.rows[i].mac)
                    && !__builtin_strcmp(a.rows[i].key ? a.rows[i].key : "", b.rows[i].key ? b.rows[i].key : "")
                    && !__builtin_strcmp(a.rows[i].label ? a.rows[i].label : "", b.rows[i].label ? b.rows[i].label : "");
 

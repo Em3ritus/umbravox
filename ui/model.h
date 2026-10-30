@@ -30,13 +30,14 @@ constexpr int MAX_CONTACTS = 48;
 inline constexpr uint8_t CHAN24[CH24] = {1,2,3,4,5,6,7,8,9,10,11,12,13};
 inline constexpr uint8_t CHAN5 [CH5]  = {36,40,44,48,149,153,157,161};
 
-// One row of the codex. SSIDs are truncated here rather than at draw time so
-// the struct is a fixed size and State stays copyable.
+// Fixed-size sight rows preserve the full printable Wi-Fi SSID. Legacy
+// auxiliary labels retain their smaller storage; native lists wrap at draw time.
 constexpr int SSID_MAX   = 20;
+constexpr int AP_SSID_MAX = 33; // full 32-byte Wi-Fi SSID plus terminator
 constexpr int MAX_SIGHTS = 8;     // rows the codex can show at once
 
 struct Sighting {
-    char    ssid[SSID_MAX];       // "" for a hidden network
+    char    ssid[AP_SSID_MAX];    // "" for a hidden network
     uint8_t mac[6];
     int8_t  rssi;
     uint8_t band;
@@ -171,7 +172,10 @@ constexpr int HIST_N = 28;
 // Everything known about one device, for the detail screen.
 struct Detail {
     bool     valid = false;
-    char     ssid[SSID_MAX] = {0};
+    bool     located = false;
+    int32_t  lat7 = 0, lon7 = 0;
+    int8_t   bestRssi = 0;
+    char     ssid[AP_SSID_MAX] = {0};
     uint8_t  mac[6] = {0};
     int8_t   rssi = 0;
     uint8_t  band = 0, chan = 0;
