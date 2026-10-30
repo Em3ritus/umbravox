@@ -6,6 +6,8 @@ Native SETTINGS page 4 adds NODE PROFILE, NODE DWELL and DISCOVERY TX.
 DISCOVERY TX toggles Wi-Fi probes and BLE scan requests. The console accepts
 `DISCOVERY ACTIVE`, `DISCOVERY PASSIVE`, and `DISCOVERY` (scan counters).
 The mode is persisted through the existing named-field preferences.
+`DWELL 150` sets the handheld scan dwell (100..600 ms); `DWELL` reads it back.
+This is separate from NODE DWELL, which commands headless mesh nodes.
 
 The handheld scans one channel at a time using its existing dwell and channel
 plan. While holding the mesh report channel it does not initiate Wi-Fi scans.

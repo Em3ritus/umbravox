@@ -1,6 +1,8 @@
 #include "ble_bridge.h"
 #include "active_discovery.h"
 static int discoveryRequested=-1;
+static int dwellRequested=-1;
+static unsigned consoleDwell=220;
 #include "poi.h"
 #include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
@@ -1012,7 +1014,16 @@ bool pollConsole() {
             if (a == sdcmd::HANDLED) { Serial.println(reply); continue; }
         }
         {
-            if (!strcmp(line,"DISCOVERY ACTIVE")) {
+            if (!strcmp(line,"DWELL")) {
+                Serial.printf("dwell: %u ms\n",consoleDwell);
+            } else if (!strncmp(line,"DWELL ",6)) {
+                char* end=nullptr;
+                const long value=strtol(line+6,&end,10);
+                if(end!=line+6 && *end==0 && value>=100 && value<=600){
+                    dwellRequested=(int)value;
+                    Serial.printf("dwell: requested %ld ms\n",value);
+                }else Serial.println("ERR DWELL expects 100..600 milliseconds");
+            } else if (!strcmp(line,"DISCOVERY ACTIVE")) {
                 discoveryRequested=1;Serial.println("discovery: ACTIVE requested (Wi-Fi + BLE)");
             } else if (!strcmp(line,"DISCOVERY PASSIVE")) {
                 discoveryRequested=0;Serial.println("discovery: PASSIVE requested");
@@ -1623,6 +1634,8 @@ void loop() {
     // the BLE duty restarts the scanner, so doing it every frame would mean
     // never scanning at all.
     if(discoveryRequested>=0){set.activeDiscovery=discoveryRequested;discoveryRequested=-1;}
+    if(dwellRequested>=0){set.dwellMs=dwellRequested;dwellRequested=-1;}
+    consoleDwell=set.dwellMs;
     static ui::Settings applied;
     if(set.activeDiscovery!=applied.activeDiscovery){cap::setActive(set.activeDiscovery);blescan::setActive(set.activeDiscovery);}
     meshcore::setTiming(set.meshProfile,set.nodeDwellMs,set.activeDiscovery);
