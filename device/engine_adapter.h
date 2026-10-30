@@ -32,6 +32,11 @@ void leave();                      // left the engine (to legacy/animation): cle
 
 bool acceptsTouch();
 bool pending();
+// True while a screen ENTRY full-repaint is in progress (enter/wake/theme),
+// until its final strip lands. The loop blanks the backlight across it so the
+// entry appears whole instead of painting in -- a brief blank, not a curtain.
+// NOT set by an ordinary touch-burst (a partial repaint does not curtain).
+bool entering();
 
 // Project live ui::State into the current screen's Store and commit the stable
 // snapshot (fills back buffer, diffs, invalidates changed bands, swaps in).

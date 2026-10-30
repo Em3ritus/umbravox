@@ -1912,10 +1912,22 @@ void loop() {
             const pmu::Batt b = pmu::read(millis());
             { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis()); bootStall("engine snapshot", _s); }
         }
+        // Curtain fix: strips paint straight to visible panel RAM, so a screen
+        // entry would reveal top-to-bottom. Blank the backlight across the
+        // (brief, ~2-pass) ENTRY render and restore after its final strip, so
+        // the new screen appears whole -- a brief blank, not a wipe. Only a full
+        // entry blanks (not an ordinary touch-burst); a 300ms cap guarantees the
+        // panel is never left dark. Strips stay bounded; no full-frame push.
+        static bool     entryBlank = false;
+        static uint32_t entryBlankMs = 0;
+        if (engineadapter::entering() && !entryBlank) { setBacklight(0); entryBlank = true; entryBlankMs = millis(); }
         const uint32_t tD = millis();
         engineadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
         engineadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
         perflog::frame(millis() - tD, 0);
+        if (entryBlank && (!engineadapter::entering() || millis() - entryBlankMs > 300)) {
+            setBacklight(pwmNow); entryBlank = false;     // entry complete (or capped): reveal
+        }
 
         static uint32_t engLogAt = 0;
         if (millis() - engLogAt >= 10000) {
