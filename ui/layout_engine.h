@@ -202,4 +202,64 @@ inline HitList domainHits(int W, int H, const HitCtx& ctx) {
     return h;
 }
 
+// --- CODEX: filter bar (4 cells) + scrolling device list ----------------------
+// The register of found devices. No delivered geometry.json oracle exists for
+// CODEX (the oracle covers scan+domain only), so the regions are asserted
+// against these rules + structural invariants. The filter bar divides the body
+// into FOUR equal cells -- WIFI / 5 GHZ / BLE / LOCATED -- which is the 76px
+// compact cell the contract's font note refers to (320 bodyW 304 / 4). LOCATED
+// is the located scope DOMAIN's "all-contacts" opens into, reused here as a
+// filter cell. Rows are a fixed 44px so every visible row is a touch target;
+// the count that fits is size-dependent (3 @ 480, 2 @ 320), and the list drag /
+// scrollbar page the rest.
+struct CodexLayout {
+    Rect status, nav, body, statusCells[4], navCells[4];
+    Rect filterBar, filters[4];
+    Rect list, rows[8];
+    int  nRows = 0;
+};
+inline CodexLayout codex(int W, int H) {
+    const Chrome c = chrome(W, H);
+    CodexLayout x;
+    x.status = c.status; x.nav = c.nav; x.body = c.body;
+    for (int i = 0; i < 4; i++) { x.statusCells[i] = c.statusCells[i]; x.navCells[i] = c.navCells[i]; }
+
+    x.filterBar = {c.body.x, c.body.y, c.body.w, 44};
+    const int fw = c.body.w / 4;
+    for (int i = 0; i < 4; i++)                            // last cell takes the remainder -> tiles bodyW exactly
+        x.filters[i] = {c.body.x + i * fw, c.body.y, i < 3 ? fw : c.body.w - 3 * fw, 44};
+
+    const int RH = 44;
+    x.list = {c.body.x, c.body.y + 44, c.body.w, c.body.h - 44};
+    x.nRows = x.list.h / RH; if (x.nRows > 8) x.nRows = 8;
+    for (int i = 0; i < x.nRows; i++) x.rows[i] = {x.list.x, x.list.y + i * RH, x.list.w, RH};
+    return x;
+}
+
+// CODEX hit set. Filters are always actionable; a row is emitted only for a
+// valid supplied key (never an invented device). WIFI/5GHZ/BLE set the band
+// filter; LOCATED selects the located scope (the same action DOMAIN uses to
+// enter located Codex). Rows open device detail by stable identity.
+inline HitList codexHits(int W, int H, const HitCtx& ctx) {
+    const CodexLayout x = codex(W, H);
+    HitList h;
+    addChromeHits(h, x.statusCells, x.navCells);
+    static const char* const flab[4] = {"WIFI", "5 GHZ", "BLE", "LOCATED"};
+    static const char* const fdesc[3] = {"Filter to WIFI (both Wi-Fi bands)",
+                                         "Filter to 5 GHZ (a subset of WIFI)",
+                                         "Filter to BLE"};
+    for (int i = 0; i < 3; i++) h.add(flab[i], x.filters[i], Action::CodexFilter, i, nullptr, fdesc[i]);
+    h.add(flab[3], x.filters[3], Action::OpenLocatedCodex, 0, nullptr, "Scope to located devices");
+
+    static const char* const rslot[8] = {"codex-0","codex-1","codex-2","codex-3",
+                                          "codex-4","codex-5","codex-6","codex-7"};
+    for (int b = 0; b < x.nRows; ++b) {
+        const char* key = (ctx.rowKeys && b < ctx.nRowKeys) ? ctx.rowKeys[b] : nullptr;
+        if (validKey(key))
+            h.add(rslot[b], x.rows[b], Action::OpenDeviceDetail, b, key,
+                  "Open device detail by stable identity");
+    }
+    return h;
+}
+
 }  // namespace uieng

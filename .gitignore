@@ -79,3 +79,6 @@ sim/test_scan_engine
 sim/test_domain_present
 sim/test_domain_render
 sim/test_domain_engine
+sim/test_codex_present
+sim/test_codex_render
+sim/test_codex_engine
