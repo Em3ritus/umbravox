@@ -84,6 +84,7 @@ void rollover();
 uint16_t locatedCount();
 
 void setDwell(uint16_t ms);
+void setActive(bool on);
 // Hold one channel instead of sweeping. 0 resumes the sweep.
 void setCamp(int chan);
 bool camping();

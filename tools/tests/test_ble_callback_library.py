@@ -9,7 +9,7 @@ spec.loader.exec_module(mod)
 HEADER = mod.ANCHOR + "\n#endif\nprivate:\nuint8_t m_maxResults;\n"
 CALLBACK = "pScan->m_pAdvertisedDeviceCallbacks->onResult(*advertisedDevice);"
 RELEASE = "if (pScan->m_maxResults == 0 && advertisedDevice->m_callbackSent) {\n        pScan->erase(advertisedAddress);"
-SOURCE = "int BLEScan::handleGAPEvent(\n" + CALLBACK + "\n" + CALLBACK + "\n" + RELEASE + "\ncase BLE_GAP_EVENT_DISC_COMPLETE:"
+SOURCE = "int BLEScan::handleGAPEvent(\n        advertisedDevice = new BLEAdvertisedDevice();\n" + CALLBACK + "\n" + CALLBACK + "\n" + RELEASE + "\ncase BLE_GAP_EVENT_DISC_COMPLETE:"
 
 
 class LocalLibraryTests(unittest.TestCase):
@@ -34,6 +34,14 @@ class LocalLibraryTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             mod.patched_header(HEADER, source)
 
+    def test_active_pending_cap_precedes_allocation(self):
+        output = mod.patched_source(SOURCE)
+        self.assertLess(output.index("size() >= 16"), output.index("new BLEAdvertisedDevice"))
+        self.assertIn("!pScan->m_scan_params.passive", output)
+        self.assertIn("pScan->m_maxResults == 0", output)
+        with self.assertRaises(RuntimeError):
+            mod.patched_source(SOURCE.replace("new BLEAdvertisedDevice", "changed"))
+
     def test_staging_never_changes_installed_library(self):
         with tempfile.TemporaryDirectory() as tmp:
             original, staged = Path(tmp)/"installed", Path(tmp)/"build"
@@ -43,7 +51,8 @@ class LocalLibraryTests(unittest.TestCase):
             (original/"LICENSE").write_text("preserve license")
             result = mod.stage_library(original, staged)
             self.assertEqual((original/"src/BLEScan.h").read_text(), HEADER)
-            self.assertEqual((result/"BLEScan.cpp").read_text(), SOURCE)
+            self.assertEqual((original/"src/BLEScan.cpp").read_text(), SOURCE)
+            self.assertEqual((result/"BLEScan.cpp").read_text(), mod.patched_source(SOURCE))
             self.assertEqual((staged/"LICENSE").read_text(), "preserve license")
             before = (result/"BLEScan.h").stat().st_mtime_ns
             (result/"obsolete.cpp").write_text("obsolete")

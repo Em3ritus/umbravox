@@ -108,6 +108,9 @@ struct Settings {
     // clampSettings pulls unknown
     // values -- and PORTRAIT on a board that cannot show it -- to LANDSCAPE.
     uint8_t  orient = 0;      // Orientation
+    uint16_t activeDiscovery = 0; // opt-in Wi-Fi probe / BLE scan requests
+    uint16_t nodeDwellMs = 220; // separate from the handheld dwell
+    uint16_t meshProfile = 0;   // 0 Tracking (existing policy), 1 Discovery
     uint16_t bridgeApp = 1;   // remembered app: 1 WarDriveGo, 2 Biscuit
     uint16_t bleBridge = 0;   // 0 OFF, 1 WarDriveGo, 2 Biscuit; fills aligned extension
 };

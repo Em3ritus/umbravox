@@ -1,6 +1,5 @@
 #pragma once
-#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
-#define UMBRAVOX_PASSIVE_ONLY 1
-#else
+// Mesh/bridge transmission is permitted. Discovery probing remains opt-in.
+#ifndef UMBRAVOX_PASSIVE_ONLY
 #define UMBRAVOX_PASSIVE_ONLY 0
 #endif

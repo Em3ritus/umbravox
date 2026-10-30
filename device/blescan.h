@@ -37,6 +37,7 @@ void tick(uint32_t nowMs);
 uint16_t followCount();
 
 void setDuty(uint8_t pct);
+void setActive(bool enabled);
 void reset();
 
 // Emit Bluetooth rows of a WigleWifi-1.6 CSV, after the WiFi ones.

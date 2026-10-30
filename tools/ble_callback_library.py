@@ -29,11 +29,28 @@ def patched_header(header, source):
     return header.replace(ANCHOR, SETTER)
 
 
+def patched_source(source):
+    # Callback-only active scanning retains scannable advertisements until a
+    # response arrives. Bound the unanswered set; blescan recycles it every 2s.
+    anchor = "        advertisedDevice = new BLEAdvertisedDevice();"
+    begin = source.find("int BLEScan::handleGAPEvent(")
+    if begin < 0 or source[begin:].count(anchor) != 1:
+        raise RuntimeError("BLE pending-result allocation changed")
+    pos = source.index(anchor, begin)
+    guard = """        if (pScan->m_maxResults == 0 && !pScan->m_scan_params.passive &&
+            pScan->m_scanResults.m_vectorAdvertisedDevices.size() >= 16) {
+          return 0; // bounded unanswered scan-response cache
+        }
+"""
+    return source[:pos] + guard + source[pos:]
+
+
 def stage_library(original, destination):
     original, destination = Path(original), Path(destination)
     header = original / "src/BLEScan.h"
     source = original / "src/BLEScan.cpp"
     patched = patched_header(header.read_text(), source.read_text())
+    patched_cpp = patched_source(source.read_text())
     # Remove obsolete sources only from this owned build-local staging directory.
     if destination.exists():
         for old in destination.rglob("*"):
@@ -45,7 +62,7 @@ def stage_library(original, destination):
             continue
         target = destination / src.relative_to(original)
         target.parent.mkdir(parents=True, exist_ok=True)
-        data = patched.encode() if src == header else src.read_bytes()
+        data = patched.encode() if src == header else patched_cpp.encode() if src == source else src.read_bytes()
         if not target.exists() or target.read_bytes() != data:
             target.write_bytes(data)
     return destination / "src"

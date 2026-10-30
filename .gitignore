@@ -124,3 +124,5 @@ sim/bridge_png
 /sim/ui_review_png
 
 /sim/test_poi
+
+/sim/test_active_discovery

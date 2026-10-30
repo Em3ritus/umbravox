@@ -11,6 +11,8 @@
 #include <esp_mac.h>
 #include <Preferences.h>
 #include "mesh.h"
+#include "mesh_timing.h"
+#include "active_discovery.h"
 #include "rehome.h"
 #include "wifi_auth.h"
 
@@ -40,6 +42,11 @@ volatile bool assigned = false;
 // Where to deliver. mesh::REPORT_CHAN against a lone Core -- which is all a
 // Core ever assigns -- and a coordinator's own channel when one has taken us.
 uint8_t  reportChan = mesh::REPORT_CHAN;
+bool activeMode=false;
+uint16_t dwellMs=DWELL_MS;
+bool listening=false;
+mesh::Assign pendingAssign{};uint8_t pendingSender[6]{};bool hasAssign=false;
+meshtiming::Config pendingConfig{};uint8_t configSender[6]{};bool hasConfig=false;
 int      hop = 0;
 uint32_t hopAt = 0, lastHello = 0, lastReport = 0;
 // The phaseMs last applied to lastReport. A coordinator's Assign (with the real
@@ -75,10 +82,9 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     // Nothing is queued before an assignment arrives: there is nowhere to
     // send it, and the queue would simply fill and then discard everything
     // behind it. The Core is covering this channel anyway.
-    if (!assigned) return;
-    const uint8_t cur = chans[hop];
-
     portENTER_CRITICAL(&mux);
+    if (!assigned || !listening) {portEXIT_CRITICAL(&mux);return;}
+    const uint8_t cur = chans[hop];
     seen++;
     if (qN < QUEUE) {
         qAt[qN] = millis();
@@ -155,16 +161,7 @@ void handleEnroll(const uint8_t* data, int len) {
     ESP.restart();
 }
 
-void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
-    if (len < (int)sizeof(mesh::Hdr)) return;
-    const mesh::Hdr* hh = (const mesh::Hdr*)data;
-    if (hh->magic != mesh::MAGIC || hh->ver != mesh::VERSION) return;
-    if (hh->kind == mesh::MSG_ENROLL) { handleEnroll(data, len); return; }
-    if (!mesh::valid(data, len, mesh::MSG_ASSIGN, (int)sizeof(mesh::Assign))) return;
-    const mesh::Assign* a = (const mesh::Assign*)data;
-    for (int i = 0; i < 6; i++) if (a->h.mac[i] != selfMac[i]) return;
-    const uint8_t* sender = (info && info->src_addr) ? info->src_addr : nullptr;
-
+void applyAssignment(const mesh::Assign* a,const uint8_t* sender) {
     // Learn the Core's address and peer with it, so reports can go unicast.
     // A later Assign naming a DIFFERENT Core is a hand-off -- the CYD's
     // collector moving this node onto a coordinator -- so drop the old peer and
@@ -194,7 +191,8 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
 
     // A re-home gets the same fresh-start treatment as a first assignment:
     // re-park on the new slice and re-seed the report phase below.
-    const bool first = !assigned || act == rehome::REHOME;
+    const bool first = !assigned || act == rehome::REHOME || nChan!=a->nChan || memcmp(chans,a->chans,nChan)!=0;
+    if(act==rehome::REHOME){activeMode=false;dwellMs=DWELL_MS;}
     nChan = a->nChan > mesh::MAX_ASSIGN ? mesh::MAX_ASSIGN : a->nChan;
     for (int i = 0; i < nChan; i++) chans[i] = a->chans[i];
     camp = a->camp;
@@ -217,11 +215,45 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     }
 }
 
+void onRecv(const esp_now_recv_info_t* info,const uint8_t* data,int len){
+    if(!info || !info->src_addr || len<(int)sizeof(mesh::Hdr))return;
+    const auto* h=(const mesh::Hdr*)data;
+    if(h->magic!=mesh::MAGIC || h->ver!=mesh::VERSION)return;
+    if(h->kind==mesh::MSG_ENROLL){handleEnroll(data,len);return;}
+    meshtiming::Config c;
+    if(meshtiming::config(data,len,c) && !memcmp(c.h.mac,selfMac,6)){
+        portENTER_CRITICAL(&mux);pendingConfig=c;memcpy(configSender,info->src_addr,6);hasConfig=true;portEXIT_CRITICAL(&mux);return;
+    }
+    if(!mesh::valid(data,len,mesh::MSG_ASSIGN,sizeof(mesh::Assign)))return;
+    const auto* a=(const mesh::Assign*)data;
+    if(memcmp(a->h.mac,selfMac,6))return;
+    portENTER_CRITICAL(&mux);pendingAssign=*a;memcpy(pendingSender,info->src_addr,6);hasAssign=true;portEXIT_CRITICAL(&mux);
+}
+void receivePending(){
+    mesh::Assign a;meshtiming::Config c;uint8_t src[6],cs[6];bool pa,pc;
+    portENTER_CRITICAL(&mux);listening=false;pa=hasAssign;pc=hasConfig;a=pendingAssign;c=pendingConfig;memcpy(src,pendingSender,6);memcpy(cs,configSender,6);hasAssign=hasConfig=false;portEXIT_CRITICAL(&mux);
+    if(pa)applyAssignment(&a,src);
+    if(pc && haveCore && !memcmp(cs,coreMac,6)){
+        activeMode=c.active;dwellMs=c.dwellMs;
+        Serial.printf("node: applied discovery=%s dwell=%u profile=%u\n",activeMode?"ACTIVE":"PASSIVE",(unsigned)dwellMs,(unsigned)c.profile);
+    }
+    portENTER_CRITICAL(&mux);listening=assigned;portEXIT_CRITICAL(&mux);
+}
+void activeRecord(const wifi_ap_record_t& ap){
+    portENTER_CRITICAL(&mux);
+    if(qN<QUEUE){
+        mesh::Rec& r=queue_[qN];r={};memcpy(r.bssid,ap.bssid,6);r.rssi=ap.rssi;r.chan=ap.primary;r.band=ap.primary>14;
+        r.ssidLen=strnlen((const char*)ap.ssid,20);memcpy(r.ssid,ap.ssid,r.ssidLen);r.auth=discovery::auth(ap);qAt[qN++]=millis();seen++;
+    }else dropped++;
+    portEXIT_CRITICAL(&mux);
+}
+
 // Deliver the queue: hop to the report channel, send batches, go back.
 void report() {
     mesh::Rec batch[mesh::MAX_RECS];
     uint32_t  batchAt[mesh::MAX_RECS];
     int n;
+    portENTER_CRITICAL(&mux);listening=false;portEXIT_CRITICAL(&mux);
     park(reportChan);
     delay(5);                                  // let the radio settle
 
@@ -252,6 +284,7 @@ void report() {
         // Unicast when we know where the Core is: that path is acknowledged
         // and retried by the radio. Broadcast is a fallback only.
         const uint8_t* to = haveCore ? coreMac : bcast;
+        const uint32_t waitFrom = txOk + txFail;
         if (esp_now_send(to, (const uint8_t*)&r, sizeof r) == ESP_OK) {
             sent += n;
             txQueued++;
@@ -261,7 +294,6 @@ void report() {
         // Wait for the send to complete rather than stuffing the queue.
         // ESP-NOW has a small transmit queue; filling it faster than the
         // radio drains it is how frames vanish with ESP_OK returned.
-        const uint32_t waitFrom = txOk + txFail;
         const uint32_t until = millis() + 30;
         while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
     }
@@ -276,6 +308,7 @@ void report() {
     while ((int32_t)(listenUntil - millis()) > 0) delay(2);
 
     if (assigned) park(chans[hop]);
+    portENTER_CRITICAL(&mux);listening=assigned;portEXIT_CRITICAL(&mux);
 }
 
 } // namespace
@@ -319,11 +352,14 @@ void setup() {
     esp_wifi_set_promiscuous_rx_cb(&onPacket);
     esp_wifi_set_promiscuous(true);
 
+    discovery::begin();
     Serial.println("node: up, waiting for an assignment");
 }
 
 void loop() {
     const uint32_t now = millis();
+    if(discovery::service(now,activeRecord)){delay(2);return;}
+    receivePending();
 
     if (!assigned) {
         if (now - lastHello >= HELLO_MS) {
@@ -341,10 +377,12 @@ void loop() {
         return;
     }
 
-    if (!camp && nChan > 1 && now - hopAt >= DWELL_MS) {
+    if (!camp && nChan > 1 && now - hopAt >= dwellMs) {
+        portENTER_CRITICAL(&mux);listening=false;portEXIT_CRITICAL(&mux);
         hop = (hop + 1) % nChan;
         park(chans[hop]);
         hopAt = now;
+        portENTER_CRITICAL(&mux);listening=true;portEXIT_CRITICAL(&mux);
     }
 
     if (now - lastReport >= mesh::REPORT_MS) {
@@ -374,5 +412,6 @@ void loop() {
                       (unsigned)txQueued, (unsigned)txOk, (unsigned)txFail,
                       haveCore ? "unicast" : "bcast");
     }
+    if(activeMode)discovery::start(chans[hop],dwellMs,millis());
     delay(2);
 }

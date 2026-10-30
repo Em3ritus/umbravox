@@ -166,6 +166,9 @@ inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char
                   else { char u[16]; if (v < 60) snprintf(u,sizeof u,"%uS",(unsigned)v); else snprintf(u,sizeof u,"%uM",(unsigned)(v/60));
                          snprintf(val,vn,"%s %s", u, st.idleMode==ui::IDLE_OFF?"OFF":st.idleMode==ui::IDLE_ANIM?"ANIM":"DIM"); }
                   break; }
+        case 11: snprintf(lbl,ln,"DISCOVERY TX"); snprintf(val,vn,"%s",st.activeDiscovery?"ACTIVE":"PASSIVE"); break;
+        case 9: snprintf(lbl,ln,"NODE PROFILE"); snprintf(val,vn,"%s",st.meshProfile?"DISCOVERY":"TRACKING"); break;
+        case 10: snprintf(lbl,ln,"NODE DWELL"); snprintf(val,vn,"%u MS",(unsigned)st.nodeDwellMs); break;
         case 8: snprintf(lbl,ln,"BRIDGE APP"); snprintf(val,vn,"%s",st.bridgeApp==2?"BISCUIT":"WARDRIVEGO"); break;
         case 6: snprintf(lbl,ln,"AUTOLOG"); snprintf(val,vn,"%s", st.autoLog?"ON":"OFF"); break;
         default: snprintf(lbl,ln,"ORIENT"); snprintf(val,vn,"%s", st.orient==ui::ORIENT_PORTRAIT?"PORTRAIT":"LANDSCAPE"); break;

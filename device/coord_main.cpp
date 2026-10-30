@@ -26,6 +26,7 @@
 #include <Preferences.h>
 #include "mesh.h"
 #include "meshcore.h"
+#include "mesh_timing.h"
 
 namespace {
 
@@ -166,6 +167,12 @@ bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
     // it) so this coordinator never adopts a node it has not been given; it
     // learns its real nodes from their Reports.
     if (h->kind == mesh::MSG_HELLO) return true;
+    if(h->kind==meshtiming::CONFIG){
+        meshtiming::Config c;
+        if(haveCyd && src && !memcmp(src,cydMac,6) && meshtiming::config(data,len,c) && !memcmp(c.h.mac,selfMac,6))
+            meshcore::setTiming(c.profile,c.dwellMs,c.active);
+        return true;
+    }
     if (h->kind == mesh::MSG_REPORT) return false;
     if (h->kind != mesh::MSG_CASSIGN) return true;  // CREG/CBATCH/ASSIGN: not ours to adopt
 

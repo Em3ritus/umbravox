@@ -1,4 +1,6 @@
 #include "ble_bridge.h"
+#include "active_discovery.h"
+static int discoveryRequested=-1;
 #include "poi.h"
 #include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
@@ -400,6 +402,7 @@ void reassignAll(int only = -1) {
         for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[i].chans[k];
 #if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+        meshcore::sendTiming(coords_[i].mac);
 #endif
     }
 }
@@ -1009,7 +1012,14 @@ bool pollConsole() {
             if (a == sdcmd::HANDLED) { Serial.println(reply); continue; }
         }
         {
-            if (!strcmp(line,"BRIDGE")) {
+            if (!strcmp(line,"DISCOVERY ACTIVE")) {
+                discoveryRequested=1;Serial.println("discovery: ACTIVE requested (Wi-Fi + BLE)");
+            } else if (!strcmp(line,"DISCOVERY PASSIVE")) {
+                discoveryRequested=0;Serial.println("discovery: PASSIVE requested");
+            } else if (!strcmp(line,"DISCOVERY")) {
+                const auto& m=discovery::metrics();
+                Serial.printf("discovery: busy=%u started=%lu completed=%lu failed=%lu omitted=%lu\n",(unsigned)discovery::busy(),(unsigned long)m.started,(unsigned long)m.completed,(unsigned long)m.failed,(unsigned long)m.omitted);
+            } else if (!strcmp(line,"BRIDGE")) {
                 Serial.printf("bridge: %s\n",blebridge::status());
             } else if (!strncmp(line, "TEST", 4)) {
                 testStep = 0;
@@ -1612,7 +1622,10 @@ void loop() {
     // Push settings to the hardware only when they actually move: changing
     // the BLE duty restarts the scanner, so doing it every frame would mean
     // never scanning at all.
+    if(discoveryRequested>=0){set.activeDiscovery=discoveryRequested;discoveryRequested=-1;}
     static ui::Settings applied;
+    if(set.activeDiscovery!=applied.activeDiscovery){cap::setActive(set.activeDiscovery);blescan::setActive(set.activeDiscovery);}
+    meshcore::setTiming(set.meshProfile,set.nodeDwellMs,set.activeDiscovery);
     if (set.dwellMs != applied.dwellMs) cap::setDwell(set.dwellMs);
     if (set.bands   != applied.bands)   cap::setBands(set.bands);
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);

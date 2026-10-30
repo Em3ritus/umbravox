@@ -42,14 +42,14 @@ inline constexpr int MAX_POOL = 64;
 // Only SOCIAL channels that are actually in the pool can be camped, and a
 // camper is only spent when there are enough radios (see below). Whatever is
 // left is swept, split by band in proportion to how many channels each has.
-inline void planCluster(const uint8_t* channels, int nCh, int nNodes, Plan* plans) {
+inline void planCluster(const uint8_t* channels, int nCh, int nNodes, Plan* plans, bool discovery = false) {
     for (int i = 0; i < nNodes; i++) { plans[i].n = 0; plans[i].camp = false; }
     if (nNodes <= 0 || nCh <= 0) return;
     if (nCh > MAX_POOL) nCh = MAX_POOL;
 
     // Dedicated campers only once there are three or more radios: with one
     // or two, every channel spent camping is breadth we cannot spare.
-    const int wantCamp = nNodes >= 4 ? 2 : nNodes == 3 ? 1 : 0;
+    const int wantCamp = discovery ? 0 : nNodes >= 4 ? 2 : nNodes == 3 ? 1 : 0;
 
     // The first `wantCamp` SOCIAL channels that this pool actually holds.
     uint8_t camped[2];
@@ -118,12 +118,12 @@ inline void planCluster(const uint8_t* channels, int nCh, int nNodes, Plan* plan
 
 // Fill `plans` for `live` nodes over the whole band, less the channel the
 // Core holds for reporting.
-inline void planChannels(int live, Plan* plans) {
+inline void planChannels(int live, Plan* plans, bool discovery = false) {
     uint8_t all[ui::CH24 + ui::CH5];
     int n = 0;
     for (int i = 0; i < ui::CH24; i++) if (ui::CHAN24[i] != mesh::REPORT_CHAN) all[n++] = ui::CHAN24[i];
     for (int i = 0; i < ui::CH5; i++) all[n++] = ui::CHAN5[i];
-    planCluster(all, n, live, plans);
+    planCluster(all, n, live, plans, discovery);
 }
 
 // --- band partitioning across coordinators --------------------------------

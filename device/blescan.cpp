@@ -23,6 +23,7 @@ namespace blescan {
 namespace {
 
 constexpr uint16_t BLE_INTERVAL_MS = 100;
+bool activeMode = false;
 uint8_t duty = 30;                                // % of the radio BLE takes
 
 // Also PSRAM-backed. BLE sees far more distinct addresses than WiFi does,
@@ -445,6 +446,7 @@ void recycle(uint32_t nowMs) {
     const uint32_t count = (uint32_t)scan->getResults()->getCount();
 #endif
     const blerecycle::Action a =
+        (activeMode && duty && scan->isScanning() && nowMs-lastCycleMs>=2000) ? blerecycle::RECYCLE :
         blerecycle::shouldRecycle(count, nowMs, lastCycleMs, scan->isScanning(), duty,
 #if defined(CONFIG_NIMBLE_ENABLED)
                                  false // callback-only: no retained library result cache
@@ -528,6 +530,14 @@ void tick(uint32_t nowMs) {
 }
 
 uint16_t followCount() { return nFollowing; }
+
+void setActive(bool enabled) {
+    if(activeMode==enabled || !scan)return;
+    scan->stop();
+    scan->setActiveScan(enabled);
+    activeMode=enabled; lastCycleMs=millis();
+    if(duty)scan->start(0,nullptr,false);
+}
 
 void setDuty(uint8_t pct) {
     if (pct > 100) pct = 100;

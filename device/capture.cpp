@@ -1,4 +1,5 @@
 #include "ble_bridge_protocol.h"
+#include "active_discovery.h"
 #include "sight_order.h"
 #include "radio_policy.h"
 #include "capture.h"
@@ -33,6 +34,7 @@ namespace {
 // just under 5 seconds.
 uint32_t dwellMs = 220;        // adjustable; see ATTUNE
 uint8_t  bandMode = 0;         // 0 both, 1 = 2.4 only, 2 = 5 only
+bool activeDiscovery=false;
 int      campIdx = -1;         // >=0: hold this channel index, do not hop
 
 constexpr int N_CHAN = ui::CH24 + ui::CH5;
@@ -497,6 +499,12 @@ bool park(int i) {
 
 } // namespace
 
+void setActive(bool on){activeDiscovery=on; if(on)discovery::begin();}
+void activeRecord(const wifi_ap_record_t& r){
+    char ssid[33]{};memcpy(ssid,r.ssid,32);
+    ingest(r.bssid,r.rssi,r.primary,r.primary>14?1:0,ssid,0,0,discovery::auth(r));
+}
+
 void begin() {
     // PSRAM. The internal-RAM fallback below cannot succeed: the table is
     // ~3 MB and internal RAM is 320 KB, so without PSRAM the unit halts at
@@ -636,6 +644,8 @@ void tick(uint32_t nowMs) {
         }
     }
 
+    if(discovery::service(nowMs,activeRecord))return;
+
     // Camping: the Core does this once it has nodes. It is not a sacrifice
     // -- channel 1 carries real traffic, so the Core becomes its full-time
     // listener while also being where the nodes can reach it.
@@ -670,6 +680,7 @@ void tick(uint32_t nowMs) {
     }
     park(hop);
     hopAt = nowMs;
+    if(activeDiscovery)discovery::start((uint8_t)chanAt(hop),dwellMs,nowMs);
 }
 
 void fill(ui::State& s, uint32_t nowMs) {

@@ -463,7 +463,7 @@ inline HitList echoesHits(int W, int H) { return logHits(W, H); }
 // floor((bodyH-44)/44) knobs fit per page (3 @480, 2 @320) above a 44px footer
 // (PAGE n/m + CLEAR). The nine knobs paginate; the page COUNT therefore adapts
 // to the profile. No geometry.json oracle; regions asserted vs these rules.
-static constexpr int kAttuneKnobs = 9;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT BRIDGE
+static constexpr int kAttuneKnobs = 12;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT BRIDGE
 inline int attuneRowsPerPage(int H) {
     const Chrome c = chrome(320, H);     // body height is width-independent
     int n = (c.body.h - 44) / 44; if (n < 1) n = 1; if (n > 4) n = 4;
@@ -511,7 +511,7 @@ inline HitList attuneHits(int W, int H, int page) {
     for (int i = 0; i < per; i++) {
         const int knob = page * per + i;
         if (knob >= kAttuneKnobs) break;
-        const int setting = knob==8 ? 9 : knob; // BRIDGE APP uses the remembered app selector
+        const int setting = knob>=8 ? knob+1 : knob; // BRIDGE APP uses the remembered app selector
         h.add(mslot[i], a.minus[i], Action::SettingStep, -(setting + 1), nullptr, "Step this setting down");
         h.add(pslot[i], a.plus[i],  Action::SettingStep, +(setting + 1), nullptr, "Step this setting up");
     }

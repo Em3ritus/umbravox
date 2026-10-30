@@ -1,5 +1,8 @@
 #include "radio_policy.h"
 #include "meshcore.h"
+#include "mesh_timing.h"
+#include "active_discovery.h"
+#include <atomic>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -21,6 +24,7 @@ namespace {
 using meshlive::NODE_TIMEOUT_MS;
 
 NodeRec nodes_[MAX_NODES];
+std::atomic<uint32_t> timing_{220u<<8};
 // Expiries, for diag.log (main.cpp logs them; meshcore has no SD).
 uint32_t nExpired = 0;
 uint8_t  lastGone[3];
@@ -212,6 +216,16 @@ void setSink(Sink sink) { sink_ = sink; }
 
 void setCollector(FrameHook hook) { collector_ = hook; }
 
+void setTiming(uint8_t profile,uint16_t dwell,bool active){timing_.store((profile?1u:0u)|(uint32_t(meshtiming::dwell(dwell))<<8)|(active?1u<<24:0));}
+void sendTiming(const uint8_t* target){
+#if !UMBRAVOX_PASSIVE_ONLY
+    const uint32_t t=timing_.load();
+    meshtiming::Config c{};c.h.magic=mesh::MAGIC;c.h.ver=mesh::VERSION;c.h.netId=mesh::netId;c.h.kind=meshtiming::CONFIG;
+    memcpy(c.h.mac,target,6);c.profile=t&1;c.dwellMs=(t>>8)&0xffff;c.active=(t>>24)&1;
+    esp_now_send(bcast,(const uint8_t*)&c,sizeof c); // addressed payload, legacy peers ignore kind
+#endif
+}
+
 void assignAll(uint32_t nowMs) {
     int live = 0;
     for (int i = 0; i < MAX_NODES; i++) if (nodes_[i].live) live++;
@@ -221,11 +235,11 @@ void assignAll(uint32_t nowMs) {
     uint8_t reportChan;
     if (sliceN_ > 0) {
         // A coordinator: plan over its slice and report on its own channel.
-        chanplan::planCluster(sliceChans_, sliceN_, live, plans);
+        chanplan::planCluster(sliceChans_, sliceN_, live, plans,(timing_.load()&1)!=0);
         reportChan = sliceReportChan_;
     } else {
         // The CYD-as-Core: the whole band on the fixed report channel.
-        chanplan::planChannels(live, plans);
+        chanplan::planChannels(live, plans,(timing_.load()&1)!=0);
         reportChan = mesh::REPORT_CHAN;
     }
 
@@ -258,6 +272,7 @@ void assignAll(uint32_t nowMs) {
 
 #if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+        sendTiming(nodes_[i].mac);
 #endif
         nodes_[i].nChan = p.n;
         nodes_[i].camp  = a.camp;
@@ -276,6 +291,7 @@ void assignAll(uint32_t nowMs) {
 }
 
 void tick(uint32_t nowMs) {
+    if(discovery::busy())return;
     portENTER_CRITICAL(&mux);
     for (int i = 0; i < MAX_NODES; i++)
         if (nodes_[i].live && meshlive::expired(nowMs, nodes_[i].lastMs, NODE_TIMEOUT_MS)) {
