@@ -1,3 +1,4 @@
+#include <new>
 #include "ble_bridge.h"
 #include "active_discovery.h"
 static int discoveryRequested=-1;
@@ -1505,7 +1506,15 @@ void loop() {
     // glass -- uptime, battery, and an SD status claiming a card was present
     // with a log file name to match. Anything not filled below now shows its
     // honest default instead.
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    // Loop-owned snapshot: leave stack room for nested rendering and SDK calls.
+    // Reconstruct in place to preserve the old fresh-State semantics each pass,
+    // without a full-sized automatic temporary or per-frame allocation.
+    static ui::State s;
+    new (&s) ui::State{};
+#else
     ui::State s;
+#endif
     s.uptimeS = millis() / 1000;
 
     // The animation clock. Driven by time, not by the frame counter: the
