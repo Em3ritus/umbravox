@@ -339,11 +339,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     centered(s,c.statusCells[0].x+c.statusCells[0].w/2,26,fix,1,gcol);
     if(c.statusCells[1].w) {
         const int nc=c.statusCells[1].x+c.statusCells[1].w/2;
-        if(W>=400)centered(s,nc,10,"NODES",1,pal::DIM);
-        else { // connected-node glyph; count remains readable beneath it
-            line(s,nc,13,nc-7,18,pal::DIM);line(s,nc,13,nc+7,18,pal::DIM);
-            frame(s,nc-2,9,5,5,pal::TEXT);frame(s,nc-9,16,5,5,pal::TEXT);frame(s,nc+5,16,5,5,pal::TEXT);
-        }
+        centered(s,nc,10,"NODES",1,pal::DIM);
         snprintf(hb,sizeof hb,"%d",st.nodes);
         centered(s,c.statusCells[1].x+c.statusCells[1].w/2,26,hb,1,pal::TEXT);
     }
