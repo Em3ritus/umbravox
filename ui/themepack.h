@@ -61,7 +61,12 @@ struct Emblem {
     uint8_t w, h, ncol;
     uint16_t pal[MAX_EMBLEM_COLORS];  // RGB565
     const uint8_t* px;
+    bool packed4 = false; // firmware assets: two palette indices per byte
 };
+
+inline uint8_t pixel(const Emblem& e, int index) {
+    return e.packed4 ? ((index&1) ? (e.px[index/2]&15) : (e.px[index/2]>>4)) : e.px[index];
+}
 
 // Parse n bytes of emblem.bin: 'U','V','E',1, w, h, ncol, 0, ncol little-endian
 // RGB565 values, then w*h indices. Everything is validated (size, limits, total

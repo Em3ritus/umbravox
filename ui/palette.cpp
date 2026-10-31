@@ -93,7 +93,10 @@ constexpr Row THEMES[TH_COUNT] = {
         rgb(0xFF,0x5F,0xD0), rgb(0x4D,0xE0,0xFF), rgb(0x57,0xFF,0xB0),
         rgb(0xFF,0xC2,0x4D), rgb(0xFF,0x5C,0x7A),
     },
+#include "bundled_theme_rows.inc"
 };
+struct BundledMeta {uint8_t sweep, rite, opacity, scale; bool diamond; const themepack::Emblem* emblem;};
+#include "bundled_theme_assets.inc"
 
 // Theme packs, appended after the built-ins at ids TH_COUNT + slot. Static
 // storage: a pack Row's name and header point into PACKS, so they live as long
@@ -101,18 +104,19 @@ constexpr Row THEMES[TH_COUNT] = {
 themepack::Pack           PACKS[themepack::MAX_PACKS];
 Row                       PACK_ROWS[themepack::MAX_PACKS];
 const themepack::Emblem*  PACK_EMBLEM[themepack::MAX_PACKS];
-int                       nPacks = 0;
+int                       nPacks = 0, nCustom = 0;
+uint8_t PACK_IDS[themepack::MAX_PACKS]{};
 
 // The slot for a pack theme id, or -1 for a built-in or an id past the packs.
 inline int slotOf(uint8_t id) {
-    const int s = (int)id - (int)TH_COUNT;
-    return (s >= 0 && s < nPacks) ? s : -1;
+    for(int s=0;s<nPacks;s++)if(PACK_IDS[s]==id)return s;
+    return -1;
 }
 
 inline const Row& row(uint8_t id) {
-    if (id < TH_COUNT) return THEMES[id];
     const int s = slotOf(id);
-    return s >= 0 ? PACK_ROWS[s] : THEMES[TH_UMBRAVOX];
+    if(s>=0)return PACK_ROWS[s];
+    return THEMES[id<TH_COUNT?id:TH_UMBRAVOX];
 }
 
 } // namespace
@@ -158,11 +162,13 @@ uint16_t    sweepMask(uint8_t id) { return row(id).sweeps; }
 
 // --- theme packs ----------------------------------------------------------
 
-int themeCount() { return TH_COUNT + nPacks; }
+int themeCount() { return TH_COUNT + nCustom; }
 
 int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
-    if (nPacks >= themepack::MAX_PACKS) return -1;
-    const int slot = nPacks;
+    int slot=nPacks;
+    for(int i=0;i<nPacks;i++)if(!strncmp(PACKS[i].name,in.name,themepack::MAX_NAME+1)){slot=i;break;}
+    const bool append=slot==nPacks;
+    if(append && nPacks>=themepack::MAX_PACKS)return -1;
     themepack::Pack& p = PACKS[slot];
     p = in;
 
@@ -208,8 +214,12 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     r.amber = c[R_AMBER];  r.red = c[R_RED];
     PACK_ROWS[slot] = r;
     PACK_EMBLEM[slot] = e;
-    nPacks++;
-    return TH_COUNT + slot;
+    int id=append?-1:PACK_IDS[slot];
+    for(int i=TH_SLICK;i<TH_COUNT;i++)if(!strcmp(p.name,THEMES[i].name)){id=i;break;}
+    if(id<0)id=TH_COUNT+nCustom++;
+    PACK_IDS[slot]=id;
+    if(append)nPacks++;
+    return id;
 }
 
 // Host tools and tests only; the device never calls it (see palette.h).
@@ -217,13 +227,14 @@ void clearPacks() {
     memset(PACKS, 0, sizeof PACKS);
     memset(PACK_ROWS, 0, sizeof PACK_ROWS);
     for (int s = 0; s < themepack::MAX_PACKS; s++) PACK_EMBLEM[s] = nullptr;
-    nPacks = 0;
+    nPacks = nCustom = 0;
 }
 
 int findPack(const char* name) {
     if (!name || !name[0]) return -1;
     for (int s = 0; s < nPacks; s++)
-        if (!strcmp(PACKS[s].name, name)) return TH_COUNT + s;
+        if (!strcmp(PACKS[s].name, name)) return PACK_IDS[s];
+    for(int i=TH_SLICK;i<TH_COUNT;i++)if(!strcmp(THEMES[i].name,name))return i;
     return -1;
 }
 
@@ -235,10 +246,11 @@ uint8_t resolveSaved(const char* name, uint8_t savedId) {
     return savedId < TH_COUNT ? savedId : (uint8_t)TH_UMBRAVOX;
 }
 
-uint8_t artOpacity(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artOpacity<=100?PACKS[s].artOpacity:100;}
-uint8_t artScale(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artScale>=25 && PACKS[s].artScale<=100?PACKS[s].artScale:82;}
+const BundledMeta* bundled(uint8_t id){return id>=TH_SLICK && id<TH_COUNT?&BUNDLED_META[id-TH_SLICK]:nullptr;}
+uint8_t artOpacity(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artOpacity<=100?PACKS[s].artOpacity:(bundled(id)?bundled(id)->opacity:100);}
+uint8_t artScale(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artScale>=25 && PACKS[s].artScale<=100?PACKS[s].artScale:(bundled(id)?bundled(id)->scale:82);}
 
-bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].diamond;}
+bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 ? PACKS[s].diamond : (bundled(id) && bundled(id)->diamond);}
 
 Centrepiece centrepiece(uint8_t id) { return row(id).centre; }
 const char* header(uint8_t id)      { return row(id).header; }
@@ -246,17 +258,17 @@ const char* header(uint8_t id)      { return row(id).header; }
 const themepack::Emblem* emblem(uint8_t id) {
     if (id == TH_COSMICMUFFIN) return &ui::muffinEmblem();
     const int s = slotOf(id);
-    return s >= 0 ? PACK_EMBLEM[s] : nullptr;
+    return s >= 0 ? PACK_EMBLEM[s] : (bundled(id)?bundled(id)->emblem:nullptr);
 }
 
 uint8_t startSweep(uint8_t id) {
     const int s = slotOf(id);
-    return s >= 0 ? PACKS[s].sweep : (uint8_t)ui::SW_RADAR;
+    return s >= 0 ? PACKS[s].sweep : (bundled(id)?bundled(id)->sweep:(uint8_t)ui::SW_RADAR);
 }
 
 uint8_t packRite(uint8_t id) {
     const int s = slotOf(id);
-    return (uint8_t)(s >= 0 ? PACKS[s].rite : themepack::RITE_WARD);
+    return (uint8_t)(s >= 0 ? PACKS[s].rite : (bundled(id)?bundled(id)->rite:themepack::RITE_WARD));
 }
 
 } // namespace pal

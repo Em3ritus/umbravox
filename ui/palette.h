@@ -59,9 +59,9 @@ extern uint16_t AMBER;
 extern uint16_t RED;
 
 // The BUILT-IN themes. TH_COUNT is the number of built-ins, not of themes:
-// theme packs off the SD card follow them at ids TH_COUNT + slot, and
+// new SD themes follow them; matching approved packs override their stable IDs, and
 // themeCount() is the total.
-enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_COUNT };
+enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_SLICK, TH_BAPH_LOGO, TH_EM3RITUS, TH_EMBER, TH_SKULD, TH_COUNT };
 
 // Point the palette at a theme. An out-of-range id (>= themeCount()) falls
 // back to UMBRAVOX rather than reading off the end of the table -- this is
@@ -78,7 +78,8 @@ uint16_t sweepMask(uint8_t id);
 // Built-ins plus loaded packs.
 int themeCount();
 
-// Append a pack; returns its theme id (TH_COUNT + slot), or -1 when
+// Add/replace an SD pack; approved names override their existing built-in ID.
+// New names append after TH_COUNT. Returns the theme ID, or -1 when
 // themepack::MAX_PACKS are already held. The pack is COPIED (the caller's may
 // go away) and its status colours sanitised on the copy. The emblem is stored
 // by POINTER, not copied: the caller keeps its buffer alive (null = none).
@@ -92,8 +93,8 @@ int addPack(const themepack::Pack& p, const themepack::Emblem* e);
 // It does not repaint: the caller runs setTheme before anything draws.
 void clearPacks();
 
-// The theme id of the pack with exactly this name, or -1. Packs only: a
-// built-in's name never matches.
+// The theme id of an SD pack or bundled crew theme with this exact name, or -1.
+// The original three reserved built-in names do not match.
 int findPack(const char* name);
 
 // The theme to select at boot from what NVS held: a saved pack NAME wins

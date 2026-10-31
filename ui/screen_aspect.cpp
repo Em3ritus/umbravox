@@ -45,7 +45,7 @@ const char* sweepName(uint8_t id) {
 }
 
 const char* alertName(uint8_t theme, uint8_t style) {
-    if (theme >= pal::TH_COUNT) {
+    if (theme >= pal::TH_SLICK) {
         // A pack plays the one rite its theme.json names; the cosmic style
         // setting does not apply to it.
         switch (pal::packRite(theme)) {

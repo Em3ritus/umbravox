@@ -645,7 +645,7 @@ void drawAlertIn(Canvas& c, const State& s, int X, int Y, int Wd, int Hd) {
                 case AL_LOCKON: rite = AL_LOCKON; break;
                 default:        rite = AL_SUPERNOVA; break;
             }
-        } else if (s.set.theme >= pal::TH_COUNT) {
+        } else if (s.set.theme >= pal::TH_SLICK) {
             switch (pal::packRite(s.set.theme)) {
                 case themepack::RITE_SUPERNOVA: rite = AL_SUPERNOVA; break;
                 case themepack::RITE_VORTEX:     rite = AL_VORTEX;    break;

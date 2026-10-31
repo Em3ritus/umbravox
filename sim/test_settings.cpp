@@ -45,7 +45,7 @@ int main() {
     const int fullId = pal::addPack(mkPack("FULL", 0x07FF, SW_RADAR), nullptr);
     const int noRadarId = pal::addPack(
         mkPack("NORADAR", (uint16_t)((1u << SW_STAR) | (1u << SW_PULSE)), SW_STAR), nullptr);
-    check("packs loaded for the loops", fullId == 3 && noRadarId == 4 && pal::themeCount() == 5);
+    check("packs loaded for the loops", fullId == pal::TH_COUNT && noRadarId == pal::TH_COUNT+1 && pal::themeCount() == pal::TH_COUNT+2);
 
     // Adding a field to Settings must not quietly widen what this test treats
     // as padding. A byte the constructor never writes is indistinguishable

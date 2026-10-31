@@ -400,6 +400,7 @@ const char* emblemCheck(const uint8_t* d, size_t n, Emblem& out) {
 }  // namespace
 
 bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t whyCap) {
+    out.packed4 = false;
     out.px = nullptr;
     const char* err = emblemCheck(data, n, out);
     if (err) out.px = nullptr;

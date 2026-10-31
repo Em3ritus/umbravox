@@ -225,11 +225,11 @@ inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, 
         for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(circular && dx*dx+dy*dy>r*r) continue;
             int sx=(x-(cx-r))*e.w/d, sy=(y-(cy-r))*e.h/d;
             if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
-            const uint16_t color=e.pal[e.px[sy*e.w+sx]];
-            if(!transparentBlack || color)pt(s,x,y,colors[e.px[sy*e.w+sx]]); } }
+            const uint16_t color=e.pal[themepack::pixel(e,sy*e.w+sx)];
+            if(!transparentBlack || color)pt(s,x,y,colors[themepack::pixel(e,sy*e.w+sx)]); } }
 }
 // Precomputed artwork: clipped spans, no heap use and no trigonometry.
-inline void crewArt(S& s,int cx,int cy,int radius,int style){
+inline void crewArt(S& s,int cx,int cy,int radius,int style,int opacity=100){
     const bool small=radius<60;
     const crewart::Span* runs=nullptr;const uint16_t* colors=nullptr;size_t count=0;
     if(style==0 && small){runs=crewart::mascot39;colors=crewart::mascot39Colors;count=sizeof crewart::mascot39/sizeof(*runs);}
@@ -243,7 +243,7 @@ inline void crewArt(S& s,int cx,int cy,int radius,int style){
     if(!runs)return;
     const int base=small?39:85;
     for(size_t i=0;i<count;i++){const auto& a=runs[i];int y=cy+a.y*radius/base;if(y<s.y0)continue;if(y>=s.y0+s.h)break;
-      int x=cx+a.x*radius/base;int end=cx+(a.x+a.n)*radius/base;box(s,x,y,std::max(1,end-x),1,colors[a.c]);}
+      int x=cx+a.x*radius/base;int end=cx+(a.x+a.n())*radius/base;box(s,x,y,std::max(1,end-x),1,opacity==100?colors[a.c()]:ui::Canvas::mix(pal::VOID,colors[a.c()],opacity,100));}
 }
 // Honor the theme's artwork, same policy as motif::drawMotif: a bitmap emblem
 // when the theme carries one, else the {7/3} heptagram.
@@ -503,7 +503,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
         }
-        if(cvlt || mascot || orbit || sigil)crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0);
+        if(cvlt || mascot || orbit || sigil)crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0,cvlt && W<400 ? 35 : 100);
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem

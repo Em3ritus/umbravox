@@ -38,10 +38,10 @@ static themepack::Pack mkPack(const char* name, themepack::Dial dial, uint16_t s
 }
 
 int main() {
-    check("three themes", pal::TH_COUNT == 3);
+    check("eight bundled themes", pal::TH_COUNT == 8);
     {   // every name a built-in displays must be refused to a pack
         bool all = true;
-        for (int i = 0; i < pal::TH_COUNT; i++) {
+        for (int i = 0; i < pal::TH_SLICK; i++) {
             themepack::Pack q; memset(&q, 0, sizeof q);
             strncpy(q.name, pal::themeName((uint8_t)i), themepack::MAX_NAME);
             if (themepack::admit("a", q, nullptr, 0) != themepack::ADMIT_RESERVED) {
@@ -77,11 +77,13 @@ int main() {
         check("COSMIC emblem is the muffin", m == &ui::muffinEmblem());
         const themepack::Emblem& e = ui::muffinEmblem();
         check("muffin emblem 72x72x16", e.w == 72 && e.h == 72 && e.ncol == 16);
-        check("muffin emblem pixels are the baked ones", e.px == ui::MUFFIN_PX);
+        bool pixelsOk=true;
+        for(int i=0;i<ui::MUFFIN_W*ui::MUFFIN_H;i++)if(themepack::pixel(e,i)!=ui::MUFFIN_PX[i])pixelsOk=false;
+        check("muffin emblem pixels are the baked ones", pixelsOk);
         bool palOk = true;
         for (int i = 0; i < ui::MUFFIN_NCOL; i++) if (e.pal[i] != ui::MUFFIN_PAL[i]) palOk = false;
         check("muffin emblem palette is the baked one", palOk);
-        for (uint8_t id = 0; id < pal::TH_COUNT; id++)
+        for (uint8_t id = 0; id < pal::TH_SLICK; id++)
             check("built-in starts on RADAR", pal::startSweep(id) == ui::SW_RADAR);
         check("no packs yet", pal::themeCount() == pal::TH_COUNT);
         check("findPack on empty table", pal::findPack("X") == -1);
@@ -108,17 +110,17 @@ int main() {
         static themepack::Emblem em;
         em.w = 2; em.h = 2; em.ncol = 2; em.pal[0] = 0x1234; em.pal[1] = 0x4321; em.px = px;
 
-        check("add SANE -> 3", pal::addPack(a, nullptr) == 3);
-        check("count 4", pal::themeCount() == 4);
-        check("add LOUD -> 4", pal::addPack(b, &em) == 4);
-        check("count 5", pal::themeCount() == 5);
+        check("add SANE -> 3", pal::addPack(a, nullptr) == (pal::TH_COUNT+0));
+        check("count 4", pal::themeCount() == (pal::TH_COUNT+1));
+        check("add LOUD -> 4", pal::addPack(b, &em) == (pal::TH_COUNT+1));
+        check("count 5", pal::themeCount() == (pal::TH_COUNT+2));
         // The caller's copy may go away: the table must hold its own.
         memset(&a, 0x55, sizeof a);
         themepack::Pack x = mkPack("X", themepack::DIAL_COMPACT, 0x0001, ui::SW_RADAR, 0x3000);
-        check("add X -> 5", pal::addPack(x, nullptr) == 5);
-        check("count 6", pal::themeCount() == 6);
+        check("add X -> 5", pal::addPack(x, nullptr) == (pal::TH_COUNT+2));
+        check("count 6", pal::themeCount() == (pal::TH_COUNT+3));
         char nm[8];
-        int expect = 6;
+        int expect = pal::TH_COUNT+3;
         for (int i = 3; i < themepack::MAX_PACKS; i++) {
             snprintf(nm, sizeof nm, "P%d", i);
             const int id = pal::addPack(mkPack(nm, themepack::DIAL_LARGE, 0x0001, 0, 0x4000), nullptr);
@@ -126,14 +128,14 @@ int main() {
             expect++;
             check("count tracks", pal::themeCount() == expect);
         }
-        check("eight packs -> eleven themes", pal::themeCount() == 11);
+        check("eight packs -> eleven themes", pal::themeCount() == (pal::TH_COUNT+8));
         check("ninth pack refused", pal::addPack(mkPack("NINE", themepack::DIAL_LARGE, 1, 0, 0), nullptr) == -1);
-        check("count unchanged after refusal", pal::themeCount() == 11);
+        check("count unchanged after refusal", pal::themeCount() == (pal::TH_COUNT+8));
 
-        check("findPack SANE", pal::findPack("SANE") == 3);
-        check("findPack LOUD", pal::findPack("LOUD") == 4);
-        check("findPack X", pal::findPack("X") == 5);
-        check("findPack P7", pal::findPack("P7") == 10);
+        check("findPack SANE", pal::findPack("SANE") == (pal::TH_COUNT+0));
+        check("findPack LOUD", pal::findPack("LOUD") == (pal::TH_COUNT+1));
+        check("findPack X", pal::findPack("X") == (pal::TH_COUNT+2));
+        check("findPack P7", pal::findPack("P7") == (pal::TH_COUNT+7));
         check("findPack is case-sensitive", pal::findPack("sane") == -1);
         check("findPack: no prefix match", pal::findPack("SAN") == -1);
         check("findPack: no extension match", pal::findPack("SANEX") == -1);
@@ -142,22 +144,22 @@ int main() {
         check("findPack null", pal::findPack(nullptr) == -1);
         check("findPack does not match built-ins", pal::findPack("UMBRAVOX") == -1);
 
-        check("pack name kept after caller clobbers", !strcmp(pal::themeName(3), "SANE"));
-        check("pack header", !strcmp(pal::header(3), "HDR SANE"));
-        check("pack header LOUD", !strcmp(pal::header(4), "HDR LOUD"));
-        check("sweepMask SANE", pal::sweepMask(3) == 0x07FD);
-        check("sweepMask LOUD", pal::sweepMask(4) == 0x0014);
-        check("startSweep SANE", pal::startSweep(3) == ui::SW_STAR);
-        check("startSweep LOUD", pal::startSweep(4) == ui::SW_PULSE);
-        check("packRite SANE", pal::packRite(3) == themepack::RITE_COMET);
-        check("packRite LOUD", pal::packRite(4) == themepack::RITE_VORTEX);
-        check("centrepiece heptagram pack", pal::centrepiece(3) == pal::CP_HEPTAGRAM);
-        check("centrepiece emblem pack", pal::centrepiece(4) == pal::CP_EMBLEM);
-        check("emblem stored by pointer", pal::emblem(4) == &em);
-        check("no emblem given -> null", pal::emblem(3) == nullptr);
+        check("pack name kept after caller clobbers", !strcmp(pal::themeName((pal::TH_COUNT+0)), "SANE"));
+        check("pack header", !strcmp(pal::header((pal::TH_COUNT+0)), "HDR SANE"));
+        check("pack header LOUD", !strcmp(pal::header((pal::TH_COUNT+1)), "HDR LOUD"));
+        check("sweepMask SANE", pal::sweepMask((pal::TH_COUNT+0)) == 0x07FD);
+        check("sweepMask LOUD", pal::sweepMask((pal::TH_COUNT+1)) == 0x0014);
+        check("startSweep SANE", pal::startSweep((pal::TH_COUNT+0)) == ui::SW_STAR);
+        check("startSweep LOUD", pal::startSweep((pal::TH_COUNT+1)) == ui::SW_PULSE);
+        check("packRite SANE", pal::packRite((pal::TH_COUNT+0)) == themepack::RITE_COMET);
+        check("packRite LOUD", pal::packRite((pal::TH_COUNT+1)) == themepack::RITE_VORTEX);
+        check("centrepiece heptagram pack", pal::centrepiece((pal::TH_COUNT+0)) == pal::CP_HEPTAGRAM);
+        check("centrepiece emblem pack", pal::centrepiece((pal::TH_COUNT+1)) == pal::CP_EMBLEM);
+        check("emblem stored by pointer", pal::emblem((pal::TH_COUNT+1)) == &em);
+        check("no emblem given -> null", pal::emblem((pal::TH_COUNT+0)) == nullptr);
         check("out-of-range emblem -> null", pal::emblem(200) == nullptr);
 
-        pal::setTheme(3);
+        pal::setTheme((pal::TH_COUNT+0));
         check("SANE void", pal::VOID == 0x0000);
         check("SANE witch", pal::WITCH == 0x1000 + themepack::R_WITCH);
         check("SANE bone", pal::BONE == 0x1000 + themepack::R_BONE);
@@ -171,24 +173,24 @@ int main() {
         check("compact pack has UMBRAVOX geometry",
               ui::DIAL_H == uDialH && ui::SPEC_H == uSpecH && ui::R_STAR == uRStar);
 
-        pal::setTheme(4);
+        pal::setTheme((pal::TH_COUNT+1));
         check("LOUD witch", pal::WITCH == 0x2000 + themepack::R_WITCH);
         check("LOUD amber sanitised to UMBRAVOX's", pal::AMBER == uAmber);
         check("LOUD red sanitised to UMBRAVOX's", pal::RED == uRed);
         check("large pack has COSMIC geometry",
               ui::DIAL_H == cDialH && ui::SPEC_H == cSpecH && ui::R_STAR == cRStar);
 
-        pal::setTheme(11);   // one past the last pack
+        pal::setTheme(pal::TH_COUNT+8);   // one past the last pack
         check("id past the packs falls back to UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
-        check("themeName past the packs is UMBRAVOX", !strcmp(pal::themeName(11), "UMBRAVOX"));
+        check("themeName past the packs is UMBRAVOX", !strcmp(pal::themeName(pal::TH_COUNT+8), "UMBRAVOX"));
         check("built-ins untouched by packs", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD);
     }
 
     printf("saved by name:\n");
     {
-        check("name present -> its id", pal::resolveSaved("X", 4) == 5);
+        check("name present -> its id", pal::resolveSaved("X", 4) == (pal::TH_COUNT+2));
         check("name absent -> UMBRAVOX", pal::resolveSaved("GONE", 4) == pal::TH_UMBRAVOX);
-        check("empty name, pack id -> UMBRAVOX", pal::resolveSaved("", 4) == pal::TH_UMBRAVOX);
+        check("empty name, pack id -> UMBRAVOX", pal::resolveSaved("", pal::TH_COUNT+1) == pal::TH_UMBRAVOX);
         check("empty name, built-in id kept", pal::resolveSaved("", 2) == 2);
         check("empty name, BAPH0MAU5 kept", pal::resolveSaved("", 1) == 1);
         check("null name, built-in id kept", pal::resolveSaved(nullptr, 2) == 2);
@@ -199,15 +201,15 @@ int main() {
     // the device never calls clearPacks.
     printf("clearPacks:\n");
     {
-        check("table full before clearing", pal::themeCount() == 11);
+        check("table full before clearing", pal::themeCount() == (pal::TH_COUNT+8));
         pal::clearPacks();
         check("cleared: only the built-ins", pal::themeCount() == pal::TH_COUNT);
-        check("old pack id 3 is UMBRAVOX again", !strcmp(pal::themeName(3), "UMBRAVOX"));
-        check("old pack id 10 is UMBRAVOX again", !strcmp(pal::themeName(10), "UMBRAVOX"));
+        check("old pack id 3 is UMBRAVOX again", !strcmp(pal::themeName((pal::TH_COUNT+0)), "UMBRAVOX"));
+        check("old pack id 10 is UMBRAVOX again", !strcmp(pal::themeName((pal::TH_COUNT+7)), "UMBRAVOX"));
         check("old pack name not found", pal::findPack("SANE") == -1 && pal::findPack("P7") == -1);
-        check("old emblem pointer gone", pal::emblem(4) == nullptr);
-        check("old centrepiece gone", pal::centrepiece(4) == pal::CP_HEPTAGRAM);
-        pal::setTheme(4);
+        check("old emblem pointer gone", pal::emblem((pal::TH_COUNT+1)) == nullptr);
+        check("old centrepiece gone", pal::centrepiece((pal::TH_COUNT+1)) == pal::CP_HEPTAGRAM);
+        pal::setTheme((pal::TH_COUNT+1));
         check("old pack id draws UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
         check("built-ins survive clearing", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD &&
                                             !strcmp(pal::themeName(pal::TH_BAPH0MAU5), "CVLT OF BAPH0MAU5"));
