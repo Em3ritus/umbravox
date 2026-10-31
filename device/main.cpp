@@ -1892,7 +1892,10 @@ void loop() {
         s.detail=ui::Detail{};
         if(uiproj::decodeContactKey(nav.detailKey,ble,mac)) {
             if(ble)blescan::fillDetailByAddress(s,mac,millis());
-            else cap::fillDetailByAddress(s,mac,millis());
+            else {
+                cap::fillDetailByAddress(s,mac,millis());
+                if(nav.detailPage==2){cap::fillClients(s,nav.clientOffset,uieng::detailClients(board::PANEL_W,board::PANEL_H).nRows,millis());nav.clientOffset=s.clients.offset;}
+            }
         }
 #else
         if (nav.filter == ui::F_BLE) blescan::fillDetail(s, nav.selected, millis());

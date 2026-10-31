@@ -31,6 +31,8 @@ void fill(ui::State& s, uint32_t nowMs);
 // `only5` restricts to the 5GHz band, which is what the 5 GHZ tile opens.
 void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly=false);
 void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs);
+// Local station observations for the selected AP; native engine only.
+void fillClients(ui::State& s,int offset,int limit,uint32_t nowMs);
 uint16_t sightCount(bool only5);
 
 // Everything known about the device at `index` in that filtered list.

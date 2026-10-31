@@ -133,3 +133,7 @@ sim/bridge_png
 /sim/test_mesh_telemetry
 
 /sim/test_gpx
+
+/sim/test_clients
+
+/sim/test_client_ui

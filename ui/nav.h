@@ -23,6 +23,7 @@ struct Nav {
     uint8_t filter = F_WIFI;
     uint8_t meshPage = 0;
     uint8_t detailPage = 0;
+    int16_t clientOffset = 0;
     int16_t scroll = 0;
     int16_t maxScroll = 0;      // set by the caller from the row count
 

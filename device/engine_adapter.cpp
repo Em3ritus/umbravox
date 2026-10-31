@@ -360,7 +360,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         case uinav::Screen::Echoes: h = uieng::echoesHits(W_, H_); break;
         case uinav::Screen::Attune: h = uieng::attuneHits(W_, H_, nav.setPage); break;
         case uinav::Screen::Aspect: h = uieng::aspectHits(W_, H_, s.set.theme == pal::TH_COSMICMUFFIN); break;
-        case uinav::Screen::Detail: h = uieng::detailHits(W_, H_); break;
+        case uinav::Screen::Detail: h = uieng::detailHits(W_, H_,nav.detailPage==2 && s.detail.band!=ui::BAND_BLE); break;
         case uinav::Screen::Files: {
             const bool deletable = (nav.fileSel >= 0 && nav.fileSel != nav.filesActive);
             h = uieng::filesHits(W_, H_, nav.fileConfirm, deletable, s.nFileRows);
@@ -384,7 +384,11 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
 
         switch (hit.action) {
             case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%(s.nNodes+1);break;
-            case uieng::Action::DetailPage: nav.detailPage^=1; break;
+            case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
+            case uieng::Action::ClientPage: {
+                const int per=uieng::detailClients(W_,H_).nRows;
+                nav.clientOffset=uiproj::pageOffset(s.clients.total,s.clients.offset+(hit.payload<0?-per:per),per);break;
+            }
             case uieng::Action::CodexFilter:       nav.filter = (uint8_t)hit.payload; nav.scroll = 0; break;
             case uieng::Action::OpenLocatedCodex:  nav.filter=ui::F_LOCATED; nav.scroll = 0; break;
             case uieng::Action::CodexPage: {
@@ -394,7 +398,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             }
             case uieng::Action::OpenDeviceDetail:
             case uieng::Action::OpenThreatDetail: {
-                nav.detailPage=0;
+                nav.detailPage=0;nav.clientOffset=0;
                 snprintf(nav.detailKey,sizeof nav.detailKey,"%s",hit.key?hit.key:"");
                 break;   // DETAIL fill resolves the address, never a shifting list index
             }

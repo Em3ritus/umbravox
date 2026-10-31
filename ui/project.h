@@ -239,6 +239,15 @@ inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c
     st.cipher(v.band==ui::BAND_BLE?"":ui::cipherSummary(v.auth));
     st.location(v.located,v.lat7,v.lon7,v.bestRssi);
     st.page(s.detailPage);
+    st.clients(s.clients);
+    for(int i=0;i<s.clients.count && i<ui::CLIENT_ROWS;i++){
+        const auto& row=s.clients.rows[i];char line[80],address[18],signal[12];macStr(address,row.mac);
+        if(row.hasRssi)snprintf(signal,sizeof signal,"%d dBm",row.rssi);else snprintf(signal,sizeof signal,"RSSI ?");
+        snprintf(line,sizeof line,"%s  %s",address,signal);st.clientLine(i,0,line);
+        snprintf(line,sizeof line,"%s / %luS AGO / %lu FR",row.evidence==3?"DATA+ASSOC":row.evidence==2?"ASSOC OK":"DATA",(unsigned long)row.ageS,(unsigned long)row.frames);st.clientLine(i,1,line);
+        // Locally administered is not proof of randomization or vendor identity.
+        snprintf(line,sizeof line,"CH%u %s",row.channel,(row.mac[0]&2)?"LOCAL MAC / VENDOR UNKNOWN":oui::lookup(row.mac));st.clientLine(i,2,line);
+    }
     char info[160];
     snprintf(info,sizeof info,"OUI %s",v.band==ui::BAND_BLE?"NOT INFERRED FOR BLE":oui::lookup(v.mac));st.fact(0,info);
     if(v.band==ui::BAND_BLE)snprintf(info,sizeof info,"OBSERVATIONS NOT COUNTED");

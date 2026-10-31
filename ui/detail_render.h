@@ -36,6 +36,8 @@ struct DetailScene {
     Rec      rec = Rec::Off;
     // the device (invalid -> the selection is gone; render "GONE")
     uint8_t page=0;
+    ui::ClientList clients;
+    const char* clientLines[ui::CLIENT_ROWS][3]={{"","",""},{"","",""}};
     const char* facts[7]={"","","","","","",""};
     bool     valid = false;
     bool located = false; int32_t lat7 = 0, lon7 = 0; int bestRssi = 0;
@@ -85,7 +87,8 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
 
     frame(s,L.more.x,L.more.y,44,44,pal::EDGE_LIT);
     centered(s,L.more.x+22,L.more.y+12,"MORE",1,pal::WITCH_HI);
-    centered(s,L.more.x+22,L.more.y+26,sc.page?"2/2":"1/2",1,pal::TEXT);
+    char pageLabel[8];snprintf(pageLabel,sizeof pageLabel,"%u/%u",unsigned(sc.page+1),sc.band==ui::BAND_BLE?2u:3u);
+    centered(s,L.more.x+22,L.more.y+26,pageLabel,1,pal::TEXT);
     const uint16_t bc = domr::bandColor(sc.band);
     // Full 32-byte printable SSID: 2x when it fits, otherwise 1x, never truncated.
     const uieng::Rect hd = L.header;
@@ -98,6 +101,32 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     char rb[40];snprintf(rb,sizeof rb,"%d dBm",sc.rssi);
     txt(s,hd.x+hd.w-4-Font::width(rb,1),hd.y+33,rb,1,pal::BRIGHT);
 
+    if(sc.page==2 && sc.band!=ui::BAND_BLE){
+        const auto c=uieng::detailClients(W,H);const auto& list=sc.clients;
+        txt(s,c.heading.x+3,c.heading.y+2,"OBSERVED CLIENTS / LAST 5 MIN",1,pal::DIM);
+        if(!list.available || !list.total){
+            txt(s,c.rows[0].x+3,c.rows[0].y+3,list.available?"NONE OBSERVED ON THIS RADIO":"CLIENT CAPTURE UNAVAILABLE",1,pal::TEXT);
+            txt(s,c.rows[0].x+3,c.rows[0].y+14,"Not a live association count.",1,pal::DIM);
+        }
+        for(int i=0;i<list.count && i<c.nRows;i++){
+            const auto r=c.rows[i];const int step=W>=400?16:10;
+            frame(s,r.x,r.y,r.w,r.h,pal::EDGE);
+            for(int j=0;j<3;j++){
+                char clipped[80];const int maxChars=std::min(79,(r.w-6)/6);
+                snprintf(clipped,sizeof clipped,"%.*s",maxChars,sc.clientLines[i][j]);
+                if(int(strlen(sc.clientLines[i][j]))>maxChars && maxChars>=3)memcpy(clipped+maxChars-3,"...",3);
+                const char* line=clipped;
+                txt(s,r.x+3,r.y+2+j*step,line,scanr::fitScale(line,r.w-6,W>=400?2:1),j==0?pal::BRIGHT:pal::TEXT);
+            }
+        }
+        frame(s,c.prev.x,c.prev.y,c.prev.w,c.prev.h,pal::EDGE_LIT);centered(s,c.prev.x+22,c.prev.y+15,"<",2,pal::TEXT);
+        frame(s,c.next.x,c.next.y,c.next.w,c.next.h,pal::EDGE_LIT);centered(s,c.next.x+22,c.next.y+15,">",2,pal::TEXT);
+        char summary[80];snprintf(summary,sizeof summary,"%u-%u / %u OBSERVED",list.total?list.offset+1:0,list.offset+list.count,list.total);
+        centered(s,c.page.x+c.page.w/2,c.page.y+6,summary,1,pal::TEXT);
+        snprintf(summary,sizeof summary,"QDROP %lu / EVICT %lu",(unsigned long)list.drops,(unsigned long)list.evictions);
+        centered(s,c.page.x+c.page.w/2,c.page.y+20,summary,scanr::fitScale(summary,c.page.w,1),(list.drops||list.evictions)?pal::AMBER:pal::DIM);
+        return;
+    }
     const auto st=L.stats;
     const int scale=W>=400?2:1, step=W>=400?18:10;
     const int x=st.x+4, y=st.y+3;

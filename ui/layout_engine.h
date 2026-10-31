@@ -137,7 +137,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -591,12 +591,24 @@ inline DetailLayout detail(int W, int H) {
     d.spark  = {c.body.x, c.body.y + c.body.h - sparkH, c.body.w, sparkH};
     return d;
 }
-inline HitList detailHits(int W, int H) {
+struct ClientLayout { Rect heading,rows[2],prev,page,next;int nRows=0; };
+inline ClientLayout detailClients(int W,int H){
+    const auto d=detail(W,H);ClientLayout c;
+    c.heading={d.stats.x,d.stats.y,d.stats.w,12};
+    const int bottom=d.body.y+d.body.h-44;
+    c.nRows=W>=400?2:1;
+    const int rowH=(bottom-c.heading.y-c.heading.h)/c.nRows;
+    for(int i=0;i<c.nRows;i++)c.rows[i]={d.stats.x,c.heading.y+12+i*rowH,d.stats.w,rowH};
+    c.prev={d.body.x,bottom,44,44};c.next={d.body.x+d.body.w-44,bottom,44,44};
+    c.page={d.body.x+48,bottom,d.body.w-96,44};return c;
+}
+inline HitList detailHits(int W, int H,bool clients=false) {
     const DetailLayout d = detail(W, H);
     HitList h;
     addChromeHits(h, W, H);
     h.add("back", d.back, Action::Back, 0, nullptr, "Return to the list, preserving scope and scroll");
-    h.add("detail-page",d.more,Action::DetailPage,0,nullptr,"Toggle signal/location and advertised AP information");
+    h.add("detail-page",d.more,Action::DetailPage,0,nullptr,"Cycle signal/location, advertised AP information and observed clients");
+    if(clients){const auto c=detailClients(W,H);h.add("client-prev",c.prev,Action::ClientPage,-1,nullptr,"Previous observed clients");h.add("client-next",c.next,Action::ClientPage,1,nullptr,"Next observed clients");}
     return h;
 }
 

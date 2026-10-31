@@ -41,6 +41,19 @@ int main(int argc,char** argv) {
   const int per=uieng::attuneRowsPerPage(h);uiproj::attune(settings,s,c,12/per,per);
   for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(strip,w,h,settings.scene());}
   png::write((std::string(argv[1])+"/pcap-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
+  s.detailPage=2;s.clients.available=true;s.clients.total=7;s.clients.count=uieng::detailClients(w,h).nRows;
+  for(int i=0;i<ui::CLIENT_ROWS;i++){
+    auto& row=s.clients.rows[i];row.mac[0]=i?0x22:0;row.mac[1]=0;row.mac[2]=0x0c;row.mac[3]=0x34;row.mac[4]=0x56;row.mac[5]=0x78+i;
+    row.hasRssi=!i;row.rssi=-51;row.frames=48+i;row.ageS=2+i;row.evidence=i?2:1;row.channel=6;
+  }
+  for(int state=0;state<3;state++){
+    if(state==1){s.clients.count=0;s.clients.total=0;}
+    if(state==2)s.clients.available=false;
+    detpres::DetailStore cs;uiproj::detail(cs,s,c);
+    for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};detr::composeStrip(strip,w,h,cs.scene());}
+    const char* tag=state==0?"clients":state==1?"clients-empty":"clients-unavailable";
+    png::write((std::string(argv[1])+"/"+tag+"-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
+  }
   s.set.bleBridge=1;s.nNodes=1;s.nodes[0].id[0]=0xf3;s.nodes[0].id[1]=0xc5;s.nodes[0].id[2]=0x5c;s.nodes[0].live=true;s.nodes[0].lossPct=2;
   auto& nd=s.nodes[0].diag;nd.known=true;nd.active=true;nd.profile=1;nd.dwellMs=150;nd.capacity=192;nd.peak=51;nd.depth=0;nd.drops=9;nd.sendFailed=2;
   s.localDiag.valid=true;s.localDiag.active=true;s.localDiag.dwellMs=150;s.localDiag.started=145;s.localDiag.completed=144;s.localDiag.bridgeMode=1;s.localDiag.streaming=true;s.localDiag.connected=true;s.localDiag.bridgeQueued=3;s.localDiag.txRetries=2;

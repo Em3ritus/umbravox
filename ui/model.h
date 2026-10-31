@@ -221,6 +221,16 @@ struct NodeDiagnostics {
             && sendFailed==b.sendFailed && reportRejected==b.reportRejected && scanFailed==b.scanFailed;
     }
 };
+// Local observed Wi-Fi station relationships; not an AP's live association table.
+constexpr int CLIENT_ROWS=2;
+struct ClientRow {
+    uint8_t mac[6]{}; int8_t rssi=0; bool hasRssi=false;
+    uint8_t evidence=0,channel=0; uint32_t ageS=0,frames=0;
+};
+struct ClientList {
+    bool available=false; uint16_t total=0,offset=0; uint8_t count=0;
+    uint32_t drops=0,evictions=0; ClientRow rows[CLIENT_ROWS]{};
+};
 struct NodeRow {
     NodeDiagnostics diag;
     bool     live = false;
@@ -336,6 +346,7 @@ struct State {
     uint8_t  setPage = 0;         // settings screen page, 0-based (SET_PAGES)
     Settings set;
     Detail   detail;
+    ClientList clients;
 
     // omens: the alert record
     Omen     omens[MAX_OMEN_ROWS];

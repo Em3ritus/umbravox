@@ -5,6 +5,7 @@
 #include "capture.h"
 #if defined(UMBRAVOX_SCAN_ENGINE)
 #include "pcap.h"
+#include "clients.h"
 #include <esp_timer.h>
 #endif
 #include <new>
@@ -31,6 +32,9 @@
 
 namespace cap {
 namespace {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+clients::Storage* clientStore=nullptr;
+#endif
 
 // How long we sit on each channel. Too short and beacons (typically every
 // 102ms) are missed; too long and the cycle takes forever. 220ms catches at
@@ -210,6 +214,14 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
 #if defined(UMBRAVOX_SCAN_ENGINE)
     if(pcap::active() && type!=WIFI_PKT_MISC && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=14)
         pcap::receive(p->payload,p->rx_ctrl.sig_len-4,esp_timer_get_time());
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore && (type==WIFI_PKT_MGMT || type==WIFI_PKT_DATA) && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=28){
+        clients::Event e;
+        if(clients::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,p->rx_ctrl.channel,millis(),e)){
+            portENTER_CRITICAL(&mux);clientStore->queue.push(e);portEXIT_CRITICAL(&mux);
+        }
+    }
 #endif
     if (type != WIFI_PKT_MGMT) return;
     if (p->rx_ctrl.sig_len < 24) return;
@@ -594,9 +606,27 @@ void begin() {
     const esp_err_t be = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
     Serial.printf("capture: band mode AUTO -> %s\n", esp_err_to_name(be));
 
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // Optional, PSRAM-only: never consume scarce internal heap as a fallback.
+    void* clientMemory=heap_caps_malloc(sizeof(clients::Storage),MALLOC_CAP_SPIRAM);
+    if(clientMemory)clientStore=new(clientMemory) clients::Storage();
+    Serial.printf("capture: clients %s (%u bytes PSRAM)\n",clientStore?"ready":"unavailable",clientStore?(unsigned)sizeof(clients::Storage):0);
+#endif
     wifi_promiscuous_filter_t filt = {};
     filt.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore)filt.filter_mask|=WIFI_PROMIS_FILTER_MASK_DATA;
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    const esp_err_t clientFilter=esp_wifi_set_promiscuous_filter(&filt);
+    if(clientFilter!=ESP_OK && clientStore){
+        Serial.printf("capture: client DATA filter failed: %s; unavailable\n",esp_err_to_name(clientFilter));
+        clientStore->~Storage();heap_caps_free(clientStore);clientStore=nullptr;
+        filt.filter_mask=WIFI_PROMIS_FILTER_MASK_MGMT;esp_wifi_set_promiscuous_filter(&filt);
+    }
+#else
     esp_wifi_set_promiscuous_filter(&filt);
+#endif
     esp_wifi_set_promiscuous_rx_cb(&onPacket);
     esp_wifi_set_promiscuous(true);
 
@@ -620,6 +650,12 @@ void begin() {
 }
 
 void tick(uint32_t nowMs) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore)for(int i=0;i<clients::DRAIN;i++){
+        clients::Event e;portENTER_CRITICAL(&mux);const bool got=clientStore->queue.pop(e);portEXIT_CRITICAL(&mux);
+        if(!got)break;clientStore->table.observe(e);
+    }
+#endif
     // One bounded chunk (<= CHUNK entries, ~1 ms with the lock held) of a
     // deferred evil-twin check, on the loop task, as the budget allows.
     portENTER_CRITICAL(&mux);
@@ -1054,6 +1090,9 @@ bool setRawCapture(bool on){
     if(raw==on)return true;
     wifi_promiscuous_filter_t f{};
     f.filter_mask=WIFI_PROMIS_FILTER_MASK_MGMT | (on?(WIFI_PROMIS_FILTER_MASK_DATA|WIFI_PROMIS_FILTER_MASK_CTRL):0);
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore)f.filter_mask|=WIFI_PROMIS_FILTER_MASK_DATA;
+#endif
     if(esp_wifi_set_promiscuous_filter(&f)!=ESP_OK)return false;
     raw=on;return true;
 }
@@ -1077,6 +1116,12 @@ void setBands(uint8_t mode) {
 }
 
 void reset() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore){
+        portENTER_CRITICAL(&mux);clientStore->queue.head=clientStore->queue.size=clientStore->queue.peak=0;clientStore->queue.drops=0;portEXIT_CRITICAL(&mux);
+        for(auto& row:clientStore->table.rows)row={};clientStore->table.evictions=0;
+    }
+#endif
     portENTER_CRITICAL(&mux);
     for (int i = 0; i < TABLE; i++) used_[i] = false;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
@@ -1134,3 +1179,25 @@ void twinStats(uint32_t& deferred, uint32_t& lost, uint32_t& stale) {
 }
 
 } // namespace cap
+
+namespace cap {
+void fillClients(ui::State& s,int offset,int limit,uint32_t now){
+    s.clients={};
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(!clientStore || !s.detail.valid || s.detail.band==ui::BAND_BLE)return;
+    auto& out=s.clients;out.available=true;limit=std::max(1,std::min(limit,ui::CLIENT_ROWS));
+    clients::Record rows[ui::CLIENT_ROWS];
+    out.total=clientStore->table.page(s.detail.mac,now,offset,limit,rows);out.offset=offset;
+    out.count=std::min(limit,int(out.total)-offset);
+    portENTER_CRITICAL(&mux);out.drops=clientStore->queue.drops;portEXIT_CRITICAL(&mux);
+    out.evictions=clientStore->table.evictions;
+    for(int i=0;i<out.count;i++){
+        const auto& r=rows[i];auto& v=out.rows[i];memcpy(v.mac,r.last.sta,6);
+        v.rssi=r.stationRssi;v.hasRssi=r.hasRssi && uint32_t(now-r.rssiAt)<60000;
+        v.channel=r.last.channel;v.ageS=(now-r.last.at)/1000;v.frames=r.frames;v.evidence=r.evidence;
+    }
+#else
+    (void)offset;(void)limit;(void)now;
+#endif
+}
+}

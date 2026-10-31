@@ -23,7 +23,7 @@ public:
 
     void begin(uint8_t theme, uint32_t now) {
         sc_ = DetailScene{}; sc_.theme = theme; sc_.now = now; sc_.hist = hist_; sc_.histN = 0;
-        cipher_[0]=0; for(auto& f:facts_)f[0]=0; wire_();
+        cipher_[0]=0; for(auto& f:facts_)f[0]=0;for(auto& row:clientLines_)for(auto& line:row)line[0]=0; wire_();
     }
     void gps(const detr::GnssFix& f) { sc_.gps = f; }
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
@@ -42,7 +42,9 @@ public:
         copy_(first_, 8, firstSeen); copy_(last_, 8, lastSeen);
         wire_();
     }
-    void page(uint8_t p){sc_.page=p&1;}
+    void page(uint8_t p){sc_.page=p%3;}
+    void clients(const ui::ClientList& v){sc_.clients=v;}
+    void clientLine(int row,int line,const char* text){if(row>=0 && row<ui::CLIENT_ROWS && line>=0 && line<3)copy_(clientLines_[row][line],80,text);}
     void fact(int i,const char* text){if(i>=0 && i<7)copy_(facts_[i],sizeof facts_[i],text);}
     void cipher(const char* value) { copy_(cipher_,sizeof cipher_,value); }
     void location(bool located,int32_t lat7,int32_t lon7,int best) {
@@ -62,11 +64,13 @@ public:
 
 private:
     void wire_() {
+        for(int i=0;i<ui::CLIENT_ROWS;i++)for(int j=0;j<3;j++)sc_.clientLines[i][j]=clientLines_[i][j];
         for(int i=0;i<7;i++)sc_.facts[i]=facts_[i];
         sc_.coordinates = coordinates_; sc_.name = name_; sc_.mac = mac_; sc_.bandChan = bc_; sc_.auth = auth_; sc_.cipher = cipher_;
         sc_.threat = threat_; sc_.why = why_; sc_.firstSeen = first_; sc_.lastSeen = last_;
     }
     static void copy_(char* d, int cap, const char* src){ int k=0; for(;src&&src[k]&&k<cap-1;k++) d[k]=src[k]; d[k]=0; }
+    char clientLines_[ui::CLIENT_ROWS][3][80]{};
     char facts_[7][96]{};
     char cipher_[24]={0};
     char coordinates_[40]={0};
@@ -95,6 +99,8 @@ inline void sceneDirty(const DetailScene& a, const DetailScene& b, bool& status,
         && !__builtin_strcmp(a.lastSeen?a.lastSeen:"", b.lastSeen?b.lastSeen:"");
     for(int i=0;same && i<7;i++)same=!__builtin_strcmp(a.facts[i],b.facts[i]);
     for (int i = 0; same && i < a.histN; i++) same = a.hist[i] == b.hist[i];
+    same=same && a.clients.available==b.clients.available && a.clients.total==b.clients.total && a.clients.offset==b.clients.offset && a.clients.count==b.clients.count && a.clients.drops==b.clients.drops && a.clients.evictions==b.clients.evictions;
+    for(int i=0;same && i<ui::CLIENT_ROWS;i++)for(int j=0;same && j<3;j++)same=!__builtin_strcmp(a.clientLines[i][j],b.clientLines[i][j]);
     body = !same;
 }
 
