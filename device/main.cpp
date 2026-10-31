@@ -756,7 +756,11 @@ void setup() {
 #if defined(WS_C5_35)
     pmu::begin();     // on the touch bus, which exio::begin() opened
     gpsi2c::begin();  // so is the LC76G
+#if !defined(UMBRAVOX_SCAN_ENGINE)
+    // Native UI owns the whole panel, including its battery badge. Do not
+    // paint the legacy USB/NO CELL strip before the first native frame.
     stripTick(millis());
+#endif
 #endif
     // Card first, then the session machine: it resumes into a fresh file when
     // the last run ended mid-session -- never the old one, which is left as
