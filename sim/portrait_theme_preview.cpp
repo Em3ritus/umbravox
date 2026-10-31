@@ -15,7 +15,7 @@ void circle(S& s,int x,int y,int r,uint16_t c){for(int a=0;a<1440;a++){double t=
 void button(S& s,uieng::Rect r,const char* label,bool active=false){box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,r.y+(r.h-7)/2,label,1,active?pal::BRIGHT:pal::DIM);if(active)box(s,r.x+8,r.y+r.h-4,r.w-16,2,pal::WITCH);}
 void chrome(S& s,const Layout& g,int active){box(s,0,s.y0,g.w,s.h,pal::VOID);box(s,0,0,g.w,88,pal::PANEL);
  for(int k=0;k<3;k++)box(s,15,13+k*5,15,1,pal::TEXT);centered(s,22,32,"MENU",1,pal::DIM);
- diamondInto(s,57,21,7,pal::WITCH);txt(s,72,15,"SLICK",2,pal::BRIGHT);
+ diamondInto(s,57,21,7,pal::WITCH);txt(s,76,15,"SLICK",2,pal::BRIGHT);
  int sd=g.w-70,bat=g.w-35;frame(s,sd,16,12,15,pal::GREEN);line(s,sd+3,19,sd+9,25,pal::GREEN);
  frame(s,bat,18,23,11,pal::TEXT);box(s,bat+24,21,2,5,pal::TEXT);box(s,bat+2,20,15,7,pal::GREEN);
  const char* labels[]={"GPS 3D","NODES 2","BRIDGE"};for(int i=0;i<3;i++)button(s,{i*g.w/3,44,(i+1)*g.w/3-i*g.w/3,44},labels[i],i==2);

@@ -293,7 +293,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     if(activeTab==3)box(s,10,39,24,2,pal::WITCH_HI);
     // Fixed title box: theme names fit without moving any controls.
     char title[64]; snprintf(title,sizeof title,"%s",pal::themeName(st.theme));
-    const int badge=pal::diamondBadge(st.theme)?18:0;
+    const int badge=pal::diamondBadge(st.theme)?22:0; // 15px diamond + 7px clear gap
     const int titleScale=fitScale(title,c.wordmark.w-8-badge,2);
     const int maxChars=(c.wordmark.w-8-badge)/(6*titleScale);
     if ((int)strlen(title)>maxChars && maxChars>=3) {
