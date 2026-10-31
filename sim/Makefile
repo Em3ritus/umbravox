@@ -444,3 +444,6 @@ test_probe_ui: test_probe_ui.cpp $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatur
 
 test_evidence_csv: test_evidence_csv.cpp ../device/evidence_csv.cpp ../device/evidence_csv.h ../device/clients.h ../device/probe_evidence.h ../device/csv.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_evidence_csv.cpp ../device/evidence_csv.cpp
+
+menu_layout_preview: menu_layout_preview.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
+	$(CXX) $(CXXFLAGS) -o $@ menu_layout_preview.cpp $(PAL_DEPS) ../ui/signatures.cpp -lm

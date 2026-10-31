@@ -143,3 +143,5 @@ sim/bridge_png
 /sim/test_probe_ui
 
 /sim/test_evidence_csv
+
+/sim/menu_layout_preview
