@@ -13,4 +13,10 @@ static const BundledMeta BUNDLED_META[] = {
 {4,0,100,64,false,&bundledEmblem2},
 {0,4,100,82,true,nullptr},
 {0,4,100,64,false,&bundledEmblem4},
+{0,4,100,82,false,nullptr},
+{0,4,100,82,false,nullptr},
+{0,4,100,82,false,nullptr},
+{0,4,100,82,false,nullptr},
+{0,4,100,82,false,nullptr},
+{0,4,100,82,false,nullptr},
 };

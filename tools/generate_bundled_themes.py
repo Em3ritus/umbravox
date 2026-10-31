@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-FOLDERS = ['slick', 'z-baph0mau5', 'z-em3ritus', 'z-ember', 'z-skuld']
+FOLDERS = ['slick', 'z-baph0mau5', 'z-em3ritus', 'z-ember', 'z-skuld', 'phosphor', 'glacier', 'obsidian', 'cyber', 'ultraviolet', 'dune']
 ROLES = 'void panel grid edge edgeLit dim text bright witch witchHi bone sweep sweepHi live liveHi magenta ice green amber red'.split()
 SWEEPS = 'radar gaze pulse star candle galaxy orbit starfall pulsar comet aurora'.split()
 RITES = 'ward supernova vortex comet lockon'.split()

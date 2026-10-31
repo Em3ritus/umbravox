@@ -161,13 +161,11 @@ int main() {
             check("aspect: two packs loaded", a == pal::TH_COUNT && b == pal::TH_COUNT+1 && pal::themeCount() == pal::TH_COUNT+2);
 
             st = Settings();
-            const uint8_t fwd[] = { 1,2,3,4,5,6,7,8,9,0 };
             bool order = true;
-            for (uint8_t want : fwd) { tapBtn(st, SET_PLUS_X, 0); if (st.theme != want) order = false; }
+            for (int i=1;i<=pal::themeCount();i++) { tapBtn(st, SET_PLUS_X, 0); if (st.theme != i%pal::themeCount()) order = false; }
             check("aspect: theme + visits built-ins, then packs, then wraps", order);
-            const uint8_t back[] = { 9,8,7,6,5,4,3,2,1,0 };
             order = true;
-            for (uint8_t want : back) { tapBtn(st, SET_MINUS_X, 0); if (st.theme != want) order = false; }
+            for (int want=pal::themeCount()-1;want>=0;want--) { tapBtn(st, SET_MINUS_X, 0); if (st.theme != want) order = false; }
             check("aspect: theme - visits packs, then built-ins, and wraps", order);
 
             st = Settings();

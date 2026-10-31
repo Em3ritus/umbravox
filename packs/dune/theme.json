@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "name": "DUNE",
+  "author": "slickrick773",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "radar",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#12100C",
+    "panel": "#242018",
+    "grid": "#353024",
+    "edge": "#5A503C",
+    "edgeLit": "#958465",
+    "dim": "#C0B399",
+    "text": "#E7DCC6",
+    "bright": "#FFF5DF",
+    "witch": "#D7B575",
+    "witchHi": "#F6D9A0",
+    "bone": "#DCCCAF",
+    "sweep": "#AA8E5A",
+    "sweepHi": "#F6D9A0",
+    "live": "#D7B575",
+    "liveHi": "#FFF5DF",
+    "magenta": "#D7B575",
+    "ice": "#92B5C7",
+    "green": "#A9C58E",
+    "amber": "#FFD16F",
+    "red": "#FF7F79"
+  }
+}

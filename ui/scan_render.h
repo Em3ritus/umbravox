@@ -351,11 +351,11 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     centered(s,22,28,"MENU",1,activeTab==3?pal::BRIGHT:pal::TEXT);
     if(activeTab==3)box(s,10,39,24,2,pal::WITCH_HI);
     // Fixed title box: theme names fit without moving any controls.
-    const char* name=pal::themeName(st.theme);
+    const char* name=pal::header(st.theme);
     const char* second=nullptr;
     const char* first=name;
     if (!strcmp(name,"CVLT OF BAPH0MAU5")){first="CVLT OF";second="BAPH0MAU5";}
-    if (!strcmp(name,"COSMIC MUFFIN")){first="COSMIC";second="MUFFIN";}
+    if (!strcmp(name,"COSMIC MUFFIN") || !strcmp(name,"COSMIC MVFFIN")){first="COSMIC";second="MUFFIN";}
     if(second){centered(s,c.wordmark.x+c.wordmark.w/2,11,first,1,pal::BRIGHT);centered(s,c.wordmark.x+c.wordmark.w/2,25,second,1,pal::BRIGHT);}
     else {
       const int badge=pal::diamondBadge(st.theme)?22:0;

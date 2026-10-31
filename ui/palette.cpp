@@ -253,7 +253,11 @@ uint8_t artScale(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artS
 bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 ? PACKS[s].diamond : (bundled(id) && bundled(id)->diamond);}
 
 Centrepiece centrepiece(uint8_t id) { return row(id).centre; }
-const char* header(uint8_t id)      { return row(id).header; }
+const char* header(uint8_t id) {
+    // General palettes retain the product identity, including older SD overrides.
+    if(id==TH_EMBER || (id>=TH_PHOSPHOR && id<TH_COUNT))return "UMBRAVOX";
+    return row(id).header;
+}
 
 const themepack::Emblem* emblem(uint8_t id) {
     if (id == TH_COSMICMUFFIN) return &ui::muffinEmblem();

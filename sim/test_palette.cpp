@@ -38,7 +38,7 @@ static themepack::Pack mkPack(const char* name, themepack::Dial dial, uint16_t s
 }
 
 int main() {
-    check("eight bundled themes", pal::TH_COUNT == 8);
+    check("fourteen bundled themes", pal::TH_COUNT == 14);
     {   // every name a built-in displays must be refused to a pack
         bool all = true;
         for (int i = 0; i < pal::TH_SLICK; i++) {

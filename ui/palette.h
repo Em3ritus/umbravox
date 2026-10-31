@@ -61,7 +61,7 @@ extern uint16_t RED;
 // The BUILT-IN themes. TH_COUNT is the number of built-ins, not of themes:
 // new SD themes follow them; matching approved packs override their stable IDs, and
 // themeCount() is the total.
-enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_SLICK, TH_BAPH_LOGO, TH_EM3RITUS, TH_EMBER, TH_SKULD, TH_COUNT };
+enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_SLICK, TH_BAPH_LOGO, TH_EM3RITUS, TH_EMBER, TH_SKULD, TH_PHOSPHOR, TH_GLACIER, TH_OBSIDIAN, TH_CYBER, TH_ULTRAVIOLET, TH_DUNE, TH_COUNT };
 
 // Point the palette at a theme. An out-of-range id (>= themeCount()) falls
 // back to UMBRAVOX rather than reading off the end of the table -- this is

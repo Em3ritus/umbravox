@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "name": "ULTRAVIOLET",
+  "author": "slickrick773",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "radar",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#0C0814",
+    "panel": "#1B1127",
+    "grid": "#2B1C3C",
+    "edge": "#4C3464",
+    "edgeLit": "#9363B8",
+    "dim": "#B6A4CA",
+    "text": "#E3D6F1",
+    "bright": "#FCF2FF",
+    "witch": "#BA7CFA",
+    "witchHi": "#E3BAFF",
+    "bone": "#D7C6E1",
+    "sweep": "#9653CD",
+    "sweepHi": "#E3BAFF",
+    "live": "#D99CFF",
+    "liveHi": "#FCF2FF",
+    "magenta": "#E58ADA",
+    "ice": "#A49AF4",
+    "green": "#82D5B2",
+    "amber": "#F0C36A",
+    "red": "#FF7989"
+  }
+}
