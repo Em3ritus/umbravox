@@ -17,6 +17,8 @@ int main(int argc,char** argv) {
   s.detail.valid=true;snprintf(s.detail.ssid,sizeof s.detail.ssid,"%s",names[0]);std::copy_n(s.sights[0].mac,6,s.detail.mac);
   s.detail.band=0;s.detail.chan=6;s.detail.rssi=-43;s.detail.auth=ui::AUTH_WPA2|ui::AUTH_WPA3|ui::AUTH_PSK|ui::AUTH_SAE|ui::AUTH_CCMP|ui::AUTH_ESS;
   s.detail.located=true;s.detail.lat7=418812345;s.detail.lon7=-876321234;s.detail.bestRssi=-38;s.detail.firstAgoS=243;s.detail.lastAgoS=2;
+  s.detail.mac[0]=0;s.detail.mac[1]=0;s.detail.mac[2]=0x0c;
+  s.detail.info.valid=true;s.detail.info.width=40;s.detail.info.phy=5;s.detail.info.beaconTu=100;s.detail.info.capabilities=0x431;s.detail.info.wps=true;s.detail.info.wpsLocked=0;snprintf(s.detail.info.country,3,"US");s.detail.observations=812;
   s.detail.histN=28;for(int i=0;i<28;++i)s.detail.hist[i]=-82+i+(i%5);
   s.set.labels=1;
   uiproj::Chrome c;c.gps={true,3,12,300};c.rec=scanr::Rec::Off;
@@ -32,6 +34,13 @@ int main(int argc,char** argv) {
    if(!png::write(file.c_str(),pixels.data(),w,h,1))return 1;
    for(int y=0;y<h;++y)std::copy_n(pixels.data()+y*w,w,sheet.data()+((tile/2)*h+y)*2*w+(tile%2)*w);
   }
+  s.detailPage=1;uiproj::detail(a,s,c);
+  for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};detr::composeStrip(strip,w,h,a.scene());}
+  png::write((std::string(argv[1])+"/detail-more-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
+  atnpres::AttuneStore settings;s.set.pcapEnabled=1;snprintf(s.pcapStatus,sizeof s.pcapStatus,"ON");s.pcapDrops=12;
+  const int per=uieng::attuneRowsPerPage(h);uiproj::attune(settings,s,c,12/per,per);
+  for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(strip,w,h,settings.scene());}
+  png::write((std::string(argv[1])+"/pcap-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
   const std::string file=std::string(argv[1])+"/review-"+std::to_string(w)+".png";
   if(!png::write(file.c_str(),sheet.data(),2*w,2*h,1))return 1;
  }

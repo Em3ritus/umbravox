@@ -9,6 +9,7 @@
 // Chrome inputs (gps/rec/hasCell/batt/now) are computed by the device loop and
 // passed in, exactly as the SCAN adapter already does.
 #pragma once
+#include "oui.h"
 #include "model.h"
 #include "scan_present.h"
 #include "domain_present.h"
@@ -166,6 +167,7 @@ inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char
                   else { char u[16]; if (v < 60) snprintf(u,sizeof u,"%uS",(unsigned)v); else snprintf(u,sizeof u,"%uM",(unsigned)(v/60));
                          snprintf(val,vn,"%s %s", u, st.idleMode==ui::IDLE_OFF?"OFF":st.idleMode==ui::IDLE_ANIM?"ANIM":"DIM"); }
                   break; }
+        case 12: snprintf(lbl,ln,"RAW PCAP");snprintf(val,vn,"%s",st.pcapEnabled?"ON":"OFF");break;
         case 11: snprintf(lbl,ln,"DISCOVERY TX"); snprintf(val,vn,"%s",st.activeDiscovery?"ACTIVE":"PASSIVE"); break;
         case 9: snprintf(lbl,ln,"NODE PROFILE"); snprintf(val,vn,"%s",st.meshProfile?"DISCOVERY":"TRACKING"); break;
         case 10: snprintf(lbl,ln,"NODE DWELL"); snprintf(val,vn,"%u MS",(unsigned)st.nodeDwellMs); break;
@@ -187,6 +189,7 @@ inline void attune(atnpres::AttuneStore& st, const ui::State& s, const Chrome& c
         const int knob = page * rowsPerPage + i;
         if (knob >= uieng::kAttuneKnobs) break;
         char lbl[16], val[32]; attuneKnob(s.set, knob, lbl, sizeof lbl, val, sizeof val);
+        if(knob==12)snprintf(val,sizeof val,"%s D%lu",s.pcapStatus,(unsigned long)s.pcapDrops);
         st.addRow(lbl, val);
     }
     st.paging(page, pages);
@@ -234,6 +237,19 @@ inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c
     st.device(true, v.ssid, mac, bc, v.band, v.rssi, auth, open, threat, v.conf, v.why, first, last);
     st.cipher(v.band==ui::BAND_BLE?"":ui::cipherSummary(v.auth));
     st.location(v.located,v.lat7,v.lon7,v.bestRssi);
+    st.page(s.detailPage);
+    char info[160];
+    snprintf(info,sizeof info,"OUI %s",v.band==ui::BAND_BLE?"NOT INFERRED FOR BLE":oui::lookup(v.mac));st.fact(0,info);
+    if(v.band==ui::BAND_BLE)snprintf(info,sizeof info,"OBSERVATIONS NOT COUNTED");
+    else snprintf(info,sizeof info,"OBSERVATIONS %lu",(unsigned long)v.observations);
+    st.fact(1,info);
+    const auto& a=v.info;
+    snprintf(info,sizeof info,"CAPS %s%s%s%s",!a.valid?"NOT REPORTED":!a.phy?"NO HT/VHT/HE":"",a.phy&1?"HT ":"",a.phy&2?"VHT ":"",a.phy&4?"HE":"");st.fact(2,info);
+    char width[16];if(a.width==8080)snprintf(width,sizeof width,"80+80");else if(a.width)snprintf(width,sizeof width,"%u",a.width);else snprintf(width,sizeof width,"?");
+    snprintf(info,sizeof info,"WIDTH %s MHz / COUNTRY %s",width,a.country[0]?a.country:"?");st.fact(3,info);
+    snprintf(info,sizeof info,"WPS %s",!a.valid?"NOT REPORTED":!a.wps?"NOT ADVERTISED":a.wpsLocked==1?"ADVERTISED / LOCKED":a.wpsLocked==0?"ADVERTISED / UNLOCKED":"ADVERTISED / LOCK ?");st.fact(4,info);
+    if(a.valid)snprintf(info,sizeof info,"BEACON %u TU / CAP 0x%04X",a.beaconTu,a.capabilities);else snprintf(info,sizeof info,"BEACON / CAP NOT REPORTED");st.fact(5,info);
+    snprintf(info,sizeof info,"FIRST %s AGO / LAST %s AGO",first,last);st.fact(6,info);
     if (v.histN) st.history(v.hist, v.histN);
 }
 

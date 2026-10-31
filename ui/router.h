@@ -82,6 +82,7 @@ public:
         Requests r;
         switch (h.action) {
             case A::Nav:            scr_ = screenFromNav(h.payload); break;
+            case A::DetailPage: break;
             case A::CodexPage: break; // caller owns the visible page size
             case A::CodexFilter:    codexScope_ = h.payload; scr_ = Screen::Codex; break;
             case A::OpenLocatedCodex: codexScope_ = kCodexLocated; scr_ = Screen::Codex; break;

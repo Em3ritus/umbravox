@@ -23,7 +23,7 @@ public:
 
     void begin(uint8_t theme, uint32_t now) {
         sc_ = DetailScene{}; sc_.theme = theme; sc_.now = now; sc_.hist = hist_; sc_.histN = 0;
-        cipher_[0]=0; wire_();
+        cipher_[0]=0; for(auto& f:facts_)f[0]=0; wire_();
     }
     void gps(const detr::GnssFix& f) { sc_.gps = f; }
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
@@ -42,6 +42,8 @@ public:
         copy_(first_, 8, firstSeen); copy_(last_, 8, lastSeen);
         wire_();
     }
+    void page(uint8_t p){sc_.page=p&1;}
+    void fact(int i,const char* text){if(i>=0 && i<7)copy_(facts_[i],sizeof facts_[i],text);}
     void cipher(const char* value) { copy_(cipher_,sizeof cipher_,value); }
     void location(bool located,int32_t lat7,int32_t lon7,int best) {
         sc_.located=located;sc_.lat7=lat7;sc_.lon7=lon7;sc_.bestRssi=best;
@@ -60,10 +62,12 @@ public:
 
 private:
     void wire_() {
+        for(int i=0;i<7;i++)sc_.facts[i]=facts_[i];
         sc_.coordinates = coordinates_; sc_.name = name_; sc_.mac = mac_; sc_.bandChan = bc_; sc_.auth = auth_; sc_.cipher = cipher_;
         sc_.threat = threat_; sc_.why = why_; sc_.firstSeen = first_; sc_.lastSeen = last_;
     }
     static void copy_(char* d, int cap, const char* src){ int k=0; for(;src&&src[k]&&k<cap-1;k++) d[k]=src[k]; d[k]=0; }
+    char facts_[7][96]{};
     char cipher_[24]={0};
     char coordinates_[40]={0};
     char name_[STRMAX]={0}, mac_[20]={0}, bc_[16]={0}, auth_[112]={0},
@@ -80,7 +84,7 @@ inline void sceneDirty(const DetailScene& a, const DetailScene& b, bool& status,
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
 
-    bool same = a.located==b.located && a.lat7==b.lat7 && a.lon7==b.lon7 && a.bestRssi==b.bestRssi
+    bool same = a.page==b.page && a.located==b.located && a.lat7==b.lat7 && a.lon7==b.lon7 && a.bestRssi==b.bestRssi
         && !__builtin_strcmp(a.cipher,b.cipher) && !__builtin_strcmp(a.auth,b.auth) && !__builtin_strcmp(a.bandChan,b.bandChan)
         && !__builtin_strcmp(a.why,b.why) && !__builtin_strcmp(a.firstSeen,b.firstSeen)
         && a.valid == b.valid && a.band == b.band && a.rssi == b.rssi && a.conf == b.conf
@@ -89,6 +93,7 @@ inline void sceneDirty(const DetailScene& a, const DetailScene& b, bool& status,
         && !__builtin_strcmp(a.mac?a.mac:"", b.mac?b.mac:"")
         && !__builtin_strcmp(a.threat?a.threat:"", b.threat?b.threat:"")
         && !__builtin_strcmp(a.lastSeen?a.lastSeen:"", b.lastSeen?b.lastSeen:"");
+    for(int i=0;same && i<7;i++)same=!__builtin_strcmp(a.facts[i],b.facts[i]);
     for (int i = 0; same && i < a.histN; i++) same = a.hist[i] == b.hist[i];
     body = !same;
 }

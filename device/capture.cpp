@@ -3,6 +3,10 @@
 #include "sight_order.h"
 #include "radio_policy.h"
 #include "capture.h"
+#if defined(UMBRAVOX_SCAN_ENGINE)
+#include "pcap.h"
+#include <esp_timer.h>
+#endif
 #include <new>
 #include <Arduino.h>
 #include <WiFi.h>
@@ -60,6 +64,8 @@ static_assert(applog::ROLL_HARD_APS > applog::ROLLOVER_APS && applog::ROLL_HARD_
 constexpr int RECENT = ui::MAX_CONTACTS;
 
 struct Node {
+    ui::ApInfo info;
+    uint32_t observations;
     uint8_t  mac[6];
     char     ssid[ui::AP_SSID_MAX];
     int8_t   rssi;
@@ -177,7 +183,7 @@ portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 int chanAt(int i);
 void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             const char* name, const ui::Hit& sig, uint32_t ageMs, uint8_t src,
-            uint16_t auth);
+            uint16_t auth, const ui::ApInfo* info=nullptr);
 
 // Keyed per boot (dedup.h): a cluster of BSSIDs precomputed to share one
 // probe chain does not collide here. Drawn in begin(), once the radio is up.
@@ -200,8 +206,12 @@ uint8_t rssiToDist(int8_t rssi) {
 
 // Runs on the WiFi task. Keep it short: no printf, no allocation, no blocking.
 void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_MGMT) return;
     const wifi_promiscuous_pkt_t* p = (const wifi_promiscuous_pkt_t*)buf;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(pcap::active() && type!=WIFI_PKT_MISC && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=14)
+        pcap::receive(p->payload,p->rx_ctrl.sig_len-4,esp_timer_get_time());
+#endif
+    if (type != WIFI_PKT_MGMT) return;
     if (p->rx_ctrl.sig_len < 24) return;
 
     const uint8_t* f = p->payload;
@@ -306,7 +316,9 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     portENTER_CRITICAL(&mux);
     nLocal++;                       // heard on our own radio, not relayed
     portEXIT_CRITICAL(&mux);
-    insert(bssid, rssi, h, band, nameBuf, sig, 0, 0, auth);
+    // sig_len includes four FCS bytes, which are not information elements.
+    const auto info=ui::parseApInfo(f+24,p->rx_ctrl.sig_len>=40?p->rx_ctrl.sig_len-28:0);
+    insert(bssid, rssi, h, band, nameBuf, sig, 0, 0, auth,&info);
 }
 
 // The evil-twin rule, shared by the inline pass and the deferred one: entry
@@ -353,7 +365,7 @@ void flagTwin(int slot, const char* name) {
 // came off our own radio or arrived over the mesh from a node.
 void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             const char* name, const ui::Hit& sig, uint32_t ageMs, uint8_t src,
-            uint16_t auth) {
+            uint16_t auth, const ui::ApInfo* info) {
     const bool is5 = band == ui::BAND_5;
     const int h = chanIdx;
 
@@ -400,6 +412,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         table_[i].bestRssi = -127;
         table_[i].finder = src;
         table_[i].auth = 0;
+        table_[i].info=ui::ApInfo{};table_[i].observations=0;
         if (src < MAX_SRC) foundBy_[src]++;
         order_[nOrder++] = (uint16_t)i;
         nUsed++;
@@ -407,6 +420,8 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         dedup::noteInsert(maxProbe_, hit);
         if (dedup::longProbe(hit)) nLongProbes++;
     }
+    if(table_[slot].observations!=UINT32_MAX)++table_[slot].observations;
+    if(info && info->valid)table_[slot].info=*info;
     table_[slot].rssi   = rssi;
     table_[slot].chan   = (uint8_t)chanAt(h);
     table_[slot].lastMs = millis();
@@ -724,7 +739,7 @@ static void fillDetailSlot(ui::State& s, int slot, uint32_t nowMs) {
         for (int k = 0; k < 6; k++) d.mac[k] = nd.mac[k];
         d.rssi = nd.rssi;  d.band = nd.band;  d.chan = nd.chan;
         d.threat = nd.threat; d.conf = nd.conf;
-        d.auth = nd.auth;
+        d.auth = nd.auth; d.info=nd.info;d.observations=nd.observations;
         for (int k = 0; k < 19 && nd.why && nd.why[k]; k++) d.why[k] = nd.why[k];
         d.firstAgoS = (nowMs - nd.firstMs) / 1000;
         d.lastAgoS  = (nowMs - nd.lastMs) / 1000;
@@ -1034,6 +1049,14 @@ uint16_t locatedCount() {
     return (uint16_t)(c>65535?65535:c);
 }
 
+bool setRawCapture(bool on){
+    static bool raw=false;
+    if(raw==on)return true;
+    wifi_promiscuous_filter_t f{};
+    f.filter_mask=WIFI_PROMIS_FILTER_MASK_MGMT | (on?(WIFI_PROMIS_FILTER_MASK_DATA|WIFI_PROMIS_FILTER_MASK_CTRL):0);
+    if(esp_wifi_set_promiscuous_filter(&f)!=ESP_OK)return false;
+    raw=on;return true;
+}
 void setDwell(uint16_t ms)  { dwellMs = ms < 20 ? 20 : ms; }
 
 void setCamp(int chan) {

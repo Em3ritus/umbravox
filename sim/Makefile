@@ -4,7 +4,7 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
-SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp
+SRC = ../ui/oui.cpp main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -320,8 +320,8 @@ test_router: test_router.cpp ../ui/router.h ../ui/layout_engine.h
 
 # The State->Store projections. Needs the theme model + the signature/auth name
 # tables (ui/signatures.cpp, ui/wifi_auth.cpp) on top of PAL_DEPS.
-test_project: test_project.cpp ../ui/project.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp
-	$(CXX) $(CXXFLAGS) -o $@ test_project.cpp $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+test_project: ../ui/oui_data.inc test_project.cpp ../ui/project.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_project.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
 
 test_sight_order: test_sight_order.cpp ../device/sight_order.h
 	$(CXX) $(CXXFLAGS) -o $@ test_sight_order.cpp
@@ -335,7 +335,7 @@ test_header: test_header.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
 test_poi: test_poi.cpp ../device/poi.cpp ../device/poi.h $(HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_poi.cpp ../device/poi.cpp $(PAL_DEPS) -lm
 
-TESTS = test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
+TESTS = test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -411,8 +411,14 @@ bench_scan: bench_scan.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
 bridge_png: bridge_png.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
 	$(CXX) $(CXXFLAGS) -o $@ bridge_png.cpp $(PAL_DEPS) ../ui/signatures.cpp -lm
 
-ui_review_png: ui_review_png.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp
-	$(CXX) $(CXXFLAGS) -o $@ ui_review_png.cpp $(PAL_DEPS) ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+ui_review_png: ../ui/oui_data.inc ui_review_png.cpp $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -o $@ ui_review_png.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
 
 test_active_discovery: test_active_discovery.cpp ../device/active_discovery.cpp ../device/active_discovery.h ../device/mesh_timing.h ../device/chanplan.h
 	$(CXX) $(CXXFLAGS) -Idiscovery_stubs -I../ui -o $@ test_active_discovery.cpp ../device/active_discovery.cpp
+
+test_ap_info: test_ap_info.cpp ../ui/ap_info.h ../ui/oui.cpp ../ui/oui_data.inc
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_ap_info.cpp ../ui/oui.cpp
+
+test_pcap: test_pcap.cpp ../device/pcap.cpp ../device/pcap.h
+	$(CXX) $(CXXFLAGS) -pthread -fsanitize=address,undefined -o $@ test_pcap.cpp ../device/pcap.cpp

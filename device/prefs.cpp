@@ -35,9 +35,9 @@ void write(const ui::Settings& s) {
     nvs.putUChar("idle",    s.idleIdx);
     nvs.putUChar("idlemode", s.idleMode);
     nvs.putUChar("autolog", s.autoLog);
-    // Every field settingsEqual compares must also be stored here and read in
-    // load(), or the save timer never settles and hammers flash. Anyone who
-    // takes a spare byte for a new setting must add it to both.
+    // Durable fields are written and read individually. pcapEnabled is deliberately
+    // session-only: stored/lastSeen below still track it so the timer settles,
+    // but recording is never resumed by loading preferences.
     nvs.putUChar("theme",   s.theme);
     // A pack is saved by NAME as well: its id is only its slot in this boot's
     // load order, which adding or removing another pack shifts. Cleared (an

@@ -21,6 +21,7 @@ constexpr uint8_t F_LOCATED = 3; // native engine: located Wi-Fi observations
 struct Nav {
     uint8_t screen = SCR_SCAN;
     uint8_t filter = F_WIFI;
+    uint8_t detailPage = 0;
     int16_t scroll = 0;
     int16_t maxScroll = 0;      // set by the caller from the row count
 

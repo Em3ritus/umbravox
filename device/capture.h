@@ -83,6 +83,7 @@ void rollover();
 // is what will not upload to WiGLE.
 uint16_t locatedCount();
 
+bool setRawCapture(bool on);
 void setDwell(uint16_t ms);
 void setActive(bool on);
 // Hold one channel instead of sweeping. 0 resumes the sweep.

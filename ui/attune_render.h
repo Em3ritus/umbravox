@@ -15,6 +15,7 @@
 #include "canvas.h"
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace atnr {
 
@@ -58,7 +59,9 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
         txt(s, r.x + 6, r.y + 8, sc.rows[i].label ? sc.rows[i].label : "", 1, pal::DIM);
         const char* v = sc.rows[i].value ? sc.rows[i].value : "";
         const int vmax = L.minus[i].x - (r.x + 6) - 6;
-        txt(s, L.minus[i].x - 6 - Font::width(v, 1), r.y + 8, v, 1, pal::BRIGHT);
+        if(sc.rows[i].label && !strcmp(sc.rows[i].label,"RAW PCAP"))
+            txt(s,r.x+6,r.y+25,v,1,pal::BRIGHT);
+        else txt(s, L.minus[i].x - 6 - Font::width(v, 1), r.y + 8, v, 1, pal::BRIGHT);
         (void)vmax;
         stepBtn(s, L.minus[i], "-");
         stepBtn(s, L.plus[i],  "+");

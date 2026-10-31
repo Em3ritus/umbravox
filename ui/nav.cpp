@@ -390,6 +390,7 @@ void applyKnobStep(Settings& st, int knob, int dir) {
         case 8: st.bleBridge = st.bleBridge ? 0 : st.bridgeApp; break;
         case 9: st.bridgeApp = st.bridgeApp==1 ? 2 : 1;
                 if(st.bleBridge)st.bleBridge=st.bridgeApp; break;
+        case 13: st.pcapEnabled=st.pcapEnabled?0:1;break;
         case 12: st.activeDiscovery = st.activeDiscovery ? 0 : 1; break;
         case 10: st.meshProfile = st.meshProfile ? 0 : 1; break;
         case 11: st.nodeDwellMs = (uint16_t)(dir<0?(st.nodeDwellMs<=110?100:st.nodeDwellMs-10):(st.nodeDwellMs>=590?600:st.nodeDwellMs+10)); break;
@@ -406,6 +407,7 @@ void clampSettings(Settings& s) {
     if (s.bright > 100) s.bright = 100;
     if (s.dwellMs < 100) s.dwellMs = 100;
     if (s.dwellMs > 600) s.dwellMs = 600;
+    if(s.pcapEnabled>1)s.pcapEnabled=0;
     if(s.activeDiscovery>1)s.activeDiscovery=0;
     if(s.meshProfile>1)s.meshProfile=0;
     if(s.nodeDwellMs<100 || s.nodeDwellMs>600)s.nodeDwellMs=220;
@@ -436,7 +438,7 @@ void setPortraitAllowed(bool ok) { g_portraitOk = ok; }
 bool portraitAllowed() { return g_portraitOk; }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
-    return a.activeDiscovery==b.activeDiscovery && a.nodeDwellMs==b.nodeDwellMs && a.meshProfile==b.meshProfile && a.alertMin == b.alertMin && a.bright  == b.bright  &&
+    return a.pcapEnabled==b.pcapEnabled && a.activeDiscovery==b.activeDiscovery && a.nodeDwellMs==b.nodeDwellMs && a.meshProfile==b.meshProfile && a.alertMin == b.alertMin && a.bright  == b.bright  &&
            a.bridgeApp == b.bridgeApp && a.bleBridge == b.bleBridge && a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&

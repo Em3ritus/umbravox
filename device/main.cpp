@@ -4,6 +4,7 @@ static int discoveryRequested=-1;
 static int dwellRequested=-1;
 static unsigned consoleDwell=220;
 #include "poi.h"
+#include "pcap.h"
 #include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
@@ -1014,6 +1015,16 @@ bool pollConsole() {
             if (a == sdcmd::HANDLED) { Serial.println(reply); continue; }
         }
         {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+            if(!strcmp(line,"PCAP ON")){
+                if(pcap::start()){
+                    if(!cap::setRawCapture(true)){pcap::stop();Serial.println("ERR PCAP radio filter");}
+                }
+                Serial.printf("pcap: %s %s (uptime timestamps)\n",pcap::status(),pcap::fileName());
+            }else if(!strcmp(line,"PCAP OFF")) {pcap::stop();cap::setRawCapture(false);Serial.println("pcap: draining queued frames");}
+            else if(!strcmp(line,"PCAP")){Serial.printf("pcap: %s file=%s written=%lu dropped=%lu\n",pcap::status(),pcap::fileName(),(unsigned long)pcap::written(),(unsigned long)pcap::dropped());}
+            else
+#endif
             if (!strcmp(line,"DWELL")) {
                 Serial.printf("dwell: %u ms\n",consoleDwell);
             } else if (!strncmp(line,"DWELL ",6)) {
@@ -1324,6 +1335,8 @@ void loop() {
     { const uint32_t _s = micros(); logging::tick(millis(), ui::Gnss::utcEpoch(millis())); bootStall("logging tick", _s); }
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
     poi::service(millis());
+    {const uint32_t start=micros();pcap::service();bootStall("pcap service",start);}
+    cap::setRawCapture(pcap::active());
 #endif
 
     // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
@@ -1637,6 +1650,13 @@ void loop() {
     if(dwellRequested>=0){set.dwellMs=dwellRequested;dwellRequested=-1;}
     consoleDwell=set.dwellMs;
     static ui::Settings applied;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(set.pcapEnabled!=applied.pcapEnabled){
+        if(set.pcapEnabled){if(pcap::start() && !cap::setRawCapture(true))pcap::stop();}
+        else {pcap::stop();cap::setRawCapture(false);}
+    }
+    set.pcapEnabled=pcap::active()?1:0;
+#endif
     if(set.activeDiscovery!=applied.activeDiscovery){cap::setActive(set.activeDiscovery);blescan::setActive(set.activeDiscovery);}
     meshcore::setTiming(set.meshProfile,set.nodeDwellMs,set.activeDiscovery);
     if (set.dwellMs != applied.dwellMs) cap::setDwell(set.dwellMs);
@@ -1795,6 +1815,10 @@ void loop() {
     s.set    = set;
     s.screen = nav.screen;
     s.filter = nav.filter;
+    s.detailPage=nav.detailPage;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    snprintf(s.pcapStatus,sizeof s.pcapStatus,"%s",pcap::status());s.pcapDrops=pcap::dropped();
+#endif
     s.scroll = nav.scroll;
     s.setPage = nav.setPage;
     if (nav.screen == ui::SCR_CODEX) {

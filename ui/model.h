@@ -6,6 +6,7 @@
 // reason the UI can be developed on a PC: the seam is a plain struct.
 #pragma once
 #include <stdint.h>
+#include "ap_info.h"
 
 namespace ui {
 
@@ -108,6 +109,7 @@ struct Settings {
     // clampSettings pulls unknown
     // values -- and PORTRAIT on a board that cannot show it -- to LANDSCAPE.
     uint8_t  orient = 0;      // Orientation
+    uint16_t pcapEnabled = 0; // session-only, never restored at boot
     uint16_t activeDiscovery = 0; // opt-in Wi-Fi probe / BLE scan requests
     uint16_t nodeDwellMs = 220; // separate from the handheld dwell
     uint16_t meshProfile = 0;   // 0 Tracking (existing policy), 1 Discovery
@@ -176,6 +178,8 @@ constexpr int HIST_N = 28;
 
 // Everything known about one device, for the detail screen.
 struct Detail {
+    ApInfo info;
+    uint32_t observations=0;
     bool     valid = false;
     bool     located = false;
     int32_t  lat7 = 0, lon7 = 0;
@@ -298,6 +302,9 @@ struct State {
     Sighting sights[MAX_SIGHTS];
     uint8_t  nSights = 0;
     uint16_t totalSights = 0;     // everything known, for the scrollbar
+    char pcapStatus[24] = "OFF";
+    uint32_t pcapDrops=0;
+    uint8_t detailPage = 0;
     int16_t  scroll = 0;          // first row shown
     uint8_t  screen = 0;          // which screen is up; see nav.h
     uint8_t  filter = 0;          // which band the codex is showing

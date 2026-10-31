@@ -137,7 +137,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -463,7 +463,7 @@ inline HitList echoesHits(int W, int H) { return logHits(W, H); }
 // floor((bodyH-44)/44) knobs fit per page (3 @480, 2 @320) above a 44px footer
 // (PAGE n/m + CLEAR). The nine knobs paginate; the page COUNT therefore adapts
 // to the profile. No geometry.json oracle; regions asserted vs these rules.
-static constexpr int kAttuneKnobs = 12;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT BRIDGE
+static constexpr int kAttuneKnobs = 13;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT BRIDGE
 inline int attuneRowsPerPage(int H) {
     const Chrome c = chrome(320, H);     // body height is width-independent
     int n = (c.body.h - 44) / 44; if (n < 1) n = 1; if (n > 4) n = 4;
@@ -568,13 +568,13 @@ inline HitList aspectHits(int W, int H, bool alertLive) {
 
 // --- DETAIL: one device -- identity, signature, RSSI history, first/last ------
 // Reached from a CODEX/DOMAIN row or a threat alert (OpenDeviceDetail /
-// OpenThreatDetail). The only control is BACK (a 44px target), which the router
+// OpenThreatDetail). MORE switches facts pages; BACK (44px) is what the router
 // turns into a return that preserves the caller's list scope + scroll. If the
 // device vanishes the scene reads invalid and the body shows a graceful "GONE".
 // No geometry.json oracle; regions asserted vs these rules.
 struct DetailLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
-    Rect back, header, stats, spark;
+    Rect back, more, header, stats, spark;
 };
 inline DetailLayout detail(int W, int H) {
     const Chrome c = chrome(W, H);
@@ -583,8 +583,9 @@ inline DetailLayout detail(int W, int H) {
     for (int i = 0; i < 4; i++) { d.statusCells[i] = c.statusCells[i]; d.navCells[i] = c.navCells[i]; }
     d.back   = {c.body.x, c.body.y, 44, 44};
     d.header = {c.body.x + 48, c.body.y, c.body.w - 48, 44};
+    d.more = {c.body.x,c.body.y+44,44,44};
     const int sparkH = W>=400 ? 44 : 16;
-    d.stats  = {c.body.x, c.body.y + 44, c.body.w, c.body.h - 44 - sparkH};
+    d.stats  = {c.body.x+48, c.body.y + 44, c.body.w-48, c.body.h - 44 - sparkH};
     d.spark  = {c.body.x, c.body.y + c.body.h - sparkH, c.body.w, sparkH};
     return d;
 }
@@ -593,6 +594,7 @@ inline HitList detailHits(int W, int H) {
     HitList h;
     addChromeHits(h, W, H);
     h.add("back", d.back, Action::Back, 0, nullptr, "Return to the list, preserving scope and scroll");
+    h.add("detail-page",d.more,Action::DetailPage,0,nullptr,"Toggle signal/location and advertised AP information");
     return h;
 }
 

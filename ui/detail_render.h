@@ -15,6 +15,7 @@
 #include "font5x7.h"
 #include "canvas.h"
 #include "model.h"           // ui::HIST_N (chart sample cap)
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -34,6 +35,8 @@ struct DetailScene {
     bool bridgeOn = false;
     Rec      rec = Rec::Off;
     // the device (invalid -> the selection is gone; render "GONE")
+    uint8_t page=0;
+    const char* facts[7]={"","","","","","",""};
     bool     valid = false;
     bool located = false; int32_t lat7 = 0, lon7 = 0; int bestRssi = 0;
     const char* coordinates = "";
@@ -80,6 +83,9 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
         return;
     }
 
+    frame(s,L.more.x,L.more.y,44,44,pal::EDGE_LIT);
+    centered(s,L.more.x+22,L.more.y+12,"MORE",1,pal::WITCH_HI);
+    centered(s,L.more.x+22,L.more.y+26,sc.page?"2/2":"1/2",1,pal::TEXT);
     const uint16_t bc = domr::bandColor(sc.band);
     // Full 32-byte printable SSID: 2x when it fits, otherwise 1x, never truncated.
     const uieng::Rect hd = L.header;
@@ -95,6 +101,15 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     const auto st=L.stats;
     const int scale=W>=400?2:1, step=W>=400?18:10;
     const int x=st.x+4, y=st.y+3;
+    if(sc.page){
+        for(int row=0;row<7;row++){
+            const char* value=sc.facts[row]?sc.facts[row]:"";
+            char line[80];const int limit=std::max(0,std::min(79,(st.w-8)/6));
+            snprintf(line,sizeof line,"%.*s",limit,value);
+            if((int)strlen(value)>limit && limit>=3){line[limit-3]=line[limit-2]=line[limit-1]='.';}
+            txt(s,x,y+row*step,line,scanr::fitScale(line,st.w-8,scale),row==0?pal::BRIGHT:pal::TEXT);
+        }
+    }else{
     // Separate observed authentication and pairwise cipher capabilities.
     // Fit each complete line independently; do not clip a mixed-mode network.
     char sec[128];
@@ -107,20 +122,21 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     char info[96];
     if(sc.located) {
         snprintf(info,sizeof info,"HEARD HERE / BEST %d dBm",sc.bestRssi);
-        txt(s,x,y+2*step,info,scale,pal::DIM);
-        txt(s,x,y+3*step,sc.coordinates,scale,pal::TEXT);
+        txt(s,x,y+2*step,info,scanr::fitScale(info,st.w-8,scale),pal::DIM);
+        txt(s,x,y+3*step,sc.coordinates,scanr::fitScale(sc.coordinates,st.w-8,scale),pal::TEXT);
     } else {
         txt(s,x,y+2*step,"NO RECORDED LOCATION",scale,pal::DIM);
-        txt(s,x,y+3*step,"A GPS fix is needed when observed.",scale,pal::DIM);
+        txt(s,x,y+3*step,"GPS fix needed when observed.",scanr::fitScale("GPS fix needed when observed.",st.w-8,scale),pal::DIM);
     }
     snprintf(info,sizeof info,"FIRST %s AGO / LAST %s AGO",sc.firstSeen?sc.firstSeen:"?",sc.lastSeen?sc.lastSeen:"?");
-    txt(s,x,y+4*step,info,scale,pal::TEXT);
+    txt(s,x,y+4*step,info,scanr::fitScale(info,st.w-8,scale),pal::TEXT);
     if(sc.threat && sc.threat[0]) {
         snprintf(info,sizeof info,"%s / %s",sc.threat,sc.conf>=2?"HIGH":sc.conf==1?"MED":"LOW");
-        txt(s,x,y+5*step,info,scale,confInk(sc.conf));
-        txt(s,x,y+6*step,sc.why?sc.why:"",scale,pal::DIM);
+        txt(s,x,y+5*step,info,scanr::fitScale(info,st.w-8,scale),confInk(sc.conf));
+        txt(s,x,y+6*step,sc.why?sc.why:"",scanr::fitScale(sc.why?sc.why:"",st.w-8,scale),pal::DIM);
     } else txt(s,x,y+5*step,"NO SIGNATURE MATCH",scale,pal::DIM);
 
+    }
     // RSSI history chart: filled bars, reference lines at -50 and -75
     const uieng::Rect ch = L.spark;
     box(s, ch.x, ch.y, ch.w, ch.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2));

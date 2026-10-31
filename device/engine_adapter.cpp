@@ -383,6 +383,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         nav.screen = fromNav(router_.screen());
 
         switch (hit.action) {
+            case uieng::Action::DetailPage: nav.detailPage^=1; break;
             case uieng::Action::CodexFilter:       nav.filter = (uint8_t)hit.payload; nav.scroll = 0; break;
             case uieng::Action::OpenLocatedCodex:  nav.filter=ui::F_LOCATED; nav.scroll = 0; break;
             case uieng::Action::CodexPage: {
@@ -392,6 +393,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             }
             case uieng::Action::OpenDeviceDetail:
             case uieng::Action::OpenThreatDetail: {
+                nav.detailPage=0;
                 snprintf(nav.detailKey,sizeof nav.detailKey,"%s",hit.key?hit.key:"");
                 break;   // DETAIL fill resolves the address, never a shifting list index
             }

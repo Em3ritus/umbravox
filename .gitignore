@@ -126,3 +126,6 @@ sim/bridge_png
 /sim/test_poi
 
 /sim/test_active_discovery
+
+/sim/test_ap_info
+/sim/test_pcap
