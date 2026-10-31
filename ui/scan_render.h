@@ -10,6 +10,7 @@
 #include "storage_status.h"
 #include "poi_state.h"
 #include "radar_geometry.h"
+#include "crew_art.h"
 #include "layout_engine.h"
 #include "palette.h"
 #include "themepack.h"
@@ -225,6 +226,18 @@ inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r) 
             if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
             pt(s,x,y, e.pal[e.px[sy*e.w+sx]]); } }
 }
+// Precomputed artwork: clipped spans, no heap use and no trigonometry.
+inline void crewArt(S& s,int cx,int cy,int radius,bool cvlt){
+    const bool small=radius<60;
+    const crewart::Span* runs=nullptr;const uint16_t* colors=nullptr;size_t count=0;
+    if(cvlt && small){runs=crewart::cvlt39;colors=crewart::cvlt39Colors;count=sizeof crewart::cvlt39/sizeof(*runs);}
+    else if(cvlt){runs=crewart::cvlt85;colors=crewart::cvlt85Colors;count=sizeof crewart::cvlt85/sizeof(*runs);}
+    else if(small){runs=crewart::mascot39;colors=crewart::mascot39Colors;count=sizeof crewart::mascot39/sizeof(*runs);}
+    else {runs=crewart::mascot85;colors=crewart::mascot85Colors;count=sizeof crewart::mascot85/sizeof(*runs);}
+    const int base=small?39:85;
+    for(size_t i=0;i<count;i++){const auto& a=runs[i];int y=cy+a.y*radius/base;if(y<s.y0)continue;if(y>=s.y0+s.h)break;
+      int x=cx+a.x*radius/base;int end=cx+(a.x+a.n)*radius/base;box(s,x,y,std::max(1,end-x),1,colors[a.c]);}
+}
 // Honor the theme's artwork, same policy as motif::drawMotif: a bitmap emblem
 // when the theme carries one, else the {7/3} heptagram.
 inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
@@ -246,16 +259,18 @@ inline HeroSub heroSub(uieng::Rect hr) {
     const int sw=std::min(168,hr.w-8);
     h.spectrum = {hr.x+(hr.w-sw)/2, hr.y+hr.h-specH, sw, specH};
     h.barBase  = hr.y+hr.h-11;
-    h.barMax   = 32;                          // 32px amplitude; every channel retained
+    h.barMax   = 16;                          // 16px amplitude; every channel retained
     return h;
 }
 
 // Shared geometry for drawing and narrow animation invalidation.
 inline uieng::Rect radarBounds(int W, int H) {
-    const auto f = heroSub(uieng::scan(W,H).hero).field;
+    const auto hr=uieng::scan(W,H).hero;
+    const auto hs=heroSub(hr);
+    const auto f=hs.field;
     const int cx = W>=400 ? 311 : f.x+f.w/2;
     const int cy = W>=400 ? 137 : f.y+f.h/2;
-    const int r = W>=400 ? 85 : std::min(f.w,f.h)/2-4;
+    const int r = W>=400 ? 85 : std::min({f.w/2-4,cy-(hr.y+22),hs.barBase-hs.barMax-cy-4});
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
 inline uint32_t sweepPhase(uint32_t now) { return (now / 50u) % 72u; } // 20 Hz, 3.6 s turn
@@ -292,16 +307,23 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     centered(s,22,28,"MENU",1,activeTab==3?pal::BRIGHT:pal::TEXT);
     if(activeTab==3)box(s,10,39,24,2,pal::WITCH_HI);
     // Fixed title box: theme names fit without moving any controls.
-    char title[64]; snprintf(title,sizeof title,"%s",pal::themeName(st.theme));
-    const int badge=pal::diamondBadge(st.theme)?22:0; // 15px diamond + 7px clear gap
-    const int titleScale=fitScale(title,c.wordmark.w-8-badge,2);
-    const int maxChars=(c.wordmark.w-8-badge)/(6*titleScale);
-    if ((int)strlen(title)>maxChars && maxChars>=3) {
-        title[maxChars]=0; title[maxChars-1]='.'; title[maxChars-2]='.'; title[maxChars-3]='.';
+    const char* name=pal::themeName(st.theme);
+    const char* second=nullptr;
+    const char* first=name;
+    if (!strcmp(name,"CVLT OF BAPH0MAU5")){first="CVLT OF";second="BAPH0MAU5";}
+    if (!strcmp(name,"COSMIC MUFFIN")){first="COSMIC";second="MUFFIN";}
+    if(second){centered(s,c.wordmark.x+c.wordmark.w/2,11,first,1,pal::BRIGHT);centered(s,c.wordmark.x+c.wordmark.w/2,25,second,1,pal::BRIGHT);}
+    else {
+      const int badge=pal::diamondBadge(st.theme)?22:0;
+      char clipped[64];snprintf(clipped,sizeof clipped,"%s",name);
+      const int scale=fitScale(name,c.wordmark.w-8-badge,2);
+      const int limit=(c.wordmark.w-8-badge)/(6*scale);
+      if(limit>=3 && int(strlen(clipped))>limit){clipped[limit]=0;clipped[limit-1]=clipped[limit-2]=clipped[limit-3]='.';}
+      name=clipped;
+      const int x=c.wordmark.x+(c.wordmark.w-Font::width(name,scale)-badge)/2;
+      if(badge)diamondInto(s,x+7,21,7,pal::WITCH);
+      txt(s,x+badge,(44-7*scale)/2,name,scale,pal::BRIGHT);
     }
-    const int titleX=c.wordmark.x+(c.wordmark.w-Font::width(title,titleScale)-badge)/2;
-    if(badge)diamondInto(s,titleX+7,21,7,pal::WITCH);
-    txt(s,titleX+badge,(44-7*titleScale)/2,title,titleScale,pal::BRIGHT);
     char hb[24];
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
@@ -413,13 +435,15 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // Approved expanded field: centre (311,137), radius 85 at 480; compact derives.
     const int fcx = (W>=400) ? 311 : (fld.x+fld.w/2);
     const int fcy = (W>=400) ? 137 : (fld.y+fld.h/2);
-    const int fr  = (W>=400) ? 85  : (((fld.w<fld.h?fld.w:fld.h)/2) - 4);
+    const int fr = (W>=400) ? 85 : std::min({fld.w/2-4,fcy-(hr.y+22),hs.barBase-hs.barMax-fcy-4});
     // design #1: a CIRCULAR radar -- NO bounding box. Three thin 1px rings at
     // radii 23/46/69 (scaled to fr) in the chrome tone, a DELICATE heptagram in
     // the seal tone (EDGE_LIT = #574465) at 0.72r with verts from east, a sweep
     // ray, and a bright centre cross.
     if (fr>6 && fcy+fr >= s.y0 && fcy-fr < s.y0+s.h) {
-        const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR;
+        const bool cvlt=sc.theme==pal::TH_BAPH0MAU5;
+        const bool mascot=pal::centrepiece(sc.theme)==pal::CP_MASCOT;
+        const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR || cvlt || mascot;
         if(clean)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepPhase(sc.now):27);
         for (int k=1;k<=3;k++){ const int rr=fr*(k*23)/69;
             int count=0;
@@ -435,6 +459,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
         }
+        if(cvlt || mascot)crewArt(s,fcx,fcy,fr,cvlt);
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
@@ -453,12 +478,12 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             const int length = fr*4/5;
             line(s,fcx,fcy,fcx+(int)(length*std::cos(angle)),fcy+(int)(length*std::sin(angle)),pal::WITCH);
         } else if(!clean) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
-        box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);  // centre cross
+        if(!cvlt && !mascot){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
             if (m.shown && m.band>=0 && m.band<3) {    // small SQUARE markers, not round dots
-                const int sq = m.sizePx; box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
+                const int sq = m.sizePx; if(cvlt || mascot)box(s,fcx+m.dx-sq/2-1,fcy+m.dy-sq/2-1,sq+2,sq+2,pal::VOID); box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
             }
         }
     }

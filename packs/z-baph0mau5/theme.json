@@ -1,0 +1,38 @@
+{
+  "format": 1,
+  "name": "BAPH0MAU5",
+  "author": "slickrick773",
+  "header": "BAPH0MAU5",
+  "dial": "large",
+  "centrepiece": "mascot",
+  "sweeps": [
+    "radar",
+    "pulse",
+    "pulsar",
+    "comet"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#07090A",
+    "panel": "#0E1214",
+    "grid": "#142018",
+    "edge": "#1D2A24",
+    "edgeLit": "#FF2FD0",
+    "dim": "#5F8A74",
+    "text": "#D6FFE8",
+    "bright": "#FFFFFF",
+    "witch": "#39FF88",
+    "witchHi": "#8CFFB8",
+    "bone": "#D6FFE8",
+    "sweep": "#39FF88",
+    "sweepHi": "#8CFFB8",
+    "live": "#39FF88",
+    "liveHi": "#CFFFE4",
+    "magenta": "#FF2FD0",
+    "ice": "#4DE6FF",
+    "green": "#39FF88",
+    "amber": "#FFE24A",
+    "red": "#FF2F6A"
+  }
+}

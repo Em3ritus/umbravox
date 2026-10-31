@@ -210,7 +210,7 @@ int main() {
         pal::setTheme(4);
         check("old pack id draws UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
         check("built-ins survive clearing", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD &&
-                                            !strcmp(pal::themeName(pal::TH_BAPH0MAU5), "BAPH0MAU5"));
+                                            !strcmp(pal::themeName(pal::TH_BAPH0MAU5), "CVLT OF BAPH0MAU5"));
         themepack::Pack again = mkPack("AGAIN", themepack::DIAL_COMPACT, 0x0001, ui::SW_RADAR, 0x5000);
         check("registering again starts at slot 0", pal::addPack(again, nullptr) == pal::TH_COUNT);
         check("count after re-register", pal::themeCount() == pal::TH_COUNT + 1);

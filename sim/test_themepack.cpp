@@ -258,7 +258,7 @@ static void admissionTests() {
     check("admit reserved UMBRAVOX", admit("a", named("UMBRAVOX"), none, 0) == ADMIT_RESERVED);
     check("admit reserved CVLT", admit("a", named("CVLT OF BAPH0MAU5"), none, 0) == ADMIT_RESERVED);
     check("admit reserved COSMIC MUFFIN", admit("a", named("COSMIC MUFFIN"), none, 0) == ADMIT_RESERVED);
-    check("admit reserved BAPH0MAU5 (the built-in's displayed name)", admit("a", named("BAPH0MAU5"), none, 0) == ADMIT_RESERVED);
+    check("admit new BAPH0MAU5 pack after Cvlt rename", admit("a", named("BAPH0MAU5"), none, 0) == ADMIT_OK);
     check("BAPH0MAU not reserved", admit("a", named("BAPH0MAU"), none, 0) == ADMIT_OK);
     check("BAPH0MAU55 not reserved", admit("a", named("BAPH0MAU55"), none, 0) == ADMIT_OK);
     check("lowercase baph0mau5 not reserved", admit("a", named("baph0mau5"), none, 0) == ADMIT_OK);

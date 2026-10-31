@@ -272,7 +272,8 @@ bool parseObject(P& p, Pack& out) {
                 if (tl <= 31 && strcmp(tmp, "emblem") == 0) out.centre = CENTRE_EMBLEM;
                 else if (tl <= 31 && strcmp(tmp, "heptagram") == 0) out.centre = CENTRE_HEPTAGRAM;
                 else if (tl <= 31 && strcmp(tmp,"radar")==0) out.centre=CENTRE_RADAR;
-                else return fail(p, "centrepiece must be emblem, heptagram or radar");
+                else if (tl <= 31 && strcmp(tmp,"mascot")==0) out.centre=CENTRE_MASCOT;
+                else return fail(p, "centrepiece must be emblem, heptagram, radar or mascot");
                 break;
             case K_SWEEPS:
                 if (!sweepList(p, out)) return false;
@@ -428,7 +429,7 @@ bool folderNameOk(const char* folder) {
 
 Admit admit(const char* folder, const Pack& p, const char* const* takenNames, int nTaken) {
     if (!folderNameOk(folder)) return ADMIT_BAD_FOLDER;
-    static const char* const reserved[] = {"UMBRAVOX", "BAPH0MAU5", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"};
+    static const char* const reserved[] = {"UMBRAVOX", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"};
     for (const char* r : reserved)
         if (strncmp(p.name, r, sizeof p.name) == 0) return ADMIT_RESERVED;
     if (takenNames)

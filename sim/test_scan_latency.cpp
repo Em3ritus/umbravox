@@ -116,8 +116,8 @@ int main() {
     scanpres::recordingHits(hits,scanr::Rec::Saving);assert(hits.count==count-1);
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
-    // Body goldens updated for the approved compact 21-channel spectrum.
-    const uint64_t golden[2][3]={{8840731277796192617ull,6261122790574932988ull,11110275749734886455ull},{2204686793497679270ull,18425762806232998356ull,730766514984931152ull}};
+    // Body goldens: approved 16px spectrum, expanded compact radar and Cvlt seal.
+    const uint64_t golden[2][3]={{9111283009185874775ull,5355564530629816857ull,13949839976764625351ull},{9583751849701587141ull,11576811030950465143ull,5684536385759763709ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

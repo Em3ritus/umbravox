@@ -102,7 +102,7 @@ int findPack(const char* name);
 // trusted, because the slots may have shifted.
 uint8_t resolveSaved(const char* name, uint8_t savedId);
 
-enum Centrepiece : uint8_t { CP_HEPTAGRAM, CP_SEAL, CP_EMBLEM, CP_RADAR };
+enum Centrepiece : uint8_t { CP_HEPTAGRAM, CP_SEAL, CP_EMBLEM, CP_RADAR, CP_MASCOT };
 Centrepiece centrepiece(uint8_t id);
 bool diamondBadge(uint8_t id);
 

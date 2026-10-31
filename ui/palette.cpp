@@ -66,13 +66,13 @@ constexpr Row THEMES[TH_COUNT] = {
         rgb(0xDC,0x8E,0xC8), rgb(0x89,0xCC,0xE9), rgb(0x78,0xD9,0xAD),
         rgb(0xF5,0x9E,0x0B), rgb(0xEF,0x44,0x44),
     },
-    {   "BAPH0MAU5", "CVLT OF BAPH0MAU5", CP_SEAL,
+    {   "CVLT OF BAPH0MAU5", "CVLT OF BAPH0MAU5", CP_SEAL,
         0b11111111111,               // all sweeps, cosmic + gaze
         13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
         rgb(0x06,0x03,0x0C), rgb(0x13,0x09,0x21), rgb(0x1D,0x11,0x33),
-        rgb(0x3C,0x20,0x62), rgb(0x74,0x3C,0xB4),
-        rgb(0x7E,0x56,0xBC), rgb(0xCA,0xB0,0xEA), rgb(0xFF,0xFA,0xFF),
-        rgb(0x9B,0x62,0xF0), rgb(0xD6,0xBC,0xFF), rgb(0xE4,0xDA,0xF6),
+        rgb(54,34,71), rgb(0x74,0x3C,0xB4),
+        rgb(174,151,199), rgb(0xCA,0xB0,0xEA), rgb(0xFF,0xFA,0xFF),
+        rgb(167,111,231), rgb(0xD6,0xBC,0xFF), rgb(0xE4,0xDA,0xF6),
         rgb(0x3B,0xFF,0x6E), rgb(0xC4,0xFF,0xD4),
         rgb(0x24,0xC4,0x50), rgb(0x3B,0xFF,0x6E),
         { rgb(0x06,0x03,0x0C), rgb(0x3E,0x30,0x55),
@@ -177,7 +177,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
         p.header[themepack::MAX_HEADER] = 0;
     }
     if (p.dial != themepack::DIAL_LARGE) p.dial = themepack::DIAL_COMPACT;
-    if (p.centre != themepack::CENTRE_EMBLEM && p.centre != themepack::CENTRE_RADAR) p.centre = themepack::CENTRE_HEPTAGRAM;
+    if (p.centre != themepack::CENTRE_EMBLEM && p.centre != themepack::CENTRE_RADAR && p.centre != themepack::CENTRE_MASCOT) p.centre = themepack::CENTRE_HEPTAGRAM;
     if ((unsigned)p.rite > (unsigned)themepack::RITE_LOCKON) p.rite = themepack::RITE_WARD;
     // The starting sweep must be one the pack offers, or clampSettings could
     // fall back to a sweep that is itself withdrawn.
@@ -194,7 +194,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     Row r = THEMES[p.dial == DIAL_LARGE ? TH_COSMICMUFFIN : TH_UMBRAVOX];   // geometry
     r.name = p.name;
     r.header = p.header;
-    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : p.centre == CENTRE_RADAR ? CP_RADAR : CP_HEPTAGRAM;
+    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : p.centre == CENTRE_RADAR ? CP_RADAR : p.centre == CENTRE_MASCOT ? CP_MASCOT : CP_HEPTAGRAM;
     r.sweeps = p.sweeps;
     const uint16_t* c = p.color;
     r.void_ = c[R_VOID];   r.panel = c[R_PANEL];     r.grid = c[R_GRID];

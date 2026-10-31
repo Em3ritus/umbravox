@@ -198,7 +198,7 @@ sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp 
 # in each test's header; wiring them here puts the engine lane under `make test`.
 # The oracle test is header-only; the render/present/engine tests need the theme
 # model + font (PAL_DEPS), same as the other draw tests.
-ENGINE_HDR = ../ui/domain_range.h ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
+ENGINE_HDR = ../ui/crew_art.h ../ui/domain_range.h ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
              ../ui/domain_render.h ../ui/domain_present.h \
              ../ui/codex_render.h ../ui/codex_present.h \
              ../ui/menu_render.h ../ui/menu_present.h \
@@ -474,5 +474,5 @@ test_alert_history: test_alert_history.cpp ../device/alertlog.cpp ../device/aler
 test_oui_registry: test_oui_registry.cpp ../ui/oui.cpp ../ui/oui_data.inc
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_oui_registry.cpp ../ui/oui.cpp
 
-test_clean_radar: test_clean_radar.cpp ../packs/slick/theme.json $(ENGINE_HDR) $(PAL_DEPS)
+test_clean_radar: test_clean_radar.cpp ../packs/slick/theme.json ../packs/z-baph0mau5/theme.json $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_clean_radar.cpp $(PAL_DEPS) -lm
