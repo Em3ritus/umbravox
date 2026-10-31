@@ -260,13 +260,14 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
 static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz; one spectrum bar each
 struct HeroSub { uieng::Rect field, spectrum; int barBase, barMax; };
 inline HeroSub heroSub(uieng::Rect hr) {
-    const int hdrH = 30, specH = 44;               // header clears the readout (text max y+26)
+    const bool compact = hr.w < 280;
+    const int hdrH = compact ? 16 : 30, specH = compact ? 26 : 44;               // compact uses a 1x channel heading; wide keeps the 2x readout
     HeroSub h;
     h.field    = {hr.x+2, hr.y+hdrH, hr.w-4, hr.h-hdrH-specH};
-    const int sw=std::min(168,hr.w-8);
+    const int sw=std::min(compact ? 140 : 168,hr.w-8);
     h.spectrum = {hr.x+(hr.w-sw)/2, hr.y+hr.h-specH, sw, specH};
     h.barBase  = hr.y+hr.h-11;
-    h.barMax   = 16;                          // 16px amplitude; every channel retained
+    h.barMax   = compact ? 8 : 16;                          // compact half-height amplitude; every channel retained
     return h;
 }
 
@@ -277,7 +278,7 @@ inline uieng::Rect radarBounds(int W, int H) {
     const auto f=hs.field;
     const int cx = W>=400 ? 311 : f.x+f.w/2;
     const int cy = W>=400 ? 137 : f.y+f.h/2;
-    const int r = W>=400 ? 85 : std::min({f.w/2-4,cy-(hr.y+22),hs.barBase-hs.barMax-cy-4});
+    const int r = W>=400 ? 85 : std::min({f.w/2-4,cy-(hr.y+16),hs.barBase-hs.barMax-cy-4});
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
 inline uint32_t sweepPhase(uint32_t now) { return (now / 50u) % 72u; } // 20 Hz, 3.6 s turn
@@ -463,17 +464,18 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // Theme identity occupies the former field heading, independently of radar clipping.
     if (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || sc.theme==pal::TH_COSMICMUFFIN) {
         const auto* headingEmblem=pal::emblem(sc.theme);
-        const int badgeR=W>=400?27:24;
+        const int badgeR=W>=400?27:14;
         if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),sc.theme==pal::TH_COSMICMUFFIN);
     }
-    txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,2), hr.y+4, sc.ch, 2, pal::BRIGHT);  // channel, right
+    const int channelScale = W>=400 ? 2 : 1;
+    txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,channelScale), hr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
 
     const HeroSub hs = heroSub(hr);
     const uieng::Rect fld = hs.field;
     // Approved expanded field: centre (311,137), radius 85 at 480; compact derives.
     const int fcx = (W>=400) ? 311 : (fld.x+fld.w/2);
     const int fcy = (W>=400) ? 137 : (fld.y+fld.h/2);
-    const int fr = (W>=400) ? 85 : std::min({fld.w/2-4,fcy-(hr.y+22),hs.barBase-hs.barMax-fcy-4});
+    const int fr = (W>=400) ? 85 : std::min({fld.w/2-4,fcy-(hr.y+16),hs.barBase-hs.barMax-fcy-4});
     // design #1: a CIRCULAR radar -- NO bounding box. Three thin 1px rings at
     // radii 23/46/69 (scaled to fr) in the chrome tone, a DELICATE heptagram in
     // the seal tone (EDGE_LIT = #574465) at 0.72r with verts from east, a sweep

@@ -79,7 +79,7 @@ int main(){
         const uieng::Rect hr = uieng::scan(W,H).hero;
         const HeroSub hs = heroSub(hr);
         snprintf(m,sizeof m,"%dx%d field clears the channel header (no border/text collision)",W,H);
-        expect(hs.field.y >= hr.y+27, m);
+        expect(hs.field.y >= hr.y+(W>=400?27:12), m);
         snprintf(m,sizeof m,"%dx%d spectrum sits below the field (no overlap)",W,H);
         expect(hs.spectrum.y >= hs.field.y+hs.field.h, m);
         snprintf(m,sizeof m,"%dx%d tallest spectrum bar stays below the field (no intrusion)",W,H);
