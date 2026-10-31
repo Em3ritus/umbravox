@@ -1107,6 +1107,10 @@ bool pollConsole() {
                 Serial.printf("gps: i2c cycles %lu bytes %lu empty %lu fails %lu recov %lu wakes %lu\n",
                               (unsigned long)g.cycles, (unsigned long)g.bytes, (unsigned long)g.empty,
                               (unsigned long)g.fails, (unsigned long)g.recov, (unsigned long)g.wakes);
+                Serial.printf("gps: transfer write-fails 50=%lu 54=%lu 58=%lu short-54=%lu budget-skips=%lu last-wire-status=%lu\n",
+                              (unsigned long)g.writeFailures[0], (unsigned long)g.writeFailures[1],
+                              (unsigned long)g.writeFailures[2], (unsigned long)g.shortReads,
+                              (unsigned long)g.budgetExhausted, (unsigned long)g.lastWriteError);
 #endif
                 // The bring-up facts in three lines: is anything arriving,
                 // does it parse, and what does the receiver say about the sky.

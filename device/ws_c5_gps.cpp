@@ -55,7 +55,7 @@ uint32_t cycleStart = 0;
 constexpr uint32_t CYCLE_BUDGET_MS = 40;
 bool transactionTime() {
     const uint16_t left = i2cbudget::remaining(cycleStart, millis(), CYCLE_BUDGET_MS);
-    if (!left) return false;
+    if (!left) { ++st.budgetExhausted; return false; }
     Wire.setTimeOut(left);
     return true;
 }
@@ -71,6 +71,15 @@ uint32_t get32le(const uint8_t* b) {
     return b[0] | (b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
 }
 
+uint8_t endWrite(uint8_t addr) {
+    const uint8_t error = Wire.endTransmission();
+    if (error) {
+        ++st.writeFailures[addr == CR_ADDR ? 0 : addr == RD_ADDR ? 1 : 2];
+        st.lastWriteError = error;
+    }
+    return error;
+}
+
 uint8_t writeCr(uint32_t reg, uint32_t len) {   // 0 = ok, else Wire's error
     if (!transactionTime()) return 5;
     uint8_t b[8];
@@ -78,12 +87,13 @@ uint8_t writeCr(uint32_t reg, uint32_t len) {   // 0 = ok, else Wire's error
     put32le(b + 4, len);
     Wire.beginTransmission(CR_ADDR);
     Wire.write(b, sizeof b);
-    return Wire.endTransmission();
+    return endWrite(CR_ADDR);
 }
 
 size_t readBytes(uint8_t* buf, size_t n) {
     if (!transactionTime()) return 0;
     const size_t got = Wire.requestFrom(RD_ADDR, n);
+    if (got != n) ++st.shortReads;
     for (size_t i = 0; i < got; i++) buf[i] = (uint8_t)Wire.read();
     return got;
 }
@@ -92,7 +102,7 @@ uint8_t dummy(uint8_t addr) {   // 1-byte write; 0 = ACKed
     if (!transactionTime()) return 5;
     Wire.beginTransmission(addr);
     Wire.write((uint8_t)0);
-    return Wire.endTransmission();
+    return endWrite(addr);
 }
 
 // The C5 bus quirk touch.cpp also works around: re-open once before a
