@@ -277,8 +277,9 @@ inline uieng::Rect radarBounds(int W, int H) {
     const auto hs=heroSub(hr);
     const auto f=hs.field;
     const int cx = W>=400 ? 311 : f.x+f.w/2;
-    const int cy = W>=400 ? 137 : f.y+f.h/2;
-    const int r = W>=400 ? 85 : std::min({f.w/2-4,cy-(hr.y+16),hs.barBase-hs.barMax-cy-4});
+    const int top = hr.y+2, bottom = hs.barBase-hs.barMax-4;
+    const int cy = W>=400 ? 137 : (top+bottom)/2;
+    const int r = W>=400 ? 85 : std::min(f.w/2-4,(bottom-top)/2);
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
 inline uint32_t sweepPhase(uint32_t now) { return (now / 50u) % 72u; } // 20 Hz, 3.6 s turn
@@ -471,11 +472,11 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,channelScale), hr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
 
     const HeroSub hs = heroSub(hr);
-    const uieng::Rect fld = hs.field;
     // Approved expanded field: centre (311,137), radius 85 at 480; compact derives.
-    const int fcx = (W>=400) ? 311 : (fld.x+fld.w/2);
-    const int fcy = (W>=400) ? 137 : (fld.y+fld.h/2);
-    const int fr = (W>=400) ? 85 : std::min({fld.w/2-4,fcy-(hr.y+16),hs.barBase-hs.barMax-fcy-4});
+    const auto radar = radarBounds(W,H);
+    const int fr = (radar.w-5)/2;
+    const int fcx = radar.x+fr+2;
+    const int fcy = radar.y+fr+2;
     // design #1: a CIRCULAR radar -- NO bounding box. Three thin 1px rings at
     // radii 23/46/69 (scaled to fr) in the chrome tone, a DELICATE heptagram in
     // the seal tone (EDGE_LIT = #574465) at 0.72r with verts from east, a sweep
