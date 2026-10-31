@@ -217,23 +217,30 @@ inline void radarTrail(S& s,int cx,int cy,int r,uint32_t phase){
     line(s,cx,cy,cx+r*lx/1024,cy+r*ly/1024,pal::SWEEP_HI);
 }
 
-inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r) {   // same mask/scale as motif::drawEmblem
-    if (r<=0 || !e.w || !e.h || !e.px) return;
+inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100) {   // same mask/scale as motif::drawEmblem
+    if (r<=0 || !e.w || !e.h || !e.px || !e.ncol || e.ncol>16) return;
     const int d=2*r;
+    uint16_t colors[16];for(int i=0;i<e.ncol;i++)colors[i]=ui::Canvas::mix(pal::VOID,e.pal[i],opacity,100);
     for (int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++){ const int dy=y-cy;
         for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(dx*dx+dy*dy>r*r) continue;
             int sx=(x-(cx-r))*e.w/d, sy=(y-(cy-r))*e.h/d;
             if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
-            pt(s,x,y, e.pal[e.px[sy*e.w+sx]]); } }
+            const uint16_t color=e.pal[e.px[sy*e.w+sx]];
+            if(!transparentBlack || color)pt(s,x,y,colors[e.px[sy*e.w+sx]]); } }
 }
 // Precomputed artwork: clipped spans, no heap use and no trigonometry.
-inline void crewArt(S& s,int cx,int cy,int radius,bool cvlt){
+inline void crewArt(S& s,int cx,int cy,int radius,int style){
     const bool small=radius<60;
     const crewart::Span* runs=nullptr;const uint16_t* colors=nullptr;size_t count=0;
-    if(cvlt && small){runs=crewart::cvlt39;colors=crewart::cvlt39Colors;count=sizeof crewart::cvlt39/sizeof(*runs);}
-    else if(cvlt){runs=crewart::cvlt85;colors=crewart::cvlt85Colors;count=sizeof crewart::cvlt85/sizeof(*runs);}
-    else if(small){runs=crewart::mascot39;colors=crewart::mascot39Colors;count=sizeof crewart::mascot39/sizeof(*runs);}
-    else {runs=crewart::mascot85;colors=crewart::mascot85Colors;count=sizeof crewart::mascot85/sizeof(*runs);}
+    if(style==0 && small){runs=crewart::mascot39;colors=crewart::mascot39Colors;count=sizeof crewart::mascot39/sizeof(*runs);}
+    else if(style==0){runs=crewart::mascot85;colors=crewart::mascot85Colors;count=sizeof crewart::mascot85/sizeof(*runs);}
+    else if(style==1 && small){runs=crewart::cvlt39;colors=crewart::cvlt39Colors;count=sizeof crewart::cvlt39/sizeof(*runs);}
+    else if(style==1){runs=crewart::cvlt85;colors=crewart::cvlt85Colors;count=sizeof crewart::cvlt85/sizeof(*runs);}
+    else if(style==2 && small){runs=crewart::orbit39;colors=crewart::orbit39Colors;count=sizeof crewart::orbit39/sizeof(*runs);}
+    else if(style==2){runs=crewart::orbit85;colors=crewart::orbit85Colors;count=sizeof crewart::orbit85/sizeof(*runs);}
+    else if(style==3 && small){runs=crewart::sigil39;colors=crewart::sigil39Colors;count=sizeof crewart::sigil39/sizeof(*runs);}
+    else if(style==3){runs=crewart::sigil85;colors=crewart::sigil85Colors;count=sizeof crewart::sigil85/sizeof(*runs);}
+    if(!runs)return;
     const int base=small?39:85;
     for(size_t i=0;i<count;i++){const auto& a=runs[i];int y=cy+a.y*radius/base;if(y<s.y0)continue;if(y>=s.y0+s.h)break;
       int x=cx+a.x*radius/base;int end=cx+(a.x+a.n)*radius/base;box(s,x,y,std::max(1,end-x),1,colors[a.c]);}
@@ -443,7 +450,10 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     if (fr>6 && fcy+fr >= s.y0 && fcy-fr < s.y0+s.h) {
         const bool cvlt=sc.theme==pal::TH_BAPH0MAU5;
         const bool mascot=pal::centrepiece(sc.theme)==pal::CP_MASCOT;
-        const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR || cvlt || mascot;
+        const bool orbit=sc.theme==pal::TH_COSMICMUFFIN;
+        const bool sigil=pal::centrepiece(sc.theme)==pal::CP_SIGIL;
+        const bool logo=pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM;
+        const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR || cvlt || mascot || orbit || sigil || logo;
         if(clean)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepPhase(sc.now):27);
         for (int k=1;k<=3;k++){ const int rr=fr*(k*23)/69;
             int count=0;
@@ -459,9 +469,10 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
         }
-        if(cvlt || mascot)crewArt(s,fcx,fcy,fr,cvlt);
+        if(cvlt || mascot || orbit || sigil)crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0);
         const themepack::Emblem* e = pal::emblem(sc.theme);
-        if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM) {
+        if(logo && e)emblemInto(s,*e,fcx,fcy,fr*pal::artScale(sc.theme)/100,true,pal::artOpacity(sc.theme));
+        else if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
         } else if(!clean) {
             const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east
@@ -478,12 +489,12 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             const int length = fr*4/5;
             line(s,fcx,fcy,fcx+(int)(length*std::cos(angle)),fcy+(int)(length*std::sin(angle)),pal::WITCH);
         } else if(!clean) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
-        if(!cvlt && !mascot){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
+        if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
             if (m.shown && m.band>=0 && m.band<3) {    // small SQUARE markers, not round dots
-                const int sq = m.sizePx; if(cvlt || mascot)box(s,fcx+m.dx-sq/2-1,fcy+m.dy-sq/2-1,sq+2,sq+2,pal::VOID); box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
+                const int sq = m.sizePx; if(cvlt || mascot || orbit || sigil || logo)box(s,fcx+m.dx-sq/2-1,fcy+m.dy-sq/2-1,sq+2,sq+2,pal::VOID); box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
             }
         }
     }

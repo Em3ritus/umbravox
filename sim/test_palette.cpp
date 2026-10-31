@@ -54,8 +54,8 @@ int main() {
     check("cosmic name", !strcmp(pal::themeName(pal::TH_COSMICMUFFIN), "COSMIC MUFFIN"));
 
     pal::setTheme(pal::TH_COSMICMUFFIN);
-    check("neon void applied", pal::VOID == pal::rgb(0x09, 0x07, 0x1C));
-    check("neon magenta applied", pal::MAGENTA == pal::rgb(0xFF, 0x1F, 0xCC));
+    check("neon void applied", pal::VOID == pal::rgb(0x0A, 0x0A, 0x1E));
+    check("neon magenta applied", pal::MAGENTA == pal::rgb(0xFF, 0x5F, 0xD0));
     // Every sweep but the gaze (0x7FD): the muffin has no eyes. The mask must
     // be wide enough to hold bit 10 -- an 8-bit mask would drop the top sweeps.
     check("cosmic offers every sweep but gaze", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD);

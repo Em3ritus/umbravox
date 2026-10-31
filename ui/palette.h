@@ -102,9 +102,11 @@ int findPack(const char* name);
 // trusted, because the slots may have shifted.
 uint8_t resolveSaved(const char* name, uint8_t savedId);
 
-enum Centrepiece : uint8_t { CP_HEPTAGRAM, CP_SEAL, CP_EMBLEM, CP_RADAR, CP_MASCOT };
+enum Centrepiece : uint8_t { CP_HEPTAGRAM, CP_SEAL, CP_EMBLEM, CP_RADAR, CP_MASCOT, CP_SIGIL, CP_RADAR_EMBLEM };
 Centrepiece centrepiece(uint8_t id);
 bool diamondBadge(uint8_t id);
+uint8_t artOpacity(uint8_t id);
+uint8_t artScale(uint8_t id);
 
 // The emblem art for this theme: the baked muffin for COSMIC MUFFIN, the
 // pack's for a pack (may be null), null for the heptagram / seal built-ins.

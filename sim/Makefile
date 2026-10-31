@@ -474,5 +474,5 @@ test_alert_history: test_alert_history.cpp ../device/alertlog.cpp ../device/aler
 test_oui_registry: test_oui_registry.cpp ../ui/oui.cpp ../ui/oui_data.inc
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_oui_registry.cpp ../ui/oui.cpp
 
-test_clean_radar: test_clean_radar.cpp ../packs/slick/theme.json ../packs/z-baph0mau5/theme.json $(ENGINE_HDR) $(PAL_DEPS)
+test_clean_radar: test_clean_radar.cpp $(wildcard ../packs/*/theme.json) $(wildcard ../packs/*/emblem.bin) $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_clean_radar.cpp $(PAL_DEPS) -lm

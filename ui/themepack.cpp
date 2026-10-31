@@ -201,14 +201,15 @@ bool sweepList(P& p, Pack& out) {
 
 bool parseObject(P& p, Pack& out) {
     enum { K_FORMAT, K_NAME, K_AUTHOR, K_HEADER, K_DIAL, K_CENTRE, K_SWEEPS,
-           K_SWEEP, K_ALERT, K_COLORS, K_BADGE, K_N };
+           K_SWEEP, K_ALERT, K_COLORS, K_BADGE, K_ART_OPACITY, K_ART_SCALE, K_N };
     static const char* const keys[K_N] = {"format", "name", "author", "header", "dial",
-        "centrepiece", "sweeps", "sweep", "alert", "colors", "badge"};
+        "centrepiece", "sweeps", "sweep", "alert", "colors", "badge", "artOpacity", "artScale"};
     bool seen[K_N] = {};
     char sweepName[12] = {};
     bool haveSweepName = false;
 
     memset(&out, 0, sizeof out);
+    out.artOpacity=100;out.artScale=82;
     out.dial = DIAL_COMPACT;
     out.centre = CENTRE_HEPTAGRAM;
     out.rite = RITE_WARD;
@@ -273,7 +274,9 @@ bool parseObject(P& p, Pack& out) {
                 else if (tl <= 31 && strcmp(tmp, "heptagram") == 0) out.centre = CENTRE_HEPTAGRAM;
                 else if (tl <= 31 && strcmp(tmp,"radar")==0) out.centre=CENTRE_RADAR;
                 else if (tl <= 31 && strcmp(tmp,"mascot")==0) out.centre=CENTRE_MASCOT;
-                else return fail(p, "centrepiece must be emblem, heptagram, radar or mascot");
+                else if (tl <= 31 && strcmp(tmp,"sigil")==0) out.centre=CENTRE_SIGIL;
+                else if (tl <= 31 && strcmp(tmp,"radar-emblem")==0) out.centre=CENTRE_RADAR_EMBLEM;
+                else return fail(p, "unknown centrepiece");
                 break;
             case K_SWEEPS:
                 if (!sweepList(p, out)) return false;
@@ -292,6 +295,13 @@ bool parseObject(P& p, Pack& out) {
                 else if (tl <= 31 && strcmp(tmp, "lockon") == 0) out.rite = RITE_LOCKON;
                 else return fail(p, "unknown or unavailable alert");
                 break;
+            case K_ART_OPACITY:
+            case K_ART_SCALE: {
+                long value; if(!integer(p,value))return false;
+                if(value<(key==K_ART_SCALE?25:0) || value>100)return fail(p,"art percentage out of range");
+                if(key==K_ART_SCALE)out.artScale=(uint8_t)value;else out.artOpacity=(uint8_t)value;
+                break;
+            }
             case K_BADGE:
                 if (!str(p,tmp,31,&tl)) return false;
                 if(tl<=31 && strcmp(tmp,"diamond")==0)out.diamond=true;

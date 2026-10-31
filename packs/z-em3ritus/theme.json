@@ -1,0 +1,37 @@
+{
+  "format": 1,
+  "name": "EM3RITUS",
+  "author": "slickrick773",
+  "header": "EM3RITUS",
+  "dial": "compact",
+  "centrepiece": "sigil",
+  "sweeps": [
+    "radar",
+    "candle",
+    "pulse"
+  ],
+  "sweep": "candle",
+  "alert": "ward",
+  "colors": {
+    "void": "#0A0806",
+    "panel": "#130F0A",
+    "grid": "#241B10",
+    "edge": "#3A2E1C",
+    "edgeLit": "#6E2420",
+    "dim": "#8A7656",
+    "text": "#ECE0C6",
+    "bright": "#FFF3D8",
+    "witch": "#E8B34A",
+    "witchHi": "#FFD27A",
+    "bone": "#D8C49A",
+    "sweep": "#E8B34A",
+    "sweepHi": "#FFD27A",
+    "live": "#E8B34A",
+    "liveHi": "#FFF3D8",
+    "magenta": "#D9823A",
+    "ice": "#C9A227",
+    "green": "#8FA05A",
+    "amber": "#E8A838",
+    "red": "#C6352F"
+  }
+}

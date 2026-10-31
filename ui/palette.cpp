@@ -83,16 +83,15 @@ constexpr Row THEMES[TH_COUNT] = {
     {   "COSMIC MUFFIN", "COSMIC MVFFIN", CP_EMBLEM,
         0b11111111101,               // every sweep but the gaze -- no eyes (0x7FD)
         13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
-        rgb(0x09,0x07,0x1C), rgb(0x16,0x10,0x3A), rgb(0x1E,0x16,0x46),
-        rgb(0x3A,0x2A,0x6E), rgb(0xA8,0x4D,0xFF),
-        rgb(0x8A,0x7B,0xD0), rgb(0xE8,0xDE,0xFF), rgb(0xFF,0xFF,0xFF),
-        rgb(0xA8,0x4D,0xFF), rgb(0xFF,0x1F,0xCC), rgb(0xFF,0xD0,0x4A),
-        rgb(0x1E,0xF5,0xEE), rgb(0xFF,0x1F,0xCC),
-        rgb(0xFF,0x58,0xB0), rgb(0xFF,0xF0,0xD0),
-        { rgb(0x09,0x07,0x1C), rgb(0x3A,0x2A,0x6E),
-          rgb(0xA8,0x4D,0xFF), rgb(0xFF,0xF0,0xE8) },
-        rgb(0xFF,0x1F,0xCC), rgb(0x1E,0xF5,0xEE), rgb(0x3B,0xFF,0x9E),
-        rgb(0xFF,0xC2,0x4A), rgb(0xFF,0x4D,0x6A),
+        rgb(0x0A,0x0A,0x1E), rgb(0x12,0x12,0x34), rgb(0x1C,0x1C,0x44),
+        rgb(0x2A,0x2A,0x52), rgb(0x4D,0xE0,0xFF),
+        rgb(0x8A,0x88,0xB8), rgb(0xE8,0xE6,0xFF), rgb(0xFF,0xFF,0xFF),
+        rgb(0xFF,0x5F,0xD0), rgb(0xFF,0x8F,0xE0), rgb(0xFF,0xC2,0x4D),
+        rgb(0x4D,0xE0,0xFF), rgb(0xFF,0x5F,0xD0),
+        rgb(0xFF,0x5F,0xD0), rgb(0xFF,0xE0,0xF5),
+        { rgb(0x0A,0x0A,0x1E), rgb(0x2A,0x2A,0x52), rgb(0x8A,0x88,0xB8), rgb(0xFF,0xFF,0xFF) },
+        rgb(0xFF,0x5F,0xD0), rgb(0x4D,0xE0,0xFF), rgb(0x57,0xFF,0xB0),
+        rgb(0xFF,0xC2,0x4D), rgb(0xFF,0x5C,0x7A),
     },
 };
 
@@ -177,7 +176,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
         p.header[themepack::MAX_HEADER] = 0;
     }
     if (p.dial != themepack::DIAL_LARGE) p.dial = themepack::DIAL_COMPACT;
-    if (p.centre != themepack::CENTRE_EMBLEM && p.centre != themepack::CENTRE_RADAR && p.centre != themepack::CENTRE_MASCOT) p.centre = themepack::CENTRE_HEPTAGRAM;
+    if (p.centre != themepack::CENTRE_EMBLEM && p.centre != themepack::CENTRE_RADAR && p.centre != themepack::CENTRE_MASCOT && p.centre != themepack::CENTRE_SIGIL && p.centre != themepack::CENTRE_RADAR_EMBLEM) p.centre = themepack::CENTRE_HEPTAGRAM;
     if ((unsigned)p.rite > (unsigned)themepack::RITE_LOCKON) p.rite = themepack::RITE_WARD;
     // The starting sweep must be one the pack offers, or clampSettings could
     // fall back to a sweep that is itself withdrawn.
@@ -194,7 +193,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     Row r = THEMES[p.dial == DIAL_LARGE ? TH_COSMICMUFFIN : TH_UMBRAVOX];   // geometry
     r.name = p.name;
     r.header = p.header;
-    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : p.centre == CENTRE_RADAR ? CP_RADAR : p.centre == CENTRE_MASCOT ? CP_MASCOT : CP_HEPTAGRAM;
+    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : p.centre == CENTRE_RADAR ? CP_RADAR : p.centre == CENTRE_MASCOT ? CP_MASCOT : p.centre == CENTRE_SIGIL ? CP_SIGIL : p.centre == CENTRE_RADAR_EMBLEM ? CP_RADAR_EMBLEM : CP_HEPTAGRAM;
     r.sweeps = p.sweeps;
     const uint16_t* c = p.color;
     r.void_ = c[R_VOID];   r.panel = c[R_PANEL];     r.grid = c[R_GRID];
@@ -235,6 +234,9 @@ uint8_t resolveSaved(const char* name, uint8_t savedId) {
     }
     return savedId < TH_COUNT ? savedId : (uint8_t)TH_UMBRAVOX;
 }
+
+uint8_t artOpacity(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artOpacity<=100?PACKS[s].artOpacity:100;}
+uint8_t artScale(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artScale>=25 && PACKS[s].artScale<=100?PACKS[s].artScale:82;}
 
 bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].diamond;}
 

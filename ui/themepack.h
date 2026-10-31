@@ -26,7 +26,7 @@ constexpr int MAX_EMBLEM_COLORS = 16;
 constexpr int N_COLORS = 20;
 
 enum Dial { DIAL_COMPACT, DIAL_LARGE };
-enum Centre { CENTRE_HEPTAGRAM, CENTRE_EMBLEM, CENTRE_RADAR, CENTRE_MASCOT };
+enum Centre { CENTRE_HEPTAGRAM, CENTRE_EMBLEM, CENTRE_RADAR, CENTRE_MASCOT, CENTRE_SIGIL, CENTRE_RADAR_EMBLEM };
 enum Rite { RITE_WARD, RITE_SUPERNOVA, RITE_VORTEX, RITE_COMET, RITE_LOCKON };
 
 enum Role : uint8_t {
@@ -45,6 +45,8 @@ struct Pack {
     uint16_t sweeps;            // bitmask over ui::Sweep
     uint8_t sweep;              // ui::Sweep; always a member of `sweeps`
     bool diamond;             // optional native-header badge
+    uint8_t artOpacity;        // 0..100, parsed default 100
+    uint8_t artScale;          // 25..100 percent of radar radius, default 82
     uint16_t color[N_COLORS];   // RGB565, indexed by Role
 };
 

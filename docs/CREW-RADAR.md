@@ -33,5 +33,34 @@ both sizes and all 72 sweep phases for radar, Cvlt and mascot styles, comparing
 partial repaints with complete frames. The existing theme parser, palette,
 render, and contrast checks remain in the host suite.
 
-This release does not implement portrait orientation or the pending SKULD logo
-and Cosmic Muffin orbital artwork. No RF scheduling or bridge behavior changes.
+Portrait orientation remains outside this change. No RF scheduling or bridge behavior changes.
+
+## Complete crew set
+
+- UMBRAVOX: unchanged original identity.
+- CVLT OF BAPH0MAU5: violet ritual seal (built-in ID 1).
+- COSMIC MUFFIN: supplied NEBULA DRIFT palette and native planet/orbit design
+  (built-in ID 2; the legacy canvas retains its muffin bitmap).
+- SLICK: crowned-dog logo, muted ruby/bronze; `packs/slick/`.
+- BAPH0MAU5: subtle mascot; `packs/z-baph0mau5/`.
+- EM3RITUS: supplied GRIMOIRE palette and upright ceremonial sigil;
+  `packs/z-em3ritus/`.
+- EMBER: renamed orange/gold clean radar; `packs/z-ember/`.
+- SKULD: supplied Viking/ring identity, cyan/violet; `packs/z-skuld/`.
+
+The two logo packs use `centrepiece: "radar-emblem"` and require a valid
+`emblem.bin`. The existing bounded loader validates it and keeps its bytes in
+PSRAM. Black RGB565 pixels are transparent over the radar. Optional `artOpacity`
+(0..100; default 100) and `artScale` (25..100 percent of radius; default 82) let
+packs choose a watermark without changing the contact markers or UI labels.
+SLICK uses 40% intensity and 64% radius. Other packs retain defaults.
+
+`tools/png_to_emblem.py` uses Pillow on the host to convert an already-square
+source to 96x96 indexed RGB565, at most 16 colors. Logo texture and tiny ring
+lettering are necessarily reduced at compact resolution. Native artwork rendering
+is clipped to the current strip and uses a fixed 16-color local palette, not a
+new framebuffer. Missing or invalid logo binaries cause the pack to be skipped.
+
+No new built-in IDs were inserted. Saved SD-pack selections resolve by name.
+The new SLICK replaces the old SLICK identity; its former design remains available
+as EMBER. No display orientation, capture timing or bridge behavior changes.
