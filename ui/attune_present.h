@@ -36,6 +36,7 @@ public:
         rows_[nr_] = AttuneRow{ lBuf_[nr_], vBuf_[nr_] };
         nr_++; sc_.nRows = nr_; return true;
     }
+    void controls(const settingsctl::Data& d){sc_.controls=true;sc_.control=d;}
     const AttuneScene& scene() const { return sc_; }
     int rowCount() const { return nr_; }
 
@@ -59,7 +60,7 @@ inline void sceneDirty(const AttuneScene& a, const AttuneScene& b, bool& status,
     for (int i = 0; same && i < a.nRows; i++)
         same = !__builtin_strcmp(a.rows[i].label?a.rows[i].label:"", b.rows[i].label?b.rows[i].label:"")
                && !__builtin_strcmp(a.rows[i].value?a.rows[i].value:"", b.rows[i].value?b.rows[i].value:"");
-    body = !same;
+    body = !same || a.controls!=b.controls || (a.controls && !settingsctl::same(a.control,b.control));
 }
 
 class AttuneEngine {

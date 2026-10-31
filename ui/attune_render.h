@@ -13,6 +13,7 @@
 #include "palette.h"
 #include "font5x7.h"
 #include "canvas.h"
+#include "settings_controls.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -26,6 +27,7 @@ using scanr::Rec;
 struct AttuneRow { const char* label; const char* value; };   // one visible knob
 
 struct AttuneScene {
+    bool controls=false; settingsctl::Data control;
     GnssFix  gps;
     int      nodes = 0;
     bool     hasCell = false; int battPct = 0;
@@ -52,6 +54,8 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
     const uieng::AttuneLayout L = uieng::attune(W, H);
     // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
+
+    if(sc.controls){settingsctl::draw(s,W,H,sc.control);return;}
 
     // knob rows: label + value + [-][+]
     for (int i = 0; i < sc.nRows && i < L.nRows; i++) {

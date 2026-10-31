@@ -120,7 +120,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl, SettingsControl };
 // Stable Nav payloads; MENU is in the header and Files is an explicit launcher.
 // Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).

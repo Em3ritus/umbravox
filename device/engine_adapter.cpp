@@ -8,6 +8,7 @@
 
 #include <Arduino.h>
 #include "poi.h"
+#include "ble_bridge.h"
 #include "logging.h"
 #include <esp_heap_caps.h>
 #include "touch.h"
@@ -67,6 +68,7 @@ echpres::EchoEngine   eEchoes_;
 atnpres::AttuneEngine eAttune_;
 asppres::AspectEngine eAspect_;
 displayctl::State display_;
+settingsctl::State settings_;
 int pendingSensitivity_=-1;
 detpres::DetailEngine eDetail_;
 flspres::FilesEngine  eFiles_;
@@ -260,7 +262,14 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
         case uinav::Screen::Mesh:   uiproj::mesh(eMesh_.back(), s, c);     eMesh_.commit();   break;
         case uinav::Screen::Omens:  uiproj::omens(eOmens_.back(), s, c);   eOmens_.commit();  break;
         case uinav::Screen::Echoes: uiproj::echoes(eEchoes_.back(), s, c); eEchoes_.commit(); break;
-        case uinav::Screen::Attune: uiproj::attune(eAttune_.back(), s, c, nav.setPage, uieng::attuneRowsPerPage(H_)); eAttune_.commit(); break;
+        case uinav::Screen::Attune: {
+            uiproj::attune(eAttune_.back(),s,c,0,1);
+            settingsctl::Data d;d.view=settings_;d.settings=s.set;d.netId=s.netId;
+            const auto bs=blebridge::stats();d.connected=bs.connected;d.streaming=bs.streaming;
+            snprintf(d.name,sizeof d.name,"%s",blebridge::deviceName());
+            snprintf(d.pcap,sizeof d.pcap,"%s",s.pcapStatus);
+            eAttune_.back().controls(d);eAttune_.commit();break;
+        }
         case uinav::Screen::Aspect:
             if(display_.editor!=6)display_.sensitivity=touch::sensitivity();
             if(display_.editor==4){const auto p=touch::observed();displayctl::sample(display_,W_,H_,p.any,p.panelX,p.panelY);}
@@ -363,7 +372,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         case uinav::Screen::Mesh:   h = uieng::meshHits(W_, H_); break;
         case uinav::Screen::Omens:  h = uieng::omensHits(W_, H_); break;
         case uinav::Screen::Echoes: h = uieng::echoesHits(W_, H_); break;
-        case uinav::Screen::Attune: h = uieng::attuneHits(W_, H_, nav.setPage); break;
+        case uinav::Screen::Attune: h = settingsctl::hits(W_, H_, settings_); break;
         case uinav::Screen::Aspect: h = displayctl::hits(W_, H_, display_, s.set.theme == pal::TH_COSMICMUFFIN); break;
         case uinav::Screen::Detail: h = uieng::detailHits(W_, H_,nav.detailPage==2 && s.detail.band!=ui::BAND_BLE); break;
         case uinav::Screen::Files: {
@@ -389,7 +398,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
 
         switch (hit.action) {
             case uieng::Action::Nav:
-                display_.editor=-1;display_.count=0;
+                display_.editor=-1;display_.count=0;settings_.editor=-1;
                 if(nav.screen==ui::SCR_FILES){nav.scroll=0;nav.fileSel=-1;nav.fileConfirm=false;}
                 break;
             case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%(s.nNodes+1);break;
@@ -419,6 +428,8 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 nav.rangeIdx = (uint8_t)domr::rangeIndexStep(nav.rangeIdx,hit.payload);
                 break;
             }
+            case uieng::Action::SettingsControl:
+                settingsctl::apply(settings_,set,hit.payload);cancelInput();break;
             case uieng::Action::DisplayControl: {
                 const int p=hit.payload;display_.error=false;
                 if(p>=0&&p<3){display_.tab=p;display_.editor=-1;}

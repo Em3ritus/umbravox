@@ -148,3 +148,5 @@ sim/bridge_png
 
 /sim/display_controls_preview
 /sim/test_display_controls
+
+/sim/test_settings_controls
