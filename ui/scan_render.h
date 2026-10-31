@@ -313,8 +313,8 @@ inline uieng::Rect radarBounds(int W, int H) {
     const auto f=hs.field;
     const int cx = W>=400 ? 311 : f.x+f.w/2;
     const int top = hr.y+4, bottom = hs.barBase-hs.barMax-2;
-    // Optical lift leaves room above the spectrum without changing diameter.
-    const int cy = (top+bottom)/2 - (W>=400 ? 6 : 2);
+    // Compact panels retain the accepted optical lift; wide panels stay centered.
+    const int cy = (top+bottom)/2 - (W>=400 ? 0 : 2);
     const int r = W>=400 ? 85 : std::min(f.w/2-4,(bottom-top)/2);
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }

@@ -26,7 +26,7 @@ std::ifstream bf(std::string(folders[i])+"emblem.bin",std::ios::binary);artwork[
    const auto b=radarBounds(wh.first,wh.second);const int r=(b.w-5)/2;
    const auto hero=uieng::scan(wh.first,wh.second).hero;const auto hs=heroSub(hero);
    const int cy=b.y+r+2,top=hero.y+4,bottom=hs.barBase-hs.barMax-2;
-   assert(cy==(top+bottom)/2-(wh.first>=400?6:2));
+   assert(cy==(top+bottom)/2-(wh.first>=400?0:2));
    assert(b.y>=hero.y && b.y+b.h<=hs.barBase-hs.barMax);
    if(wh.second==240)assert(r==55);if(wh.first==480)assert(r==85);
    for(int k=1;k<=3;k++){int n=0;assert(radargeometry::ring(r*k/3,n)&&n>0);}

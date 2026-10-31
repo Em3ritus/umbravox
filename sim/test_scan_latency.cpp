@@ -125,8 +125,8 @@ int main() {
     scanpres::recordingHits(hits,scanr::Rec::Saving);assert(hits.count==count-1);
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
-    // Body goldens: optically raised radars; CVLT has two rings and a quiet seal.
-    const uint64_t golden[2][3]={{9633963175803861902ull,4191396170369580127ull,15680692686663135510ull},{10901866208411352173ull,12349037646100620601ull,4266813576137956039ull}};
+    // Body goldens: accepted per-size radar positions; CVLT has two rings and a quiet seal.
+    const uint64_t golden[2][3]={{9248154531956547406ull,437666352304452431ull,3863943504657656766ull},{10901866208411352173ull,12349037646100620601ull,4266813576137956039ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();
