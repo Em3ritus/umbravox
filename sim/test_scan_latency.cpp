@@ -3,18 +3,27 @@
 #include "../ui/frame_present.h"
 #include <cassert>
 #include <set>
+#include <map>
 #include <vector>
 #include <cstdio>
 static void geometry() {
     for(int r : {9,13,18,19,23,26,27,28,32,36,38,39,46,55,56,58,65,69,85,98}) {
-        std::set<std::pair<int,int>> reference,table;
-        for(int a=0;a<1440;++a) {
-            double t=a*3.14159265/720.0;
-            reference.emplace((int)(r*std::cos(t)+.5),(int)(r*std::sin(t)+.5));
+        int n=0;const auto* pts=radargeometry::ring(r,n);assert(pts && n>0);
+        std::map<std::pair<int,int>,int> table;
+        int previous=-999;double coverage=0;
+        for(int i=0;i<n;++i){const auto p=pts[i];
+            assert(p.y>=previous);previous=p.y;
+            assert(p.coverage>0 && p.coverage<=16);
+            assert(std::abs(std::hypot(double(p.x),double(p.y))-r)<1.3);
+            assert(table.emplace(std::make_pair(p.x,p.y),p.coverage).second);
+            coverage+=p.coverage/16.0;
         }
-        int n=0;const auto* pts=radargeometry::ring(r,n);assert(pts);
-        for(int i=0;i<n;++i)table.emplace(pts[i].x,pts[i].y);
-        assert(table==reference); // exact old raster, including asymmetric truncation
+        for(const auto& p:table){int x=p.first.first,y=p.first.second;
+            assert(table.at({-x,y})==p.second && table.at({x,-y})==p.second);
+            assert(table.at({y,x})==p.second);
+        }
+        // A one-pixel stroke has area approximately equal to circumference.
+        assert(std::abs(coverage-2*3.14159265*r)<2*3.14159265*r*.06);
     }
 }
 static std::vector<uint16_t> draw(int w,int h,const scanr::ScanScene& sc) {
@@ -116,8 +125,8 @@ int main() {
     scanpres::recordingHits(hits,scanr::Rec::Saving);assert(hits.count==count-1);
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
-    // Body goldens: wide unchanged; compact native 55px artwork, 8px spectrum, subdued Cvlt seal.
-    const uint64_t golden[2][3]={{1146081116921973907ull,13540596851408026256ull,17758537092499423455ull},{9848779580087129569ull,608851863895226392ull,11942760010647885326ull}};
+    // Body goldens: symmetric antialiased rings; CVLT has one outer boundary.
+    const uint64_t golden[2][3]={{1424835025725215149ull,15058593841316351995ull,15271070740236724997ull},{10901866208411352173ull,7512234154594361247ull,6432492321551372875ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

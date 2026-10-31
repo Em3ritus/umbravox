@@ -217,7 +217,7 @@ inline void radarTrail(S& s,int cx,int cy,int r,uint32_t phase){
     line(s,cx,cy,cx+r*lx/1024,cy+r*ly/1024,pal::SWEEP_HI);
 }
 
-inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true) {   // same mask/scale as motif::drawEmblem
+inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true, bool smooth=false) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px || !e.ncol || e.ncol>16) return;
     const int d=2*r;
     uint16_t colors[16];for(int i=0;i<e.ncol;i++)colors[i]=ui::Canvas::mix(pal::VOID,e.pal[i],opacity,100);
@@ -225,8 +225,24 @@ inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, 
         for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(circular && dx*dx+dy*dy>r*r) continue;
             int sx=(x-(cx-r))*e.w/d, sy=(y-(cy-r))*e.h/d;
             if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
-            const uint16_t color=e.pal[themepack::pixel(e,sy*e.w+sx)];
-            if(!transparentBlack || color)pt(s,x,y,colors[themepack::pixel(e,sy*e.w+sx)]); } }
+            if(smooth && d<e.w){
+                // Four area samples per destination pixel; only the small badge,
+                // never the radar/labels. Transparent samples use the background.
+                uint16_t samples[4];int n=0;bool visible=false;
+                for(int oy:{1,3})for(int ox:{1,3}){
+                    const int ax=std::min(int(e.w)-1,((x-cx+r)*4+ox)*e.w/(d*4));
+                    const int ay=std::min(int(e.h)-1,((y-cy+r)*4+oy)*e.h/(d*4));
+                    const int index=themepack::pixel(e,ay*e.w+ax);
+                    visible|=bool(e.pal[index]);
+                    samples[n++]=transparentBlack && !e.pal[index]?pal::VOID:colors[index];
+                }
+                if(!transparentBlack || visible)pt(s,x,y,ui::Canvas::mix(
+                    ui::Canvas::mix(samples[0],samples[1],1,2),
+                    ui::Canvas::mix(samples[2],samples[3],1,2),1,2));
+            }else{
+                const int index=themepack::pixel(e,sy*e.w+sx);
+                if(!transparentBlack || e.pal[index])pt(s,x,y,colors[index]);
+            } } }
 }
 // Precomputed artwork: clipped spans, no heap use and no trigonometry.
 inline void crewArt(S& s,int cx,int cy,int radius,int style,int opacity=100){
@@ -484,8 +500,8 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // Theme identity occupies the former field heading, independently of radar clipping.
     if (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || sc.theme==pal::TH_COSMICMUFFIN) {
         const auto* headingEmblem=pal::emblem(sc.theme);
-        const int badgeR=W>=400?27:14;
-        if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),sc.theme==pal::TH_COSMICMUFFIN);
+        const int badgeR=W>=400?27:22;
+        if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),sc.theme==pal::TH_COSMICMUFFIN,true);
     }
     const int channelScale = W>=400 ? 2 : 1;
     txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,channelScale), hr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
@@ -515,7 +531,11 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                 for (int i=0;i<count;++i) {
                     if (fcy+ring[i].y < s.y0) continue;
                     if (fcy+ring[i].y >= s.y0+s.h) break; // sorted rows
-                    pt(s,fcx+ring[i].x,fcy+ring[i].y,pal::EDGE);
+                    const int x=fcx+ring[i].x, y=fcy+ring[i].y;
+                    if(x>=0 && x<s.W){
+                        auto& dst=s.px[(y-s.y0)*s.W+x];
+                        dst=ui::Canvas::mix(dst,pal::EDGE,ring[i].coverage,16);
+                    }
                 }
             } else { // other logical sizes retain the original geometry
                 for (int a=0;a<1440;a++){ const double t=a*3.14159265/720.0;

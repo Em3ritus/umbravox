@@ -10,8 +10,7 @@ void paint(S& s,int fcx,int fcy,int fr,bool cvlt){
  if(cvlt){          const uint16_t ink=pal::rgb(156,102,221),quiet=pal::rgb(71,43,100),bright=pal::rgb(208,171,245);
           auto polar=[&](float angle,float radius){double t=angle*3.14159265/180.;return std::pair<int,int>{fcx+int(cos(t)*radius),fcy+int(sin(t)*radius)};};
           auto radial=[&](float a,float r1,float r2,uint16_t c){auto x=polar(a,r1),y=polar(a,r2);line(s,x.first,x.second,y.first,y.second,c);};
-          // Interrupted outer annulus and fine calibration ticks.
-          for(int a=0;a<360;a++){if(a%90>9&&a%90<81){auto z=polar(a,fr*.94);pt(s,z.first,z.second,ink);}}
+          // One outer boundary comes from the shared radar; retain calibration ticks.
           for(int a=0;a<360;a+=10)radial(a,fr*.85,fr*(a%30==0?.91:.88),a%30==0?bright:quiet);
           // Four cardinal sigils, deliberately sparse at compact size.
           for(int a=0;a<360;a+=90){auto z=polar(a,fr*.94);int k=fr>=60?4:2;diamondInto(s,z.first,z.second,k,bright);}
