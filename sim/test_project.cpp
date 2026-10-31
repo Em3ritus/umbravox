@@ -160,7 +160,7 @@ int main(){
     }
 
     { asppres::AspectStore st; aspect(st, s, c); const auto& o=st.scene();
-      expect(!strcmp(o.sweepName,"PULSE") && o.alertLive && o.packsSkipped==2, "aspect: sweep name + COSMIC alertLive + skipped"); }
+      expect(o.plain==bool(s.set.labels) && !strcmp(o.sweepName,"PULSE") && o.alertLive && o.packsSkipped==2, "aspect: sweep name + COSMIC alertLive + skipped"); }
 
     {
       auto value=s; value.detail.auth=0;

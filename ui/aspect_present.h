@@ -21,6 +21,7 @@ public:
     void begin(uint8_t theme, uint32_t now) { sc_ = AspectScene{}; sc_.theme = theme; sc_.now = now; wire_(); }
     void gps(const aspr::GnssFix& f) { sc_.gps = f; }
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
+    void labels(bool plain){sc_.plain=plain;}
     void poi(ui::PoiStatus value) { sc_.poi=value; }
     void status(int nodes, bool hasCell, int batt, aspr::Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
@@ -47,7 +48,7 @@ inline void sceneDirty(const AspectScene& a, const AspectScene& b, bool& status,
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
 
-    const bool same = a.theme == b.theme && a.alertLive == b.alertLive && a.packsSkipped == b.packsSkipped
+    const bool same = a.plain == b.plain && a.theme == b.theme && a.alertLive == b.alertLive && a.packsSkipped == b.packsSkipped
         && !__builtin_strcmp(a.themeName?a.themeName:"", b.themeName?b.themeName:"")
         && !__builtin_strcmp(a.sweepName?a.sweepName:"", b.sweepName?b.sweepName:"")
         && !__builtin_strcmp(a.alertName?a.alertName:"", b.alertName?b.alertName:"");

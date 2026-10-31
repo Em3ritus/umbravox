@@ -15,6 +15,7 @@ static void expect(bool c,const char* m){ ++checks; if(!c){++fails;printf("  FAI
 
 static void fill(AspectStore& st, const aspr::AspectScene& s){
     st.begin(s.theme, s.now); st.gps(s.gps); st.status(s.nodes,s.hasCell,s.battPct,s.rec);
+    st.labels(s.plain);
     st.appearance(s.themeName, s.sweepName, s.alertName, s.alertLive, s.packsSkipped);
 }
 struct FbSink : aspr::Sink {
@@ -40,6 +41,8 @@ int main(){
     aspr::AspectScene sk = aspfix::demo(2); sk.packsSkipped = 3;
     sceneDirty(a, sk, s, b); expect(!s && b, "diff: skipped-pack count -> body only");
 
+    auto labels=a;labels.plain=!a.plain;
+    sceneDirty(a,labels,s,b);expect(!s&&b,"Labels mode change schedules body repaint");
     const int W=480,H=320;
     AspectEngine e; e.reset(W,H); aspr::Compositor comp; FbSink fb(W,H);
     e.enter(); fill(e.back(), aspfix::demo(2)); e.commit();

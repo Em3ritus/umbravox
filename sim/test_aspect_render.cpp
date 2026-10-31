@@ -45,6 +45,10 @@ int main(){
         bool match=true; for(int i=0;i<W*H;i++) if(reg.fb[i]!=full.fb[i]){ match=false; break; }
         snprintf(m,sizeof m,"%dx%d sweep change: row region == full",W,H); expect(match,m);
 
+        AspectScene labels=sc;labels.plain=!sc.plain;
+        FbSink lf(W,H),lp(W,H);comp.renderFull(W,H,labels,lf);comp.renderFull(W,H,sc,lp);
+        comp.renderRegion(W,H,labels,L.labels,lp);
+        expect(lp.fb==lf.fb && lf.fb!=fb.fb,"Labels toggle erases previous value; region equals full repaint");
         const uieng::Rect gcell = L.statusCells[0];
         AspectScene stl = sc; stl.gps = {true,3,12,30000};
         FbSink gf(W,H); comp.renderFull(W,H,stl,gf);

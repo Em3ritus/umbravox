@@ -19,9 +19,10 @@ namespace uinav {
 
 // The full set of engine screens the router can rest on. The first nine share
 // uieng::ScreenId's order (so a Nav payload casts across); Detail and Files are
-// reached by their own actions, not by a Nav tab.
+// separate screen values; Files also has an explicit MENU Nav launcher.
 enum class Screen : int { Scan, Domain, Codex, Menu, Mesh, Omens, Echoes, Attune, Aspect, Detail, Files };
 inline Screen screenFromNav(int payload) {         // Nav payload (a ScreenId) -> Screen
+    if(payload==(int)uieng::ScreenId::Files)return Screen::Files;
     if (payload < 0 || payload > (int)Screen::Aspect) return Screen::Scan;
     return (Screen)payload;
 }
@@ -81,7 +82,7 @@ public:
         using A = uieng::Action;
         Requests r;
         switch (h.action) {
-            case A::Nav:            scr_ = screenFromNav(h.payload); break;
+            case A::Nav:            scr_ = screenFromNav(h.payload); if(scr_==Screen::Files)enteringFiles(); break;
             case A::DetailPage: break;
             case A::ClientPage: break;
             case A::EchoPage: break;

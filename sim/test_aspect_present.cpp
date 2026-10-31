@@ -20,7 +20,7 @@ int main(){
         const AspectLayout a = aspect(W,H);
         expect(a.body==Rect{8,52,W-16,H-104}, P?"320 body":"480 body");
         // preview is the left column; it does not overlap the stepper rows
-        expect(a.preview.x==a.body.x && a.preview.h==a.body.h, "preview fills the left column");
+        expect(a.preview.x==a.body.x && a.preview.h==a.body.h-48 && a.labels.h==44 && !overlap(a.preview,a.labels), "preview and Labels share the left column");
         bool geo=true;
         for(int i=0;i<3;i++){
             if(a.rows[i].h!=44) geo=false;
@@ -34,10 +34,12 @@ int main(){
         // alertLive -> 6 stepper hits; not live -> 4 (ALERT omitted)
         HitList hl = aspectHits(W,H,true);
         HitList hn = aspectHits(W,H,false);
-        expect(hl.count==(W>=400?10:9)+6, "alertLive: chrome + THEME/SWEEP/ALERT steppers");
-        expect(hn.count==(W>=400?10:9)+4, "not live: ALERT steppers omitted (not a dead target)");
+        expect(hl.count==(W>=400?10:9)+7, "alertLive: chrome + THEME/SWEEP/ALERT steppers");
+        expect(hn.count==(W>=400?10:9)+5, "not live: ALERT steppers omitted (not a dead target)");
 
         auto find=[&](HitList&h,const char* s)->const Hit*{ for(int j=0;j<h.count;j++) if(!strcmp(h.items[j].slot,s)) return &h.items[j]; return nullptr; };
+        const Hit* labels=find(hl,"labels");
+        expect(labels&&labels->action==Action::ToggleLabels&&labels->rect==a.labels,"DISPLAY Labels hit bound to geometry");
         const Hit* tm=find(hl,"theme-"); const Hit* tp=find(hl,"theme+");
         expect(tm&&tm->action==Action::ThemeStep&&tm->payload==-1, "THEME - -> ThemeStep(-1)");
         expect(tp&&tp->action==Action::ThemeStep&&tp->payload==+1, "THEME + -> ThemeStep(+1)");

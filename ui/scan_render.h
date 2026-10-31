@@ -258,9 +258,12 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     box(s, 0, 0, W, H, pal::VOID);
     box(s, 0, 0, W, 44, pal::PANEL);
     box(s, 0, H - 44, W, 44, pal::PANEL);
-    box(s, body.x, 38, body.w, 1, pal::EDGE);
+    box(s, 8, 43, W-16, 1, pal::EDGE);
     box(s, body.x, H - 46, body.w, 1, pal::EDGE);
 
+    for(int y:{8,13,18})box(s,14,y,16,2,activeTab==3?pal::BRIGHT:pal::TEXT);
+    centered(s,22,28,"MENU",1,activeTab==3?pal::BRIGHT:pal::TEXT);
+    if(activeTab==3)box(s,10,39,24,2,pal::WITCH_HI);
     // Fixed title box: theme names fit without moving any controls.
     char title[64]; snprintf(title,sizeof title,"%s",pal::themeName(st.theme));
     const int titleScale=fitScale(title,c.wordmark.w-8,2);
@@ -268,8 +271,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     if ((int)strlen(title)>maxChars && maxChars>=3) {
         title[maxChars]=0; title[maxChars-1]='.'; title[maxChars-2]='.'; title[maxChars-3]='.';
     }
-    centered(s,c.wordmark.x+c.wordmark.w/2,(30-7*titleScale)/2,title,titleScale,pal::BRIGHT);
-    centered(s,c.wordmark.x+c.wordmark.w/2,29,"HOME",1,activeTab==0?pal::WITCH_HI:pal::DIM);
+    centered(s,c.wordmark.x+c.wordmark.w/2,(44-7*titleScale)/2,title,titleScale,pal::BRIGHT);
     char hb[24];
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
@@ -294,14 +296,14 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     else snprintf(hb,sizeof hb,"%s",st.pmuOk&&!st.hasCell?"NO BAT":"N/A");
     centered(s,c.statusCells[2].x+c.statusCells[2].w/2,23,hb,1,level?pal::TEXT:pal::DIM);
 
-    // Three destinations, POI action, recording action. Header title is Home.
-    static const char* const nav[3]={"DOMAIN","CODEX","MENU"};
+    // Three destinations, POI action, recording action. Header MENU opens the hub.
+    static const char* const nav[3]={"SCAN","DOMAIN","CODEX"};
     for(int i=0;i<3;++i){
         const auto r=c.navCells[i];
         const int ns=fitScale(nav[i],r.w-8,2), width=Font::width(nav[i],ns);
         const int lx=r.x+(r.w-width)/2;
-        const bool on=activeTab==i+1;
-        txt(s,lx,H-30,nav[i],ns,on?pal::BRIGHT:pal::DIM);
+        const bool on=activeTab==i;
+        txt(s,lx,H-44+(44-7*ns)/2,nav[i],ns,on?pal::BRIGHT:pal::TEXT);
         if(on)box(s,lx,H-8,width,2,pal::WITCH_HI);
     }
     const auto mark=c.navCells[3];

@@ -22,47 +22,30 @@ struct Rect {
 
 inline int iround(double v) { return (int)std::lround(v); }
 
-// --- shared chrome: the ONE design-1 header + nav bar every screen composes ----
-// Single-sourced so a chrome fix lands once and every screen inherits it. The
-// Header uses a theme title, GPS, optional MESH, BRIDGE toggle and battery;
-// the nav bar is the four tabs + a STOP/REC record control at the far right:
-//   statusCells[0..2] = GPS / MESH / POWER readout hits (cell 3 is the wordmark
-//   area, NOT a control); navCells[0..3] = the four tabs; `stop` is the fifth
-//   nav hit (the record control). `wordmark` is draw-only. `body` carries an 8px
-//   margin (SCAN widens its own body to 16 at 480; the bands here are the same).
+// Shared native chrome: MENU + branding + status, SCAN/DOMAIN/CODEX/POI/REC.
+// Theme title is draw-only; every control uses these same hit rectangles.
 struct Chrome {
     Rect status, nav, body;
     Rect statusCells[4], navCells[4];
-    Rect wordmark, stop, bridge;
+    Rect wordmark, stop, bridge, menu;
 };
 inline Chrome chrome(int W, int H) {
     Chrome c;
-    const bool wide = (W >= 400);
-    c.status = {0, 0, W, 44};
-    c.nav    = {0, H - 44, W, 44};
-    c.body   = {8, 52, W - 16, H - 104};   // 52 = 44 status + 8 gap; 104 = that + 44 nav + 8 gap
-    const int ny = H - 44;
-    if (wide) {
-        c.wordmark = {8, 0, 176, 44};
-        c.statusCells[0] = {184, 0, 68, 44};
-        c.statusCells[1] = {252, 0, 60, 44};
-        c.bridge = {312, 0, 64, 44};
-        c.statusCells[2] = {376, 0, W-384, 44};
-        c.statusCells[3] = {0, 0, 184, 44};
-        c.navCells[0] = {0,   ny, 99, 44}; c.navCells[1] = {99,  ny,  99, 44};
-        c.navCells[2] = {198, ny, 99, 44}; c.navCells[3] = {297, ny, 101, 44};
-        c.stop = {398, ny, 82, 44};
-    } else {
-        c.wordmark = {8, 0, 128, 44};
-        c.statusCells[0] = {136, 0, 52, 44};
-        c.statusCells[1] = {}; // Mesh remains available through MENU.
-        c.bridge = {188, 0, 60, 44};
-        c.statusCells[2] = {248, 0, W-256, 44};
-        c.statusCells[3] = {0, 0, 136, 44};
-        c.navCells[0] = {0,   ny, 65, 44}; c.navCells[1] = {65,  ny, 65, 44};
-        c.navCells[2] = {130, ny, 65, 44}; c.navCells[3] = {195, ny, 65, 44};
-        c.stop = {260, ny, 60, 44};
+    c.status={0,0,W,44}; c.nav={0,H-44,W,44}; c.body={8,52,W-16,H-104};
+    c.menu={0,0,44,44};
+    if(W>=400){
+        c.wordmark={44,0,164,44};c.statusCells[0]={208,0,56,44};
+        c.statusCells[1]={264,0,48,44};c.bridge={312,0,64,44};c.statusCells[2]={376,0,W-376,44};
+        for(int i=0;i<4;i++)c.navCells[i]={i*W/5,H-44,(i+1)*W/5-i*W/5,44};
+        c.stop={4*W/5,H-44,W-4*W/5,44};
+    }else{
+        c.wordmark={44,0,104,44};c.statusCells[0]={148,0,48,44};
+        c.statusCells[1]={};c.bridge={196,0,60,44};c.statusCells[2]={256,0,W-256,44};
+        const int edges[]={0,60,140,208,260};
+        for(int i=0;i<4;i++)c.navCells[i]={edges[i],H-44,edges[i+1]-edges[i],44};
+        c.stop={260,H-44,W-260,44};
     }
+    c.statusCells[3]=c.wordmark; // retained draw-only alias, never a hit
     return c;
 }
 
@@ -138,11 +121,11 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
                           FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage };
-// Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
-// the rest are the additional destinations the MENU hub launches into. Scan=0,
+// Stable Nav payloads; MENU is in the header and Files is an explicit launcher.
+// Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
 enum class ScreenId : int { Scan, Domain, Codex, Menu,
-                            Mesh, Omens, Echoes, Attune, Aspect };
+                            Mesh, Omens, Echoes, Attune, Aspect, Files=10 };
 enum class Band     : int { Wifi, FiveGhz, Ble };          // CodexFilter payload
 
 struct Hit {
@@ -182,19 +165,18 @@ static const char* const kThreatDesc =
 inline bool validKey(const char* k) { return k && k[0]; }
 
 // The shared design-1 chrome hit set, derived from chrome(W,H) so EVERY screen
-// binds the identical header + nav geometry: GPS/MESH/POWER readouts, the four
-// nav tabs, and the STOP/REC record control (design #1 moved logging here from a
-// status cell). The wordmark area (statusCells[3]) is draw-only, not a control.
+// binds identical MENU/status and SCAN/DOMAIN/CODEX/POI/REC geometry.
+// The wordmark area (statusCells[3]) is draw-only, not a control.
 inline void addChromeHits(HitList& h, int W, int H) {
     const Chrome c = chrome(W, H);
     h.add("gps",   c.statusCells[0], Action::OpenGps,     0, nullptr, "Open GPS diagnostics");
     if (c.statusCells[1].w) h.add("mesh",  c.statusCells[1], Action::OpenMesh,    0, nullptr, "Open Mesh");
     h.add("power", c.statusCells[2], Action::PowerDetail, 0, nullptr, "Power detail (NM: sensing unavailable)");
     h.add("bridge",c.bridge,Action::SettingStep,9,nullptr,"Toggle BLE bridge");
-    h.add("nav-scan",c.statusCells[3],Action::Nav,0,nullptr,"Home: return to SCAN");
-    static const char* const nslot[3] = {"nav-domain","nav-codex","nav-menu"};
-    static const char* const ndesc[3] = {"Open DOMAIN","Open CODEX","Open MENU"};
-    for (int i=0;i<3;++i) h.add(nslot[i],c.navCells[i],Action::Nav,i+1,nullptr,ndesc[i]);
+    h.add("nav-menu",c.menu,Action::Nav,3,nullptr,"Open MENU");
+    static const char* const nslot[3] = {"nav-scan","nav-domain","nav-codex"};
+    static const char* const ndesc[3] = {"Open SCAN","Open DOMAIN","Open CODEX"};
+    for (int i=0;i<3;++i) h.add(nslot[i],c.navCells[i],Action::Nav,i,nullptr,ndesc[i]);
     h.add("mark-poi",c.navCells[3],Action::MarkPoi,0,nullptr,"Save current GPS point of interest");
     h.add("stop", c.stop, Action::ToggleLogging, 0, nullptr, "Toggle logging; the REC/STOP record control");
 }
@@ -324,55 +306,33 @@ inline HitList codexHits(int W, int H, const HitCtx& ctx) {
 // --- MENU: the hub, a grid of launcher tiles (the old GRIMOIRE) ---------------
 // No geometry.json oracle (scan+domain only), so regions are asserted against
 // these rules + structural invariants. The body holds a resolution-independent
-// 3x3 grid: eight screen launchers plus a LABELS tile that toggles brand/plain
-// naming. Cells tile the body exactly (last col/row take the remainder) and
-// stay >=44px at both approved profiles. The shared nav bar persists with MENU
-// (index 3) lit, so the hub is a peer screen, reachable and leavable like the
-// rest.
-static constexpr int kMenuCols = 3, kMenuRows = 3, kMenuCells = 9;
-
+// Six secondary destinations; primary screens remain in the shared footer.
+static constexpr int kMenuCells=6;
 struct MenuLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
     Rect cells[kMenuCells];
-    int  cols = kMenuCols, rows = kMenuRows, nCells = kMenuCells;
+    int cols=3, rows=2, nCells=kMenuCells;
 };
-inline MenuLayout menu(int W, int H) {
-    const Chrome c = chrome(W, H);
-    MenuLayout m;
-    m.status = c.status; m.nav = c.nav; m.body = c.body;
-    for (int i = 0; i < 4; i++) { m.statusCells[i] = c.statusCells[i]; m.navCells[i] = c.navCells[i]; }
-
-    const int cw = c.body.w / kMenuCols, rh = c.body.h / kMenuRows;
-    for (int i = 0; i < kMenuCells; i++) {
-        const int col = i % kMenuCols, row = i / kMenuCols;
-        const int x = c.body.x + col * cw, y = c.body.y + row * rh;
-        const int w = (col < kMenuCols - 1) ? cw : c.body.w - (kMenuCols - 1) * cw;
-        const int hh = (row < kMenuRows - 1) ? rh : c.body.h - (kMenuRows - 1) * rh;
-        m.cells[i] = {x, y, w, hh};
+inline MenuLayout menu(int W,int H){
+    const Chrome c=chrome(W,H);MenuLayout m;
+    m.status=c.status;m.nav=c.nav;m.body=c.body;
+    for(int i=0;i<4;i++){m.statusCells[i]=c.statusCells[i];m.navCells[i]=c.navCells[i];}
+    m.cols=W>=400?3:2;m.rows=6/m.cols;const int gap=W>=400?6:2;
+    for(int i=0;i<6;i++){
+        int col=i%m.cols,row=i/m.cols;
+        int x=c.body.x+col*(c.body.w+gap)/m.cols,y=c.body.y+row*(c.body.h+gap)/m.rows;
+        int right=c.body.x+(col+1)*(c.body.w+gap)/m.cols-gap;
+        int bottom=c.body.y+(row+1)*(c.body.h+gap)/m.rows-gap;
+        m.cells[i]={x,y,right-x,bottom-y};
     }
     return m;
 }
-
-// MENU hit set. Eight tiles navigate (Nav payload = ScreenId); the ninth toggles
-// the label mode. The tile order matches the delivered GRIMOIRE grid so the hit
-// test and the drawing cannot disagree about which cell is which.
-inline HitList menuHits(int W, int H) {
-    const MenuLayout m = menu(W, H);
-    HitList h;
-    addChromeHits(h, W, H);
-    struct ME { ScreenId id; const char* slot; const char* desc; };
-    static const ME tiles[8] = {
-        {ScreenId::Scan,   "menu-scan",   "Open SCAN"},
-        {ScreenId::Codex,  "menu-codex",  "Open CODEX (FOUND)"},
-        {ScreenId::Domain, "menu-domain", "Open DOMAIN (MAP)"},
-        {ScreenId::Echoes, "menu-echoes", "Open ECHOES (PROBES)"},
-        {ScreenId::Mesh,   "menu-mesh",   "Open MESH"},
-        {ScreenId::Omens,  "menu-omens",  "Open OMENS (ALERTS)"},
-        {ScreenId::Attune, "menu-attune", "Open ATTUNE (SETTINGS)"},
-        {ScreenId::Aspect, "menu-aspect", "Open ASPECT (DISPLAY)"},
-    };
-    for (int i = 0; i < 8; i++) h.add(tiles[i].slot, m.cells[i], Action::Nav, (int)tiles[i].id, nullptr, tiles[i].desc);
-    h.add("labels", m.cells[8], Action::ToggleLabels, 0, nullptr, "Toggle brand/plain labels");
+inline HitList menuHits(int W,int H){
+    const auto m=menu(W,H);HitList h;addChromeHits(h,W,H);
+    const ScreenId ids[]={ScreenId::Echoes,ScreenId::Mesh,ScreenId::Omens,ScreenId::Files,ScreenId::Attune,ScreenId::Aspect};
+    const char* slots[]={"menu-echoes","menu-mesh","menu-omens","menu-files","menu-attune","menu-aspect"};
+    const char* desc[]={"Open PROBES","Open MESH","Open ALERTS","Open FILES","Open SETTINGS","Open DISPLAY"};
+    for(int i=0;i<6;i++)h.add(slots[i],m.cells[i],Action::Nav,int(ids[i]),nullptr,desc[i]);
     return h;
 }
 
@@ -538,7 +498,7 @@ inline HitList attuneHits(int W, int H, int page) {
 // theme with a choice; otherwise its steppers are omitted (not a dead target).
 struct AspectLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
-    Rect preview, rows[3], minus[3], plus[3];
+    Rect preview, labels, rows[3], minus[3], plus[3];
     int  nRows = 3;
 };
 inline AspectLayout aspect(int W, int H) {
@@ -547,7 +507,8 @@ inline AspectLayout aspect(int W, int H) {
     a.status = c.status; a.nav = c.nav; a.body = c.body;
     for (int i = 0; i < 4; i++) { a.statusCells[i] = c.statusCells[i]; a.navCells[i] = c.navCells[i]; }
     const int previewW = c.body.w * 2 / 5;
-    a.preview = {c.body.x, c.body.y, previewW, c.body.h};
+    a.preview = {c.body.x, c.body.y, previewW, c.body.h-48};
+    a.labels = {c.body.x,c.body.y+c.body.h-44,previewW,44};
     const int rx = c.body.x + previewW + 8, rw = c.body.w - previewW - 8;
     for (int i = 0; i < 3; i++) {
         const int y = c.body.y + i * 44;
@@ -565,6 +526,7 @@ inline HitList aspectHits(int W, int H, bool alertLive) {
     const AspectLayout a = aspect(W, H);
     HitList h;
     addChromeHits(h, W, H);
+    h.add("labels",a.labels,Action::ToggleLabels,0,nullptr,"Toggle plain/brand labels");
     h.add("theme-", a.minus[0], Action::ThemeStep, -1, nullptr, "Previous theme");
     h.add("theme+", a.plus[0],  Action::ThemeStep, +1, nullptr, "Next theme");
     h.add("sweep-", a.minus[1], Action::SettingStep, -2, nullptr, "Previous sweep");

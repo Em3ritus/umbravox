@@ -383,6 +383,9 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         nav.screen = fromNav(router_.screen());
 
         switch (hit.action) {
+            case uieng::Action::Nav:
+                if(nav.screen==ui::SCR_FILES){nav.scroll=0;nav.fileSel=-1;nav.fileConfirm=false;}
+                break;
             case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%(s.nNodes+1);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
             case uieng::Action::EchoPage: {

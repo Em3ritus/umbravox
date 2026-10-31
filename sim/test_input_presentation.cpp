@@ -25,7 +25,7 @@ static void input() {
     const auto cell=uieng::menu(480,320).cells[1];
     assert(pending.observe(hits,cell.x+4,cell.y+4,2));
     assert(!pending.take(false,2,hits,hit)); // release needs no action; event persists
-    assert(pending.take(true,2,hits,hit)); assert(hit.payload==(int)uieng::ScreenId::Codex);
+    assert(pending.take(true,2,hits,hit)); assert(hit.payload==(int)uieng::ScreenId::Mesh);
     assert(!pending.take(true,2,hits,hit));
     pending.observe(hits,cell.x+4,cell.y+4,2); assert(!pending.take(true,3,hits,hit));
     uieng::HitList rows; char key[]="original";

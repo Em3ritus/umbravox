@@ -18,7 +18,10 @@ int main(){
     assert(a.rect.w>=44 && a.rect.h>=44 && a.rect.x>=0 && a.rect.x+a.rect.w<=w);
     if(!strcmp(a.slot,"bridge")){++bridges;assert(a.rect==ch.bridge && a.action==uieng::Action::SettingStep && a.payload==9);}
     if(!strcmp(a.slot,"mesh"))++meshes;
-    if(!strcmp(a.slot,"nav-scan")){++home;assert(a.rect==ch.statusCells[3] && a.payload==0);uinav::Router r;r.setScreen(uinav::Screen::Detail);r.dispatch(a);assert(r.screen()==uinav::Screen::Scan);}
+    if(!strcmp(a.slot,"nav-menu")){assert(a.rect==ch.menu && a.payload==3);uinav::Router r;r.setScreen(uinav::Screen::Detail);r.dispatch(a);assert(r.screen()==uinav::Screen::Menu);}
+    // Branding is intentionally not an invisible Home target.
+    assert(!(a.rect.x < ch.wordmark.x+ch.wordmark.w && ch.wordmark.x<a.rect.x+a.rect.w && a.rect.y<44));
+    if(!strcmp(a.slot,"nav-scan")){++home;assert(a.rect==ch.navCells[0] && a.payload==0);uinav::Router r;r.setScreen(uinav::Screen::Detail);r.dispatch(a);assert(r.screen()==uinav::Screen::Scan);}
     if(a.action==uieng::Action::MarkPoi){++poi;assert(a.rect==ch.navCells[3]);}
 
    }assert(home==1 && poi==1 && bridges==1 && meshes==(w==480?1:0));

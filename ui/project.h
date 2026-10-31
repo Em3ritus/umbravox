@@ -213,6 +213,7 @@ inline const char* alertStyleName(uint8_t theme, uint8_t style) {
 }
 inline void aspect(asppres::AspectStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
+    st.labels(s.set.labels!=0);
     st.gps(c.gps);
     st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     const bool live = (s.set.theme == pal::TH_COSMICMUFFIN);

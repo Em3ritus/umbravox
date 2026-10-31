@@ -33,6 +33,7 @@ struct AspectScene {
     const char* themeName = "";
     const char* sweepName = "";
     const char* alertName = "";
+    bool plain = false;
     bool     alertLive = false;     // ALERT row actionable (a theme with a choice)
     int      packsSkipped = 0;      // theme packs skipped at boot (status)
     uint8_t  theme = 0;             // drives the preview artwork
@@ -59,6 +60,10 @@ inline void composeStrip(scanr::S& s, int W, int H, const AspectScene& sc) {
         txt(s, pv.x + 4, pv.y + pv.h - 9, sk, 1, pal::AMBER);
     }
 
+    frame(s,L.labels.x,L.labels.y,L.labels.w,L.labels.h,pal::EDGE);
+    centered(s,L.labels.x+L.labels.w/2,L.labels.y+7,"LABELS",1,pal::DIM);
+    centered(s,L.labels.x+L.labels.w/2,L.labels.y+23,sc.plain?"PLAIN":"BRAND",1,pal::BRIGHT);
+
     // rows: THEME / SWEEP / ALERT
     static const char* const lab[3] = {"THEME", "SWEEP", "ALERT"};
     const char* val[3] = { sc.themeName, sc.sweepName, sc.alertName };
@@ -66,9 +71,11 @@ inline void composeStrip(scanr::S& s, int W, int H, const AspectScene& sc) {
         const uieng::Rect r = L.rows[i];
         const bool live = (i < 2) || sc.alertLive;
         if (i) box(s, r.x, r.y, r.w, 1, ui::Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
-        txt(s, r.x + 2, r.y + 8, lab[i], 1, pal::DIM);
-        const char* v = val[i] ? val[i] : "";
-        txt(s, L.minus[i].x - 6 - Font::width(v, 1), r.y + 8, v, 1, live ? pal::BRIGHT : pal::DIM);
+        txt(s, r.x + 2, r.y + 6, lab[i], 1, pal::DIM);
+        char value[32];snprintf(value,sizeof value,"%s",val[i]?val[i]:"");
+        const int maxChars=(L.minus[i].x-r.x-8)/6;
+        if(maxChars>=3 && int(strlen(value))>maxChars){value[maxChars]=0;value[maxChars-1]=value[maxChars-2]=value[maxChars-3]='.';}
+        txt(s,r.x+2,r.y+24,value,1,live?pal::BRIGHT:pal::DIM);
         subr::stepBtn(s, L.minus[i], "-", live);
         subr::stepBtn(s, L.plus[i],  "+", live);
     }

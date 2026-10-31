@@ -4,7 +4,7 @@
 //   - the body holds a 3x3 grid of 9 cells that tile the body exactly and each
 //     stay >=44x44 at both sizes (480x320 and 320x240);
 //   - every hit is in-bounds, >=44px, distinct-slotted, non-overlapping;
-//   - bindings: the 8 launcher tiles -> Nav with the right ScreenId payload (in
+//   - bindings: the 6 launcher tiles -> Nav with the right ScreenId payload (in
 //     the delivered GRIMOIRE order), the 9th -> ToggleLabels, plus 8 chrome.
 // Build:
 //   g++ -std=c++17 -I. -Isim sim/test_menu_present.cpp ui/palette.cpp \
@@ -23,18 +23,18 @@ int main(){
         const int W=P?320:480, H=P?240:320;
         const MenuLayout m = menu(W,H);
         expect(m.body==Rect{8,52,W-16,H-104}, P?"320 body rect":"480 body rect");
-        expect(m.nCells==9 && m.cols==3 && m.rows==3, "menu: 3x3 grid, 9 cells");
+        expect(m.nCells==6 && m.cols==(W>=400?3:2) && m.rows==(W>=400?2:3), "menu: adaptive grid, 6 cells");
 
         // cells tile the body exactly (no gaps/overlaps) and are each >=44x44
         bool fills=true, big=true;
         long area=0;
-        for(int i=0;i<9;i++){ const Rect c=m.cells[i];
+        for(int i=0;i<6;i++){ const Rect c=m.cells[i];
             area += (long)c.w*c.h;
             if(c.w<44||c.h<44) big=false;
             if(c.x<m.body.x||c.y<m.body.y||c.x+c.w>m.body.x+m.body.w||c.y+c.h>m.body.y+m.body.h) fills=false;
             for(int j=0;j<i;j++) if(overlap(c,m.cells[j])) fills=false; }
         expect(big, "menu: every cell >=44x44 at this profile");
-        expect(fills && area==(long)m.body.w*m.body.h, "menu: cells tile the body exactly (area == body, no overlap)");
+        expect(fills && area<(long)m.body.w*m.body.h, "menu: cells have gaps and no overlap");
 
         // hit set: structure + count
         HitList h = menuHits(W,H);
@@ -46,25 +46,24 @@ int main(){
             for(int k=0;k<j;k++){ if(!strcmp(h.items[j].slot,h.items[k].slot)) ok=false;
                                   if(overlap(r,h.items[k].rect)) ok=false; } }
         expect(ok, "menu hits: in-bounds, >=44px, distinct slots, non-overlapping");
-        expect(h.count==(W>=400?10:9)+8+1, "menu hits: 8 chrome + 8 launchers + 1 labels");
+        expect(h.count==(W>=400?10:9)+6, "menu hits: chrome + 6 launchers");
 
         // bindings: each launcher -> Nav(ScreenId); labels -> ToggleLabels
         auto find=[&](const char* slot)->const Hit*{
             for(int j=0;j<h.count;j++) if(!strcmp(h.items[j].slot,slot)) return &h.items[j]; return nullptr; };
         struct B { const char* slot; ScreenId id; };
-        const B want[8] = {
-            {"menu-scan",ScreenId::Scan}, {"menu-codex",ScreenId::Codex},
-            {"menu-domain",ScreenId::Domain}, {"menu-echoes",ScreenId::Echoes},
+        const B want[6] = {
+            {"menu-files",ScreenId::Files}, {"menu-echoes",ScreenId::Echoes},
             {"menu-mesh",ScreenId::Mesh}, {"menu-omens",ScreenId::Omens},
             {"menu-attune",ScreenId::Attune}, {"menu-aspect",ScreenId::Aspect} };
         bool bind=true;
-        for(int i=0;i<8;i++){ const Hit* t=find(want[i].slot);
+        for(int i=0;i<6;i++){ const Hit* t=find(want[i].slot);
             if(!t||t->action!=Action::Nav||t->payload!=(int)want[i].id) bind=false; }
-        expect(bind, "menu: 8 launcher tiles bind Nav -> correct ScreenId payload");
+        expect(bind, "menu: 6 launcher tiles bind Nav -> correct ScreenId payload");
         const Hit* poi=find("mark-poi");
         expect(poi && poi->action==Action::MarkPoi,"footer saves POI");
         const Hit* lab=find("labels");
-        expect(lab && lab->action==Action::ToggleLabels, "menu: LABELS tile -> ToggleLabels");
+        expect(!lab, "menu: LABELS moved to DISPLAY");
     }
 
     printf("\n%s  %d/%d checks passed\n", fails?"FAILED":"PASSED", checks-fails, checks);

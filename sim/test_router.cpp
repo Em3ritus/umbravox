@@ -63,7 +63,12 @@ int main(){
     // MENU: launcher tiles navigate; LABELS toggles
     { Router r; HitList h=menuHits(W,H);
       r.dispatch(*slot(h,"menu-aspect")); expect(r.screen()==Screen::Aspect, "MENU aspect tile -> ASPECT");
-      bool before=r.labelsPlain(); r.dispatch(*slot(h,"labels")); expect(r.labelsPlain()!=before, "LABELS toggles label mode"); }
+      r.dispatch({"select",{},Action::FileSelect,2,nullptr,""});
+      r.dispatch({"delete",{},Action::FileDelete,0,nullptr,""});
+      expect(r.fileSel()==2&&r.fileConfirm(),"precondition: prior FILES selection/modal exists");
+      r.dispatch(*slot(h,"menu-files")); expect(r.screen()==Screen::Files,"MENU files tile opens FILES");
+      expect(r.fileSel()==-1 && !r.fileConfirm(),"FILES entry clears selection and confirmation");
+      h=aspectHits(W,H,true); bool before=r.labelsPlain(); r.dispatch(*slot(h,"labels")); expect(r.labelsPlain()!=before, "LABELS toggles label mode"); }
 
     // MESH: ENROLL / RESET side effects
     { Router r; HitList h=meshHits(W,H);

@@ -52,11 +52,11 @@ public:
         emit({0,0,w_,44},send);
         if (menu) {
             const auto m = uieng::menu(w_,h_);
-            for(int row=0;row<3;++row) for(int col=0;col<3;++col) {
-                const auto c=m.cells[row*3+col];
+            for(int row=0;row<m.rows;++row) for(int col=0;col<m.cols;++col) {
+                const auto c=m.cells[row*m.cols+col];
                 const int x0=col?c.x:0, y0=row?c.y:44;
-                const int x1=col==2?w_:c.x+c.w;
-                const int y1=row==2?h_-44:c.y+c.h;
+                const int x1=col==m.cols-1?w_:m.cells[row*m.cols+col+1].x;
+                const int y1=row==m.rows-1?h_-44:m.cells[(row+1)*m.cols+col].y;
                 emit({x0,y0,x1-x0,y1-y0},send);
             }
         } else emit({0,44,w_,h_-88},send);

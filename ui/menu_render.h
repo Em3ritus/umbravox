@@ -1,8 +1,8 @@
 // menu_render.h -- static MENU (hub) compositor + scene.
 //
-// MENU is the hub (the old GRIMOIRE): a 3x3 grid of launcher tiles over the
-// shared chrome. Eight tiles open screens; the ninth toggles brand/plain
-// labels. Regions come from uieng::menu(W,H); the screen is painted as strips
+// MENU is the secondary hub: six launchers reflow from 3x2 to 2x3.
+// Primary destinations live in the footer; Labels lives in Display.
+// Regions come from uieng::menu(W,H); the screen is painted as strips
 // composed completely from scene state, same strategy as the other engine
 // screens. Reuses scanr:: primitives + gpsLabel/recLabel. 5x7 plumbing (runes
 // and final typography are the separate visual-fidelity milestone). Host +
@@ -24,14 +24,13 @@ using scanr::GnssFix;
 using scanr::Rec;
 
 // The hub's launcher tiles, in grid order (matches uieng::menuHits). Each
-// carries both label modes; the LABELS toggle is tile 8, handled separately.
+// carries both label modes; the LABELS toggle is on Display.
 struct MenuEntry { const char* brand; const char* plain; };
-static const MenuEntry kMenuEntries[8] = {
-    {"SCAN",   "SCAN"},     {"CODEX",  "FOUND"},
-    {"DOMAIN", "MAP"},      {"ECHOES", "PROBES"},
-    {"MESH",   "MESH"},     {"OMENS",  "ALERTS"},
-    {"ATTUNE", "SETTINGS"}, {"ASPECT", "DISPLAY"},
+static const MenuEntry kMenuEntries[6] = {
+    {"ECHOES","PROBES"},{"MESH","MESH"},{"OMENS","ALERTS"},
+    {"FILES","FILES"},{"ATTUNE","SETTINGS"},{"ASPECT","DISPLAY"}
 };
+static const char* const kMenuDescriptions[]={"REQUESTED NETWORKS","NODES + DIAGNOSTICS","SIGNATURE MATCHES","RECORDINGS","RADIO + CAPTURE","THEMES + LABELS"};
 
 struct MenuScene {
     // status chrome (projected by scanr::gpsLabel / recLabel)
@@ -57,30 +56,18 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
     // shared design-1 chrome: header + nav (MENU lit, index 3) + STOP/REC control
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi}, 3);
 
-    // the grid: eight launcher tiles + a LABELS toggle. Design #1 is muted
-    // chrome -- the old WITCH (bright violet) tile accents clashed on hardware,
-    // so the per-tile top bar is EDGE (a quiet member of the chrome family).
-    for (int i = 0; i < 8; i++) { const uieng::Rect t = L.cells[i];
-        box(s, t.x, t.y, t.w, t.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 2, 3));
-        frame(s, t.x, t.y, t.w, t.h, pal::EDGE);
-        box(s, t.x, t.y, t.w, 3, pal::EDGE_LIT);             // top accent (design-1 seal tone)
-        const char* lbl = sc.plain ? kMenuEntries[i].plain : kMenuEntries[i].brand;
-        const int scale = fitScale(lbl, t.w - 10, 2);
-        centered(s, t.x + t.w / 2, t.y + (t.h - 7*scale)/2, lbl, scale, pal::TEXT); }
+    for(int i=0;i<L.nCells;i++){
+        const auto t=L.cells[i];
+        box(s,t.x,t.y,t.w,t.h,pal::PANEL);frame(s,t.x,t.y,t.w,t.h,pal::EDGE);
+        const char* label=sc.plain?kMenuEntries[i].plain:kMenuEntries[i].brand;
+        const int scale=fitScale(label,t.w-12,2);
+        // Center the complete label/subtitle group, not just the heading.
+        const bool wide=W>=400;
+        const int groupH=7*scale+(wide?17:0),y=t.y+(t.h-groupH)/2;
+        centered(s,t.x+t.w/2,y,label,scale,pal::TEXT);
+        if(wide)centered(s,t.x+t.w/2,y+7*scale+10,kMenuDescriptions[i],1,pal::DIM);
+    }
 
-    // LABELS control tile (ninth cell): the lit EDGE_LIT edge (design-1's live-
-    // control edge, per subr::stepBtn) marks it as a control, not a launcher --
-    // no WITCH purple on the hub.
-    { const uieng::Rect t = L.cells[8];
-      box(s, t.x, t.y, t.w, t.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 2, 3));
-      frame(s, t.x, t.y, t.w, t.h, pal::EDGE_LIT);
-      const char* mode = sc.plain ? "PLAIN" : "BRAND";
-      const int scale = fitScale("LABELS", t.w - 10, 2), gap = 5;
-      const int y = t.y + (t.h - 14*scale - gap)/2;
-      centered(s, t.x + t.w / 2, y, "LABELS", scale, pal::BRIGHT);
-      centered(s, t.x + t.w / 2, y + 7*scale + gap, mode, scale, sc.plain ? pal::GREEN : pal::DIM); }
-
-    // nav bar + STOP/REC drawn by scanr::drawChrome above (shared design-1 chrome).
 }
 
 // --- strip compositor: small buffer, compose-then-emit (mirrors the others) ---

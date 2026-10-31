@@ -1,28 +1,25 @@
-# Menu navigation proposal — review only
+# Approved native menu navigation
 
-Working hardware baseline: `86ebc16`. The startup-strip cleanup is independent of this proposal. No navigation implementation or routing changes are included.
+Implemented from the approved renders. Hardware baseline `86ebc16` remains saved separately. Native boot-strip cleanup is `738185a`. This navigation increment is host-tested/build-tested; hardware validation waits for an authorized flash. Legacy 160×120 screens are unchanged.
 
 ## Shared chrome
 
-- Header: **MENU → theme title → GPS → MESH → BRIDGE → BAT**. MENU is a 44×44 target with a three-line icon, label, and active underline. No outlined button. Existing readout order stays intact. Bridge retains its ON underline. Theme title becomes branding only; the explicit SCAN footer is Home.
-- Compact header retains the existing mesh fallback: omit MESH, access it through MENU. This is not a loss of mesh functionality.
-- Footer: **SCAN → DOMAIN → CODEX → POI → REC**. The relative order of DOMAIN, CODEX, POI and REC is unchanged. SCAN replaces the previous implicit theme-title/Home interaction. POI and REC remain actions, not destinations; recording states still need to use their existing labels/highlights in implementation.
-- Header/footer height remains 44 px. Body remains `(8,52,W−16,H−104)`. No change to the SCAN content layout.
-- At 480, header widths are `44 / 164 / 56 / 48 / 64 / 104`; footer cells are 96 px each. At 320, header widths are `44 / 104 / 48 / [mesh omitted] / 60 / 64`; footer widths are `60 / 80 / 68 / 52 / 60`. This keeps compact DOMAIN/CODEX at the same two-times font size as the other footer labels.
-- Theme title uses the existing integer font fitting. Both UMBRAVOX and COSMIC MUFFIN are rendered in the review. Custom titles will still need the existing length/ellipsis policy when implemented.
+Header: **MENU → theme title → GPS → MESH → BRIDGE → BAT**. MENU is a 44×44 target with a three-line icon, label and active underline. Theme title is draw-only branding, no hidden Home action. Existing status order is preserved; compact omits MESH and retains mesh access in MENU. Bridge and recording keep their existing states and underline feedback.
 
-## Six secondary destinations
+Footer: **SCAN → DOMAIN → CODEX → POI → REC**. SCAN is explicit Home. DOMAIN, CODEX, POI and REC retain their relative order. POI and REC are actions, not destinations. No new outlines or recording-state changes.
 
-Reading order: **PROBES, MESH, ALERTS, FILES, SETTINGS, DISPLAY**.
+Header/footer stay 44 px. Body stays `(8,52,W−16,H−104)`. At 480, header widths are `44 / 164 / 56 / 48 / 64 / 104`; footer cells are 96 px. At 320, header widths are `44 / 104 / 48 / [mesh omitted] / 60 / 64`; footer widths are `60 / 80 / 68 / 52 / 60`. Wider compact DOMAIN/CODEX cells retain the two-times font. Theme names use existing integer font fitting and ellipsis policy without moving controls.
 
-Remove redundant SCAN/CODEX/DOMAIN menu launchers because their footer controls are always visible. Add direct FILES access (currently the existing WiGLE file browser; do not imply the new CSV sidecars are listed there). Move the existing Labels toggle into DISPLAY, with its current plain/brand functionality preserved. SETTINGS continues to hold radio and capture controls. These are proposed changes, not yet wired.
+## Secondary destinations
 
-At 480: 3 columns × 2 rows, 6 px gaps, descriptive subtitles. At 320: 2 columns × 3 rows, 2 px gaps, no subtitles, 44 px tall tiles. For a body dimension B, cell starts use `index*(B+gap)/count`; the next start minus the gap is the cell end. All targets derive from these same rectangles. Pixel labels are vertically centered, with wide subtitles included in the centered group. The source asserts minimum 44 px menu/footer/status targets.
+Reading order: **PROBES, MESH, ALERTS, FILES, SETTINGS, DISPLAY** in plain-label mode. Brand mode preserves ECHOES/OMENS/ATTUNE/ASPECT names. No duplicated SCAN/CODEX/DOMAIN menu launchers. FILES opens the existing WiGLE file browser (not a claim that PCAP/GPX/client/probe sidecars are listed). Opening it clears the previous selection, scroll and delete-confirmation state.
 
-These PNGs use the real firmware font, palette and SCAN compositor. Only the proposed chrome/menu are host-drawn. Counts and GPS/bridge states are fixtures, not device telemetry. No implementation approval is implied by generating these pictures.
+480: 3 columns × 2 rows, 6 px gaps and descriptions. 320: 2 columns × 3 rows, 2 px gaps, no descriptions, 44 px tall tiles. Cell starts use `index*(body+gap)/count`; next start minus gap gives cell end. Hits and drawing share these rectangles. The entire heading/subtitle group is centered.
 
-## Regenerate
+Labels now lives in DISPLAY beneath the artwork preview, with a 44 px target and current PLAIN/BRAND value. Its existing setting and persistence are retained. Theme, Sweep and Alert steppers retain their 44×44 controls. Labels and values in each stepper row occupy separate lines; long values fit with ellipsis. Label changes invalidate the Display body and the Menu projection updates on return.
 
-From the repository: `make -C sim menu_layout_preview`, then `sim/menu_layout_preview <existing-output-directory>`.
+## Reproduce and verify
 
-The host-only generator renders SCAN and MENU at 480×320 and 320×240, in UMBRAVOX and COSMIC MUFFIN themes. The production layout, hit regions and touch routing are unchanged pending review.
+`make -C sim menu_layout_preview`, then `sim/menu_layout_preview <existing-output-directory>` renders production SCAN, MENU and DISPLAY at both sizes in UMBRAVOX and COSMIC MUFFIN themes. Data are fixtures, not live telemetry.
+
+`sim/native-hit-contract.json` records the approved independent chrome rectangles across the 20 SCAN/DOMAIN state/size cases; `gen_oracle.py` generates the test include. Host coverage includes all-screen shared hits, no wordmark hit, six launcher bindings, file-selection reset, nonoverlap/minimum targets, Labels projection/dispatch/dirtiness, and partial repaint equality. Radio, SD, GPS and touch scheduling are unchanged.
