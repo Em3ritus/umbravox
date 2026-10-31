@@ -15,7 +15,7 @@ static const uint8_t ws28Init[] = {
     WRITE_DATA_8, 0x05,
     WRITE_COMMAND_8, 0xB0,
     WRITE_DATA_8, 0x00,
-    WRITE_DATA_8, 0xE8,
+    WRITE_DATA_8, 0xE0, // RAMCTRL: MSB first for Arduino_GFX (vendor raw buffers use E8/LSB)
     WRITE_COMMAND_8, 0xB2,
     WRITE_DATA_8, 0x0C,
     WRITE_DATA_8, 0x0C,

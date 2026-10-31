@@ -24,7 +24,9 @@ Verified against `schematic/ESP32-C5-Touch-LCD-2.8.pdf`, Arduino
 | Speaker | EXIO3 held low; audio not enabled |
 | Charger | ETA6098; battery divider feeds expander ADC, not AXP2101 |
 
-The official display initialization registers are supplied to Arduino_GFX;
+The official display initialization registers are supplied to Arduino_GFX,
+with RAMCTRL byte-order bit cleared (0xE8 to 0xE0) for its MSB-first RGB565
+transport rather than the vendor demo's raw little-endian buffers;
 its address windows and rotation are reused. Reset delays follow the vendor
 example. The 3.5-inch EXIO5 power sequence is deliberately not used.
 
