@@ -63,7 +63,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
     // title band + NET state
-    txt(s, L.title.x, L.title.y + 2, "MESH", 2, pal::BRIGHT);
+    txt(s, L.title.x, L.title.y + 2, "NODES", 2, pal::BRIGHT);
     char nb[24]; if (sc.netId) snprintf(nb, sizeof nb, "NET %d", sc.netId); else snprintf(nb, sizeof nb, "NET OPEN");
     txt(s, L.title.x + L.title.w - Font::width(nb,1), L.title.y + 4, nb, 1, sc.netId ? pal::GREEN : pal::DIM);
 

@@ -28,7 +28,7 @@ inline uieng::HitList hits(int w,int h,const State& v){
  for(int i=0;i<4;i++){
   const int id=tab*4+i;
   if(id==7)out.add(cards[i],l.cards[i],Action::Nav,int(ScreenId::Files),nullptr,"Open files");
-  else if(id==14)out.add(cards[i],l.cards[i],Action::Nav,int(ScreenId::Mesh),nullptr,"Open mesh");
+  else if(id==14)out.add(cards[i],l.cards[i],Action::Nav,int(ScreenId::Mesh),nullptr,"Open nodes");
   else if(validEditor(id))out.add(cards[i],l.cards[i],Action::SettingsControl,10+id,nullptr,"Open setting editor");
  }return out;
 }
@@ -50,8 +50,8 @@ inline void apply(State& v,ui::Settings& s,int p){
  case 12:s.meshProfile=d.meshProfile;break;case 13:s.nodeDwellMs=d.nodeDwellMs;break;
  }
 }
-inline const char* title(int id){static const char* t[]={"DISCOVERY","CHANNEL DWELL","BLE SCAN DUTY","WIFI BANDS","AUTO RECORD","RAW PCAP","ALERT LEVEL","SAVED FILES","BLE BRIDGE","PHONE APP","LINK STATUS","NODE NAME","SCAN PROFILE","NODE DWELL","MESH","NETWORK"};return t[id];}
-inline const char* hint(int id){static const char* t[]={"Active sends discovery probes","Time on each WiFi channel","Requested BLE scan window","Coordinator radio bands","Record after a stable GPS fix","Raw WiFi frames to SD","On-screen warning threshold","Saved capture files","Advertise to your phone","Changing app disconnects phone","Current phone connection","Advertised BLE identity","Coordinator node policy","Requested remote-node dwell","Status, enrollment, controls","Current mesh network ID"};return t[id];}
+inline const char* title(int id){static const char* t[]={"DISCOVERY","CHANNEL DWELL","BLE SCAN DUTY","WIFI BANDS","AUTO RECORD","RAW PCAP","ALERT LEVEL","SAVED FILES","BLE BRIDGE","PHONE APP","LINK STATUS","NODE NAME","SCAN PROFILE","NODE DWELL","NODES","NETWORK"};return t[id];}
+inline const char* hint(int id){static const char* t[]={"Active sends discovery probes","Time on each WiFi channel","Requested BLE scan window","Coordinator radio bands","Record after a stable GPS fix","Raw WiFi frames to SD","On-screen warning threshold","Saved capture files","Advertise to your phone","Changing app disconnects phone","Current phone connection","Advertised BLE identity","Coordinator node policy","Requested remote-node dwell","Status, enrollment, controls","Current node network ID"};return t[id];}
 inline void value(const Data& d,int id,char* b,int n){const auto& s=d.settings;
  switch(id){
  case 0:snprintf(b,n,"%s",s.activeDiscovery?"ACTIVE":"PASSIVE");break;
@@ -64,7 +64,7 @@ inline void value(const Data& d,int id,char* b,int n){const auto& s=d.settings;
  case 10:snprintf(b,n,"%s",!s.bleBridge?"OFF":d.streaming?"STREAMING":d.connected?"CONNECTED":"NO PHONE");break;
  case 11:snprintf(b,n,"%s",d.name);break;
  case 12:snprintf(b,n,"%s",s.meshProfile?"DISCOVERY":"TRACKING");break;
- case 13:snprintf(b,n,"%u MS",s.nodeDwellMs);break;case 14:snprintf(b,n,"OPEN MESH");break;
+ case 13:snprintf(b,n,"%u MS",s.nodeDwellMs);break;case 14:snprintf(b,n,"OPEN NODES");break;
  case 15:if(d.netId)snprintf(b,n,"%u / PRIVATE",d.netId);else snprintf(b,n,"0 / OPEN");break;
  }
 }

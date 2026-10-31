@@ -282,7 +282,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     centered(s,c.statusCells[0].x+c.statusCells[0].w/2,10,"GPS",1,pal::DIM);
     centered(s,c.statusCells[0].x+c.statusCells[0].w/2,26,fix,1,gcol);
     if(c.statusCells[1].w) {
-        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,10,"MESH",1,pal::DIM);
+        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,10,"NODES",1,pal::DIM);
         snprintf(hb,sizeof hb,"%d",st.nodes);
         centered(s,c.statusCells[1].x+c.statusCells[1].w/2,26,hb,1,pal::TEXT);
     }

@@ -57,7 +57,7 @@ void drawScanP(Canvas& c, const State& s) {
         char ch[8] = {'C', 'H', 0};
         u2s(ch + 2, s.chan, 2);
         c.textRight(pl::DIAL_X + pl::DIAL_W - 4, pl::DIAL_Y + 3, ch, pal::DIM);
-        if (s.nNodes) c.text(pl::DIAL_X + 3, pl::DIAL_Y + 3, "MESH", pal::GREEN);
+        if (s.nNodes) c.text(pl::DIAL_X + 3, pl::DIAL_Y + 3, "NODES", pal::GREEN);
         c.text(pl::DIAL_X + 3, pl::DIAL_Y + pl::dialH() - 9, "-90", pal::DIM);
     }
     drawDialAt(c, s, pl::dialCX(), pl::dialCY(), R_FIELD, R_RUNES, R_STAR, R_BOUND);

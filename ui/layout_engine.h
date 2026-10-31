@@ -170,7 +170,7 @@ inline bool validKey(const char* k) { return k && k[0]; }
 inline void addChromeHits(HitList& h, int W, int H) {
     const Chrome c = chrome(W, H);
     h.add("gps",   c.statusCells[0], Action::OpenGps,     0, nullptr, "Open GPS diagnostics");
-    if (c.statusCells[1].w) h.add("mesh",  c.statusCells[1], Action::OpenMesh,    0, nullptr, "Open Mesh");
+    if (c.statusCells[1].w) h.add("mesh",  c.statusCells[1], Action::OpenMesh,    0, nullptr, "Open Nodes");
     h.add("power", c.statusCells[2], Action::PowerDetail, 0, nullptr, "Power detail (NM: sensing unavailable)");
     h.add("bridge",c.bridge,Action::SettingStep,9,nullptr,"Toggle BLE bridge");
     h.add("nav-menu",c.menu,Action::Nav,3,nullptr,"Open MENU");
@@ -331,7 +331,7 @@ inline HitList menuHits(int W,int H){
     const auto m=menu(W,H);HitList h;addChromeHits(h,W,H);
     const ScreenId ids[]={ScreenId::Echoes,ScreenId::Mesh,ScreenId::Omens,ScreenId::Files,ScreenId::Attune,ScreenId::Aspect};
     const char* slots[]={"menu-echoes","menu-mesh","menu-omens","menu-files","menu-attune","menu-aspect"};
-    const char* desc[]={"Open PROBES","Open MESH","Open ALERTS","Open FILES","Open SETTINGS","Open DISPLAY"};
+    const char* desc[]={"Open PROBES","Open NODES","Open ALERTS","Open FILES","Open SETTINGS","Open DISPLAY"};
     for(int i=0;i<6;i++)h.add(slots[i],m.cells[i],Action::Nav,int(ids[i]),nullptr,desc[i]);
     return h;
 }

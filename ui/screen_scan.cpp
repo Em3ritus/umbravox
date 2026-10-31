@@ -102,7 +102,7 @@ const char* screenName(uint8_t screen, bool plain) {
         case SCR_CODEX:    return plain ? "FOUND"    : "CODEX";
         case SCR_DETAIL:   return plain ? "DETAIL"   : "SIGHTING";
         case SCR_DOMAIN:   return plain ? "MAP"      : "DOMAIN";
-        case SCR_MESH:     return "MESH";
+        case SCR_MESH:     return "NODES";
         case SCR_OMENS:    return plain ? "ALERTS"   : "OMENS";
         case SCR_ECHOES:   return plain ? "PROBES"   : "ECHOES";
         case SCR_GRIMOIRE: return plain ? "MENU"     : "GRIMOIRE";
@@ -903,7 +903,7 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
         // Parked on the collection channel for the mesh: say so, or a channel
         // that never moves reads as a stuck radio. Coverage comes from the
         // nodes then, shown mesh-wide on the spectrum and the dial.
-        if (s.nNodes) c.text(COL_R_X + 3, DIAL_Y + 3, "MESH", pal::GREEN);
+        if (s.nNodes) c.text(COL_R_X + 3, DIAL_Y + 3, "NODES", pal::GREEN);
         c.text(COL_R_X + 3, DIAL_Y + DIAL_H - 9, "-90", pal::DIM);
     }
     drawDialAt(c, s, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND);

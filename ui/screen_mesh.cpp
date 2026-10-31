@@ -66,7 +66,7 @@ void meshBtn(Canvas& c, int x, int y, int w, const char* label, uint16_t ink) {
 
 void drawMesh(Canvas& c, const State& s, Dirty* d) {
     c.clear(pal::VOID);
-    drawHeader(c, s, "MESH");
+    drawHeader(c, s, "NODES");
 
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
