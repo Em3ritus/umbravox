@@ -1,7 +1,7 @@
 # Couch check: AP details and PCAP
 
 Preparation only. Flashing is a separate, explicit step. Keep the working
-`c6b5e8a` baseline and the other board unchanged. Use one Waveshare 3.5-inch board,
+`a9def7e` PCAP baseline (and earlier `c6b5e8a` scan baseline) and the other board unchanged. Use one Waveshare 3.5-inch board,
 a known-good SD card, and the existing USB connection. No GPS fix or outdoor trip
 is needed. Keep the existing dwell and discovery settings unchanged for this check.
 
@@ -16,7 +16,7 @@ is needed. Keep the existing dwell and discovery settings unchanged for this che
    whether it stays connected. GPS coordinates are not required for PCAP.
 4. Return to RAW PCAP and disable it. Wait for OFF (after any SAVING state).
    Record the displayed D/drop count. If serial is available, run `PCAP` to
-   capture filename, written count and dropped count. Retain the serial capture
+   capture filename, written count, dropped count, batch count and queue peak. Retain the serial capture
    with `[mem]` and stall lines; do not infer free heap from the build-size report.
 5. Only after OFF, power down and read the SD card. Open the new
    `/captureNNNN.pcap` in Wireshark. Expect recognized IEEE 802.11 packets and
@@ -33,6 +33,13 @@ calling a busy-channel capture lossless. An error, reset, unreadable file, or
 noticeable input regression ends the check—retain the file and log before retrying.
 
 Bring back: AP-page observations, capture duration, filenames/file sizes,
-written/drop counts, UI/bridge behavior, and serial log if available. A screenshot
+written/drop counts, batches/queue peak, UI/bridge behavior, and serial log if available. A screenshot
 of Wireshark's packet list is sufficient for an initial format check. This does
 not validate capture completeness, GPS timing, or 220-versus-150-ms performance.
+
+For the batching comparison, repeat the same duration, location, dwell, active/
+passive mode, bridge connection and navigation pattern. Compare dropped fraction
+(dropped / (written + dropped)), SD append durations and touch gaps—not just AP
+counts. The previous run reported 1,868 written / 1,453 dropped (~44% dropped).
+RF traffic varies, so a single couch run is a practical check, not a controlled
+throughput benchmark. No timing improvement is established by host I/O counts.

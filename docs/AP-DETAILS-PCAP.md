@@ -50,7 +50,7 @@ state and `D<count>` dropped frames. Serial commands:
 
 - `PCAP ON`: start a new `/captureNNNN.pcap` on the SD card.
 - `PCAP OFF`: stop accepting frames and drain the queued records.
-- `PCAP`: print state, filename, successfully written and dropped counts.
+- `PCAP`: print state, filename, successfully written and dropped counts, successful data batches, and peak queue occupancy.
 
 This is independent of the footer's REC/STOP (WiGLE CSV) and defaults OFF on every
 boot. Stop PCAP and wait for OFF before removing power/card. Read the resulting
@@ -70,12 +70,26 @@ PCAP seconds/microseconds fields. They are not GPS/phone/UTC timestamps; an epoc
 1970 date in Wireshark is expected. Use relative-time display. Do not align files
 from different boots/boards by those dates.
 
-A 16-record queue occupies 24,864 bytes of PSRAM, allocated only on first start
-and retained for reuse. The callback never writes SD, allocates, or waits on a
-lock; contention/full queue increments drops. Main-loop service writes at most
-two records (~3.1 KB) per pass; SD open/write/flush latency itself cannot be
-bounded by this byte budget. Hardware throughput and touch responsiveness while
-recording still require validation.
+A 64-record queue plus an 8 KiB contiguous staging buffer occupies 107,648 bytes
+of PSRAM, allocated only on first start and retained for reuse. This is 82,784
+bytes more PSRAM than the original recorder, while removing its 3,108-byte
+internal-RAM staging array. The callback never writes SD, allocates, or waits on
+a lock; contention/full queue increments drops.
+
+Main-loop service copies at most sixteen queued records per pass, releasing the
+queue lock between records. It makes at most one contiguous append of up to 8 KiB,
+followed by the existing verified close. A batch flushes when full (or when the
+next record would not fit), after 250 ms since its first staged record, or when
+stopping. The deadline is serviced by the main loop, not a guaranteed wall-clock
+latency. Stop drains all staged/queued frames before OFF. There is no SD file held
+open across loop passes, so WiGLE and POI keep using the same append API.
+
+The working `a9def7e` recorder was hardware checked: the file opened in Wireshark
+and touch stayed responsive, with 1,868 written and 1,453 dropped in the reported
+run. This batching revision has not been flashed. Its drop rate and touch
+latency still need measurement: SD open/write/flush latency cannot be bounded by
+a byte budget. An unexpected power loss may lose the staged and queued tail;
+stop and wait for OFF before removing power.
 
 Files stop at 32 MiB. Writes/close failures stop recording; partial batches are
 rolled back. Failed rollback is shown as DAMAGED FILE. A new start uses a new

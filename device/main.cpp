@@ -1022,7 +1022,7 @@ bool pollConsole() {
                 }
                 Serial.printf("pcap: %s %s (uptime timestamps)\n",pcap::status(),pcap::fileName());
             }else if(!strcmp(line,"PCAP OFF")) {pcap::stop();cap::setRawCapture(false);Serial.println("pcap: draining queued frames");}
-            else if(!strcmp(line,"PCAP")){Serial.printf("pcap: %s file=%s written=%lu dropped=%lu\n",pcap::status(),pcap::fileName(),(unsigned long)pcap::written(),(unsigned long)pcap::dropped());}
+            else if(!strcmp(line,"PCAP")){Serial.printf("pcap: %s file=%s written=%lu dropped=%lu batches=%lu queue_peak=%lu\n",pcap::status(),pcap::fileName(),(unsigned long)pcap::written(),(unsigned long)pcap::dropped(),(unsigned long)pcap::batches(),(unsigned long)pcap::peakQueue());}
             else
 #endif
             if (!strcmp(line,"DWELL")) {
@@ -1335,7 +1335,7 @@ void loop() {
     { const uint32_t _s = micros(); logging::tick(millis(), ui::Gnss::utcEpoch(millis())); bootStall("logging tick", _s); }
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
     poi::service(millis());
-    {const uint32_t start=micros();pcap::service();bootStall("pcap service",start);}
+    {const uint32_t start=micros();pcap::service(millis());bootStall("pcap service",start);}
     cap::setRawCapture(pcap::active());
 #endif
 

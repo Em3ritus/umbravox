@@ -9,9 +9,14 @@
 #endif
 namespace pcap {
 namespace {
-constexpr unsigned SNAP=1536,N=16,LIMIT=32*1024*1024;
+constexpr unsigned SNAP=1536,N=64,BATCH_BYTES=8192,COPY_LIMIT=16,FLUSH_MS=250,LIMIT=32*1024*1024;
 struct Record {uint8_t data[16+SNAP];uint16_t size;};
+struct Storage {Record queue[N];uint8_t batch[BATCH_BYTES];};
+Storage* storage=nullptr;
 Record* queue=nullptr;
+unsigned stagedBytes=0,stagedFrames=0;
+uint32_t stagedAt=0,flushes=0;
+std::atomic<uint32_t> highWater{0};
 unsigned head=0,tail=0,count=0;
 std::atomic_flag lock=ATOMIC_FLAG_INIT;
 std::atomic<bool> enabled{false};
@@ -29,6 +34,8 @@ void fail(const char* why){enabled=false;draining=true;state=why;broken=true;}
 bool active(){return enabled.load();}
 bool pending(){return draining;}
 uint32_t written(){return saved;}
+uint32_t batches(){return flushes;}
+uint32_t peakQueue(){return highWater.load();}
 uint32_t dropped(){return lost.load();}
 const char* status(){return state;}
 const char* fileName(){return path;}
@@ -37,11 +44,12 @@ bool start(){
  if(!sdlog::present()){state="NO CARD";return false;}
  if(!queue){
 #ifdef ARDUINO
-  queue=static_cast<Record*>(heap_caps_malloc(sizeof(Record)*N,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+  storage=static_cast<Storage*>(heap_caps_malloc(sizeof(Storage),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
 #else
-  queue=static_cast<Record*>(malloc(sizeof(Record)*N));
+  storage=static_cast<Storage*>(malloc(sizeof(Storage)));
 #endif
-  if(!queue){state="NO PSRAM";return false;}
+  if(!storage){state="NO PSRAM";return false;}
+  queue=storage->queue;
  }
  // New files only. Bounded name search; never overwrite an existing capture.
  static unsigned nextName=1;bool found=false;
@@ -53,7 +61,7 @@ bool start(){
  const bool closed=sdlog::closeAppend();
  if(!ok||!closed){sdlog::truncateTo(path,before);state="WRITE ERROR";return false;}
  if(!take()){state="BUSY";return false;}
- head=tail=count=0;lost=0;saved=0;bytes=24;broken=false;draining=false;state="ON";enabled=true;give();return true;
+ head=tail=count=0;stagedBytes=stagedFrames=0;flushes=0;highWater=0;lost=0;saved=0;bytes=24;broken=false;draining=false;state="ON";enabled=true;give();return true;
 }
 void stop(){enabled=false;if(!broken)state="SAVING";draining=true;}
 void receive(const uint8_t* frame,size_t len,uint64_t us){
@@ -63,24 +71,40 @@ void receive(const uint8_t* frame,size_t len,uint64_t us){
  if(count==N){++lost;give();return;}
  auto& r=queue[head];const unsigned cap=len>SNAP?SNAP:len;
  le(r.data,uint32_t(us/1000000));le(r.data+4,uint32_t(us%1000000));le(r.data+8,cap);le(r.data+12,len);
- memcpy(r.data+16,frame,cap);r.size=16+cap;head=(head+1)%N;++count;give();
+ memcpy(r.data+16,frame,cap);r.size=16+cap;head=(head+1)%N;++count;if(count>highWater.load())highWater=count;give();
 }
-void service(){
+void service(uint32_t nowMs){
  if(!active()&&!draining)return;
- static Record batch[2];unsigned n=0;
- if(!take())return;
- if(broken){lost+=count;count=0;}
- while(n<2 && count){batch[n++]=queue[tail];tail=(tail+1)%N;--count;}
- if(!enabled.load() && !count && !n){draining=false;if(!broken)state="OFF";give();return;}
- give();if(!n)return;
- unsigned add=0;for(unsigned i=0;i<n;i++)add+=batch[i].size;
- if(bytes+add>LIMIT){lost+=n;fail("32MB LIMIT");return;}
- uint32_t before=0;
- if(!sdlog::openAppend(path,before)){lost+=n;fail("OPEN ERROR");return;}
- bool ok=before==bytes;
- for(unsigned i=0;ok&&i<n;i++)ok=sdlog::writeAppend(reinterpret_cast<char*>(batch[i].data),batch[i].size);
- const bool closed=sdlog::closeAppend();
- if(!ok||!closed){lost+=n;const bool restored=sdlog::truncateTo(path,before);fail(restored?"WRITE ERROR":"DAMAGED FILE");return;}
- bytes+=add;saved+=n;
+ if(broken){
+  if(!take())return;
+  lost+=count+stagedFrames;count=0;stagedBytes=stagedFrames=0;draining=false;give();return;
+ }
+ bool full=false;
+ // Release the queue lock between records, never hold it for an SD operation.
+ for(unsigned i=0;i<COPY_LIMIT;i++){
+  if(!take())break;
+  if(!count){give();break;}
+  const auto& r=queue[tail];
+  if(stagedBytes+r.size>BATCH_BYTES){full=true;give();break;}
+  if(!stagedFrames)stagedAt=nowMs;
+  memcpy(storage->batch+stagedBytes,r.data,r.size);stagedBytes+=r.size;++stagedFrames;
+  tail=(tail+1)%N;--count;give();
+ }
+ if(stagedBytes && (full || stagedBytes==BATCH_BYTES || !active() || uint32_t(nowMs-stagedAt)>=FLUSH_MS)){
+  const unsigned n=stagedFrames,add=stagedBytes;
+  // This batch leaves staging exactly once, whether written or counted as lost.
+  stagedBytes=stagedFrames=0;
+  if(bytes+add>LIMIT){lost+=n;fail("32MB LIMIT");return;}
+  uint32_t before=0;
+  if(!sdlog::openAppend(path,before)){lost+=n;fail("OPEN ERROR");return;}
+  const bool ok=before==bytes && sdlog::writeAppend(reinterpret_cast<char*>(storage->batch),add);
+  const bool closed=sdlog::closeAppend();
+  if(!ok||!closed){lost+=n;const bool restored=sdlog::truncateTo(path,before);fail(restored?"WRITE ERROR":"DAMAGED FILE");return;}
+  bytes+=add;saved+=n;++flushes;
+ }
+ if(!active() && !stagedFrames && take()){
+  if(!count){draining=false;state="OFF";}
+  give();
+ }
 }
 }
