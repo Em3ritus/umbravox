@@ -1,5 +1,6 @@
 #include "radio_policy.h"
 #include "meshcore.h"
+#include "node_diagnostics.h"
 #include "mesh_timing.h"
 #include "active_discovery.h"
 #include <atomic>
@@ -138,6 +139,7 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
         if (h->kind == mesh::MSG_REPORT && len >= (int)sizeof(mesh::Report)) {
             const mesh::Report* r = (const mesh::Report*)data;
             nodes_[i].reports++;
+            nodes_[i].lastReportMs=millis();
             nodes_[i].recs += r->count;
             nReport++;
 
@@ -361,14 +363,7 @@ void fill(ui::State& s, uint32_t nowMs) {
         portENTER_CRITICAL(&mux);node=nodes_[i];portEXIT_CRITICAL(&mux);
         if (!node.live) continue;
         ui::NodeRow& r = s.nodes[n++];
-        r.live  = true;r.diag={};
-        const auto& t=node.telemetry;
-        if(t.known){
-            const auto& d=t.data;r.diag.known=true;r.diag.ageS=meshlive::ageMs(nowMs,t.receivedAt)/1000;
-            r.diag.active=d.active;r.diag.profile=d.profile;r.diag.camp=d.camp;r.diag.dwellMs=d.dwellMs;
-            r.diag.depth=d.depth;r.diag.capacity=d.capacity;r.diag.peak=d.peak;
-            r.diag.drops=d.drops;r.diag.sendFailed=d.sendFailed;r.diag.reportRejected=d.reportRejected;r.diag.scanFailed=d.scanFailed;
-        }
+        r.live=true;r.diag=nodeDiagnostics(node,nowMs);
         for (int k = 0; k < 3; k++) r.id[k] = node.mac[3 + k];
         r.nChan = node.nChan;
         r.chan0 = node.chans[0];

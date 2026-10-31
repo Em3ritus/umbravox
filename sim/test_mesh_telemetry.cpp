@@ -1,4 +1,6 @@
 #include "../device/mesh_timing.h"
+#include "../device/node_diagnostics.h"
+#include "../ui/router.h"
 #include "../ui/project.h"
 #include <cassert>
 #include <cstring>
@@ -23,5 +25,25 @@ int main(){
  s.meshPage=1;s.nodes[0].diag.known=true;s.nodes[0].diag.active=true;s.nodes[0].diag.dwellMs=150;s.nodes[0].diag.ageS=11;
  uiproj::mesh(b,s,c);assert(b.scene().page==1&&b.scene().rows[0].diag.ageS==11);bool st,body;mshpres::sceneDirty(a.scene(),b.scene(),st,body);assert(body&&!st);
  for(int w:{320,480}){auto hits=uieng::meshHits(w,w==480?320:240);bool pager=false;for(int i=0;i<hits.count;i++)if(hits.items[i].action==uieng::Action::MeshPage){pager=true;assert(hits.items[i].rect.w>=44&&hits.items[i].rect.h>=44);}assert(pager);}
+ // A hello/status packet does not pretend that a sighting report arrived.
+ meshcore::NodeRec node{};node.lastMs=10000;node.assigned=true;node.nChan=3;
+ node.chans[0]=1;node.chans[1]=36;node.chans[2]=149;
+ auto diag=meshcore::nodeDiagnostics(node,10000);assert(!diag.hasReport&&diag.assignedCount==3&&diag.assignedChannels[2]==149);
+ node.reports=1;node.lastReportMs=2000;diag=meshcore::nodeDiagnostics(node,10000);assert(diag.hasReport&&diag.reportAgeS==8);
+ node.lastReportMs=10001;assert(meshcore::nodeDiagnostics(node,10000).reportAgeS==0);
+ node.lastReportMs=0xffffff00;assert(meshcore::nodeDiagnostics(node,1744).reportAgeS==2);
+ node.assigned=false;assert(meshcore::nodeDiagnostics(node,2000).assignedCount==0);
+ mshr::MeshScene scene;ui::NodeDiagnostics nd;
+ assert(!strcmp(mshr::timingStatus(scene,nd),"UNKNOWN"));
+ nd.known=true;nd.dwellMs=220;assert(!strcmp(mshr::timingStatus(scene,nd),"MATCH"));
+ nd.dwellMs=150;assert(!strcmp(mshr::timingStatus(scene,nd),"PENDING"));
+ scene.targetDwell=150;assert(!strcmp(mshr::timingStatus(scene,nd),"MATCH"));
+ nd.ageS=10;assert(!strcmp(mshr::timingStatus(scene,nd),"STALE"));
+ char channels[96];diag.assignedCount=3;diag.assignedChannels[0]=1;diag.assignedChannels[1]=36;diag.assignedChannels[2]=149;
+ mshr::channelLabel(diag,channels,sizeof channels);assert(!strcmp(channels,"ASSIGNED 1 36 149"));
+ s.nodes[0].diag=diag;uiproj::mesh(a,s,c);s.nodes[0].diag.assignedChannels[2]=165;uiproj::mesh(b,s,c);mshpres::sceneDirty(a.scene(),b.scene(),st,body);assert(body);
+ assert(mshr::pageCount(0)==1&&mshr::pageCount(16)==33);
+ for(int w:{320,480}){auto hits=uieng::meshHits(w,w==480?320:240);bool tune=false;
+  for(int i=0;i<hits.count;i++)if(!strcmp(hits.items[i].slot,"node-tune")){uinav::Router r;r.dispatch(hits.items[i]);assert(r.screen()==uinav::Screen::Attune);tune=true;}assert(tune);}
  puts("Mesh telemetry: strict packet validation, sender binding, ordering/reboot/wrap, unknown/stale state, local bridge projection and pager PASS");
 }

@@ -28,7 +28,7 @@ int main(){
                && m.reset.x+m.reset.w==m.body.x+m.body.w, "ENROLL left, RESET right, no overlap");
 
         HitList h = meshHits(W,H);
-        expect(h.count==10+3, "mesh hits: chrome + ENROLL + PAGE + RESET");
+        expect(h.count==10+4, "mesh hits: chrome + ENROLL + PAGE + TUNE + RESET");
         bool ok=true;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;

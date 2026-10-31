@@ -413,8 +413,9 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             case uieng::Action::Nav:
                 display_.editor=-1;display_.count=0;settings_.editor=-1;
                 if(nav.screen==ui::SCR_FILES)ui::filesEnter(nav);
+                if(hit.slot && !strcmp(hit.slot,"node-tune"))settings_.tab=3;
                 break;
-            case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%(s.nNodes+1);break;
+            case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%mshr::pageCount(s.nNodes);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
             case uieng::Action::EchoPage: {
                 const int per=uieng::echoes(W_,H_).nRows;

@@ -214,11 +214,15 @@ struct LocalDiagnostics {
 };
 struct NodeDiagnostics {
     bool known=false,active=false,camp=false;
+    bool hasReport=false; uint32_t reportAgeS=0;
+    uint8_t assignedCount=0, assignedChannels[10]{};
     uint8_t profile=0;
     uint16_t dwellMs=0,depth=0,capacity=0,peak=0;
     uint32_t ageS=0,drops=0,sendFailed=0,reportRejected=0,scanFailed=0;
     bool operator==(const NodeDiagnostics& b) const {
-        return known==b.known && active==b.active && camp==b.camp && profile==b.profile && dwellMs==b.dwellMs
+        for(int i=0;i<10;i++)if(assignedChannels[i]!=b.assignedChannels[i])return false;
+        return hasReport==b.hasReport && reportAgeS==b.reportAgeS && assignedCount==b.assignedCount
+            && known==b.known && active==b.active && camp==b.camp && profile==b.profile && dwellMs==b.dwellMs
             && depth==b.depth && capacity==b.capacity && peak==b.peak && ageS==b.ageS && drops==b.drops
             && sendFailed==b.sendFailed && reportRejected==b.reportRejected && scanFailed==b.scanFailed;
     }

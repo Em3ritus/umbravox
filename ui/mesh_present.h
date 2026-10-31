@@ -40,6 +40,7 @@ public:
     }
     void local(const ui::LocalDiagnostics& d){sc_.local=d;}
     void page(int p){sc_.page=p;}
+    void target(uint16_t dwell,uint8_t profile,bool active){sc_.targetDwell=dwell;sc_.targetProfile=profile;sc_.targetActive=active;}
     bool addNode(const uint8_t id[3], uint32_t ageS, uint8_t lossPct, bool live, const ui::NodeDiagnostics& diag={}) {
         if (nr_ >= MAXROWS) return false;
         rows_[nr_] = MeshNode{ {id[0], id[1], id[2]}, ageS, lossPct, live,diag };
@@ -62,7 +63,7 @@ inline void sceneDirty(const MeshScene& a, const MeshScene& b, bool& status, boo
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
 
-    bool same = a.local==b.local && a.page==b.page && a.meshCoords == b.meshCoords && a.coreCamping == b.coreCamping && a.coreChan == b.coreChan
+    bool same = a.targetDwell==b.targetDwell && a.targetProfile==b.targetProfile && a.targetActive==b.targetActive && a.local==b.local && a.page==b.page && a.meshCoords == b.meshCoords && a.coreCamping == b.coreCamping && a.coreChan == b.coreChan
                 && a.meshLossPct == b.meshLossPct && a.netId == b.netId && a.enrollSecs == b.enrollSecs
                 && a.nRows == b.nRows;
     for (int i = 0; same && i < a.nRows; i++)

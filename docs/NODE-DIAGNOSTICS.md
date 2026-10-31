@@ -1,14 +1,43 @@
-# Local and mesh-node diagnostics
+# Node diagnostics
 
-Working hardware baseline: `3ab7864`. Its PCAP couch check saved 1,837 frames with
-9 drops (0.49%); the user confirmed responsive touch and a readable capture. The
-new diagnostics are a separate increment and have not been flashed.
+The native engine's Nodes screen has one local page and two pages per live node.
+NEXT cycles Local → node Radio → node Link. TUNE opens Settings → Nodes; its
+profile and dwell controls are **fleet-wide**, not a per-node override. Active
+versus passive discovery remains the shared Scanning setting.
 
-## Native MESH screen
+## Radio
 
-MENU → MESH opens a paged diagnostics view. The middle `1/N >` button advances
-through LOCAL, then each directly heard mesh node. ENROLL and RESET retain their
-existing network actions. The same layout supports 480×320 and 320×240.
+- ASSIGNED lists channels the coordinator assigned. This is the coordinator's
+  plan, not proof that the node received or applied that assignment.
+- APPLIED mode, dwell and camp/sweep come from the node's telemetry packet.
+- TARGET is the current requested fleet mode, dwell and profile.
+- MATCH means fresh telemetry values match the target; it is not a protocol ACK.
+- PENDING means fresh reported values differ from the target.
+- STALE means telemetry is at least 10 seconds old. It is not relabeled pending
+  or matched even when its old values happen to equal the target.
+- UNKNOWN means no supported telemetry was received. Old nodes remain visible;
+  unavailable fields are not fabricated as zero or success.
+
+## Link
+
+- REPORT is age of the last received MSG_REPORT, including empty keepalive
+  reports; HELLO and telemetry do not refresh this timestamp.
+- HEARD is age of the latest accepted node activity.
+- Q / PEAK / DROP describe node capture queue occupancy, high-water mark and
+  dropped records, as reported by the node.
+- DELIVERY FAIL counts failed asynchronous ESP-NOW sends; API REJECT counts
+  immediate report-submission errors. These are distinct measurements.
+- SCANFAIL is the node's scan-failure count. LOSS is the coordinator's existing
+  report-sequence gap estimate, not a direct RF packet-loss measurement.
+- Stale telemetry counters are marked STALE. Node counters can reset on reboot;
+  they are totals, not per-second rates.
+
+No packet layout/version or radio scheduling is changed by this increment.
+Nodes that already emit the supported telemetry need no new firmware for these
+views. Current scope does not add persistent per-node tuning or runtime changes
+to the reporting interval. NM's legacy renderer is not redesigned by this work.
+
+## Existing local counters
 
 LOCAL is useful on the existing full-UI standalone WarDriveGo/Biscuit boards:
 
@@ -25,23 +54,6 @@ Bridge retry/drop counters accumulate since bridge-state initialization; scan
 counters accumulate since boot. No BLE initialization, transmission cadence,
 scanner scheduling, or radio dwell policy is changed by displaying them.
 
-Remote node pages show applied ACTIVE/PASSIVE and dwell, coordinator-supplied
-profile, actual CAMP/SWEEP assignment state, report-queue depth/capacity and peak,
-queue drops, LINKFAIL, API rejection count, active scan failures, and the existing
-receiver-estimated report-loss percentage. Queue depth is sampled after the report
-queue drains, so zero is expected; PEAK is the lifetime high-water mark. All remote
-counters are cumulative since that node boot.
-
-LINKFAIL counts failed ESP-NOW send callbacks (including status/hello traffic),
-not application-level acknowledgement. API counts immediate report submission
-rejections, in frames. DROP counts sightings rejected because the report queue
-was full. These are deliberately separate measures. The local bridge and remote
-ESP-NOW paths use different counters and are not interchangeable.
-
-NO TELEMETRY means no valid status message has arrived; requested coordinator
-settings are never substituted. After ten seconds without a new status, the last
-values are amber and explicitly STALE. Node silence can eventually expire the row
-under the existing node-liveness policy.
 
 ## Wire path and compatibility
 
@@ -58,27 +70,11 @@ matching is identity consistency, not cryptographic authentication; existing
 unencrypted mesh trust is unchanged.
 
 Both core and coordinator builds accept status from their directly attached
-headless nodes. This increment does NOT relay individual downstream status through
+headless nodes. The protocol does NOT relay individual downstream status through
 the coordinator's ClusterBatch to the handheld. That collector UI still has only
 its existing aggregate cluster information. Old node firmware remains usable but
-shows NO TELEMETRY. New node firmware is needed for remote status.
+shows NO TELEMETRY. Nodes lacking that telemetry message need compatible firmware for remote status.
 
 The two standalone full-UI boards are not headless mesh nodes: LOCAL diagnostics
 work on them without changing roles. Do not replace either with a headless build
 just to test this screen. Node firmware deployment is a separate explicit step.
-
-## Verification and next hardware check
-
-Host tests cover packet validation, sender mismatch, stale/unknown state
-projection, duplicate/out-of-order rejection, reboot and uptime wrap, local bridge
-projection, scene invalidation, and geometry/hit bounds at both sizes. Firmware
-builds cover NM handheld, native Waveshare, both headless-node USB configurations,
-and coordinator. Previews cover LOCAL, fresh remote, stale remote, and unknown
-remote at both sizes. These checks do not establish over-air telemetry delivery.
-
-After an explicitly approved flash, open MESH on a standalone board and verify
-LOCAL matches the chosen dwell/mode and the bridge connection. Start/stop the
-phone bridge stream and check that Q/STREAM changes without affecting touch.
-Remote validation needs a separately approved headless node: verify its applied
-settings, then stop its status transmissions and confirm STALE appears rather
-than inferred fresh settings. Keep the working PCAP build available for rollback.

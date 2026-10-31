@@ -357,7 +357,7 @@ inline SubChrome subChrome(int W, int H) {
 // --- MESH: Core/loss header + paged diagnostics + ENROLL/PAGE/RESET -----------
 struct MeshLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
-    Rect title, header, list, enroll, pager, reset;
+    Rect title, header, list, enroll, pager, tune, reset;
 };
 inline MeshLayout mesh(int W, int H) {
     const SubChrome c = subChrome(W, H);
@@ -366,12 +366,14 @@ inline MeshLayout mesh(int W, int H) {
     for (int i = 0; i < 4; i++) { m.statusCells[i] = c.statusCells[i]; m.navCells[i] = c.navCells[i]; }
     m.title = c.title;
     const int ctrlH = 44, by = c.body.y, bh = c.body.h;
-    m.header = {c.body.x, by + 20, c.body.w, 24};                  // CORE/COORD + LOSS
-    m.list   = {c.body.x, by + 44, c.body.w, bh - 44 - ctrlH};     // node rows (display only)
-    const int ctrlY = by + bh - ctrlH, cellW = (c.body.w - 16) / 3;
+    const int headerH=W<400?16:24;
+    m.header = {c.body.x, by + 20, c.body.w, headerH};                  // CORE/COORD + LOSS
+    m.list   = {c.body.x, by + 20+headerH, c.body.w, bh - 20-headerH - ctrlH};     // node rows (display only)
+    const int ctrlY = by + bh - ctrlH, cellW = (c.body.w - 18) / 4;
     m.enroll = {c.body.x, ctrlY, cellW, ctrlH};
-    m.pager = {c.body.x+cellW+8, ctrlY, cellW, ctrlH};
-    m.reset = {c.body.x+2*(cellW+8),ctrlY,c.body.w-2*(cellW+8),ctrlH};
+    m.pager = {c.body.x+cellW+6, ctrlY, cellW, ctrlH};
+    m.tune = {c.body.x+2*(cellW+6),ctrlY,cellW,ctrlH};
+    m.reset = {c.body.x+3*(cellW+6),ctrlY,c.body.w-3*(cellW+6),ctrlH};
     return m;
 }
 // MESH hits: two network-control buttons and a diagnostics pager. ENROLL
@@ -381,6 +383,7 @@ inline HitList meshHits(int W, int H) {
     HitList h;
     addChromeHits(h, W, H);
     h.add("mesh-page",m.pager,Action::MeshPage,0,nullptr,"Next node diagnostics");
+    h.add("node-tune",m.tune,Action::Nav,int(ScreenId::Attune),nullptr,"Fleet timing controls");
     h.add("enroll", m.enroll, Action::MeshEnroll,   0, nullptr, "Open a pairing window (adopt open nodes)");
     h.add("reset",  m.reset,  Action::MeshResetNet, 0, nullptr, "Return the fleet to the open network");
     return h;

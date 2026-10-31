@@ -46,6 +46,18 @@ int main(){
         snprintf(m,sizeof m,"%dx%d pairing window: ENROLL region == full (old label erased)",W,H);
         expect(match,m);
 
+        // Radio/Link page transitions and stale/unknown values erase old text.
+        MeshNode node{{0,0,1},2,3,true};MeshScene radio=sc;radio.rows=&node;radio.nRows=1;radio.page=1;
+        node.diag.known=true;node.diag.dwellMs=220;node.diag.assignedCount=1;node.diag.assignedChannels[0]=149;
+        FbSink previous(W,H);comp.renderFull(W,H,radio,previous);
+        for(int state=0;state<4;state++){
+            if(state==0)radio.page=2;
+            if(state==1){node.diag.ageS=11;node.diag.hasReport=true;node.diag.reportAgeS=12;}
+            if(state==2)node.diag.known=false;
+            if(state==3)radio.page=1;
+            FbSink expected(W,H);comp.renderFull(W,H,radio,expected);comp.renderRegion(W,H,radio,L.body,previous);
+            expect(previous.fb==expected.fb && !previous.oob,"node page/state body repaint matches full frame");
+        }
         const uieng::Rect gcell = L.statusCells[0];
         MeshScene stl = sc; stl.gps = {true,3,12,30000};
         FbSink gf(W,H); comp.renderFull(W,H,stl,gf);

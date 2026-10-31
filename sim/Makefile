@@ -429,8 +429,8 @@ test_ap_info: test_ap_info.cpp ../ui/ap_info.h ../ui/oui.cpp ../ui/oui_data.inc
 test_pcap: test_pcap.cpp ../device/pcap.cpp ../device/pcap.h
 	$(CXX) $(CXXFLAGS) -pthread -fsanitize=address,undefined -o $@ test_pcap.cpp ../device/pcap.cpp
 
-test_mesh_telemetry: test_mesh_telemetry.cpp ../device/mesh_timing.h $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_mesh_telemetry.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+test_mesh_telemetry: ../device/node_diagnostics.h ../device/meshcore.h test_mesh_telemetry.cpp ../device/mesh_timing.h $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -I../ui -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_mesh_telemetry.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
 
 test_gpx: test_gpx.cpp ../device/gpx.cpp ../device/gpx.h ../device/sdlog.h ../device/csv.h ../ui/gnss.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_gpx.cpp ../device/gpx.cpp

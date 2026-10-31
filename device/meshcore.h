@@ -13,6 +13,7 @@ struct NodeRec {
     meshtiming::TelemetryState telemetry;
     uint8_t  mac[6];
     uint32_t lastMs;
+    uint32_t lastReportMs;
     uint32_t hellos, reports, recs;
     // Link quality, from the sequence numbers the node stamps on each
     // report. Counting what arrived says nothing about what did not.

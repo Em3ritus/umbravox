@@ -45,6 +45,7 @@ struct MeshScene {
     int      meshLossPct = 0;
     ui::LocalDiagnostics local;
     int page=0;
+    uint16_t targetDwell=220;uint8_t targetProfile=0;bool targetActive=false;
     int      netId = 0;                         // 0 = open network
     int      enrollSecs = 0;                    // pairing window countdown (0 = closed)
     // node list (caller-owned, stable)
@@ -53,6 +54,20 @@ struct MeshScene {
     uint32_t now = 0;
 };
 
+inline int pageCount(int nodes){return 1+2*std::max(0,nodes);}
+inline const char* timingStatus(const MeshScene& sc,const ui::NodeDiagnostics& d){
+    if(!d.known)return "UNKNOWN";
+    if(d.ageS>=10)return "STALE";
+    return d.dwellMs==sc.targetDwell && d.profile==sc.targetProfile && d.active==sc.targetActive?"MATCH":"PENDING";
+}
+inline void channelLabel(const ui::NodeDiagnostics& d,char* out,size_t size){
+    snprintf(out,size,"ASSIGNED");size_t used=strlen(out);
+    if(!d.assignedCount){snprintf(out,size,"ASSIGNED UNKNOWN");return;}
+    for(int i=0;i<std::min<int>(d.assignedCount,10) && used<size;i++){
+        const int n=snprintf(out+used,size-used," %u",d.assignedChannels[i]);
+        if(n<0 || size_t(n)>=size-used)break;used+=n;
+    }
+}
 inline uint16_t lossInk(int pct) { return pct >= 20 ? pal::RED : pct >= 5 ? pal::AMBER : pal::GREEN; }
 inline uint16_t ageMark(uint32_t s) { return s < 10 ? pal::GREEN : s < 20 ? pal::AMBER : pal::RED; }
 
@@ -81,7 +96,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
 
     // node list: two columns
     box(s, L.list.x, L.list.y, L.list.w, L.list.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
-    const int selected=(sc.page<0?0:sc.page)%(sc.nRows+1);
+    const int selected=(sc.page<0?0:sc.page)%pageCount(sc.nRows);
     if(selected==0){
         const auto& d=sc.local;char lines[5][96]{};
         if(d.valid){
@@ -91,26 +106,31 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
             snprintf(lines[3],96,"BRIDGE %s %s Q%u",d.bridgeMode==1?"WDGO":d.bridgeMode==2?"BISCUIT":"OFF",d.streaming?"STREAM":d.connected?"LINK":"",d.bridgeQueued);
             snprintf(lines[4],96,"RXDROP %lu TXRETRY %lu",(unsigned long)d.rxDrops,(unsigned long)d.txRetries);
         }else snprintf(lines[0],96,"LOCAL DIAGNOSTICS UNAVAILABLE");
-        const int scale=W>=400?2:1,step=W>=400?22:8;
+        const int scale=W>=400?2:1,step=W>=400?22:10;
         for(int i=0;i<5;i++)txt(s,L.list.x+4,L.list.y+4+i*step,lines[i],fitScale(lines[i],L.list.w-8,scale),i==0?pal::BRIGHT:pal::TEXT);
     }else{
-        const MeshNode& nd=sc.rows[selected-1];
+        const MeshNode& nd=sc.rows[(selected-1)/2];
         const auto& d=nd.diag;
         char lines[5][96]{};
-        if(d.known){
-            snprintf(lines[0],96,"%02X:%02X:%02X  %s %uMS",nd.id[0],nd.id[1],nd.id[2],d.active?"ACTIVE":"PASSIVE",d.dwellMs);
-            snprintf(lines[1],96,"%s %s / %s %luS",d.profile?"DISCOVERY":"TRACKING",d.camp?"CAMP":"SWEEP",d.ageS>=10?"STALE":"AGE",(unsigned long)d.ageS);
-            snprintf(lines[2],96,"Q %u/%u  PEAK %u",d.depth,d.capacity,d.peak);
-            snprintf(lines[3],96,"DROP %lu  LINKFAIL %lu",(unsigned long)d.drops,(unsigned long)d.sendFailed);
-            snprintf(lines[4],96,"API %lu SCANFAIL %lu LOSS %u%%",(unsigned long)d.reportRejected,(unsigned long)d.scanFailed,nd.lossPct);
+        const bool link=(selected-1)%2;
+        snprintf(lines[0],96,"%02X:%02X:%02X  %s",nd.id[0],nd.id[1],nd.id[2],link?"LINK":"RADIO");
+        if(!link){
+            channelLabel(d,lines[1],96);
+            if(d.known)snprintf(lines[2],96,"APPLIED %s %uMS %s",d.active?"ACTIVE":"PASSIVE",d.dwellMs,d.camp?"CAMP":"SWEEP");
+            else snprintf(lines[2],96,"APPLIED UNKNOWN / NO TELEMETRY");
+            snprintf(lines[3],96,"TARGET %s %uMS %s",sc.targetActive?"ACTIVE":"PASSIVE",sc.targetDwell,sc.targetProfile?"DISC":"TRACK");
+            snprintf(lines[4],96,"%s / %s / STATUS %luS",timingStatus(sc,d),d.known?(d.profile?"DISC":"TRACK"):"?",(unsigned long)d.ageS);
+            if(!d.known)snprintf(lines[4],96,"UNKNOWN / UPDATE NODE FIRMWARE");
         }else{
-            snprintf(lines[0],96,"%02X:%02X:%02X / LOSS %u%%",nd.id[0],nd.id[1],nd.id[2],nd.lossPct);
-            snprintf(lines[1],96,"NO TELEMETRY");
-            snprintf(lines[2],96,"APPLIED SETTINGS UNKNOWN");
-            snprintf(lines[3],96,"NODE FIRMWARE MUST SUPPORT STATUS");
-            snprintf(lines[4],96,"LAST HEARD %luS",(unsigned long)nd.ageS);
+            if(d.hasReport)snprintf(lines[1],96,"REPORT %luS / HEARD %luS",(unsigned long)d.reportAgeS,(unsigned long)nd.ageS);
+            else snprintf(lines[1],96,"REPORT NONE / HEARD %luS",(unsigned long)nd.ageS);
+            if(d.known){
+                snprintf(lines[2],96,"Q %u/%u PEAK %u DROP %lu",d.depth,d.capacity,d.peak,(unsigned long)d.drops);
+                snprintf(lines[3],96,"DELIVERY FAIL %lu API REJECT %lu",(unsigned long)d.sendFailed,(unsigned long)d.reportRejected);
+                snprintf(lines[4],96,"SCANFAIL %lu LOSS %u%% %s",(unsigned long)d.scanFailed,nd.lossPct,d.ageS>=10?"STALE":"");
+            }else{snprintf(lines[2],96,"QUEUE / DELIVERY UNKNOWN");snprintf(lines[3],96,"UPDATE NODE FIRMWARE");snprintf(lines[4],96,"OBSERVED REPORT LOSS %u%%",nd.lossPct);}
         }
-        const int scale=W>=400?2:1,step=W>=400?22:8;
+        const int scale=W>=400?2:1,step=W>=400?22:10;
         for(int i=0;i<5;i++)txt(s,L.list.x+4,L.list.y+4+i*step,lines[i],fitScale(lines[i],L.list.w-8,scale),i==0?pal::BRIGHT:(!d.known || d.ageS>=10)?pal::AMBER:pal::TEXT);
 
     }
@@ -122,9 +142,11 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     box(s, L.enroll.x, L.enroll.y, L.enroll.w, 44, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
     frame(s, L.enroll.x, L.enroll.y, L.enroll.w, 44, ui::Canvas::mix(eInk, pal::EDGE, 1, 2));
     centered(s, L.enroll.x + L.enroll.w / 2, L.enroll.y + 15, eb, fitScale(eb, L.enroll.w - 8, 2), eInk);
-    char page[32];snprintf(page,sizeof page,"%d/%d >",selected+1,sc.nRows+1);
+    char page[32];snprintf(page,sizeof page,"%d/%d >",selected+1,pageCount(sc.nRows));
     frame(s,L.pager.x,L.pager.y,L.pager.w,44,pal::EDGE_LIT);
     centered(s,L.pager.x+L.pager.w/2,L.pager.y+15,page,fitScale(page,L.pager.w-8,2),pal::TEXT);
+    frame(s,L.tune.x,L.tune.y,L.tune.w,44,pal::EDGE_LIT);
+    centered(s,L.tune.x+L.tune.w/2,L.tune.y+15,"TUNE",fitScale("TUNE",L.tune.w-8,2),pal::TEXT);
     const uint16_t rInk = sc.netId ? pal::WITCH_HI : pal::DIM;
     box(s, L.reset.x, L.reset.y, L.reset.w, 44, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
     frame(s, L.reset.x, L.reset.y, L.reset.w, 44, ui::Canvas::mix(rInk, pal::EDGE, 1, 2));

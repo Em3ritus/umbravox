@@ -128,6 +128,7 @@ inline void mesh(mshpres::MeshStore& st, const ui::State& s, const Chrome& c) {
     for (int i = 0; i < s.nNodes && i < ui::MAX_NODE_ROWS; i++)
         st.addNode(s.nodes[i].id, s.nodes[i].ageS, s.nodes[i].lossPct, s.nodes[i].live,s.nodes[i].diag);
     st.page(s.meshPage);st.local(s.localDiag);
+    st.target(s.set.nodeDwellMs,s.set.meshProfile,s.set.activeDiscovery);
 }
 
 // --- OMENS -------------------------------------------------------------------
