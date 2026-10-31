@@ -13,6 +13,22 @@ struct FakeScanner {
     bool start(int,decltype(nullptr),bool){++starts;active=startOk;return startOk;}
 };
 int main(){
+    const uint8_t primary[6]={0x10,0xbd,0xa3,0x11,0x22,0x33};
+    const uint8_t secondary[6]={0x10,0xbd,0xa3,0x44,0x55,0x66};
+    char first[24],second[24];
+    formatDeviceName(first,sizeof first,primary);formatDeviceName(second,sizeof second,secondary);
+    assert(!strcmp(first,"Umbravox-112233") && !strcmp(second,"Umbravox-445566"));
+    assert(strcmp(first,second));
+
+    for(auto mode:{OFF,WARDRIVEGO,BISCUIT}){
+        bool wd=true,bs=true;int calls=0;
+        assert(selectServices(mode,[&](bool biscuit,bool visible){++calls;(biscuit?bs:wd)=visible;return true;}));
+        assert(wd==(mode==WARDRIVEGO) && bs==(mode==BISCUIT) && !(wd&&bs));
+        assert(calls==(mode==OFF?2:3));
+        assert(!strcmp(identity(mode).model,mode==BISCUIT?"Biscuit DIY":"Umbravox WS C5 35"));
+        for(int fail=1;fail<=calls;++fail){int n=0;assert(!selectServices(mode,[&](bool,bool){return ++n!=fail;}));assert(n==fail);}
+    }
+
     {
         FakeScanner s;bool called=false;
         auto r=bridgeinit::configure(s,[&]{called=true;assert(!s.active);return true;});

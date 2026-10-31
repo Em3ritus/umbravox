@@ -8,10 +8,12 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <esp_heap_caps.h>
+#include <esp_mac.h>
 #include <atomic>
 #include <new>
 #include <host/ble_hs.h>
 #include <services/gap/ble_svc_gap.h>
+#include <services/gatt/ble_svc_gatt.h>
 
 namespace blebridge {
 namespace {
@@ -33,6 +35,9 @@ struct State {
 };
 State* st=nullptr;
 BLEServer* server=nullptr; BLECharacteristic *wdTx=nullptr,*bisTx=nullptr,*bisStatus=nullptr;
+BLEService *wdService=nullptr,*biscuitService=nullptr;
+BLECharacteristic* modelInfo=nullptr;
+int identityMode=-1;
 char name[24]{};
 void clearSession(uint32_t now){
     st->out.clear();st->command.reset();st->greeted=false;st->timeSynced=false;
@@ -84,22 +89,24 @@ bool init(){
         st=new(p)State{};
     }
     BLEDevice::setMTU(247);
-    auto addr=BLEDevice::getAddress();const uint8_t* mac=addr.getNative();
-    snprintf(name,sizeof name,"Umbravox-%02X%02X",mac[4],mac[5]);
+    uint8_t mac[6]{};
+    if(esp_read_mac(mac,ESP_MAC_BT)!=ESP_OK)return false;
+    formatDeviceName(name,sizeof name,mac);
     auto* scanner=BLEDevice::getScan();
     const auto result=bridgeinit::configure(*scanner,[&]() {
     server=BLEDevice::createServer();if(!server)return false;server->setCallbacks(&serverCallbacks);server->advertiseOnDisconnect(false);
-    auto* wd=server->createService(WD_SERVICE);
+    auto* wd=server->createService(WD_SERVICE);wdService=wd;
     wdTx=wd->createCharacteristic(WD_TX,BLECharacteristic::PROPERTY_NOTIFY);wdTx->setCallbacks(&callbacks);
     for(const char* uuid:{WD_RX,WD_CTRL})wd->createCharacteristic(uuid,BLECharacteristic::PROPERTY_WRITE|BLECharacteristic::PROPERTY_WRITE_NR)->setCallbacks(&callbacks);
     if(!wd->start())return false;
-    auto* bs=server->createService(BIS_SERVICE);
+    auto* bs=server->createService(BIS_SERVICE);biscuitService=bs;
     bisTx=bs->createCharacteristic(BIS_RSP,BLECharacteristic::PROPERTY_NOTIFY);bisTx->setCallbacks(&callbacks);
     bs->createCharacteristic(BIS_CMD,BLECharacteristic::PROPERTY_WRITE|BLECharacteristic::PROPERTY_WRITE_NR)->setCallbacks(&callbacks);
     bisStatus=bs->createCharacteristic(BIS_STA,BLECharacteristic::PROPERTY_READ);bisStatus->setCallbacks(&callbacks);
     if(!bs->start())return false;
     auto* info=server->createService(BLEUUID(uint16_t(0x180a)));
-    info->createCharacteristic(BLEUUID(uint16_t(0x2a24)),BLECharacteristic::PROPERTY_READ)->setValue("Biscuit DIY");
+    modelInfo=info->createCharacteristic(BLEUUID(uint16_t(0x2a24)),BLECharacteristic::PROPERTY_READ);
+    modelInfo->setValue(identity(Mode(selected.load())).model);
     info->createCharacteristic(BLEUUID(uint16_t(0x2a29)),BLECharacteristic::PROPERTY_READ)->setValue("Umbravox");
     info->createCharacteristic(BLEUUID(uint16_t(0x2a26)),BLECharacteristic::PROPERTY_READ)->setValue(FW_VERSION);
     if(!info->start())return false;
@@ -182,6 +189,19 @@ void setMode(uint8_t mode){
 void tick(uint32_t now){
     if(!st || !server || selected==OFF)return;
     if(st->seenEpoch!=epoch.load()){clearSession(now);st->seenEpoch=epoch.load();}
+    if(identityMode!=selected.load()){
+        // setMode requests disconnect first; never change discovery while connected.
+        if(connection!=NO_CONN)return;
+        const Mode mode=Mode(selected.load());
+        const bool ok=selectServices(mode,[](bool biscuit,bool visible){
+            auto* svc=biscuit?biscuitService:wdService;
+            return svc && ble_gatts_svc_set_visibility(svc->getHandle(),visible?1:0)==0;
+        });
+        if(!ok){selected=OFF;Serial.println("bridge: service visibility failed; advertising remains off");return;}
+        modelInfo->setValue(identity(mode).model);
+        ble_svc_gatt_changed(1,0xFFFF); // let bonded peers invalidate cached discovery
+        identityMode=mode;
+    }
     if(connection==NO_CONN){
         if(uint32_t(now-st->advAt)>=1500){st->advAt=now;if(!BLEDevice::getAdvertising()->isAdvertising())advertise();}
         return;

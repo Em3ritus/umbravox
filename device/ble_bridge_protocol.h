@@ -25,6 +25,27 @@ constexpr const char* BIS_CMD="beb5483e-36e1-4688-b7f5-ea07361b26a8";
 constexpr const char* BIS_RSP="beb5483e-36e1-4688-b7f5-ea07361b26a9";
 constexpr const char* BIS_STA="beb5483e-36e1-4688-b7f5-ea07361b26aa";
 enum Mode:uint8_t { OFF, WARDRIVEGO, BISCUIT };
+// esp_read_mac supplies canonical byte order, unlike NimBLE's native address.
+inline void formatDeviceName(char* out,size_t cap,const uint8_t mac[6]){
+    snprintf(out,cap,"Umbravox-%02X%02X%02X",mac[3],mac[4],mac[5]);
+}
+struct Identity {bool wdVisible,biscuitVisible;const char* model;};
+inline Identity identity(Mode mode){
+#if defined(WS_C5_28)
+    constexpr const char* boardName="Umbravox WS C5 28";
+#else
+    constexpr const char* boardName="Umbravox WS C5 35";
+#endif
+    // Keep Biscuit's compatibility model only in Biscuit mode.
+    return {mode==WARDRIVEGO,mode==BISCUIT,mode==BISCUIT?"Biscuit DIY":boardName};
+}
+// Hide both services before exposing the selected protocol. Fail closed.
+template<class SetVisibility> bool selectServices(Mode mode,SetVisibility set){
+    if(!set(false,false))return false;
+    if(!set(true,false))return false;
+    const auto i=identity(mode);
+    return (!i.wdVisible || set(false,true)) && (!i.biscuitVisible || set(true,true));
+}
 struct Ap { uint8_t mac[6]{}; char ssid[33]{}; int8_t rssi=0; uint8_t channel=0; uint16_t auth=0; uint32_t at=0; };
 inline uint32_t u32(const uint8_t* p) { return uint32_t(p[0])|uint32_t(p[1])<<8|uint32_t(p[2])<<16|uint32_t(p[3])<<24; }
 inline size_t frame(uint8_t* out,size_t cap,uint8_t type,uint32_t id,const char* text,size_t n,uint8_t status=0) {
