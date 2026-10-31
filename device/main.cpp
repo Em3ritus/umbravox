@@ -5,6 +5,7 @@ static int dwellRequested=-1;
 static unsigned consoleDwell=220;
 #include "poi.h"
 #include "pcap.h"
+#include "gpx.h"
 #include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
@@ -979,6 +980,7 @@ sdcmd::Console console(io);
 static void rebootNow(const ui::Settings& set) {
     const bool was = logging::wantsActive();
     logging::stop(millis());
+    gpx::tick("",ui::Gnss::fix(),millis(),0);
     prefs::setLogging(was);
     prefs::flush(set);
     elog::event(elog::INFO, "sys", "reboot requested on the console%s",
@@ -1025,7 +1027,9 @@ bool pollConsole() {
             else if(!strcmp(line,"PCAP")){Serial.printf("pcap: %s file=%s written=%lu dropped=%lu batches=%lu queue_peak=%lu\n",pcap::status(),pcap::fileName(),(unsigned long)pcap::written(),(unsigned long)pcap::dropped(),(unsigned long)pcap::batches(),(unsigned long)pcap::peakQueue());}
             else
 #endif
-            if (!strcmp(line,"DWELL")) {
+            if (!strcmp(line,"GPX")) {
+                Serial.printf("gpx: %s file=%s points=%lu\n",gpx::status(),gpx::fileName(),(unsigned long)gpx::points());
+            } else if (!strcmp(line,"DWELL")) {
                 Serial.printf("dwell: %u ms\n",consoleDwell);
             } else if (!strncmp(line,"DWELL ",6)) {
                 char* end=nullptr;
@@ -1333,6 +1337,16 @@ void loop() {
     { const uint32_t _s = micros(); blescan::tick(millis()); bootStall("blescan tick", _s); }
     { const uint32_t _s=micros(); blebridge::tick(millis()); bootStall("bridge tick",_s); }
     { const uint32_t _s = micros(); logging::tick(millis(), ui::Gnss::utcEpoch(millis())); bootStall("logging tick", _s); }
+    {
+        const uint32_t start=micros(),now=millis();
+        const auto& fix=ui::Gnss::fix();
+        const uint32_t epoch=ui::Gnss::utcEpoch(now),ageSeconds=(now-fix.atMs)/1000;
+        // utcEpoch extrapolates forward: do not call it with a past fix.atMs.
+        gpx::tick(logging::state()==logging::ACTIVE && logging::wantsActive() ? logging::fileName() : "",
+                  fix,now,epoch>=ageSeconds ? epoch-ageSeconds : 0);
+        bootStall("gpx tick",start);
+        if(gpx::takeError())elog::event(elog::WARN,"gpx","track write failed: %s; stopped for this session",gpx::fileName());
+    }
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
     poi::service(millis());
     {const uint32_t start=micros();pcap::service(millis());bootStall("pcap service",start);}
