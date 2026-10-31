@@ -71,7 +71,7 @@ int main(){
       h=aspectHits(W,H,true); bool before=r.labelsPlain(); r.dispatch(*slot(h,"labels")); expect(r.labelsPlain()!=before, "LABELS toggles label mode"); }
 
     // MESH: ENROLL / RESET side effects
-    { Router r; HitList h=meshHits(W,H);
+    { Router r; HitList h=meshHits(W,H,MESH_NETWORK_PAGE);
       expect(r.dispatch(*slot(h,"enroll")).meshEnroll, "ENROLL -> meshEnroll");
       expect(r.dispatch(*slot(h,"reset")).meshReset,  "RESET -> meshReset"); }
 

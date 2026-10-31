@@ -1,11 +1,18 @@
 # Node diagnostics
 
-The native engine's Nodes screen has one local page and two pages per live node.
-NEXT cycles Local → node Radio → node Link. TUNE opens Settings → Nodes; its
-profile and dwell controls are **fleet-wide**, not a per-node override. Active
-versus passive discovery remains the shared Scanning setting.
+The native engine's Nodes screen separates device selection from diagnostics.
+The left/right arrows select **This handheld** or a node identified by its MAC
+suffix. The subtitle shows the device position in the fleet. Selecting a node
+opens **Scanning**; its **Connection** tab stays on that same node. The handheld
+shows its own Overview instead. With no nodes, both arrows stay on the handheld.
 
-## Radio
+**Fleet settings** opens Settings → Nodes; profile and dwell controls affect all
+nodes, not just the selected device. Active/passive discovery remains the shared
+Scanning setting. **Network** opens a separate management view containing ENROLL
+and RESET NETWORK. These actions are absent from diagnostic hit regions. Network
+shows NET OPEN for network ID zero; tapping Network again returns to the handheld.
+
+## Scanning
 
 - ASSIGNED lists channels the coordinator assigned. This is the coordinator's
   plan, not proof that the node received or applied that assignment.
@@ -18,7 +25,7 @@ versus passive discovery remains the shared Scanning setting.
 - UNKNOWN means no supported telemetry was received. Old nodes remain visible;
   unavailable fields are not fabricated as zero or success.
 
-## Link
+## Connection
 
 - REPORT is age of the last received MSG_REPORT, including empty keepalive
   reports; HELLO and telemetry do not refresh this timestamp.

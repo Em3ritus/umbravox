@@ -77,27 +77,26 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
-    // title band + NET state
-    txt(s, L.title.x, L.title.y + 2, "NODES", 2, pal::BRIGHT);
-    char nb[24]; if (sc.netId) snprintf(nb, sizeof nb, "NET %d", sc.netId); else snprintf(nb, sizeof nb, "NET OPEN");
-    txt(s, L.title.x + L.title.w - Font::width(nb,1), L.title.y + 4, nb, 1, sc.netId ? pal::GREEN : pal::DIM);
-
-    // header: CORE/COORD + sweep, LOSS on the right
-    char hd[24]; if (sc.meshCoords > 0) snprintf(hd, sizeof hd, "%d COORD", sc.meshCoords);
-                 else                    snprintf(hd, sizeof hd, "CORE");
-    char hd2[48];
-    if (sc.coreCamping) snprintf(hd2, sizeof hd2, "%s CH%d", hd, sc.coreChan);
-    else                snprintf(hd2, sizeof hd2, "%s SWEEP", hd);
-    box(s, L.header.x, L.header.y + 2, 3, 6, pal::WITCH_HI);
-    txt(s, L.header.x + 6, L.header.y + 2, hd2, 1, pal::BRIGHT);
-    char lb[24]; snprintf(lb, sizeof lb, "LOSS %d%%", sc.meshLossPct);
-    txt(s, L.header.x + L.header.w - Font::width(lb,1), L.header.y + 2, lb, 1, lossInk(sc.meshLossPct));
-    box(s, L.header.x, L.header.y + L.header.h - 1, L.header.w, 1, pal::EDGE);
-
-    // node list: two columns
-    box(s, L.list.x, L.list.y, L.list.w, L.list.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
-    const int selected=(sc.page<0?0:sc.page)%pageCount(sc.nRows);
-    if(selected==0){
+    const int selected=uieng::meshPage(sc.page,sc.nRows);
+    const bool network=selected==uieng::MESH_NETWORK_PAGE;
+    auto button=[&](uieng::Rect r,const char* label,bool active=false){
+        box(s,r.x,r.y,r.w,r.h,pal::PANEL);
+        centered(s,r.x+r.w/2,r.y+16,label,fitScale(label,r.w-4, W>=400?2:1),active?pal::BRIGHT:pal::TEXT);
+        if(active)box(s,r.x+4,r.y+r.h-3,r.w-8,2,pal::WITCH_HI);
+    };
+    button(L.previous,"<");button(L.pager,">");
+    char name[48],hint[48];
+    if(network){snprintf(name,sizeof name,"NETWORK");if(sc.netId)snprintf(hint,sizeof hint,"NET %d",sc.netId);else snprintf(hint,sizeof hint,"NET OPEN");}
+    else if(selected==0){snprintf(name,sizeof name,"THIS HANDHELD");snprintf(hint,sizeof hint,"DEVICE 1/%d - LOCAL STATUS",sc.nRows+1);}
+    else{const auto& n=sc.rows[(selected-1)/2];snprintf(name,sizeof name,"NODE %02X:%02X:%02X",n.id[0],n.id[1],n.id[2]);snprintf(hint,sizeof hint,"DEVICE %d/%d - %s",(selected+1)/2+1,sc.nRows+1,selected%2?"SCANNING":"CONNECTION");}
+    centered(s,L.title.x+L.title.w/2,L.title.y+5,name,fitScale(name,L.title.w,2),pal::BRIGHT);
+    centered(s,L.title.x+L.title.w/2,L.title.y+28,hint,1,pal::DIM);
+    box(s,L.list.x,L.list.y,L.list.w,L.list.h,ui::Canvas::mix(pal::VOID,pal::PANEL,1,3));
+    if(network){
+        char enroll[24];if(sc.enrollSecs)snprintf(enroll,sizeof enroll,"PAIR %dS",sc.enrollSecs);else snprintf(enroll,sizeof enroll,"ENROLL NODES");
+        button(L.enroll,enroll,sc.enrollSecs>0);button(L.reset,"RESET NETWORK");
+        if(L.list.h>=70)centered(s,L.list.x+L.list.w/2,L.list.y+58,"ENROLL ADOPTS NODES / RESET OPENS THE NETWORK",1,pal::DIM);
+    }else     if(selected==0){
         const auto& d=sc.local;char lines[5][96]{};
         if(d.valid){
             snprintf(lines[0],96,"LOCAL %s %uMS",d.active?"ACTIVE":"PASSIVE",d.dwellMs);
@@ -106,14 +105,14 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
             snprintf(lines[3],96,"BRIDGE %s %s Q%u",d.bridgeMode==1?"WDGO":d.bridgeMode==2?"BISCUIT":"OFF",d.streaming?"STREAM":d.connected?"LINK":"",d.bridgeQueued);
             snprintf(lines[4],96,"RXDROP %lu TXRETRY %lu",(unsigned long)d.rxDrops,(unsigned long)d.txRetries);
         }else snprintf(lines[0],96,"LOCAL DIAGNOSTICS UNAVAILABLE");
-        const int scale=W>=400?2:1,step=W>=400?22:10;
-        for(int i=0;i<5;i++)txt(s,L.list.x+4,L.list.y+4+i*step,lines[i],fitScale(lines[i],L.list.w-8,scale),i==0?pal::BRIGHT:pal::TEXT);
+        const int scale=W>=400?2:1,step=W>=400?22:8;
+        for(int i=0;i<5;i++)txt(s,L.list.x+4,L.list.y+2+i*step,lines[i],fitScale(lines[i],L.list.w-8,scale),i==0?pal::BRIGHT:pal::TEXT);
     }else{
         const MeshNode& nd=sc.rows[(selected-1)/2];
         const auto& d=nd.diag;
         char lines[5][96]{};
         const bool link=(selected-1)%2;
-        snprintf(lines[0],96,"%02X:%02X:%02X  %s",nd.id[0],nd.id[1],nd.id[2],link?"LINK":"RADIO");
+        snprintf(lines[0],96,"%s",link?"NODE CONNECTION HEALTH":"NODE SCANNING SETTINGS");
         if(!link){
             channelLabel(d,lines[1],96);
             if(d.known)snprintf(lines[2],96,"APPLIED %s %uMS %s",d.active?"ACTIVE":"PASSIVE",d.dwellMs,d.camp?"CAMP":"SWEEP");
@@ -130,27 +129,17 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
                 snprintf(lines[4],96,"SCANFAIL %lu LOSS %u%% %s",(unsigned long)d.scanFailed,nd.lossPct,d.ageS>=10?"STALE":"");
             }else{snprintf(lines[2],96,"QUEUE / DELIVERY UNKNOWN");snprintf(lines[3],96,"UPDATE NODE FIRMWARE");snprintf(lines[4],96,"OBSERVED REPORT LOSS %u%%",nd.lossPct);}
         }
-        const int scale=W>=400?2:1,step=W>=400?22:10;
-        for(int i=0;i<5;i++)txt(s,L.list.x+4,L.list.y+4+i*step,lines[i],fitScale(lines[i],L.list.w-8,scale),i==0?pal::BRIGHT:(!d.known || d.ageS>=10)?pal::AMBER:pal::TEXT);
+        const int scale=W>=400?2:1;
+        for(int i=1;i<5;i++)txt(s,L.list.x+4,L.list.y+3+(i-1)*(W>=400?26:10),lines[i],fitScale(lines[i],L.list.w-8,scale),(!d.known || d.ageS>=10)?pal::AMBER:pal::TEXT);
 
     }
 
-    // control row: ENROLL (or PAIR countdown) + RESET
-    char eb[24];
-    if (sc.enrollSecs) snprintf(eb, sizeof eb, "PAIR %dS", sc.enrollSecs); else snprintf(eb, sizeof eb, "ENROLL");
-    const uint16_t eInk = sc.enrollSecs ? pal::GREEN : pal::WITCH_HI;
-    box(s, L.enroll.x, L.enroll.y, L.enroll.w, 44, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
-    frame(s, L.enroll.x, L.enroll.y, L.enroll.w, 44, ui::Canvas::mix(eInk, pal::EDGE, 1, 2));
-    centered(s, L.enroll.x + L.enroll.w / 2, L.enroll.y + 15, eb, fitScale(eb, L.enroll.w - 8, 2), eInk);
-    char page[32];snprintf(page,sizeof page,"%d/%d >",selected+1,pageCount(sc.nRows));
-    frame(s,L.pager.x,L.pager.y,L.pager.w,44,pal::EDGE_LIT);
-    centered(s,L.pager.x+L.pager.w/2,L.pager.y+15,page,fitScale(page,L.pager.w-8,2),pal::TEXT);
-    frame(s,L.tune.x,L.tune.y,L.tune.w,44,pal::EDGE_LIT);
-    centered(s,L.tune.x+L.tune.w/2,L.tune.y+15,"TUNE",fitScale("TUNE",L.tune.w-8,2),pal::TEXT);
-    const uint16_t rInk = sc.netId ? pal::WITCH_HI : pal::DIM;
-    box(s, L.reset.x, L.reset.y, L.reset.w, 44, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
-    frame(s, L.reset.x, L.reset.y, L.reset.w, 44, ui::Canvas::mix(rInk, pal::EDGE, 1, 2));
-    centered(s, L.reset.x + L.reset.w / 2, L.reset.y + 15, "RESET", fitScale("RESET", L.reset.w - 8, 2), rInk);
+    if(!network && selected>0){button(L.scanning,"SCANNING",selected%2);button(L.connection,"CONNECTION",!(selected%2));}
+    else if(!network){auto overview=L.scanning;overview.w=L.connection.x+L.connection.w-overview.x;button(overview,"OVERVIEW",true);}
+    box(s,L.tune.x,L.tune.y,L.tune.w,L.tune.h,pal::PANEL);
+    centered(s,L.tune.x+L.tune.w/2,L.tune.y+9,"FLEET",1,pal::TEXT);
+    centered(s,L.tune.x+L.tune.w/2,L.tune.y+25,"SETTINGS",1,pal::TEXT);
+    button(L.network,"NETWORK",network);
 
 }
 

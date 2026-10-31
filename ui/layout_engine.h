@@ -354,38 +354,56 @@ inline SubChrome subChrome(int W, int H) {
     return s;
 }
 
-// --- MESH: Core/loss header + paged diagnostics + ENROLL/PAGE/RESET -----------
+// --- NODES: device selector, diagnostics tabs, separate network controls ---
+constexpr int MESH_NETWORK_PAGE = 255;
+inline int meshPage(int page, int nodes) {
+    if(page==MESH_NETWORK_PAGE)return page;
+    return page>=0 && page<=2*std::max(0,nodes)?page:0;
+}
+// Commands: previous/next device, Scanning, Connection, Network.
+inline int meshNavigate(int page,int nodes,int command) {
+    nodes=std::max(0,nodes);page=meshPage(page,nodes);
+    if(command==4)return page==MESH_NETWORK_PAGE?0:MESH_NETWORK_PAGE;
+    const int device=page==MESH_NETWORK_PAGE?0:(page+1)/2;
+    if(command==2 || command==3)return device?2*device-(command==2?1:0):0;
+    const int next=(device+(command<0?-1:1)+nodes+1)%(nodes+1);
+    return next?2*next-1:0;
+}
 struct MeshLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
     Rect title, header, list, enroll, pager, tune, reset;
+    Rect previous, scanning, connection, network;
 };
 inline MeshLayout mesh(int W, int H) {
     const SubChrome c = subChrome(W, H);
     MeshLayout m;
-    m.status = c.status; m.nav = c.nav; m.body = c.body;
-    for (int i = 0; i < 4; i++) { m.statusCells[i] = c.statusCells[i]; m.navCells[i] = c.navCells[i]; }
-    m.title = c.title;
-    const int ctrlH = 44, by = c.body.y, bh = c.body.h;
-    const int headerH=W<400?16:24;
-    m.header = {c.body.x, by + 20, c.body.w, headerH};                  // CORE/COORD + LOSS
-    m.list   = {c.body.x, by + 20+headerH, c.body.w, bh - 20-headerH - ctrlH};     // node rows (display only)
-    const int ctrlY = by + bh - ctrlH, cellW = (c.body.w - 18) / 4;
-    m.enroll = {c.body.x, ctrlY, cellW, ctrlH};
-    m.pager = {c.body.x+cellW+6, ctrlY, cellW, ctrlH};
-    m.tune = {c.body.x+2*(cellW+6),ctrlY,cellW,ctrlH};
-    m.reset = {c.body.x+3*(cellW+6),ctrlY,c.body.w-3*(cellW+6),ctrlH};
+    m.status=c.status;m.nav=c.nav;m.body=c.body;
+    for(int i=0;i<4;i++){m.statusCells[i]=c.statusCells[i];m.navCells[i]=c.navCells[i];}
+    const int x=c.body.x,y=c.body.y,w=c.body.w;
+    m.previous={x,y,44,44};m.pager={x+w-44,y,44,44};
+    m.title={x+48,y,w-96,44};m.header=m.title;
+    m.list={x,y+46,w,c.body.h-92};
+    const int cy=y+c.body.h-44,cw=(w-6)/4;
+    m.scanning={x,cy,cw,44};m.connection={x+cw+2,cy,std::max(cw,60),44};
+    m.tune={m.connection.x+m.connection.w+2,cy,cw,44};
+    m.network={m.tune.x+cw+2,cy,x+w-(m.tune.x+cw+2),44};
+    m.enroll={x,m.list.y,(w-8)/2,44};m.reset={x+(w-8)/2+8,m.list.y,w-(w-8)/2-8,44};
     return m;
 }
-// MESH hits: two network-control buttons and a diagnostics pager. ENROLL
-// opens the pairing window; RESET returns the fleet to the open network.
-inline HitList meshHits(int W, int H) {
-    const MeshLayout m = mesh(W, H);
-    HitList h;
-    addChromeHits(h, W, H);
-    h.add("mesh-page",m.pager,Action::MeshPage,0,nullptr,"Next node diagnostics");
-    h.add("node-tune",m.tune,Action::Nav,int(ScreenId::Attune),nullptr,"Fleet timing controls");
-    h.add("enroll", m.enroll, Action::MeshEnroll,   0, nullptr, "Open a pairing window (adopt open nodes)");
-    h.add("reset",  m.reset,  Action::MeshResetNet, 0, nullptr, "Return the fleet to the open network");
+inline HitList meshHits(int W,int H,int page=0,int nodes=0) {
+    const MeshLayout m=mesh(W,H);HitList h;addChromeHits(h,W,H);
+    page=meshPage(page,nodes);
+    h.add("node-previous",m.previous,Action::MeshPage,-1,nullptr,"Previous device");
+    h.add("mesh-page",m.pager,Action::MeshPage,1,nullptr,"Next device");
+    h.add("node-tune",m.tune,Action::Nav,int(ScreenId::Attune),nullptr,"Fleet settings (all nodes)");
+    h.add("node-network",m.network,Action::MeshPage,4,nullptr,"Network management");
+    if(page==MESH_NETWORK_PAGE){
+        h.add("enroll",m.enroll,Action::MeshEnroll,0,nullptr,"Adopt open nodes");
+        h.add("reset",m.reset,Action::MeshResetNet,0,nullptr,"Return fleet to open network");
+    }else if(page>0){
+        h.add("node-scanning",m.scanning,Action::MeshPage,2,nullptr,"Scanning settings");
+        h.add("node-connection",m.connection,Action::MeshPage,3,nullptr,"Connection health");
+    }
     return h;
 }
 

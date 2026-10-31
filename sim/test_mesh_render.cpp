@@ -38,9 +38,10 @@ int main(){
         snprintf(m,sizeof m,"%dx%d empty node list tiles cleanly",W,H); expect(eonce && !ef.oob,m);
 
         const uieng::MeshLayout L = uieng::mesh(W,H);
-        MeshScene pair = sc; pair.enrollSecs = 30;             // ENROLL -> PAIR 30S
+        MeshScene beforePair=sc;beforePair.page=uieng::MESH_NETWORK_PAGE;
+        MeshScene pair = beforePair; pair.enrollSecs = 30;             // ENROLL -> PAIR 30S
         FbSink full(W,H); comp.renderFull(W,H,pair,full);
-        FbSink reg(W,H);  comp.renderFull(W,H,sc,reg);
+        FbSink reg(W,H);  comp.renderFull(W,H,beforePair,reg);
         comp.renderRegion(W,H,pair,L.enroll,reg);
         bool match=true; for(int i=0;i<W*H;i++) if(reg.fb[i]!=full.fb[i]){ match=false; break; }
         snprintf(m,sizeof m,"%dx%d pairing window: ENROLL region == full (old label erased)",W,H);
@@ -50,11 +51,13 @@ int main(){
         MeshNode node{{0,0,1},2,3,true};MeshScene radio=sc;radio.rows=&node;radio.nRows=1;radio.page=1;
         node.diag.known=true;node.diag.dwellMs=220;node.diag.assignedCount=1;node.diag.assignedChannels[0]=149;
         FbSink previous(W,H);comp.renderFull(W,H,radio,previous);
-        for(int state=0;state<4;state++){
+        for(int state=0;state<6;state++){
             if(state==0)radio.page=2;
             if(state==1){node.diag.ageS=11;node.diag.hasReport=true;node.diag.reportAgeS=12;}
             if(state==2)node.diag.known=false;
             if(state==3)radio.page=1;
+            if(state==4)radio.page=uieng::MESH_NETWORK_PAGE;
+            if(state==5)radio.page=0;
             FbSink expected(W,H);comp.renderFull(W,H,radio,expected);comp.renderRegion(W,H,radio,L.body,previous);
             expect(previous.fb==expected.fb && !previous.oob,"node page/state body repaint matches full frame");
         }

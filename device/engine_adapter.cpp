@@ -379,7 +379,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             ctx.rowKeys=rowKeys;ctx.nRowKeys=rowCount;
             h=uieng::codexHits(W_,H_,ctx);break;
         case uinav::Screen::Menu:   h = uieng::menuHits(W_, H_); break;
-        case uinav::Screen::Mesh:   h = uieng::meshHits(W_, H_); break;
+        case uinav::Screen::Mesh:   h = uieng::meshHits(W_, H_, nav.meshPage, s.nNodes); break;
         case uinav::Screen::Omens: {
             const auto& sc=eOmens_.scene();
             h=uieng::omensHits(W_,H_,rowKeys,rowCount,sc.detail!=nullptr);break;
@@ -415,7 +415,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 if(nav.screen==ui::SCR_FILES)ui::filesEnter(nav);
                 if(hit.slot && !strcmp(hit.slot,"node-tune"))settings_.tab=3;
                 break;
-            case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%mshr::pageCount(s.nNodes);break;
+            case uieng::Action::MeshPage: nav.meshPage=uieng::meshNavigate(nav.meshPage,s.nNodes,hit.payload);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
             case uieng::Action::EchoPage: {
                 const int per=uieng::echoes(W_,H_).nRows;
