@@ -54,6 +54,19 @@ int main(int argc,char** argv) {
     const char* tag=state==0?"clients":state==1?"clients-empty":"clients-unavailable";
     png::write((std::string(argv[1])+"/"+tag+"-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
   }
+  s.nEchoes=uieng::echoes(w,h).nRows;s.echoTotal=9;s.echoClients=4;s.scroll=0;
+  for(int i=0;i<s.nEchoes;i++){
+    auto& e=s.echoes[i];snprintf(e.ssid,sizeof e.ssid,"%s","FULL 32 BYTE REQUESTED SSID 1234");
+    e.mac[0]=i?0x20:0x22;e.mac[1]=0xab;e.mac[2]=0xcd;e.mac[3]=0x34;e.mac[4]=0x56;e.mac[5]=0x78+i;
+    e.randomised=!i;e.wildcard=i;e.rssi=-52;e.chan=48;e.agoS=2;e.observations=19;
+    e.linked=!i;std::copy_n(s.detail.mac,6,e.ap);
+  }
+  echpres::EchoStore probes;uiproj::echoes(probes,s,c);
+  for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};echr::composeStrip(strip,w,h,probes.scene());}
+  png::write((std::string(argv[1])+"/probes-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
+  s.detailPage=1;s.detail.nameEvidence=2;detpres::DetailStore resolved;uiproj::detail(resolved,s,c);
+  for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};detr::composeStrip(strip,w,h,resolved.scene());}
+  png::write((std::string(argv[1])+"/resolved-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
   s.set.bleBridge=1;s.nNodes=1;s.nodes[0].id[0]=0xf3;s.nodes[0].id[1]=0xc5;s.nodes[0].id[2]=0x5c;s.nodes[0].live=true;s.nodes[0].lossPct=2;
   auto& nd=s.nodes[0].diag;nd.known=true;nd.active=true;nd.profile=1;nd.dwellMs=150;nd.capacity=192;nd.peak=51;nd.depth=0;nd.drops=9;nd.sendFailed=2;
   s.localDiag.valid=true;s.localDiag.active=true;s.localDiag.dwellMs=150;s.localDiag.started=145;s.localDiag.completed=144;s.localDiag.bridgeMode=1;s.localDiag.streaming=true;s.localDiag.connected=true;s.localDiag.bridgeQueued=3;s.localDiag.txRetries=2;

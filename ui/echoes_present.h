@@ -18,7 +18,7 @@ using scanpres::PresentMetrics;
 class EchoStore {
 public:
     static constexpr int MAXROWS = ui::MAX_ECHO_ROWS;   // 6
-    static constexpr int STRMAX  = ui::SSID_MAX;         // 20
+    static constexpr int STRMAX  = ui::AP_SSID_MAX;         // 20
 
     void begin(uint8_t theme, uint32_t now) {
         nr_ = 0; sc_ = EchoScene{}; sc_.theme = theme; sc_.now = now; sc_.rows = rows_; sc_.nRows = 0;
@@ -29,11 +29,12 @@ public:
     void status(int nodes, bool hasCell, int batt, echr::Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
     }
+    void page(int offset,uint32_t drops,uint32_t evicted,bool available){sc_.offset=offset;sc_.drops=drops;sc_.evicted=evicted;sc_.available=available;}
     void totals(int total, int clients) { sc_.total = total; sc_.clients = clients; }
-    bool addRow(const char* seeking, const char* who, bool randomised, uint32_t agoS) {
+    bool addRow(const char* seeking, const char* who, bool randomised, uint32_t agoS,int rssi=0,uint8_t channel=0,uint32_t count=0,bool wildcard=false,const char* link="") {
         if (nr_ >= MAXROWS) return false;
-        copy_(sBuf_[nr_], STRMAX, seeking); copy_(wBuf_[nr_], 8, who);
-        rows_[nr_] = EchoRow{ sBuf_[nr_], wBuf_[nr_], randomised, agoS };
+        copy_(sBuf_[nr_], STRMAX, seeking); copy_(wBuf_[nr_], 18, who);copy_(linkBuf_[nr_],40,link);
+        rows_[nr_] = EchoRow{ sBuf_[nr_], wBuf_[nr_], randomised, agoS,rssi,channel,count,wildcard,linkBuf_[nr_] };
         nr_++; sc_.nRows = nr_; return true;
     }
     const EchoScene& scene() const { return sc_; }
@@ -42,7 +43,7 @@ public:
 private:
     static void copy_(char* d, int cap, const char* src){ int k=0; for(;src&&src[k]&&k<cap-1;k++) d[k]=src[k]; d[k]=0; }
     EchoRow rows_[MAXROWS];
-    char    sBuf_[MAXROWS][STRMAX], wBuf_[MAXROWS][8];
+    char    sBuf_[MAXROWS][STRMAX], wBuf_[MAXROWS][18],linkBuf_[MAXROWS][40];
     int     nr_ = 0;
     EchoScene sc_;
 };
@@ -55,9 +56,9 @@ inline void sceneDirty(const EchoScene& a, const EchoScene& b, bool& status, boo
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
 
-    bool same = a.total == b.total && a.clients == b.clients && a.nRows == b.nRows;
+    bool same = a.offset==b.offset && a.drops==b.drops && a.evicted==b.evicted && a.available==b.available && a.total == b.total && a.clients == b.clients && a.nRows == b.nRows;
     for (int i = 0; same && i < a.nRows; i++)
-        same = a.rows[i].randomised == b.rows[i].randomised && a.rows[i].agoS == b.rows[i].agoS
+        same = a.rows[i].rssi==b.rows[i].rssi && a.rows[i].channel==b.rows[i].channel && a.rows[i].count==b.rows[i].count && a.rows[i].wildcard==b.rows[i].wildcard && !__builtin_strcmp(a.rows[i].link,b.rows[i].link) && a.rows[i].randomised == b.rows[i].randomised && a.rows[i].agoS == b.rows[i].agoS
                && !__builtin_strcmp(a.rows[i].seeking?a.rows[i].seeking:"", b.rows[i].seeking?b.rows[i].seeking:"")
                && !__builtin_strcmp(a.rows[i].who?a.rows[i].who:"", b.rows[i].who?b.rows[i].who:"");
     body = !same;

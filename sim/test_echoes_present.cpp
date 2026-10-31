@@ -18,9 +18,9 @@ int main(){
         const LogLayout g = echoes(W,H);
         expect(g.body==Rect{8,52,W-16,H-104}, P?"320 body":"480 body");
         expect(g.title.y==g.body.y && g.header.y==g.body.y+20 && g.list.y==g.body.y+32, "title/header/list stack");
-        expect(g.list.y+g.list.h==g.body.y+g.body.h, "list fills to body bottom");
+        expect(g.list.y+g.list.h==g.prev.y && g.prev.y+44==g.body.y+g.body.h, "list stops above pager");
         HitList h = echoesHits(W,H);
-        expect(h.count==(W>=400?10:9), "echoes hits: chrome nav only (log is scroll, not taps)");
+        expect(h.count==(W>=400?12:11), "echoes hits: chrome and two page controls");
         bool ok=true; int nav=0;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;

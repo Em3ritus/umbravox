@@ -6,6 +6,7 @@
 #if defined(UMBRAVOX_SCAN_ENGINE)
 #include "pcap.h"
 #include "clients.h"
+#include "probe_evidence.h"
 #include <esp_timer.h>
 #endif
 #include <new>
@@ -34,6 +35,7 @@ namespace cap {
 namespace {
 #if defined(UMBRAVOX_SCAN_ENGINE)
 clients::Storage* clientStore=nullptr;
+evidence::Storage* evidenceStore=nullptr;
 #endif
 
 // How long we sit on each channel. Too short and beacons (typically every
@@ -147,13 +149,9 @@ bool     chanOk[N_CHAN];        // false if the radio refused the channel
 
 // --- probe requests ------------------------------------------------------
 //
-// A client looking for a named network is telling you it has joined that
-// network before. A phone that probes for a hotel SSID has stayed there.
-// This is the one capture here that is about people rather than
-// infrastructure, which is also why it is worth treating carefully.
-//
-// Broadcast probes -- the ones with no SSID -- are discarded: they say only
-// "a device is here", which the rest of the radio already told us.
+// Named probe requests show what was requested, not proof of past membership.
+// The legacy path retains named probes only; native capture also records wildcard
+// requests and preserves complete raw SSIDs for pair identity.
 constexpr int PROBE_TABLE = 512;
 struct Probe {
     uint8_t  mac[6];
@@ -223,6 +221,14 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
         }
     }
 #endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    evidence::Event parsedEvidence;
+    const bool haveEvidence=type==WIFI_PKT_MGMT && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=28 &&
+        evidence::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,p->rx_ctrl.channel,millis(),parsedEvidence);
+    if(haveEvidence && evidenceStore){
+        portENTER_CRITICAL(&mux);evidenceStore->queue.push(parsedEvidence);portEXIT_CRITICAL(&mux);
+    }
+#endif
     if (type != WIFI_PKT_MGMT) return;
     if (p->rx_ctrl.sig_len < 24) return;
 
@@ -241,6 +247,9 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
 
     // 4 = probe request: a client calling out for a network by name.
     if (subtype == 4) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        return; // parsed into the bounded evidence queue above
+#endif
         if (p->rx_ctrl.sig_len < 26 || !probes) return;
         const uint8_t* src = f + 10;                  // addr2, the client
         if (f[24] != 0) return;                       // first element is SSID
@@ -300,11 +309,17 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     // zero length is a hidden network, which is a finding, not an absence.
     const uint8_t* ssid = nullptr;
     uint8_t ssidLen = 0;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(!haveEvidence || parsedEvidence.kind!=evidence::Advertisement)return;
+    ssidLen=parsedEvidence.len;ssid=ssidLen?parsedEvidence.name:nullptr;
+#else
     if (p->rx_ctrl.sig_len >= 38 && f[36] == 0) {
         ssidLen = f[37];
         if (ssidLen > 0 && (36 + 2 + ssidLen) <= p->rx_ctrl.sig_len) ssid = f + 38;
         else ssidLen = 0;
     }
+
+#endif
 
     // The channel comes from our own hop state, not from rx_ctrl: that field
     // is 4 bits wide and cannot represent anything above channel 15, so it is
@@ -575,10 +590,17 @@ void begin() {
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; chanOk[i] = true; }
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
 
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    void* evidenceMemory=heap_caps_malloc(sizeof(evidence::Storage),MALLOC_CAP_SPIRAM);
+    if(evidenceMemory)evidenceStore=new(evidenceMemory) evidence::Storage();
+    Serial.printf("capture: probe evidence %s (%u bytes PSRAM)\n",evidenceStore?"ready":"unavailable",evidenceStore?(unsigned)sizeof(evidence::Storage):0);
+#else
     probes = (Probe*)heap_caps_malloc(sizeof(Probe) * PROBE_TABLE, MALLOC_CAP_SPIRAM);
     if (!probes) probes = (Probe*)calloc(PROBE_TABLE, sizeof(Probe));
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     Serial.printf("capture: %d probe slots\n", probes ? PROBE_TABLE : 0);
+
+#endif
 
 #if UMBRAVOX_PASSIVE_ONLY
     // Initialize directly in NULL mode: never start a station or AP, even briefly.
@@ -649,7 +671,33 @@ void begin() {
     hopAt = millis();
 }
 
+// Fill only a known, still-unnamed AP. Do not fabricate signal, position,
+// observations or a new table row from a client's association request.
+#if defined(UMBRAVOX_SCAN_ENGINE)
+static void applyNameEvidence(const uint8_t* mac){
+    const auto* a=evidenceStore->store.find(mac);if(!a||!a->hidden||!a->len||a->conflict)return;
+    char name[ui::AP_SSID_MAX];evidence::display(name,a->name,a->len);
+    const auto sig=ui::matchWifi(mac,name);
+    portENTER_CRITICAL(&mux);
+    const auto hit=dedup::find(hashMac(mac),TABLE,nUsed,INSERT_LIMIT,maxProbe_,
+        [](uint32_t i){return used_[i];},[mac](uint32_t i){return macEq(table_[i].mac,mac);});
+    if(hit.kind==dedup::FOUND && evidenceStore->store.resolve(mac,table_[hit.slot].ssid,name)){
+        memcpy(table_[hit.slot].ssid,name,strlen(name)+1);
+        if(sig.threat!=ui::TH_NONE && sig.conf>=table_[hit.slot].conf){table_[hit.slot].threat=sig.threat;table_[hit.slot].conf=sig.conf;table_[hit.slot].why=sig.why;}
+        if(table_[hit.slot].auth)(*twinF).add(name,hashSeed);
+        ++tableGen;
+    }
+    portEXIT_CRITICAL(&mux);
+}
+#endif
 void tick(uint32_t nowMs) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(evidenceStore)for(int i=0;i<evidence::DRAIN;i++){
+        evidence::Event e;portENTER_CRITICAL(&mux);const bool got=evidenceStore->queue.pop(e);portEXIT_CRITICAL(&mux);
+        if(!got)break;
+        if(evidenceStore->store.observe(e))applyNameEvidence(e.ap);
+    }
+#endif
 #if defined(UMBRAVOX_SCAN_ENGINE)
     if(clientStore)for(int i=0;i<clients::DRAIN;i++){
         clients::Event e;portENTER_CRITICAL(&mux);const bool got=clientStore->queue.pop(e);portEXIT_CRITICAL(&mux);
@@ -776,6 +824,9 @@ static void fillDetailSlot(ui::State& s, int slot, uint32_t nowMs) {
         d.rssi = nd.rssi;  d.band = nd.band;  d.chan = nd.chan;
         d.threat = nd.threat; d.conf = nd.conf;
         d.auth = nd.auth; d.info=nd.info;d.observations=nd.observations;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        if(evidenceStore){const auto* a=evidenceStore->store.find(nd.mac);if(a && a->hidden && a->len){char name[33];evidence::display(name,a->name,a->len);if(a->conflict)d.nameEvidence=3;else if(!strcmp(name,nd.ssid))d.nameEvidence=a->source;}}
+#endif
         for (int k = 0; k < 19 && nd.why && nd.why[k]; k++) d.why[k] = nd.why[k];
         d.firstAgoS = (nowMs - nd.firstMs) / 1000;
         d.lastAgoS  = (nowMs - nd.lastMs) / 1000;
@@ -953,10 +1004,30 @@ void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool ha
     for (int i = 0; i < nPlotsC; i++) s.plots[i] = plotsC[i];
 }
 
-// Newest first. `randomised` flags a locally-administered address, which is
-// what a modern phone uses when it is trying not to be tracked -- worth
-// showing, because an un-randomised probe is a far stronger identifier.
-void fillEchoes(ui::State& s, int offset, uint32_t nowMs) {
+// Newest first. A local MAC does not prove randomization or device identity.
+void fillEchoes(ui::State& s, int offset, uint32_t nowMs,int limit) {
+    limit=std::max(1,std::min(limit,ui::MAX_ECHO_ROWS));
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    s.nEchoes=0;s.echoTotal=0;s.echoClients=0;s.echoDrops=s.echoEvicted=0;s.echoAvailable=evidenceStore!=nullptr;
+    if(!evidenceStore)return;
+    uint16_t ids[ui::MAX_ECHO_ROWS];
+    s.echoTotal=evidenceStore->store.page(nowMs,offset,limit,ids,s.echoClients);s.scroll=offset;
+    portENTER_CRITICAL(&mux);s.echoDrops=evidenceStore->queue.dropped;portEXIT_CRITICAL(&mux);
+    s.echoEvicted=evidenceStore->store.evicted;
+    s.nEchoes=std::min(limit,int(s.echoTotal)-offset);
+    for(int i=0;i<s.nEchoes;i++){
+        auto& out=s.echoes[i];out={};const auto& r=evidenceStore->store.probes[ids[i]];
+        evidence::display(out.ssid,r.last.name,r.last.len);memcpy(out.mac,r.last.sta,6);
+        out.rssi=r.last.rssi;out.chan=r.last.channel;out.agoS=(nowMs-r.last.at)/1000;out.observations=r.count;
+        out.randomised=(out.mac[0]&2)!=0;out.wildcard=r.last.len==0;
+        if(clientStore){uint32_t best=clients::RETAIN_MS;
+            for(const auto& v:clientStore->table.rows)if(v.used&&clients::equal(v.last.sta,out.mac)&&uint32_t(nowMs-v.last.at)<best){
+                best=nowMs-v.last.at;out.linked=true;memcpy(out.ap,v.last.ap,6);
+            }
+        }
+    }
+    return;
+#endif
     s.nEchoes = 0;
     s.echoTotal = nProbes;
     if (!probes) return;
@@ -998,8 +1069,20 @@ void fillEchoes(ui::State& s, int offset, uint32_t nowMs) {
     s.nEchoes = (uint8_t)n;
 }
 
-uint16_t echoCount()  { return nProbes; }
-uint32_t probeFrames() { return nProbeFrames; }
+uint16_t echoCount() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    return evidenceStore?evidenceStore->store.count:0;
+#else
+    return nProbes;
+#endif
+}
+uint32_t probeFrames() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    uint32_t n=0;portENTER_CRITICAL(&mux);if(evidenceStore)n=evidenceStore->queue.probes;portEXIT_CRITICAL(&mux);return n;
+#else
+    return nProbeFrames;
+#endif
+}
 
 uint32_t deauths()    { return nDeauth; }
 uint32_t deauthPerS() { return deauthRate * 1000 / DEAUTH_WINDOW_MS; }
@@ -1116,6 +1199,13 @@ void setBands(uint8_t mode) {
 }
 
 void reset() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(evidenceStore){
+        portENTER_CRITICAL(&mux);evidenceStore->queue.head=evidenceStore->queue.size=0;evidenceStore->queue.dropped=evidenceStore->queue.probes=0;portEXIT_CRITICAL(&mux);
+        for(auto& p:evidenceStore->store.probes)p={};for(auto& a:evidenceStore->store.aps)a={};
+        evidenceStore->store.count=0;evidenceStore->store.evicted=evidenceStore->store.conflicts=0;
+    }
+#endif
 #if defined(UMBRAVOX_SCAN_ENGINE)
     if(clientStore){
         portENTER_CRITICAL(&mux);clientStore->queue.head=clientStore->queue.size=clientStore->queue.peak=0;clientStore->queue.drops=0;portEXIT_CRITICAL(&mux);

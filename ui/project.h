@@ -145,10 +145,11 @@ inline void echoes(echpres::EchoStore& st, const ui::State& s, const Chrome& c) 
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
     st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
-    st.totals(s.echoTotal, s.echoClients);
+    st.totals(s.echoTotal, s.echoClients);st.page(s.scroll,s.echoDrops,s.echoEvicted,s.echoAvailable);
     for (int i = 0; i < s.nEchoes; i++) {
-        char who[8]; macTail(who, s.echoes[i].mac);
-        st.addRow(s.echoes[i].ssid, who, s.echoes[i].randomised, s.echoes[i].agoS);
+        const auto& e=s.echoes[i];char who[18],link[40]="";macStr(who,e.mac);
+        if(e.linked){char ap[18];macStr(ap,e.ap);snprintf(link,sizeof link,"SEEN WITH AP %s",ap);}
+        st.addRow(e.ssid,who,e.randomised,e.agoS,e.rssi,e.chan,e.observations,e.wildcard,link);
     }
 }
 
@@ -259,7 +260,9 @@ inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c
     snprintf(info,sizeof info,"WIDTH %s MHz / COUNTRY %s",width,a.country[0]?a.country:"?");st.fact(3,info);
     snprintf(info,sizeof info,"WPS %s",!a.valid?"NOT REPORTED":!a.wps?"NOT ADVERTISED":a.wpsLocked==1?"ADVERTISED / LOCKED":a.wpsLocked==0?"ADVERTISED / UNLOCKED":"ADVERTISED / LOCK ?");st.fact(4,info);
     if(a.valid)snprintf(info,sizeof info,"BEACON %u TU / CAP 0x%04X",a.beaconTu,a.capabilities);else snprintf(info,sizeof info,"BEACON / CAP NOT REPORTED");st.fact(5,info);
-    snprintf(info,sizeof info,"FIRST %s AGO / LAST %s AGO",first,last);st.fact(6,info);
+    if(v.nameEvidence==3)snprintf(info,sizeof info,"SSID EVIDENCE CONFLICT");
+    else if(v.nameEvidence)snprintf(info,sizeof info,"SSID RESOLVED: %s",v.nameEvidence==1?"AP FRAME":"ASSOC EXCHANGE");
+    else snprintf(info,sizeof info,"FIRST %s AGO / LAST %s AGO",first,last);st.fact(6,info);
     if (v.histN) st.history(v.hist, v.histN);
 }
 

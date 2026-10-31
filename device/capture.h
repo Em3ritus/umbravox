@@ -60,8 +60,8 @@ uint16_t foundBy(uint8_t src);
 // Project located devices onto the territory map at the given scale.
 void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix, int mapRadius=42);
 
-// Probe requests: clients calling out for networks they have joined before.
-void fillEchoes(ui::State& s, int offset, uint32_t nowMs);
+// Probe requests: observed requests, not proof of prior network membership.
+void fillEchoes(ui::State& s, int offset, uint32_t nowMs,int limit=ui::MAX_ECHO_ROWS);
 uint16_t echoCount();
 uint32_t probeFrames();
 

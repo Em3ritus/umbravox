@@ -1627,6 +1627,7 @@ void loop() {
                       : nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
                       : nav.screen == ui::SCR_ECHOES ? ui::MAX_ECHO_ROWS : ui::ROWS;
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    if(nav.screen==ui::SCR_ECHOES)visible=uieng::echoes(board::PANEL_W,board::PANEL_H).nRows;
     if(nav.screen==ui::SCR_CODEX)visible=uieng::codex(board::PANEL_W,board::PANEL_H).nRows;
 #endif
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
@@ -1850,7 +1851,14 @@ void loop() {
         if (nav.filter == ui::F_BLE) blescan::fillSights(s,nav.scroll);
         else cap::fillSights(s,nav.scroll,nav.filter==ui::F_5G,nav.filter==ui::F_LOCATED);
     } else if (nav.screen == ui::SCR_ECHOES) {
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        nav.scroll=uiproj::pageOffset(cap::echoCount(),nav.scroll,uieng::echoes(board::PANEL_W,board::PANEL_H).nRows);s.scroll=nav.scroll;
+#endif
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+        cap::fillEchoes(s, nav.scroll, millis(),uieng::echoes(board::PANEL_W,board::PANEL_H).nRows);
+#else
         cap::fillEchoes(s, nav.scroll, millis());
+#endif
     } else if (nav.screen == ui::SCR_OMENS) {
         alertlog::fill(s, nav.scroll, millis());
         s.omenScroll = nav.scroll;

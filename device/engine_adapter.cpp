@@ -385,6 +385,10 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         switch (hit.action) {
             case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%(s.nNodes+1);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
+            case uieng::Action::EchoPage: {
+                const int per=uieng::echoes(W_,H_).nRows;
+                nav.scroll=uiproj::pageOffset(s.echoTotal,s.scroll+(hit.payload<0?-per:per),per);break;
+            }
             case uieng::Action::ClientPage: {
                 const int per=uieng::detailClients(W_,H_).nRows;
                 nav.clientOffset=uiproj::pageOffset(s.clients.total,s.clients.offset+(hit.payload<0?-per:per),per);break;

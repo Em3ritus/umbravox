@@ -137,3 +137,7 @@ sim/bridge_png
 /sim/test_clients
 
 /sim/test_client_ui
+
+/sim/test_probe_evidence
+
+/sim/test_probe_ui

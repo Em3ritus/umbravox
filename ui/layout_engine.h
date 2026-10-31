@@ -137,7 +137,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -434,7 +434,7 @@ inline HitList meshHits(int W, int H) {
 // scroll hit. Compact rows (not 44px touch targets, since they are not hits).
 struct LogLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
-    Rect title, header, list;
+    Rect title, header, list, prev, page, next;
     int  rowH = 14, nRows = 0;   // visible compact rows
 };
 inline LogLayout logBody(int W, int H) {
@@ -450,14 +450,22 @@ inline LogLayout logBody(int W, int H) {
     return g;
 }
 inline LogLayout omens(int W, int H)  { return logBody(W, H); }
-inline LogLayout echoes(int W, int H) { return logBody(W, H); }
+inline LogLayout echoes(int W, int H) {
+    auto g=logBody(W,H);const int y=g.body.y+g.body.h-44;
+    g.list.h=y-g.list.y;g.nRows=W>=400?2:1;g.rowH=g.list.h/g.nRows;
+    g.prev={g.body.x,y,44,44};g.next={g.body.x+g.body.w-44,y,44,44};g.page={g.body.x+48,y,g.body.w-96,44};return g;
+}
 inline HitList logHits(int W, int H) {        // chrome only; the list is a scroll gesture
     HitList h;
     addChromeHits(h, W, H);
     return h;
 }
 inline HitList omensHits(int W, int H)  { return logHits(W, H); }
-inline HitList echoesHits(int W, int H) { return logHits(W, H); }
+inline HitList echoesHits(int W, int H) {
+    auto h=logHits(W,H);const auto g=echoes(W,H);
+    h.add("probe-prev",g.prev,Action::EchoPage,-1,nullptr,"Previous probe requests");
+    h.add("probe-next",g.next,Action::EchoPage,1,nullptr,"Next probe requests");return h;
+}
 
 // --- ATTUNE: paginated knob rows + a pager/CLEAR footer ----------------------
 // The shipped settings pack seven short rows, but the engine honours the >=44px

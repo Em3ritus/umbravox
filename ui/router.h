@@ -84,6 +84,7 @@ public:
             case A::Nav:            scr_ = screenFromNav(h.payload); break;
             case A::DetailPage: break;
             case A::ClientPage: break;
+            case A::EchoPage: break;
             case A::MeshPage: break;
             case A::CodexPage: break; // caller owns the visible page size
             case A::CodexFilter:    codexScope_ = h.payload; scr_ = Screen::Codex; break;

@@ -180,6 +180,7 @@ constexpr int HIST_N = 28;
 struct Detail {
     ApInfo info;
     uint32_t observations=0;
+    uint8_t nameEvidence=0; // 1 AP-origin name, 2 accepted association exchange (formerly hidden)
     bool     valid = false;
     bool     located = false;
     int32_t  lat7 = 0, lon7 = 0;
@@ -270,12 +271,14 @@ struct Omen {
 // different kind of finding from "an access point is here".
 constexpr int MAX_ECHO_ROWS = 6;
 struct Echo {
-    char    ssid[SSID_MAX] = {0};
+    char    ssid[AP_SSID_MAX] = {0};
     uint8_t mac[6] = {0};
     int8_t  rssi = 0;
     uint8_t chan = 0;
     uint32_t agoS = 0;
-    bool    randomised = false;   // locally-administered address
+    bool    randomised = false;   // locally-administered, not proof of randomization
+    uint32_t observations=0;
+    bool wildcard=false,linked=false;uint8_t ap[6]{};
 };
 
 // FILES: the owner's session logs on the SD card (/WD-*.csv, the serial
@@ -357,6 +360,7 @@ struct State {
     // echoes: probe requests
     Echo     echoes[MAX_ECHO_ROWS];
     uint8_t  nEchoes = 0;
+    uint32_t echoDrops=0,echoEvicted=0;bool echoAvailable=true;
     uint16_t echoTotal = 0;
     uint16_t echoClients = 0;
 
