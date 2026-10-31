@@ -125,8 +125,8 @@ int main() {
     scanpres::recordingHits(hits,scanr::Rec::Saving);assert(hits.count==count-1);
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
-    // Body goldens: symmetric antialiased rings; CVLT has one outer boundary.
-    const uint64_t golden[2][3]={{1424835025725215149ull,15058593841316351995ull,15271070740236724997ull},{10901866208411352173ull,7512234154594361247ull,6432492321551372875ull}};
+    // Body goldens: vertically centered radars; CVLT has two rings and a quiet seal.
+    const uint64_t golden[2][3]={{9248154531956547406ull,437666352304452431ull,12945118743565175179ull},{9200782248880109201ull,18207972536395956111ull,15893746811169307569ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

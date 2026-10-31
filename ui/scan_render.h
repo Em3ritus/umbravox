@@ -312,8 +312,8 @@ inline uieng::Rect radarBounds(int W, int H) {
     const auto hs=heroSub(hr);
     const auto f=hs.field;
     const int cx = W>=400 ? 311 : f.x+f.w/2;
-    const int top = hr.y+2, bottom = hs.barBase-hs.barMax-4;
-    const int cy = W>=400 ? 137 : (top+bottom)/2;
+    const int top = hr.y+4, bottom = hs.barBase-hs.barMax-2;
+    const int cy = (top+bottom)/2;
     const int r = W>=400 ? 85 : std::min(f.w/2-4,(bottom-top)/2);
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
@@ -507,7 +507,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,channelScale), hr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
 
     const HeroSub hs = heroSub(hr);
-    // Approved expanded field: centre (311,137), radius 85 at 480; compact derives.
+    // Center between the top inset and spectrum; retain the approved radar sizes.
     const auto radar = radarBounds(W,H);
     const int fr = (radar.w-5)/2;
     const int fcx = radar.x+fr+2;
@@ -524,7 +524,9 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         const bool logo=pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM;
         const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR || cvlt || mascot || orbit || sigil || logo;
         if(clean)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepPhase(sc.now):27);
-        for (int k=1;k<=3;k++){ const int rr=fr*(k*23)/69;
+        for (int k=1;k<=3;k++){
+            if(cvlt && k==1)continue; // two range rings leave the quiet seal uncluttered
+            const int rr=fr*(k*23)/69;
             int count=0;
             const auto* ring=radargeometry::ring(rr,count);
             if (ring) {
@@ -542,7 +544,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
         }
-        if(cvlt || mascot || orbit || sigil)crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0,cvlt && W<400 ? 35 : 100);
+        if(cvlt || mascot || orbit || sigil)crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0,100);
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
@@ -561,6 +563,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             const int length = fr*4/5;
             line(s,fcx,fcy,fcx+(int)(length*std::cos(angle)),fcy+(int)(length*std::sin(angle)),pal::WITCH);
         } else if(!clean) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
+        if(cvlt){box(s,fcx-2,fcy,5,1,pal::DIM);box(s,fcx,fcy-2,1,5,pal::DIM);}
         if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];

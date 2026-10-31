@@ -24,6 +24,11 @@ std::ifstream bf(std::string(folders[i])+"emblem.bin",std::ios::binary);artwork[
  // Every supported landscape/portrait geometry must avoid the trig fallback.
  for(auto wh:{std::pair<int,int>{320,240},{480,320},{320,480},{240,320}}){
    const auto b=radarBounds(wh.first,wh.second);const int r=(b.w-5)/2;
+   const auto hero=uieng::scan(wh.first,wh.second).hero;const auto hs=heroSub(hero);
+   const int cy=b.y+r+2,top=hero.y+4,bottom=hs.barBase-hs.barMax-2;
+   assert(std::abs((cy-top)-(bottom-cy))<=1);
+   assert(b.y>=hero.y && b.y+b.h<=hs.barBase-hs.barMax);
+   if(wh.second==240)assert(r==55);if(wh.first==480)assert(r==85);
    for(int k=1;k<=3;k++){int n=0;assert(radargeometry::ring(r*k/3,n)&&n>0);}
  }
  // Artwork resampling is identical whether composed full-height or in strips,

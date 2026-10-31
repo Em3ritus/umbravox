@@ -6,21 +6,15 @@
 using namespace scanr;
 void paint(S& s,int fcx,int fcy,int fr,bool cvlt){
  bool mascotBold=false;
- auto oval=[&](int cx,int cy,int rx,int ry,uint16_t color){for(int a=0;a<360;a++){double t=a*3.14159265/180;pt(s,cx+int(rx*cos(t)),cy+int(ry*sin(t)),color);}};
- if(cvlt){          const uint16_t ink=pal::rgb(156,102,221),quiet=pal::rgb(71,43,100),bright=pal::rgb(208,171,245);
+ if(cvlt){
+          const uint16_t ink=pal::rgb(87,60,116),tick=pal::rgb(125,94,156);
           auto polar=[&](float angle,float radius){double t=angle*3.14159265/180.;return std::pair<int,int>{fcx+int(cos(t)*radius),fcy+int(sin(t)*radius)};};
-          auto radial=[&](float a,float r1,float r2,uint16_t c){auto x=polar(a,r1),y=polar(a,r2);line(s,x.first,x.second,y.first,y.second,c);};
-          // One outer boundary comes from the shared radar; retain calibration ticks.
-          for(int a=0;a<360;a+=10)radial(a,fr*.85,fr*(a%30==0?.91:.88),a%30==0?bright:quiet);
-          // Four cardinal sigils, deliberately sparse at compact size.
-          for(int a=0;a<360;a+=90){auto z=polar(a,fr*.94);int k=fr>=60?4:2;diamondInto(s,z.first,z.second,k,bright);}
-          // Inverted five-point ceremonial seal with seven satellite nodes.
+          // Four quiet cardinal ticks; the shared renderer owns both range rings.
+          for(int a=0;a<360;a+=90){auto p=polar(a,fr*.87),q=polar(a,fr*.93);line(s,p.first,p.second,q.first,q.second,tick);}
+          // Keep the inverted pentagram as identity, without satellite ornaments,
+          // an extra seal ring, or a second center symbol competing with contacts.
           int vx[5],vy[5];for(int i=0;i<5;i++){auto z=polar(90+i*72,fr*.57);vx[i]=z.first;vy[i]=z.second;}
           for(int i=0;i<5;i++)line(s,vx[i],vy[i],vx[(i+2)%5],vy[(i+2)%5],ink);
-          oval(fcx,fcy,int(fr*.61),int(fr*.61),quiet);
-          for(int i=0;i<7;i++){auto z=polar(-90+i*360.f/7,fr*.73);int k=fr>=60?2:1;diamondInto(s,z.first,z.second,k,ink);if(fr>=60){line(s,z.first-2,z.second-6,z.first+2,z.second-9,quiet);}}
-          // A small central lozenge keeps the field origin legible.
-          diamondInto(s,fcx,fcy,fr>=60?7:3,bright);
 }else{          // Code-native pixel emblem proposal: curled horns, X eyes, toothy grin.
           const float scale=fr*(mascotBold?.70f:.56f)/50.f;
           const uint16_t outline=mascotBold?pal::rgb(155,91,211):pal::rgb(91,59,116);
