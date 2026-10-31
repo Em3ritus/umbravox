@@ -35,7 +35,7 @@ inline Chrome chrome(int W, int H) {
     c.menu={0,0,44,44};
     if(W>=400){
         c.wordmark={44,0,164,44};c.statusCells[0]={208,0,56,44};
-        c.statusCells[1]={264,0,48,44};c.bridge={312,0,64,44};c.sd={376,0,32,44};c.statusCells[2]={408,0,W-408,44};
+        c.statusCells[1]={264,0,48,44};c.bridge={312,0,64,44};c.sd={376,0,48,44};c.statusCells[2]={424,0,W-424,44};
         for(int i=0;i<4;i++)c.navCells[i]={i*W/5,H-44,(i+1)*W/5-i*W/5,44};
         c.stop={4*W/5,H-44,W-4*W/5,44};
     }else{

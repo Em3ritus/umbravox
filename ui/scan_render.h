@@ -295,7 +295,8 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     }
     // Read-only storage icon; adjacent battery keeps its own >=44px hit.
     const uint16_t sdInk=st.sd==ui::StorageState::Ready?pal::GREEN:st.sd==ui::StorageState::Error?pal::AMBER:pal::DIM;
-    const int sx=c.sd.x+(c.sd.w-14)/2,sy=13;
+    // Center the 14px card + 8px gap + 24px battery as one 46px group.
+    const int sx=c.sd.x+(W-c.sd.x-46)/2,sy=13;
     box(s,sx,sy,10,1,sdInk);box(s,sx,sy,1,17,sdInk);box(s,sx,sy+16,14,1,sdInk);
     box(s,sx+13,sy+4,1,13,sdInk);
     for(int i=0;i<4;i++)box(s,sx+10+i,sy+i,1,1,sdInk);
@@ -305,7 +306,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
         if(st.sd==ui::StorageState::Missing)for(int i=0;i<14;i++)box(s,sx+i,sy+14-i,1,2,sdInk);
     }
     const bool cell=st.pmuOk&&st.hasCell,level=cell&&st.batt>=0&&st.batt<=100;
-    const auto br=c.statusCells[2];const int bx=br.x+(br.w-24)/2,by=cell?8:16;
+    const int bx=sx+22,by=cell?8:16;
     const uint16_t bi=cell?(st.charging?pal::GREEN:level&&st.batt<=20?pal::AMBER:pal::TEXT):pal::DIM;
     frame(s,bx,by,22,11,bi);box(s,bx+22,by+3,2,5,bi);
     if(level&&st.batt>0)box(s,bx+2,by+2,std::max(1,18*st.batt/100),7,bi);
@@ -313,7 +314,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     else if(!st.hasCell)for(int i=0;i<20;i++)box(s,bx+1+i,by+10-i/2,1,1,pal::DIM);
     if(cell){
         if(level)snprintf(hb,sizeof hb,"%d%%",st.batt);else snprintf(hb,sizeof hb,"?");
-        centered(s,br.x+br.w/2,27,hb,1,bi);
+        centered(s,bx+12,27,hb,1,bi);
         // A plus beside the battery identifies charging independently of color.
         if(st.charging){box(s,bx-5,by+5,3,1,bi);box(s,bx-4,by+4,1,3,bi);}
     }
