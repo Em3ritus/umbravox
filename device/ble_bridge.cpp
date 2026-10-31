@@ -213,9 +213,14 @@ void tick(uint32_t now){
         st->diagAt=now;Serial.printf("[bridge] mode %u stream %u queued %lu queue %u rx-drop %lu tx-retry %lu heap %u\n",unsigned(selected.load()),unsigned(streaming.load()),(unsigned long)st->sent,st->out.count,(unsigned long)st->rxDrops,(unsigned long)st->notifyFails,unsigned(ESP.getFreeHeap()));
     }
 }
+Stats stats(){
+    Stats s;s.mode=selected.load();s.connected=connection!=NO_CONN;s.streaming=streaming.load();
+    if(st){s.queued=st->out.count;s.txRetries=st->notifyFails;portENTER_CRITICAL(&rxMux);s.rxDrops=st->rxDrops;portEXIT_CRITICAL(&rxMux);}
+    return s;
+}
 uint8_t mode(){return selected.load();}
 const char* status(){return selected==OFF?"OFF":streaming?"STREAMING":connection!=NO_CONN?"CONNECTED":"ADVERTISING";}
 }
 #else
-namespace blebridge {uint8_t mode(){return 0;} void setMode(uint8_t){} void tick(uint32_t){} const char* status(){return "UNAVAILABLE";}}
+namespace blebridge {Stats stats(){return {};} uint8_t mode(){return 0;} void setMode(uint8_t){} void tick(uint32_t){} const char* status(){return "UNAVAILABLE";}}
 #endif

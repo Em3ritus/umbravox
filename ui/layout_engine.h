@@ -137,7 +137,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage };
 // Nav payload. The first four are the bottom nav-bar tabs (0..3, in bar order);
 // the rest are the additional destinations the MENU hub launches into. Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -394,10 +394,10 @@ inline SubChrome subChrome(int W, int H) {
     return s;
 }
 
-// --- MESH: Core/loss header + node list + ENROLL/RESET control row ------------
+// --- MESH: Core/loss header + paged diagnostics + ENROLL/PAGE/RESET -----------
 struct MeshLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
-    Rect title, header, list, enroll, reset;
+    Rect title, header, list, enroll, pager, reset;
 };
 inline MeshLayout mesh(int W, int H) {
     const SubChrome c = subChrome(W, H);
@@ -408,17 +408,19 @@ inline MeshLayout mesh(int W, int H) {
     const int ctrlH = 44, by = c.body.y, bh = c.body.h;
     m.header = {c.body.x, by + 20, c.body.w, 24};                  // CORE/COORD + LOSS
     m.list   = {c.body.x, by + 44, c.body.w, bh - 44 - ctrlH};     // node rows (display only)
-    const int ctrlY = by + bh - ctrlH, halfW = (c.body.w - 8) / 2;
-    m.enroll = {c.body.x, ctrlY, halfW, ctrlH};
-    m.reset  = {c.body.x + c.body.w - halfW, ctrlY, halfW, ctrlH};
+    const int ctrlY = by + bh - ctrlH, cellW = (c.body.w - 16) / 3;
+    m.enroll = {c.body.x, ctrlY, cellW, ctrlH};
+    m.pager = {c.body.x+cellW+8, ctrlY, cellW, ctrlH};
+    m.reset = {c.body.x+2*(cellW+8),ctrlY,c.body.w-2*(cellW+8),ctrlH};
     return m;
 }
-// MESH hits: the two network-control buttons (nodes are display-only). ENROLL
+// MESH hits: two network-control buttons and a diagnostics pager. ENROLL
 // opens the pairing window; RESET returns the fleet to the open network.
 inline HitList meshHits(int W, int H) {
     const MeshLayout m = mesh(W, H);
     HitList h;
     addChromeHits(h, W, H);
+    h.add("mesh-page",m.pager,Action::MeshPage,0,nullptr,"Next node diagnostics");
     h.add("enroll", m.enroll, Action::MeshEnroll,   0, nullptr, "Open a pairing window (adopt open nodes)");
     h.add("reset",  m.reset,  Action::MeshResetNet, 0, nullptr, "Return the fleet to the open network");
     return h;

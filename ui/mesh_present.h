@@ -37,9 +37,11 @@ public:
         sc_.meshCoords = coords; sc_.coreCamping = camping; sc_.coreChan = chan;
         sc_.meshLossPct = lossPct; sc_.netId = netId; sc_.enrollSecs = enrollSecs;
     }
-    bool addNode(const uint8_t id[3], uint32_t ageS, uint8_t lossPct, bool live) {
+    void local(const ui::LocalDiagnostics& d){sc_.local=d;}
+    void page(int p){sc_.page=p;}
+    bool addNode(const uint8_t id[3], uint32_t ageS, uint8_t lossPct, bool live, const ui::NodeDiagnostics& diag={}) {
         if (nr_ >= MAXROWS) return false;
-        rows_[nr_] = MeshNode{ {id[0], id[1], id[2]}, ageS, lossPct, live };
+        rows_[nr_] = MeshNode{ {id[0], id[1], id[2]}, ageS, lossPct, live,diag };
         nr_++; sc_.nRows = nr_; return true;
     }
     const MeshScene& scene() const { return sc_; }
@@ -59,13 +61,13 @@ inline void sceneDirty(const MeshScene& a, const MeshScene& b, bool& status, boo
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
 
-    bool same = a.meshCoords == b.meshCoords && a.coreCamping == b.coreCamping && a.coreChan == b.coreChan
+    bool same = a.local==b.local && a.page==b.page && a.meshCoords == b.meshCoords && a.coreCamping == b.coreCamping && a.coreChan == b.coreChan
                 && a.meshLossPct == b.meshLossPct && a.netId == b.netId && a.enrollSecs == b.enrollSecs
                 && a.nRows == b.nRows;
     for (int i = 0; same && i < a.nRows; i++)
         same = a.rows[i].ageS == b.rows[i].ageS && a.rows[i].lossPct == b.rows[i].lossPct
                && a.rows[i].live == b.rows[i].live
-               && a.rows[i].id[1] == b.rows[i].id[1] && a.rows[i].id[2] == b.rows[i].id[2];
+               && a.rows[i].id[0]==b.rows[i].id[0] && a.rows[i].diag==b.rows[i].diag && a.rows[i].id[1] == b.rows[i].id[1] && a.rows[i].id[2] == b.rows[i].id[2];
     body = !same;
 }
 

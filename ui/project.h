@@ -126,7 +126,8 @@ inline void mesh(mshpres::MeshStore& st, const ui::State& s, const Chrome& c) {
     st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);
     st.header(s.meshCoords, s.coreCamping, s.coreChan, s.meshLossPct, s.netId, s.enrollSecs);
     for (int i = 0; i < s.nNodes && i < ui::MAX_NODE_ROWS; i++)
-        st.addNode(s.nodes[i].id, s.nodes[i].ageS, s.nodes[i].lossPct, s.nodes[i].live);
+        st.addNode(s.nodes[i].id, s.nodes[i].ageS, s.nodes[i].lossPct, s.nodes[i].live,s.nodes[i].diag);
+    st.page(s.meshPage);st.local(s.localDiag);
 }
 
 // --- OMENS -------------------------------------------------------------------

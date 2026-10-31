@@ -3,12 +3,14 @@
 #pragma once
 #include <stdint.h>
 #include "model.h"
+#include "mesh_timing.h"
 
 namespace meshcore {
 
 constexpr int MAX_NODES = 16;
 
 struct NodeRec {
+    meshtiming::TelemetryState telemetry;
     uint8_t  mac[6];
     uint32_t lastMs;
     uint32_t hellos, reports, recs;

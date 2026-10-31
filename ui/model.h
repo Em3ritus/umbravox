@@ -199,7 +199,30 @@ struct Detail {
 // One row of the mesh screen. The UI never sees a meshcore::NodeRec --
 // device types stop at the State boundary, same as everywhere else.
 constexpr int MAX_NODE_ROWS = 16;
+struct LocalDiagnostics {
+    bool valid=false,active=false,connected=false,streaming=false;
+    uint16_t dwellMs=0,bridgeQueued=0;
+    uint8_t bridgeMode=0;
+    uint32_t started=0,completed=0,failed=0,omitted=0,rxDrops=0,txRetries=0;
+    bool operator==(const LocalDiagnostics& b) const {
+        return valid==b.valid && active==b.active && connected==b.connected && streaming==b.streaming && dwellMs==b.dwellMs
+            && bridgeQueued==b.bridgeQueued && bridgeMode==b.bridgeMode && started==b.started && completed==b.completed
+            && failed==b.failed && omitted==b.omitted && rxDrops==b.rxDrops && txRetries==b.txRetries;
+    }
+};
+struct NodeDiagnostics {
+    bool known=false,active=false,camp=false;
+    uint8_t profile=0;
+    uint16_t dwellMs=0,depth=0,capacity=0,peak=0;
+    uint32_t ageS=0,drops=0,sendFailed=0,reportRejected=0,scanFailed=0;
+    bool operator==(const NodeDiagnostics& b) const {
+        return known==b.known && active==b.active && camp==b.camp && profile==b.profile && dwellMs==b.dwellMs
+            && depth==b.depth && capacity==b.capacity && peak==b.peak && ageS==b.ageS && drops==b.drops
+            && sendFailed==b.sendFailed && reportRejected==b.reportRejected && scanFailed==b.scanFailed;
+    }
+};
 struct NodeRow {
+    NodeDiagnostics diag;
     bool     live = false;
     uint8_t  id[3] = {0};     // last three octets, which is how nodes are named
     uint8_t  nChan = 0;
@@ -304,6 +327,8 @@ struct State {
     uint16_t totalSights = 0;     // everything known, for the scrollbar
     char pcapStatus[24] = "OFF";
     uint32_t pcapDrops=0;
+    LocalDiagnostics localDiag;
+    uint8_t meshPage = 0;
     uint8_t detailPage = 0;
     int16_t  scroll = 0;          // first row shown
     uint8_t  screen = 0;          // which screen is up; see nav.h

@@ -41,6 +41,16 @@ int main(int argc,char** argv) {
   const int per=uieng::attuneRowsPerPage(h);uiproj::attune(settings,s,c,12/per,per);
   for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(strip,w,h,settings.scene());}
   png::write((std::string(argv[1])+"/pcap-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
+  s.set.bleBridge=1;s.nNodes=1;s.nodes[0].id[0]=0xf3;s.nodes[0].id[1]=0xc5;s.nodes[0].id[2]=0x5c;s.nodes[0].live=true;s.nodes[0].lossPct=2;
+  auto& nd=s.nodes[0].diag;nd.known=true;nd.active=true;nd.profile=1;nd.dwellMs=150;nd.capacity=192;nd.peak=51;nd.depth=0;nd.drops=9;nd.sendFailed=2;
+  s.localDiag.valid=true;s.localDiag.active=true;s.localDiag.dwellMs=150;s.localDiag.started=145;s.localDiag.completed=144;s.localDiag.bridgeMode=1;s.localDiag.streaming=true;s.localDiag.connected=true;s.localDiag.bridgeQueued=3;s.localDiag.txRetries=2;
+  const char* meshTags[]={"mesh-local","mesh-node","mesh-stale","mesh-unknown"};
+  for(int state=0;state<4;state++){
+   s.meshPage=state?1:0;nd.ageS=state==2?15:1;nd.known=state!=3;
+   mshpres::MeshStore mesh;uiproj::mesh(mesh,s,c);
+   for(int y=0;y<h;y+=16){scanr::S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};mshr::composeStrip(strip,w,h,mesh.scene());}
+   png::write((std::string(argv[1])+"/"+meshTags[state]+"-"+std::to_string(w)+".png").c_str(),pixels.data(),w,h,1);
+  }
   const std::string file=std::string(argv[1])+"/review-"+std::to_string(w)+".png";
   if(!png::write(file.c_str(),sheet.data(),2*w,2*h,1))return 1;
  }

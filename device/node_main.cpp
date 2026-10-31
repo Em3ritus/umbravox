@@ -10,6 +10,7 @@
 #include <esp_now.h>
 #include <esp_mac.h>
 #include <Preferences.h>
+#include <atomic>
 #include "mesh.h"
 #include "mesh_timing.h"
 #include "active_discovery.h"
@@ -43,6 +44,9 @@ volatile bool assigned = false;
 // Core ever assigns -- and a coordinator's own channel when one has taken us.
 uint8_t  reportChan = mesh::REPORT_CHAN;
 bool activeMode=false;
+uint8_t appliedProfile=meshtiming::Tracking;
+uint32_t bootId=0,reportRejected=0;
+uint16_t queuePeak=0;
 uint16_t dwellMs=DWELL_MS;
 bool listening=false;
 mesh::Assign pendingAssign{};uint8_t pendingSender[6]{};bool hasAssign=false;
@@ -61,7 +65,7 @@ uint32_t  seen = 0, sent = 0, dropped = 0, failed = 0;
 // Frames, as distinct from records. esp_now_send() returning ESP_OK means
 // the frame was *queued*, not delivered -- so queued and confirmed are
 // counted separately, and the gap between them is the thing to look at.
-uint32_t  txQueued = 0, txOk = 0, txFail = 0;
+std::atomic<uint32_t> txQueued{0},txOk{0},txFail{0};
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 bool is5(uint8_t ch) { return ch > 14; }
@@ -89,6 +93,7 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (qN < QUEUE) {
         qAt[qN] = millis();
         mesh::Rec& r = queue_[qN++];
+        if(qN>queuePeak)queuePeak=qN;
         for (int i = 0; i < 6; i++) r.bssid[i] = f[16 + i];
         r.rssi = (int8_t)p->rx_ctrl.rssi;
         r.chan = cur;
@@ -192,7 +197,7 @@ void applyAssignment(const mesh::Assign* a,const uint8_t* sender) {
     // A re-home gets the same fresh-start treatment as a first assignment:
     // re-park on the new slice and re-seed the report phase below.
     const bool first = !assigned || act == rehome::REHOME || nChan!=a->nChan || memcmp(chans,a->chans,nChan)!=0;
-    if(act==rehome::REHOME){activeMode=false;dwellMs=DWELL_MS;}
+    if(act==rehome::REHOME){activeMode=false;dwellMs=DWELL_MS;appliedProfile=meshtiming::Tracking;}
     nChan = a->nChan > mesh::MAX_ASSIGN ? mesh::MAX_ASSIGN : a->nChan;
     for (int i = 0; i < nChan; i++) chans[i] = a->chans[i];
     camp = a->camp;
@@ -234,7 +239,7 @@ void receivePending(){
     portENTER_CRITICAL(&mux);listening=false;pa=hasAssign;pc=hasConfig;a=pendingAssign;c=pendingConfig;memcpy(src,pendingSender,6);memcpy(cs,configSender,6);hasAssign=hasConfig=false;portEXIT_CRITICAL(&mux);
     if(pa)applyAssignment(&a,src);
     if(pc && haveCore && !memcmp(cs,coreMac,6)){
-        activeMode=c.active;dwellMs=c.dwellMs;
+        activeMode=c.active;dwellMs=c.dwellMs;appliedProfile=c.profile;
         Serial.printf("node: applied discovery=%s dwell=%u profile=%u\n",activeMode?"ACTIVE":"PASSIVE",(unsigned)dwellMs,(unsigned)c.profile);
     }
     portENTER_CRITICAL(&mux);listening=assigned;portEXIT_CRITICAL(&mux);
@@ -243,7 +248,7 @@ void activeRecord(const wifi_ap_record_t& ap){
     portENTER_CRITICAL(&mux);
     if(qN<QUEUE){
         mesh::Rec& r=queue_[qN];r={};memcpy(r.bssid,ap.bssid,6);r.rssi=ap.rssi;r.chan=ap.primary;r.band=ap.primary>14;
-        r.ssidLen=strnlen((const char*)ap.ssid,20);memcpy(r.ssid,ap.ssid,r.ssidLen);r.auth=discovery::auth(ap);qAt[qN++]=millis();seen++;
+        r.ssidLen=strnlen((const char*)ap.ssid,20);memcpy(r.ssid,ap.ssid,r.ssidLen);r.auth=discovery::auth(ap);qAt[qN++]=millis();seen++;if(qN>queuePeak)queuePeak=qN;
     }else dropped++;
     portEXIT_CRITICAL(&mux);
 }
@@ -289,13 +294,25 @@ void report() {
             sent += n;
             txQueued++;
         } else {
-            failed += n;
+            failed += n;++reportRejected;
         }
         // Wait for the send to complete rather than stuffing the queue.
         // ESP-NOW has a small transmit queue; filling it faster than the
         // radio drains it is how frames vanish with ESP_OK returned.
         const uint32_t until = millis() + 30;
         while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
+    }
+
+    // Separate status packet: existing sighting reports remain byte-identical.
+    // No extra channel visit; the usual listen window follows this send.
+    if(haveCore){
+        meshtiming::Telemetry t{};
+        t.h={mesh::MAGIC,mesh::VERSION,mesh::netId,meshtiming::TELEMETRY,{0}};
+        memcpy(t.h.mac,selfMac,6);t.profile=appliedProfile;t.active=activeMode;t.camp=camp;
+        t.nChan=nChan;t.dwellMs=dwellMs;t.boot=bootId;t.uptime=millis();t.capacity=QUEUE;
+        portENTER_CRITICAL(&mux);t.depth=qN;t.peak=queuePeak;t.drops=dropped;portEXIT_CRITICAL(&mux);
+        t.reportQueued=txQueued.load();t.reportRejected=reportRejected;t.sendFailed=txFail.load();t.scanFailed=discovery::metrics().failed;
+        esp_now_send(coreMac,reinterpret_cast<const uint8_t*>(&t),sizeof t);
     }
 
     // Stay on the report channel a short while so the recv callback can catch a
@@ -352,6 +369,7 @@ void setup() {
     esp_wifi_set_promiscuous_rx_cb(&onPacket);
     esp_wifi_set_promiscuous(true);
 
+    bootId=esp_random();
     discovery::begin();
     Serial.println("node: up, waiting for an assignment");
 }

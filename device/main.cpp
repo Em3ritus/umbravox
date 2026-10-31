@@ -1815,6 +1815,12 @@ void loop() {
     s.set    = set;
     s.screen = nav.screen;
     s.filter = nav.filter;
+    const auto& scans=discovery::metrics();const auto bridgeStats=blebridge::stats();
+    s.localDiag={};s.localDiag.valid=true;s.localDiag.active=set.activeDiscovery;s.localDiag.dwellMs=set.dwellMs;
+    s.localDiag.started=scans.started;s.localDiag.completed=scans.completed;s.localDiag.failed=scans.failed;s.localDiag.omitted=scans.omitted;
+    s.localDiag.bridgeMode=bridgeStats.mode;s.localDiag.connected=bridgeStats.connected;s.localDiag.streaming=bridgeStats.streaming;
+    s.localDiag.bridgeQueued=bridgeStats.queued;s.localDiag.rxDrops=bridgeStats.rxDrops;s.localDiag.txRetries=bridgeStats.txRetries;
+    s.meshPage=nav.meshPage;
     s.detailPage=nav.detailPage;
 #if defined(UMBRAVOX_SCAN_ENGINE)
     snprintf(s.pcapStatus,sizeof s.pcapStatus,"%s",pcap::status());s.pcapDrops=pcap::dropped();

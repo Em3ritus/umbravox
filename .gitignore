@@ -129,3 +129,5 @@ sim/bridge_png
 
 /sim/test_ap_info
 /sim/test_pcap
+
+/sim/test_mesh_telemetry

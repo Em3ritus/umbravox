@@ -101,6 +101,16 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
         return;
     }
 
+    if(h->kind==meshtiming::TELEMETRY){
+        meshtiming::Telemetry t;
+        if(!meshtiming::telemetry(data,len,info?info->src_addr:nullptr,t)){rxLen++;return;}
+        portENTER_CRITICAL(&mux);
+        const int i=findOrAdd(t.h.mac);
+        if(i>=0 && nodes_[i].telemetry.accept(t,millis()))nodes_[i].lastMs=millis();
+        else if(i<0)rxNoSlot++;
+        portEXIT_CRITICAL(&mux);return;
+    }
+
     // Right protocol, wrong size: the structs drifted without the version
     // moving. Worth shouting about, because it is a bug rather than a
     // deployment mistake.
@@ -347,18 +357,27 @@ const NodeRec* node(int i) {
 void fill(ui::State& s, uint32_t nowMs) {
     int n = 0;
     for (int i = 0; i < MAX_NODES && n < ui::MAX_NODE_ROWS; i++) {
-        if (!nodes_[i].live) continue;
+        NodeRec node;
+        portENTER_CRITICAL(&mux);node=nodes_[i];portEXIT_CRITICAL(&mux);
+        if (!node.live) continue;
         ui::NodeRow& r = s.nodes[n++];
-        r.live  = true;
-        for (int k = 0; k < 3; k++) r.id[k] = nodes_[i].mac[3 + k];
-        r.nChan = nodes_[i].nChan;
-        r.chan0 = nodes_[i].chans[0];
-        r.camp  = nodes_[i].camp;
-        r.recs  = nodes_[i].recs;
+        r.live  = true;r.diag={};
+        const auto& t=node.telemetry;
+        if(t.known){
+            const auto& d=t.data;r.diag.known=true;r.diag.ageS=meshlive::ageMs(nowMs,t.receivedAt)/1000;
+            r.diag.active=d.active;r.diag.profile=d.profile;r.diag.camp=d.camp;r.diag.dwellMs=d.dwellMs;
+            r.diag.depth=d.depth;r.diag.capacity=d.capacity;r.diag.peak=d.peak;
+            r.diag.drops=d.drops;r.diag.sendFailed=d.sendFailed;r.diag.reportRejected=d.reportRejected;r.diag.scanFailed=d.scanFailed;
+        }
+        for (int k = 0; k < 3; k++) r.id[k] = node.mac[3 + k];
+        r.nChan = node.nChan;
+        r.chan0 = node.chans[0];
+        r.camp  = node.camp;
+        r.recs  = node.recs;
         r.found = cap::foundBy((uint8_t)(i + 1));
-        const uint32_t tot = nodes_[i].reports + nodes_[i].lost;
-        r.lossPct = (uint8_t)(tot ? (nodes_[i].lost * 100 + tot / 2) / tot : 0);
-        r.ageS  = meshlive::ageMs(nowMs, nodes_[i].lastMs) / 1000;   // signed, >= 0
+        const uint32_t tot = node.reports + node.lost;
+        r.lossPct = (uint8_t)(tot ? (node.lost * 100 + tot / 2) / tot : 0);
+        r.ageS  = meshlive::ageMs(nowMs, node.lastMs) / 1000;   // signed, >= 0
     }
     s.nNodes = (uint8_t)n;
 }

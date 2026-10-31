@@ -173,7 +173,7 @@ bool onCoordFrame(const uint8_t* src, const uint8_t* data, int len) {
             meshcore::setTiming(c.profile,c.dwellMs,c.active);
         return true;
     }
-    if (h->kind == mesh::MSG_REPORT) return false;
+    if (h->kind == mesh::MSG_REPORT || h->kind==meshtiming::TELEMETRY) return false;
     if (h->kind != mesh::MSG_CASSIGN) return true;  // CREG/CBATCH/ASSIGN: not ours to adopt
 
     if (!mesh::valid(data, len, mesh::MSG_CASSIGN, (int)sizeof(mesh::CoordAssign)))
