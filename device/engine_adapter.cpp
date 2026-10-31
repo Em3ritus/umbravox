@@ -10,6 +10,7 @@
 #include "poi.h"
 #include "ble_bridge.h"
 #include "logging.h"
+#include "alertlog.h"
 #include <esp_heap_caps.h>
 #include "touch.h"
 #include "../ui/pending_hit.h"
@@ -458,6 +459,9 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             }
             case uieng::Action::ToggleLabels:      set.labels = set.labels ? 0 : 1; break;
             case uieng::Action::SettingPage:       nav.setPage = (uint8_t)hit.payload; break;
+            case uieng::Action::AlertTest: alertlog::pushTest(millis());nav.scroll=0;cancelInput();break;
+            case uieng::Action::AlertPage: {const int per=uieng::omens(W_,H_).nRows;
+                nav.scroll=uiproj::pageOffset(alertlog::count(),nav.scroll+(hit.payload<0?-per:per),per);cancelInput();break;}
             case uieng::Action::FileRefresh: nav.filesScanRequested=true;cancelInput();break;
             case uieng::Action::FilePage: {
                 const int per=uieng::files(W_,H_).nRows;

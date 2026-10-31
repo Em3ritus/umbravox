@@ -264,6 +264,7 @@ struct Omen {
     uint32_t epoch = 0;        // UTC, 0 if there was no fix
     uint32_t agoS = 0;
     bool     located = false;
+    bool test = false;
 };
 
 // A probe request: a client asking after a network by name. Directed probes

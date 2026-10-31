@@ -26,6 +26,7 @@ struct OmenRow {
     uint8_t     conf;      // 0 LOW, 1 MED, 2 HIGH
     uint32_t    agoS;
     bool        located;
+    bool        test = false;
 };
 
 struct OmenScene {
@@ -39,6 +40,7 @@ struct OmenScene {
     Rec      rec = Rec::Off;
     const OmenRow* rows = nullptr; int nRows = 0;
     int      total = 0;                         // everything recorded (>= nRows)
+    uint8_t level = 1; // LOW/MED/HIGH/OFF
     uint8_t  theme = 0;
     uint32_t now = 0;
 };
@@ -56,26 +58,31 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
     // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
-    // title + total
-    txt(s, L.title.x, L.title.y + 2, "OMENS", 2, pal::BRIGHT);
-    if (sc.total > sc.nRows) { char tb[24]; snprintf(tb, sizeof tb, "%d", sc.total);
-        txt(s, L.title.x + L.title.w - Font::width(tb,1), L.title.y + 4, tb, 1, pal::DIM); }
+    txt(s, L.title.x, L.title.y + 2, "ALERTS", 2, pal::BRIGHT);
+    const char* levels[]={"LOW","MEDIUM","HIGH","OFF"};
+    char level[24];snprintf(level,sizeof level,"LEVEL %s",levels[sc.level<4?sc.level:3]);
+    txt(s,L.title.x+L.title.w-Font::width(level,1),L.title.y+4,level,1,sc.level==3?pal::AMBER:pal::DIM);
+    scanr::frame(s,L.prev.x,L.prev.y,L.prev.w,L.prev.h,pal::EDGE);scanr::frame(s,L.next.x,L.next.y,L.next.w,L.next.h,pal::EDGE);scanr::frame(s,L.page.x,L.page.y,L.page.w,L.page.h,pal::EDGE);
+    centered(s,L.prev.x+22,L.prev.y+15,"<",2,pal::TEXT);
+    centered(s,L.next.x+22,L.next.y+15,">",2,pal::TEXT);
+    centered(s,L.page.x+L.page.w/2,L.page.y+6,"TEST ALERT",1,pal::BRIGHT);
+    centered(s,L.page.x+L.page.w/2,L.page.y+23,"SIMULATED / NO RF",1,pal::DIM);
 
     // column header
-    txt(s, L.header.x + 4,  L.header.y + 2, "OMEN", 1, pal::EDGE_LIT);
+    txt(s, L.header.x + 4,  L.header.y + 2, "TYPE", 1, pal::EDGE_LIT);
     txt(s, L.header.x + L.header.w/2, L.header.y + 2, "SOURCE", 1, pal::EDGE_LIT);
     txt(s, L.header.x + L.header.w - Font::width("AGE",1), L.header.y + 2, "AGE", 1, pal::EDGE_LIT);
 
     box(s, L.list.x, L.list.y, L.list.w, L.list.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
     if (sc.total == 0) {
-        centered(s, L.list.x + L.list.w/2, L.list.y + L.list.h/2 - 6, "NOTHING HAS FIRED", 1, pal::DIM);
-        centered(s, L.list.x + L.list.w/2, L.list.y + L.list.h/2 + 4, "WHICH IS THE GOOD OUTCOME", 1, pal::EDGE_LIT);
+        centered(s, L.list.x + L.list.w/2, L.list.y + L.list.h/2 - 6, sc.level==3?"ALERTS DISABLED":"NO MATCHES RECORDED", 1, pal::DIM);
+        centered(s, L.list.x + L.list.w/2, L.list.y + L.list.h/2 + 4, sc.level==3?"CHANGE LEVEL IN SETTINGS":"THIS BOOT / FILTERED HISTORY", 1, pal::EDGE_LIT);
     } else {
         const int srcX = L.list.x + L.list.w/2;
         for (int i = 0; i < sc.nRows && i < L.nRows; i++) {
             const OmenRow& o = sc.rows[i];
             const int y = L.list.y + 2 + i * L.rowH;
-            const uint16_t cc = confColor(o.conf);
+            const uint16_t cc = o.test?pal::ICE:confColor(o.conf);
             box(s, L.list.x + 2, y + 1, 2, L.rowH - 4, cc);
             txt(s, L.list.x + 7, y + 1, o.omen ? o.omen : "", 1, cc);
             if (o.located) box(s, srcX - 8, y + 4, 2, 2, pal::GREEN);

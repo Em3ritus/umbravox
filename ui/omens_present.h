@@ -30,11 +30,12 @@ public:
     void status(int nodes, bool hasCell, int batt, omnr::Rec rec) {
         sc_.nodes = nodes; sc_.hasCell = hasCell; sc_.battPct = batt; sc_.rec = rec;
     }
+    void level(uint8_t v){sc_.level=v;}
     void total(int t) { sc_.total = t; }
-    bool addRow(const char* omen, const char* source, uint8_t conf, uint32_t agoS, bool located) {
+    bool addRow(const char* omen, const char* source, uint8_t conf, uint32_t agoS, bool located, bool test=false) {
         if (nr_ >= MAXROWS) return false;
         copy_(oBuf_[nr_], STRMAX, omen); copy_(sBuf_[nr_], STRMAX, source);
-        rows_[nr_] = OmenRow{ oBuf_[nr_], sBuf_[nr_], conf, agoS, located };
+        rows_[nr_] = OmenRow{ oBuf_[nr_], sBuf_[nr_], conf, agoS, located, test };
         nr_++; sc_.nRows = nr_; return true;
     }
     const OmenScene& scene() const { return sc_; }
@@ -56,9 +57,9 @@ inline void sceneDirty(const OmenScene& a, const OmenScene& b, bool& status, boo
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
 
-    bool same = a.total == b.total && a.nRows == b.nRows;
+    bool same = a.level == b.level && a.total == b.total && a.nRows == b.nRows;
     for (int i = 0; same && i < a.nRows; i++)
-        same = a.rows[i].conf == b.rows[i].conf && a.rows[i].agoS == b.rows[i].agoS
+        same = a.rows[i].test == b.rows[i].test && a.rows[i].conf == b.rows[i].conf && a.rows[i].agoS == b.rows[i].agoS
                && a.rows[i].located == b.rows[i].located
                && !__builtin_strcmp(a.rows[i].omen?a.rows[i].omen:"", b.rows[i].omen?b.rows[i].omen:"")
                && !__builtin_strcmp(a.rows[i].source?a.rows[i].source:"", b.rows[i].source?b.rows[i].source:"");

@@ -152,3 +152,5 @@ sim/bridge_png
 /sim/test_settings_controls
 
 /sim/test_storage_paths
+
+/sim/test_alert_history

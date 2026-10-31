@@ -19,11 +19,11 @@ int main(){
         const LogLayout g = omens(W,H);
         expect(g.body==Rect{8,52,W-16,H-104}, P?"320 body":"480 body");
         expect(g.title.y==g.body.y && g.header.y==g.body.y+20 && g.list.y==g.body.y+32, "title/header/list stack");
-        expect(g.list.x==g.body.x && g.list.w==g.body.w && g.list.y+g.list.h==g.body.y+g.body.h, "list fills to body bottom");
+        expect(g.list.x==g.body.x && g.list.w==g.body.w && g.list.y+g.list.h==g.body.y+g.body.h-44, "list ends above controls");
         expect(g.nRows>=1 && g.rowH==14, "log shows at least one compact row");
 
         HitList h = omensHits(W,H);
-        expect(h.count==(W>=400?10:9), "omens hits: chrome nav only (log is scroll, not taps)");
+        expect(h.count==(W>=400?13:12), "omens hits: chrome nav only (log is scroll, not taps)");
         bool ok=true, navOk=true;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;

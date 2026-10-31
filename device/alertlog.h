@@ -19,6 +19,8 @@ constexpr int DEPTH = 48;
 void push(const ui::AlertRec& a, uint32_t nowMs, uint32_t epoch,
           bool located, int32_t lat7, int32_t lon7);
 
+void pushTest(uint32_t nowMs); // explicit synthetic history test; never a detection
+
 void fill(ui::State& s, int offset, uint32_t nowMs);
 uint16_t count();
 void clear();

@@ -1670,6 +1670,7 @@ void loop() {
                       : nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
                       : nav.screen == ui::SCR_ECHOES ? ui::MAX_ECHO_ROWS : ui::ROWS;
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    if(nav.screen==ui::SCR_OMENS)visible=uieng::omens(board::PANEL_W,board::PANEL_H).nRows;
     if(nav.screen==ui::SCR_FILES)visible=uieng::files(board::PANEL_W,board::PANEL_H).nRows;
     if(nav.screen==ui::SCR_ECHOES)visible=uieng::echoes(board::PANEL_W,board::PANEL_H).nRows;
     if(nav.screen==ui::SCR_CODEX)visible=uieng::codex(board::PANEL_W,board::PANEL_H).nRows;

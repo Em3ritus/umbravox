@@ -27,7 +27,7 @@ using scanr::Rec;
 // carries both label modes; the LABELS toggle is on Display.
 struct MenuEntry { const char* brand; const char* plain; };
 static const MenuEntry kMenuEntries[6] = {
-    {"ECHOES","PROBES"},{"NODES","NODES"},{"OMENS","ALERTS"},
+    {"ECHOES","PROBES"},{"NODES","NODES"},{"ALERTS","ALERTS"},
     {"FILES","FILES"},{"ATTUNE","SETTINGS"},{"ASPECT","DISPLAY"}
 };
 static const char* const kMenuDescriptions[]={"REQUESTED NETWORKS","NODES + DIAGNOSTICS","SIGNATURE MATCHES","RECORDINGS","RADIO + CAPTURE","THEMES + LABELS"};
