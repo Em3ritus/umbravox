@@ -240,13 +240,13 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
 static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz; one spectrum bar each
 struct HeroSub { uieng::Rect field, spectrum; int barBase, barMax; };
 inline HeroSub heroSub(uieng::Rect hr) {
-    const int hdrH = 30, specH = 40;               // header clears the readout (text max y+26)
+    const int hdrH = 30, specH = 44;               // header clears the readout (text max y+26)
     HeroSub h;
     h.field    = {hr.x+2, hr.y+hdrH, hr.w-4, hr.h-hdrH-specH};
     const int sw=std::min(168,hr.w-8);
     h.spectrum = {hr.x+(hr.w-sw)/2, hr.y+hr.h-specH, sw, specH};
     h.barBase  = hr.y+hr.h-11;
-    h.barMax   = 16;                          // compact 16px amplitude; every channel retained
+    h.barMax   = 32;                          // 32px amplitude; every channel retained
     return h;
 }
 
@@ -254,8 +254,8 @@ inline HeroSub heroSub(uieng::Rect hr) {
 inline uieng::Rect radarBounds(int W, int H) {
     const auto f = heroSub(uieng::scan(W,H).hero).field;
     const int cx = W>=400 ? 311 : f.x+f.w/2;
-    const int cy = W>=400 ? 143 : f.y+f.h/2;
-    const int r = W>=400 ? 69 : std::min(f.w,f.h)/2-6;
+    const int cy = W>=400 ? 137 : f.y+f.h/2;
+    const int r = W>=400 ? 85 : std::min(f.w,f.h)/2-4;
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
 inline uint32_t sweepPhase(uint32_t now) { return (now / 50u) % 72u; } // 20 Hz, 3.6 s turn
@@ -410,10 +410,10 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
 
     const HeroSub hs = heroSub(hr);
     const uieng::Rect fld = hs.field;
-    // design #1 radar is centred (311,143) r69 at 480 (pixel-exact); 320 derives.
+    // Approved expanded field: centre (311,137), radius 85 at 480; compact derives.
     const int fcx = (W>=400) ? 311 : (fld.x+fld.w/2);
-    const int fcy = (W>=400) ? 143 : (fld.y+fld.h/2);
-    const int fr  = (W>=400) ? 69  : (((fld.w<fld.h?fld.w:fld.h)/2) - 6);
+    const int fcy = (W>=400) ? 137 : (fld.y+fld.h/2);
+    const int fr  = (W>=400) ? 85  : (((fld.w<fld.h?fld.w:fld.h)/2) - 4);
     // design #1: a CIRCULAR radar -- NO bounding box. Three thin 1px rings at
     // radii 23/46/69 (scaled to fr) in the chrome tone, a DELICATE heptagram in
     // the seal tone (EDGE_LIT = #574465) at 0.72r with verts from east, a sweep
@@ -440,7 +440,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
         } else if(!clean) {
             const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east
-            const auto* star = h7==49 ? radargeometry::star49 : h7==19 ? radargeometry::star19 : nullptr;
+            const auto* star = h7==61 ? radargeometry::star61 : h7==49 ? radargeometry::star49 : h7==19 ? radargeometry::star19 : nullptr;
             for (int i=0;i<7;i++) {
                 if (star) { vx[i]=fcx+star[i].x; vy[i]=fcy+star[i].y; }
                 else { const double t=i*2.0*3.14159265/7.0;

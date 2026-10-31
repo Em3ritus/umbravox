@@ -25,10 +25,10 @@ void rows(S& s,int w,int y,int limit){const char* names[]={"LAFAYETTE_LN","KATY 
 void portrait(S& s,const Layout& g,int screen,int theme){int w=g.w,h=g.h;chrome(s,g,screen<3?screen:-1);
  if(screen==0){const char* names[]={"WIFI","5 GHZ","BLE"};const char* nums[]={"169","32","73"};uint16_t colors[]={pal::MAGENTA,pal::ICE,pal::GREEN};for(int i=0;i<3;i++){auto r=g.tiles[i];box(s,r.x,r.y,r.w,r.h,pal::PANEL);box(s,r.x,r.y,2,r.h,colors[i]);txt(s,r.x+8,r.y+6,names[i],1,pal::DIM);txt(s,r.x+8,r.y+24,nums[i],2,pal::BRIGHT);}
  txt(s,12,158,"LIVE FIELD",1,pal::DIM);txt(s,w-68,158,"CH 48",1,pal::BRIGHT);
- int bottom=g.foot-50,cy=(174+bottom)/2,r=std::min((w-32)/2,(bottom-174)/2)-4;
+ int bottom=g.foot-58,top=154,cy=(top+bottom)/2,r=std::min((w-24)/2,(bottom-top)/2);
  radarTrail(s,w/2,cy,r,previewPhase);for(int k=1;k<=3;k++)circle(s,w/2,cy,r*k/3,pal::EDGE);box(s,w/2-4,cy,9,1,pal::BRIGHT);box(s,w/2,cy-4,1,9,pal::BRIGHT);
  for(int i=0;i<6;i++){auto b=scanfix::BLIPS[i];auto m=placeMarker(b.bearing,b.dist,b.band,0,r);box(s,w/2+m.dx-2,cy+m.dy-2,4,4,colors[b.band]);}
- int pitch=std::min(8,(w-24)/21),sx=(w-pitch*21)/2;for(int i=0;i<21;i++){int bh=scanfix::CHANNELS[i]*16/100;box(s,sx+i*pitch,g.foot-22-bh,pitch-2,bh,colors[i<13?0:1]);}txt(s,sx,g.foot-15,"2.4 GHZ",1,pal::DIM);txt(s,sx+13*pitch,g.foot-15,"5 GHZ",1,pal::DIM);
+ int pitch=std::min(8,(w-24)/21),sx=(w-pitch*21)/2;for(int i=0;i<21;i++){int bh=scanfix::CHANNELS[i]*32/100;box(s,sx+i*pitch,g.foot-22-bh,pitch-2,bh,colors[i<13?0:1]);}txt(s,sx,g.foot-15,"2.4 GHZ",1,pal::DIM);txt(s,sx+13*pitch,g.foot-15,"5 GHZ",1,pal::DIM);
  }else if(screen==1){txt(s,12,100,"DOMAIN",2,pal::BRIGHT);int mapH=h>=400?112:64,cy=122+mapH/2,r=mapH/2-12;circle(s,w/2,cy,r,pal::EDGE);circle(s,w/2,cy,r/2,pal::EDGE);centered(s,w/2,120,"N",1,pal::DIM);box(s,w/2+8,cy-5,3,3,pal::ICE);box(s,w/2-10,cy+5,3,3,pal::MAGENTA);txt(s,14,cy,"-",2,pal::TEXT);txt(s,w-30,cy,"+",2,pal::TEXT);txt(s,12,114+mapH,"25M  /  12 LOCATED",1,pal::DIM);int y=132+mapH;rows(s,w,y,(g.foot-y)/56);
  }else if(screen==2){const char* tabs[]={"WIFI","5 GHZ","BLE","LOCATED"};for(int i=0;i<4;i++)button(s,{8+i*(w-16)/4,96,(w-16)/4,44},tabs[i],i==0);rows(s,w,148,(g.foot-148)/56);
  }else{const char* names[]={"PROBES","NODES","ALERTS","FILES","SETTINGS","DISPLAY"};int rh=(g.bodyH-16)/3;for(int i=0;i<6;i++)button(s,{8+(i%2)*(w-12)/2,96+(i/2)*rh,(w-20)/2,rh-6},names[i]);}

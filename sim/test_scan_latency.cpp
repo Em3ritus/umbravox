@@ -6,7 +6,7 @@
 #include <vector>
 #include <cstdio>
 static void geometry() {
-    for(int r : {9,18,23,27,46,69}) {
+    for(int r : {9,18,23,27,28,46,56,69,85}) {
         std::set<std::pair<int,int>> reference,table;
         for(int a=0;a<1440;++a) {
             double t=a*3.14159265/720.0;
@@ -117,7 +117,7 @@ int main() {
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
     // Body goldens updated for the approved compact 21-channel spectrum.
-    const uint64_t golden[2][3]={{13146520544081172232ull,470220667227810589ull,12806502433216106219ull},{10584663885296049188ull,6305631667154806508ull,14618175897313386900ull}};
+    const uint64_t golden[2][3]={{8840731277796192617ull,6261122790574932988ull,11110275749734886455ull},{2204686793497679270ull,18425762806232998356ull,730766514984931152ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();
