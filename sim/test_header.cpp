@@ -17,14 +17,14 @@ int main(){
    for(int i=0;i<list.count;++i){const auto& a=list.items[i];
     assert(a.rect.w>=44 && a.rect.h>=44 && a.rect.x>=0 && a.rect.x+a.rect.w<=w);
     if(!strcmp(a.slot,"bridge")){++bridges;assert(a.rect==ch.bridge && a.action==uieng::Action::SettingStep && a.payload==9);}
-    if(!strcmp(a.slot,"mesh"))++meshes;
+    if(!strcmp(a.slot,"mesh")){++meshes;assert(a.rect==ch.statusCells[1] && a.action==uieng::Action::OpenMesh);uinav::Router r;r.dispatch(a);assert(r.screen()==uinav::Screen::Mesh);}
     if(!strcmp(a.slot,"nav-menu")){assert(a.rect==ch.menu && a.payload==3);uinav::Router r;r.setScreen(uinav::Screen::Detail);r.dispatch(a);assert(r.screen()==uinav::Screen::Menu);}
     // Branding is intentionally not an invisible Home target.
     assert(!(a.rect.x < ch.wordmark.x+ch.wordmark.w && ch.wordmark.x<a.rect.x+a.rect.w && a.rect.y<44));
     if(!strcmp(a.slot,"nav-scan")){++home;assert(a.rect==ch.navCells[0] && a.payload==0);uinav::Router r;r.setScreen(uinav::Screen::Detail);r.dispatch(a);assert(r.screen()==uinav::Screen::Scan);}
     if(a.action==uieng::Action::MarkPoi){++poi;assert(a.rect==ch.navCells[3]);}
 
-   }assert(home==1 && poi==1 && bridges==1 && meshes==(w==480?1:0));
+   }assert(home==1 && poi==1 && bridges==1 && meshes==1);
   }
   for(auto screen:{uinav::Screen::Scan,uinav::Screen::Domain,uinav::Screen::Codex,uinav::Screen::Menu,uinav::Screen::Aspect}){
    uinav::Router router;router.setScreen(screen);auto list=uieng::scanHits(w,h,{});
@@ -46,7 +46,7 @@ int main(){
    assert(!(r.x<ch.sd.x+ch.sd.w && ch.sd.x<r.x+r.w && r.y<44)); // icon is read-only
   }
   auto sc=scan.scene();pal::setTheme(sc.theme);auto before=draw(w,h,sc);
-  for(int change=0;change<7;++change){auto next=sc;
+  for(int change=0;change<8;++change){auto next=sc;
    if(change==0)next.bridgeOn=false;
    if(change==1)next.charging=false;
    if(change==2)next.hasCell=false;
@@ -54,6 +54,7 @@ int main(){
    if(change==4)next.battPct=255;
    if(change==5)next.sd=ui::StorageState::Missing;
    if(change==6)next.sd=ui::StorageState::Error;
+   if(change==7)next.nodes=3;
    bool status,body;scanpres::sceneDirty(w,h,sc,next,status,body);assert(status&&!body);
    auto full=draw(w,h,next),partial=before;
    for(int y=0;y<48;y+=16){S strip{partial.data()+y*w,w,y,16};composeStrip(strip,w,h,next);}

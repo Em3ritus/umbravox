@@ -45,7 +45,7 @@ int main(){
                                   if(overlap(r,h.items[k].rect)) structural=false; } }
         expect(structural, "attune hits: in-bounds, >=44px, distinct slots, non-overlapping");
         const int visible = per < kAttuneKnobs ? per : kAttuneKnobs;
-        expect(h.count == (W>=400?10:9) + 2*visible + 2, "hit count = chrome + 2*rows + pager + clear");
+        expect(h.count == 10 + 2*visible + 2, "hit count = chrome + 2*rows + pager + clear");
 
         // stepper payload encoding: knob0 minus=-1 plus=+1; knob1 minus=-2 plus=+2 ...
         auto find=[&](const char* slot)->const Hit*{ for(int j=0;j<h.count;j++) if(!strcmp(h.items[j].slot,slot)) return &h.items[j]; return nullptr; };

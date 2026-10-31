@@ -46,7 +46,7 @@ int main(){
             for(int k=0;k<j;k++){ if(!strcmp(h.items[j].slot,h.items[k].slot)) ok=false;
                                   if(overlap(r,h.items[k].rect)) ok=false; } }
         expect(ok, "menu hits: in-bounds, >=44px, distinct slots, non-overlapping");
-        expect(h.count==(W>=400?10:9)+6, "menu hits: chrome + 6 launchers");
+        expect(h.count==10+6, "menu hits: chrome + 6 launchers");
 
         // bindings: each launcher -> Nav(ScreenId); labels -> ToggleLabels
         auto find=[&](const char* slot)->const Hit*{

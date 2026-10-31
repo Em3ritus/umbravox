@@ -338,7 +338,12 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     centered(s,c.statusCells[0].x+c.statusCells[0].w/2,10,"GPS",1,pal::DIM);
     centered(s,c.statusCells[0].x+c.statusCells[0].w/2,26,fix,1,gcol);
     if(c.statusCells[1].w) {
-        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,10,"NODES",1,pal::DIM);
+        const int nc=c.statusCells[1].x+c.statusCells[1].w/2;
+        if(W>=400)centered(s,nc,10,"NODES",1,pal::DIM);
+        else { // connected-node glyph; count remains readable beneath it
+            line(s,nc,13,nc-7,18,pal::DIM);line(s,nc,13,nc+7,18,pal::DIM);
+            frame(s,nc-2,9,5,5,pal::TEXT);frame(s,nc-9,16,5,5,pal::TEXT);frame(s,nc+5,16,5,5,pal::TEXT);
+        }
         snprintf(hb,sizeof hb,"%d",st.nodes);
         centered(s,c.statusCells[1].x+c.statusCells[1].w/2,26,hb,1,pal::TEXT);
     }
@@ -352,6 +357,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     // Read-only storage icon; adjacent battery keeps its own >=44px hit.
     const uint16_t sdInk=st.sd==ui::StorageState::Ready?pal::GREEN:st.sd==ui::StorageState::Error?pal::AMBER:pal::DIM;
     // Distribute free space equally before, between, and after the icons.
+    if(W>=400){
     const int iconGap=(W-c.sd.x-14-24)/3;
     const int sx=c.sd.x+iconGap,sy=13;
     box(s,sx,sy,10,1,sdInk);box(s,sx,sy,1,17,sdInk);box(s,sx,sy+16,14,1,sdInk);
@@ -374,6 +380,32 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
         centered(s,bx+12,27,hb,1,bi);
         // A plus beside the battery identifies charging independently of color.
         if(st.charging){box(s,bx-5,by+5,3,1,bi);box(s,bx-4,by+4,1,3,bi);}
+    }
+    }else{
+    const bool compact=W<400;
+    const int sw=compact?12:14,sh=compact?15:17,bw=compact?18:22,bh=compact?9:11;
+    const int iconGap=(W-c.sd.x-sw-(bw+2))/3;
+    const int sx=c.sd.x+iconGap,sy=(44-sh)/2;
+    box(s,sx,sy,sw-4,1,sdInk);box(s,sx,sy,1,sh,sdInk);box(s,sx,sy+sh-1,sw,1,sdInk);
+    box(s,sx+sw-1,sy+4,1,sh-4,sdInk);
+    for(int i=0;i<4;i++)box(s,sx+sw-4+i,sy+i,1,1,sdInk);
+    if(st.sd==ui::StorageState::Error){box(s,sx+sw/2,sy+4,1,5,sdInk);box(s,sx+sw/2,sy+11,1,1,sdInk);}
+    else{
+        for(int i=0;i<3;i++)box(s,sx+3+i*(compact?2:3),sy+3,1,4,sdInk);
+        if(st.sd==ui::StorageState::Missing)for(int i=0;i<sw;i++)box(s,sx+i,sy+sh-3-i*(sh-4)/(sw-1),1,2,sdInk);
+    }
+    const bool cell=st.pmuOk&&st.hasCell,level=cell&&st.batt>=0&&st.batt<=100;
+    const int bx=sx+sw+iconGap,by=cell?8:(44-bh)/2;
+    const uint16_t bi=cell?(st.charging?pal::GREEN:level&&st.batt<=20?pal::AMBER:pal::TEXT):pal::DIM;
+    frame(s,bx,by,bw,bh,bi);box(s,bx+bw,by+3,2,bh-6,bi);
+    if(level&&st.batt>0)box(s,bx+2,by+2,std::max(1,(bw-4)*st.batt/100),bh-4,bi);
+    if(!st.pmuOk)centered(s,bx+bw/2,by+1,"?",1,pal::DIM);
+    else if(!st.hasCell)for(int i=0;i<bw-2;i++)box(s,bx+1+i,by+bh-2-i*(bh-3)/(bw-3),1,1,pal::DIM);
+    if(cell){
+        if(level)snprintf(hb,sizeof hb,"%d%%",st.batt);else snprintf(hb,sizeof hb,"?");
+        centered(s,bx+(bw+2)/2,27,hb,1,bi);
+        if(st.charging){box(s,bx-5,by+bh/2,3,1,bi);box(s,bx-4,by+bh/2-1,1,3,bi);}
+    }
     }
 
     // Three destinations, POI action, recording action. Header MENU opens the hub.

@@ -39,8 +39,8 @@ inline Chrome chrome(int W, int H) {
         for(int i=0;i<4;i++)c.navCells[i]={i*W/5,H-44,(i+1)*W/5-i*W/5,44};
         c.stop={4*W/5,H-44,W-4*W/5,44};
     }else{
-        c.wordmark={44,0,104,44};c.statusCells[0]={148,0,48,44};
-        c.statusCells[1]={};c.bridge={196,0,52,44};c.sd={248,0,28,44};c.statusCells[2]={276,0,W-276,44};
+        c.wordmark={44,0,68,44};c.statusCells[0]={112,0,44,44};
+        c.statusCells[1]={156,0,44,44};c.bridge={200,0,44,44};c.sd={244,0,32,44};c.statusCells[2]={276,0,W-276,44};
         const int edges[]={0,60,140,208,260};
         for(int i=0;i<4;i++)c.navCells[i]={edges[i],H-44,edges[i+1]-edges[i],44};
         c.stop={260,H-44,W-260,44};

@@ -63,7 +63,7 @@ int main(){
         expect(ok, "hits: in-bounds, >=44px, distinct slots, non-overlapping");
 
         // chrome(8) + 4 filters + wantRows rows
-        expect(h.count==(W>=400?10:9)+4+2+wantRows, "hit count = 8 chrome + 4 filters + 2 pager controls + rows");
+        expect(h.count==10+4+2+wantRows, "hit count = 8 chrome + 4 filters + 2 pager controls + rows");
 
         auto findAction=[&](const char* slot)->const Hit*{
             for(int j=0;j<h.count;j++) if(!strcmp(h.items[j].slot,slot)) return &h.items[j]; return nullptr; };
