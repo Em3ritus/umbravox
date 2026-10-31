@@ -313,7 +313,8 @@ inline uieng::Rect radarBounds(int W, int H) {
     const auto f=hs.field;
     const int cx = W>=400 ? 311 : f.x+f.w/2;
     const int top = hr.y+4, bottom = hs.barBase-hs.barMax-2;
-    const int cy = (top+bottom)/2;
+    // Optical lift leaves room above the spectrum without changing diameter.
+    const int cy = (top+bottom)/2 - (W>=400 ? 6 : 2);
     const int r = W>=400 ? 85 : std::min(f.w/2-4,(bottom-top)/2);
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
@@ -501,7 +502,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     if (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || sc.theme==pal::TH_COSMICMUFFIN) {
         const auto* headingEmblem=pal::emblem(sc.theme);
         const int badgeR=W>=400?27:22;
-        if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),sc.theme==pal::TH_COSMICMUFFIN,true);
+        if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),false,true);
     }
     const int channelScale = W>=400 ? 2 : 1;
     txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,channelScale), hr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right

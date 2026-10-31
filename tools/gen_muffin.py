@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """Generate ui/muffin.h -- the COSMIC MUFFIN dial centrepiece.
 
-Unlike the Baphomet sigil (a textured line drawing baked to a 4-level ramp),
-the muffin is a full-colour pixel-art image, so it ships as an indexed bitmap
-plus an RGB565 colour table. The source is already stylised and chunky, so the
-pipeline is just: crop to the muffin, area-average down (BOX, never Lanczos --
-Lanczos rings on the hard pixel edges), quantise to a small palette, pack.
-
-The bitmap is a square; drawMuffin() masks it to the dial circle at draw time.
+The approved transparent source is fitted without cropping, composited onto
+black, area-averaged to 72px and quantized to the indexed firmware palette.
 
 Usage:  python3 -I tools/gen_muffin.py      # writes ui/muffin.h
         Needs Python 3 with Pillow.
@@ -18,13 +13,12 @@ import os
 import sys
 
 import PIL
-from PIL import Image
+from PIL import Image, ImageOps
 
 SRC = "ui/art/cosmic-muffin-src.png"     # committed, so anyone can regenerate
 OUT = "ui/muffin.h"
 SIZE = 72                                 # square bitmap; drawMuffin scales it
 NCOL = 16                                 # palette entries
-CROP = (0.13, 0.07, 0.88, 0.86)           # muffin bbox as fractions of the art
 
 
 def rgb565(r, g, b):
@@ -39,13 +33,14 @@ def main():
         with open(SRC, "rb") as fh:
             raw = fh.read()
         digest = hashlib.sha256(raw).hexdigest()
-        src = Image.open(io.BytesIO(raw)).convert("RGB")
+        src = Image.open(io.BytesIO(raw)).convert("RGBA")
     except Exception as e:
         sys.exit("gen_muffin: cannot read %s as an image (%s)" % (SRC, e))
 
-    w, h = src.size
-    box = (int(w * CROP[0]), int(h * CROP[1]), int(w * CROP[2]), int(h * CROP[3]))
-    small = src.crop(box).resize((SIZE, SIZE), Image.BOX)
+    scaled = ImageOps.contain(src, (SIZE, SIZE), Image.Resampling.BOX)
+    canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 255))
+    canvas.alpha_composite(scaled, ((SIZE-scaled.width)//2, (SIZE-scaled.height)//2))
+    small = canvas.convert("RGB")
     q = small.quantize(colors=NCOL, method=Image.MEDIANCUT, dither=Image.NONE)
 
     pal = q.getpalette()                  # flat [r,g,b, ...]

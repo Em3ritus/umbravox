@@ -108,12 +108,11 @@ int main(int argc, char** argv) {
     printf("regression guard (built-in COSMIC MUFFIN and BAPH0MAU5):\n");
     {
         static const uint32_t WANT[16] = {
-            // Approved Cosmic palette and Cvlt label palette; legacy motif geometry unchanged.
-            0x0FC0BFE8u, 0x1651586Fu, 0x57D1210Cu, 0xDFEE32FEu,
-            0x0BB63FEBu, 0x7C8F9C8Du, 0x60F22F77u, 0x31CF93CFu,
-            0xE1BFB741u, 0x6B5BF093u, 0x2C205B2Bu, 0xCCCB3B68u,
-            0x01120537u, 0x5328BB02u, 0xE3AEB109u, 0x1273DCF9u,
-
+            // Approved refreshed Cosmic artwork; legacy motif geometry unchanged.
+            0x5A1CB09Cu, 0x11E32DAEu, 0x57D1210Cu, 0xDFEE32FEu,
+            0xAE98A637u, 0x480ACD76u, 0xA50E4263u, 0x31CF93CFu,
+            0xE1BFB741u, 0x6B5BF093u, 0x49F3564Bu, 0xCCCB3B68u,
+            0x1BAAEB9Bu, 0x38343B82u, 0x4C315202u, 0x593E869Eu,
         };
         uint32_t g[16]; computeGuard(g);
         for (int i = 0; i < 16; i++) {
