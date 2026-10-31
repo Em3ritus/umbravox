@@ -78,7 +78,9 @@ bool sanitizeStatus(Pack& p);
 // spaces, non-ASCII, NULL) is not a pack folder.
 bool folderNameOk(const char* folder);
 
-enum Admit { ADMIT_OK, ADMIT_BAD_FOLDER, ADMIT_RESERVED, ADMIT_DUPLICATE, ADMIT_FULL };
+// Fixed underlying type makes unknown diagnostic codes representable without UB.
+// Named admission outcomes and their numeric values are unchanged.
+enum Admit : int { ADMIT_OK, ADMIT_BAD_FOLDER, ADMIT_RESERVED, ADMIT_DUPLICATE, ADMIT_FULL };
 
 // Decide whether a parsed pack in `folder` joins the n already admitted packs
 // (takenNames[0..nTaken), NULL entries ignored). The name must not be a

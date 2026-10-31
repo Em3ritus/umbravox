@@ -299,8 +299,10 @@ static void admissionTests() {
     for (int i = 0; i < 5; i++) for (int j = i + 1; j < 5; j++)
         if (!strcmp(admitWhy(all[i]), admitWhy(all[j]))) distinct = false;
     check("admitWhy distinct per value", distinct);
-    check("admitWhy out-of-range value still a string",
-          admitWhy((Admit)99) && *admitWhy((Admit)99));
+    check("admitWhy unknown positive code has explicit fallback",
+          !strcmp(admitWhy(static_cast<Admit>(99)), "unknown admission result"));
+    check("admitWhy unknown negative code has explicit fallback",
+          !strcmp(admitWhy(static_cast<Admit>(-1)), "unknown admission result"));
 
     // sortNames
     {

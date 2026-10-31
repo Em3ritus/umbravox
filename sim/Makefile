@@ -77,7 +77,7 @@ test_ble_ad: test_ble_ad.cpp ../device/ble_ad.h
 
 # theme.json is read off an SD card anyone can write to: sanitizers, as above.
 test_themepack: test_themepack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/model.h ../ui/palette.h
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
 
 test_elog: test_elog.cpp ../device/elog.h
 	$(CXX) $(CXXFLAGS) -o $@ test_elog.cpp -lm
