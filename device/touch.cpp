@@ -134,15 +134,20 @@ Point read() {
 } // namespace touch
 #endif // NM_CYD_C5
 
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
 #include <Wire.h>
 #include "ws_c5_bus.h"
 #include "ws_c5_expander.h"
 #include <Preferences.h>
+#include "cst3530_sample.h"
 
 namespace touch {
 namespace {
 
+#if defined(WS_C5_28)
+constexpr uint8_t ADDR=0x58;
+constexpr int NATIVE_W=240,NATIVE_H=320;
+#else
 constexpr uint8_t ADDR      = 0x38;
 constexpr uint8_t TD_STATUS = 0x02;   // point count, then 6 bytes of point 1
 constexpr uint8_t ID_G_THGROUP = 0x80; // touch threshold; lower = more sensitive
@@ -153,6 +158,7 @@ constexpr uint8_t ID_G_CIPHER  = 0xA3; // chip id
 constexpr int NATIVE_W = 320;
 constexpr int NATIVE_H = 480;
 
+#endif
 // A read can FAIL (bus glitch / short read): bridge a gap this short so a
 // momentary read failure does not read as a lift and re-press. A *successful*
 // read that reports zero fingers is NOT bridged -- it is a real release (see
@@ -167,6 +173,29 @@ int threshold = 12;
 // (a genuine release); Fail = the read itself failed/garbage after retries.
 enum class Sampled : uint8_t { Touch, Lift, Fail };
 
+#if defined(WS_C5_28)
+bool address(uint32_t reg,bool stop){
+    Wire.beginTransmission(ADDR);
+    for(int shift=24;shift>=0;shift-=8)Wire.write(uint8_t(reg>>shift));
+    return Wire.endTransmission(stop)==0;
+}
+Sampled sample(uint16_t& nx,uint16_t& ny){
+    wsbus::Guard guard;
+    uint8_t data[9];
+    // CST3530 uses a four-byte register address and repeated START, unlike FT6336.
+    if(!address(0xD0070000,false))return Sampled::Fail;
+    const int got=Wire.requestFrom(int(ADDR),9);
+    if(got!=9){while(Wire.available())Wire.read();address(0xD00002AB,true);return Sampled::Fail;}
+    for(auto& value:data)value=uint8_t(Wire.read());
+    if(!address(0xD00002AB,true))return Sampled::Fail; // acknowledge every complete packet
+    switch(cst3530::decode(data,sizeof data,nx,ny)){
+      case cst3530::Result::Touch:return Sampled::Touch;
+      case cst3530::Result::Lift:return Sampled::Lift;
+      case cst3530::Result::Fail:return Sampled::Fail;
+    }
+    return Sampled::Fail;
+}
+#else
 // Register read with a STOP between the address write and the read, not a
 // repeated start. The bus is shared with the expander and the PMU, and on
 // this board a repeated-start read is what can leave it wedged.
@@ -201,11 +230,17 @@ Sampled sample(uint16_t& nx, uint16_t& ny) {
     return Sampled::Fail;                       // reads failed/garbage every attempt
 }
 
+#endif
+
 // Native portrait -> the landscape frame the display is drawn in. The panel
 // runs at Arduino_GFX rotation board::ROTATION; this is the same turn.
 void rotate(uint16_t nx, uint16_t ny, int& sx, int& sy) {
+#if defined(WS_C5_28)
+    cst3530::landscape(nx,ny,sx,sy);
+#else
     if (board::ROTATION == 1) { sx = ny;                sy = NATIVE_W - 1 - nx; }
     else                      { sx = NATIVE_H - 1 - ny; sy = nx; }
+#endif
 }
 
 } // namespace
@@ -214,6 +249,13 @@ void setRotation(uint8_t) {}     // landscape only on this board (board.h)
 
 void begin() {
     exio::begin();   // touch reset is on the expander; a no-op if already up
+#if defined(WS_C5_28)
+    pinMode(board::PIN_TOUCH_IRQ,INPUT);
+    wsbus::Guard guard;
+    Wire.beginTransmission(ADDR);present=Wire.endTransmission()==0;
+    threshold=-1; // sensitivity register is not specified for CST3530
+    Serial.printf("touch: CST3530 on I2C 0x58 %s\n",present?"(ok)":"(not found)");
+#else
     uint8_t id = 0;
     present = readRegs(ID_G_CIPHER, &id, 1) && id == 0x64;   // FT6336U
     Serial.printf("touch: FT6336 on I2C 0x38, id 0x%02X %s\n", id,
@@ -228,6 +270,7 @@ void begin() {
     Wire.write(threshold);
     const uint8_t err=Wire.endTransmission();
     Serial.printf("touch: threshold %d (write %s)\n",threshold,err?"failed":"ok");
+#endif
 }
 
 static Point readSensor() {
@@ -333,6 +376,9 @@ Point read() {
 Point observed() { portENTER_CRITICAL(&eventMux); Point p=latest; portEXIT_CRITICAL(&eventMux); return p; }
 int sensitivity(){ return threshold; }
 bool setSensitivity(int value){
+#if defined(WS_C5_28)
+    (void)value;return false;
+#else
     if(!present || value<8 || value>30)return false;
     { wsbus::Guard guard;
       Wire.beginTransmission(ADDR);Wire.write(ID_G_THGROUP);Wire.write(uint8_t(value));
@@ -341,6 +387,7 @@ bool setSensitivity(int value){
     threshold=value;
     Preferences prefs;if(!prefs.begin("touch",false))return false;
     const bool saved=prefs.putUChar("threshold",uint8_t(value))==1;prefs.end();return saved;
+#endif
 }
 bool takePress(inputevents::Press& p) {
     portENTER_CRITICAL(&eventMux); const bool ok = presses.pop(p); portEXIT_CRITICAL(&eventMux); return ok;

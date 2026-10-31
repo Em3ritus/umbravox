@@ -158,3 +158,5 @@ sim/bridge_png
 /sim/test_oui_registry
 
 /sim/test_clean_radar
+
+/sim/test_ws28_touch

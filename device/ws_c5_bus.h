@@ -1,5 +1,5 @@
 #pragma once
-#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
 #include <Wire.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>

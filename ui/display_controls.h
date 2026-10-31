@@ -43,7 +43,7 @@ inline uieng::HitList hits(int w,int h,const State& s,bool alertLive){
  for(int i=0;i<3;i++)hits.add(tabs[i],l.tabs[i],Action::DisplayControl,i,nullptr,"Display control");
  const char* cards[]={"control-0","control-1","control-2","control-3"};
  for(int i=0;i<4;i++){
-  if((s.tab==0&&i==3)||(s.tab==1&&(i==1||i==3))||(s.tab==2&&i==2&&!alertLive))continue;
+  if((s.tab==1&&i==2&&s.sensitivity<0)||(s.tab==0&&i==3)||(s.tab==1&&(i==1||i==3))||(s.tab==2&&i==2&&!alertLive))continue;
   hits.add(cards[i],l.cards[i],Action::DisplayControl,10+s.tab*4+i,nullptr,"Display control");
  }return hits;
 }

@@ -51,7 +51,7 @@ void setRotation(uint8_t r);
 
 } // namespace touch
 
-#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
 #include "../ui/input_events.h"
 namespace touch {
 Point observed(); // latest physical sample, without retained-tap wake synthesis

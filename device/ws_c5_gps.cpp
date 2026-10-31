@@ -1,4 +1,4 @@
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
 #include "ws_c5_gps.h"
 #include <Arduino.h>
 #include <Wire.h>

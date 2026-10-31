@@ -69,7 +69,7 @@ def stage_library(original, destination):
 
 
 def configure(env):
-    if env.subst("$PIOENV") not in ("nm-cyd-c5", "ws-c5-35", "ws-c5-35-engine"):
+    if env.subst("$PIOENV") not in ("nm-cyd-c5", "ws-c5-35", "ws-c5-35-engine", "ws-c5-28-engine"):
         return
     framework = Path(env.PioPlatform().get_package_dir("framework-arduinoespressif32"))
     build = Path(env.subst("$BUILD_DIR"))

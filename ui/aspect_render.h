@@ -49,7 +49,7 @@ inline void drawControls(scanr::S& s,int W,int H,const AspectScene& sc){
  const char* titles[]={"BRIGHTNESS","IDLE AFTER","WHEN IDLE","ORIENTATION","TOUCH TEST","CALIBRATION","SENSITIVITY","WAKE TOUCH","THEME","SWEEP","ALERT STYLE","LABELS"};
  char brightness[12],idle[16],sens[12];snprintf(brightness,sizeof brightness,"%u%%",sc.brightness);
  if(sc.idleIdx==0)snprintf(idle,sizeof idle,"NEVER");else snprintf(idle,sizeof idle,"%u SEC",ui::IDLE_S[sc.idleIdx%ui::IDLE_N]);
- snprintf(sens,sizeof sens,"%d",v.sensitivity);
+ if(v.sensitivity<0)snprintf(sens,sizeof sens,"FACTORY");else snprintf(sens,sizeof sens,"%d",v.sensitivity);
  const char* values[]={brightness,idle,sc.idleMode==ui::IDLE_OFF?"OFF":sc.idleMode==ui::IDLE_ANIM?"ANIMATION":"DIM","LANDSCAPE","OPEN PAD","FACTORY MAP",sens,"WAKE ONLY",sc.themeName,sc.sweepName,sc.alertName,sc.plain?"PLAIN":"BRAND"};
  if(v.editor>=0){
   centered(s,W/2,53,titles[v.editor],1,pal::BRIGHT);
@@ -68,7 +68,7 @@ inline void drawControls(scanr::S& s,int W,int H,const AspectScene& sc){
  }
  const char* tabs[]={"DISPLAY","TOUCH","APPEARANCE"};
  for(int i=0;i<3;i++){auto r=l.tabs[i];box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==v.tab?pal::BRIGHT:pal::DIM);if(i==v.tab)box(s,r.x+10,84,r.w-20,2,pal::WITCH_HI);}
- for(int i=0;i<4;i++){auto r=l.cards[i];int id=v.tab*4+i;bool enabled=!(id==3||id==5||id==7||(id==10&&!sc.alertLive));
+ for(int i=0;i<4;i++){auto r=l.cards[i];int id=v.tab*4+i;bool enabled=!((id==6&&v.sensitivity<0)||id==3||id==5||id==7||(id==10&&!sc.alertLive));
   box(s,r.x,r.y,r.w,r.h,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);txt(s,r.x+8,r.y+7,titles[id],1,pal::DIM);
   txt(s,r.x+8,r.y+(r.h>=70?30:24),values[id],fitScale(values[id],r.w-16,2),enabled?pal::BRIGHT:pal::DIM);
   if(enabled)box(s,r.x+8,r.y+r.h-3,r.w-16,1,pal::WITCH_HI);

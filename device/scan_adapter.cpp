@@ -4,7 +4,7 @@
 // the default WS build and the NM path carry none of it.
 #include "scan_adapter.h"
 
-#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>

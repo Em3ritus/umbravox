@@ -11,7 +11,11 @@ constexpr size_t MAX_LINE=384, MAX_CMD=192, HEADER=12;
 // Compatibility sentinel from slickrick773's ESP32Marauder PR #1671.
 // Not the Umbravox software version. Never replace with a normal release number.
 constexpr const char* FW_VERSION="99.99.99";
+#if defined(WS_C5_28)
+constexpr const char* WD_CAPS="WD:CAPS fw=99.99.99 chip=esp32c5 bands=2g,5g ota=0 bt=0 gps=0 cap=0 usb=0 board_name=Umbravox_WS_C5_28 link=ble";
+#else
 constexpr const char* WD_CAPS="WD:CAPS fw=99.99.99 chip=esp32c5 bands=2g,5g ota=0 bt=0 gps=0 cap=0 usb=0 board_name=Umbravox_WS_C5_35 link=ble";
+#endif
 constexpr const char* WD_SERVICE="47686F73-7445-5350-4272-696467655376";
 constexpr const char* WD_RX="0147686F-7374-4553-5042-726964675852";
 constexpr const char* WD_TX="0247686F-7374-4553-5042-726964675854";

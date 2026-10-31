@@ -74,3 +74,13 @@ const Batt& read(uint32_t nowMs) {
 
 } // namespace pmu
 #endif // WS_C5_35
+
+#if defined(WS_C5_28)
+#include "ws_c5_pmu.h"
+// ETA6098 charger; battery voltage reaches the expander ADC, not an AXP2101.
+// No validated cell-presence/percentage contract yet: report unavailable.
+namespace pmu {
+bool begin(){return false;}
+const Batt& read(uint32_t){static const Batt unavailable{};return unavailable;}
+}
+#endif
