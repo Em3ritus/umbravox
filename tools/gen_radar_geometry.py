@@ -9,7 +9,7 @@ from pathlib import Path
 out = ['// Integer radar geometry; regenerate with tools/gen_radar_geometry.py.',
        '#pragma once', '#include <cstdint>', 'namespace radargeometry {',
        'struct Point { int8_t x, y; };']
-for r in (9, 13, 18, 23, 26, 27, 28, 39, 46, 56, 69, 85):
+for r in (9, 13, 18, 19, 23, 26, 27, 28, 32, 36, 38, 39, 46, 55, 56, 58, 65, 69, 85, 98):
     pts = sorted({(int(r * math.cos(a * 3.14159265 / 720.0) + .5),
                    int(r * math.sin(a * 3.14159265 / 720.0) + .5))
                   for a in range(1440)}, key=lambda p: (p[1], p[0]))
@@ -22,7 +22,7 @@ for r in (19, 49, 61):
         '{%d,%d}' % (int(r*math.cos(i*2*3.14159265/7)), int(r*math.sin(i*2*3.14159265/7)))
         for i in range(7)) + '};']
 out += ['inline const Point* ring(int r, int& count) {', '    switch (r) {']
-for r in (9, 13, 18, 23, 26, 27, 28, 39, 46, 56, 69, 85):
+for r in (9, 13, 18, 19, 23, 26, 27, 28, 32, 36, 38, 39, 46, 55, 56, 58, 65, 69, 85, 98):
     out += [f'    case {r}: count = sizeof ring{r}/sizeof(Point); return ring{r};']
 out += ['    default: count=0; return nullptr;', '    }', '}', '} // namespace radargeometry', '']
 (Path(__file__).resolve().parents[1] / 'ui/radar_geometry.h').write_text('\n'.join(out))

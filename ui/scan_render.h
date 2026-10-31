@@ -230,7 +230,7 @@ inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, 
 }
 // Precomputed artwork: clipped spans, no heap use and no trigonometry.
 inline void crewArt(S& s,int cx,int cy,int radius,int style,int opacity=100){
-    const bool small=radius<60;
+    const bool small=radius<=39; // never enlarge the 39px source when the 85px asset is available
     const crewart::Span* runs=nullptr;const uint16_t* colors=nullptr;size_t count=0;
     if(style==0 && small){runs=crewart::mascot39;colors=crewart::mascot39Colors;count=sizeof crewart::mascot39/sizeof(*runs);}
     else if(style==0){runs=crewart::mascot85;colors=crewart::mascot85Colors;count=sizeof crewart::mascot85/sizeof(*runs);}
@@ -240,10 +240,29 @@ inline void crewArt(S& s,int cx,int cy,int radius,int style,int opacity=100){
     else if(style==2){runs=crewart::orbit85;colors=crewart::orbit85Colors;count=sizeof crewart::orbit85/sizeof(*runs);}
     else if(style==3 && small){runs=crewart::sigil39;colors=crewart::sigil39Colors;count=sizeof crewart::sigil39/sizeof(*runs);}
     else if(style==3){runs=crewart::sigil85;colors=crewart::sigil85Colors;count=sizeof crewart::sigil85/sizeof(*runs);}
+    // Native 55px artwork avoids shrinking away one-pixel orbit/sigil strokes.
+    if(radius==55){
+      switch(style){
+        case 0:runs=crewart::mascot55;colors=crewart::mascot55Colors;count=sizeof crewart::mascot55/sizeof(*runs);break;
+        case 1:runs=crewart::cvlt55;colors=crewart::cvlt55Colors;count=sizeof crewart::cvlt55/sizeof(*runs);break;
+        case 2:runs=crewart::orbit55;colors=crewart::orbit55Colors;count=sizeof crewart::orbit55/sizeof(*runs);break;
+        case 3:runs=crewart::sigil55;colors=crewart::sigil55Colors;count=sizeof crewart::sigil55/sizeof(*runs);break;
+      }
+    }
     if(!runs)return;
-    const int base=small?39:85;
-    for(size_t i=0;i<count;i++){const auto& a=runs[i];int y=cy+a.y*radius/base;if(y<s.y0)continue;if(y>=s.y0+s.h)break;
-      int x=cx+a.x*radius/base;int end=cx+(a.x+a.n())*radius/base;box(s,x,y,std::max(1,end-x),1,opacity==100?colors[a.c()]:ui::Canvas::mix(pal::VOID,colors[a.c()],opacity,100));}
+    const int base=radius==55?55:small?39:85;
+    for(size_t i=0;i<count;i++){
+      const auto& a=runs[i];
+      // Map row edges, not only row origins. This fills enlarged rows and
+      // samples a single source row on reduction, instead of stacking rows.
+      const int y=cy-radius+(a.y+base)*radius/base;
+      const int endY=cy-radius+(a.y+base+1)*radius/base;
+      if(endY<=s.y0 || endY<=y)continue;
+      if(y>=s.y0+s.h)break;
+      const int x=cx-radius+(a.x+base)*radius/base;
+      const int end=cx-radius+(a.x+base+a.n())*radius/base;
+      if(end>x)box(s,x,y,end-x,endY-y,opacity==100?colors[a.c()]:ui::Canvas::mix(pal::VOID,colors[a.c()],opacity,100));
+    }
 }
 // Honor the theme's artwork, same policy as motif::drawMotif: a bitmap emblem
 // when the theme carries one, else the {7/3} heptagram.

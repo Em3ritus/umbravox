@@ -21,6 +21,19 @@ std::ifstream bf(std::string(folders[i])+"emblem.bin",std::ios::binary);artwork[
  auto hs=heroSub(uieng::scan(w,h).hero);assert(hs.spectrum.w<=(w>=400?168:140)&&hs.barMax==(w>=400?16:8));
  }
  }
+ // Every supported landscape/portrait geometry must avoid the trig fallback.
+ for(auto wh:{std::pair<int,int>{320,240},{480,320},{320,480},{240,320}}){
+   const auto b=radarBounds(wh.first,wh.second);const int r=(b.w-5)/2;
+   for(int k=1;k<=3;k++){int n=0;assert(radargeometry::ring(r*k/3,n)&&n>0);}
+ }
+ // Artwork resampling is identical whether composed full-height or in strips,
+ // including radii above the source size where a row must cover multiple pixels.
+ for(int r:{39,55,58,85,98})for(int style=0;style<4;style++){
+   const int w=240,h=240;std::vector<uint16_t> full(w*h),partial(w*h);
+   S whole{full.data(),w,0,h};crewArt(whole,120,120,r,style);
+   for(int y=0;y<h;y+=16){S strip{partial.data()+y*w,w,y,16};crewArt(strip,120,120,r,style);}
+   assert(full==partial);
+ }
  // Guarded strip rendering across every sweep angle and portrait-size radii.
  for(int r:{22,69,85,102})for(unsigned phase=0;phase<72;phase++){const int w=320,h=480;std::vector<uint16_t> guard(w*16+2,0xABCD);for(int y=0;y<h;y+=16){S strip{guard.data()+1,w,y,16};radarTrail(strip,160,260,r,phase);assert(guard.front()==0xABCD&&guard.back()==0xABCD);}}
  puts("clean radar: parser, reusable style, phase repaint, clipping and compact spectrum PASS");}
