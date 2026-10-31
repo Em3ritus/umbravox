@@ -22,6 +22,7 @@ public:
     void gps(const aspr::GnssFix& f) { sc_.gps = f; }
     void storage(ui::StorageState sd){sc_.sd=sd;}
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
+    void controls(const displayctl::State& v,const ui::Settings& set){sc_.controls=true;sc_.control=v;sc_.brightness=set.bright;sc_.idleIdx=set.idleIdx;sc_.idleMode=set.idleMode;}
     void labels(bool plain){sc_.plain=plain;}
     void poi(ui::PoiStatus value) { sc_.poi=value; }
     void status(int nodes, bool hasCell, int batt, aspr::Rec rec) {
@@ -53,7 +54,7 @@ inline void sceneDirty(const AspectScene& a, const AspectScene& b, bool& status,
         && !__builtin_strcmp(a.themeName?a.themeName:"", b.themeName?b.themeName:"")
         && !__builtin_strcmp(a.sweepName?a.sweepName:"", b.sweepName?b.sweepName:"")
         && !__builtin_strcmp(a.alertName?a.alertName:"", b.alertName?b.alertName:"");
-    body = !same;
+    body = !same || a.controls!=b.controls || a.brightness!=b.brightness || a.idleIdx!=b.idleIdx || a.idleMode!=b.idleMode || !displayctl::same(a.control,b.control);
 }
 
 class AspectEngine {

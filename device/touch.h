@@ -54,6 +54,9 @@ void setRotation(uint8_t r);
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
 #include "../ui/input_events.h"
 namespace touch {
+Point observed(); // latest physical sample, without retained-tap wake synthesis
+int sensitivity(); // FT6336 threshold currently applied
+bool setSensitivity(int threshold); // bounded 8..30, locked write, saved only after ACK
 bool startSampling(); // after all setup-time Wire initialization
 bool takePress(inputevents::Press& p);
 void newScreen();

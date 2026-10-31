@@ -1596,7 +1596,7 @@ void loop() {
 
     // Dim to a fraction of the chosen brightness rather than a fixed level,
     // so someone running at 3% does not get *brighter* when it dims.
-    const uint8_t dimPct = set.bright > 16 ? set.bright / 8 : 2;
+    const uint8_t dimPct = idlemode::dimPercent(set.bright);
     const uint8_t brightPwm = (uint8_t)((uint32_t)set.bright * 255 / 100);
     const uint8_t dimPwm    = (uint8_t)((uint32_t)dimPct * 255 / 100);
     // The mode picks the dimmed level (OFF -> 0) and whether the dark panel
@@ -1667,6 +1667,7 @@ void loop() {
         // uinav::Router inside the adapter and writes nav/set.
         if (wasDimmed) engineadapter::cancelInput();
         switched = engineadapter::dispatchTouch(nav, set, s);
+        engineadapter::serviceSettings();
     }
 #else
     switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);

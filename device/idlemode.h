@@ -19,6 +19,9 @@
 
 namespace idlemode {
 
+// Idle dimming must never brighten a panel already set to 1%.
+inline uint8_t dimPercent(uint8_t bright){return bright>16?bright/8:bright<2?bright:2;}
+
 struct Rect { int16_t x, y, w, h; };
 
 // Mode clamping and stepping live in ui (clampSettings, idleStep): one

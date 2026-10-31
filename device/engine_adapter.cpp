@@ -66,6 +66,8 @@ omnpres::OmenEngine   eOmens_;
 echpres::EchoEngine   eEchoes_;
 atnpres::AttuneEngine eAttune_;
 asppres::AspectEngine eAspect_;
+displayctl::State display_;
+int pendingSensitivity_=-1;
 detpres::DetailEngine eDetail_;
 flspres::FilesEngine  eFiles_;
 
@@ -259,7 +261,10 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
         case uinav::Screen::Omens:  uiproj::omens(eOmens_.back(), s, c);   eOmens_.commit();  break;
         case uinav::Screen::Echoes: uiproj::echoes(eEchoes_.back(), s, c); eEchoes_.commit(); break;
         case uinav::Screen::Attune: uiproj::attune(eAttune_.back(), s, c, nav.setPage, uieng::attuneRowsPerPage(H_)); eAttune_.commit(); break;
-        case uinav::Screen::Aspect: uiproj::aspect(eAspect_.back(), s, c); eAspect_.commit(); break;
+        case uinav::Screen::Aspect:
+            if(display_.editor!=6)display_.sensitivity=touch::sensitivity();
+            if(display_.editor==4){const auto p=touch::observed();displayctl::sample(display_,W_,H_,p.any,p.panelX,p.panelY);}
+            uiproj::aspect(eAspect_.back(), s, c);eAspect_.back().controls(display_,s.set);eAspect_.commit();break;
         case uinav::Screen::Detail: uiproj::detail(eDetail_.back(), s, c); eDetail_.commit(); break;
         case uinav::Screen::Files:  uiproj::files(eFiles_.back(), s, c);   eFiles_.commit();  break;
     }
@@ -359,7 +364,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         case uinav::Screen::Omens:  h = uieng::omensHits(W_, H_); break;
         case uinav::Screen::Echoes: h = uieng::echoesHits(W_, H_); break;
         case uinav::Screen::Attune: h = uieng::attuneHits(W_, H_, nav.setPage); break;
-        case uinav::Screen::Aspect: h = uieng::aspectHits(W_, H_, s.set.theme == pal::TH_COSMICMUFFIN); break;
+        case uinav::Screen::Aspect: h = displayctl::hits(W_, H_, display_, s.set.theme == pal::TH_COSMICMUFFIN); break;
         case uinav::Screen::Detail: h = uieng::detailHits(W_, H_,nav.detailPage==2 && s.detail.band!=ui::BAND_BLE); break;
         case uinav::Screen::Files: {
             const bool deletable = (nav.fileSel >= 0 && nav.fileSel != nav.filesActive);
@@ -384,6 +389,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
 
         switch (hit.action) {
             case uieng::Action::Nav:
+                display_.editor=-1;display_.count=0;
                 if(nav.screen==ui::SCR_FILES){nav.scroll=0;nav.fileSel=-1;nav.fileConfirm=false;}
                 break;
             case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%(s.nNodes+1);break;
@@ -413,6 +419,31 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 nav.rangeIdx = (uint8_t)domr::rangeIndexStep(nav.rangeIdx,hit.payload);
                 break;
             }
+            case uieng::Action::DisplayControl: {
+                const int p=hit.payload;display_.error=false;
+                if(p>=0&&p<3){display_.tab=p;display_.editor=-1;}
+                else if(p>=10&&p<=21){
+                    const int id=p-10;
+                    if(id==11)set.labels=!set.labels;
+                    else {display_.editor=id;display_.count=0;display_.down=false;display_.sensitivity=touch::sensitivity();}
+                }else if(p==30||p==31){
+                    const int dir=p==30?-1:1;
+                    displayctl::step(display_,set,dir);
+                    if(display_.editor>=8&&display_.editor<=10)ui::applyAspectStep(set,display_.editor-8,dir);
+                }else if(p==32){
+                    switch(display_.editor){
+                        case 0:set.bright=80;break;case 1:set.idleIdx=2;break;case 2:set.idleMode=ui::IDLE_DIM;break;
+                        case 4:display_.count=0;break;case 6:display_.sensitivity=12;break;
+                        case 8:set.theme=0;break;case 9:set.sweep=0;break;case 10:set.alertStyle=0;break;
+                    }
+                    ui::clampSettings(set);
+                }else if(p==33){
+                    if(display_.editor==6)pendingSensitivity_=display_.sensitivity;
+                    else display_.editor=-1;
+                }
+                // Do not let retained presses from the previous subpage activate its replacement.
+                cancelInput();break;
+            }
             case uieng::Action::ToggleLabels:      set.labels = set.labels ? 0 : 1; break;
             case uieng::Action::SettingPage:       nav.setPage = (uint8_t)hit.payload; break;
             case uieng::Action::FileSelect:        nav.fileSel = (int8_t)(nav.scroll + hit.payload); break;
@@ -436,6 +467,14 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         return nav.screen != before;
     }
     return false;
+}
+
+// Run outside dispatchTouch's hit-list/row-key stack frame.
+void serviceSettings(){
+    if(pendingSensitivity_<0)return;
+    const int value=pendingSensitivity_;pendingSensitivity_=-1;
+    if(touch::setSensitivity(value)){display_.error=false;display_.editor=-1;}
+    else display_.error=true;
 }
 
 void sampleCapture(uint32_t frames, uint32_t uniques, uint32_t ble) { metrics_.capture(frames,uniques,ble); }

@@ -138,6 +138,7 @@ Point read() {
 #include <Wire.h>
 #include "ws_c5_bus.h"
 #include "ws_c5_expander.h"
+#include <Preferences.h>
 
 namespace touch {
 namespace {
@@ -159,6 +160,7 @@ constexpr int NATIVE_H = 480;
 constexpr uint32_t DROPOUT_MS = 90;
 
 bool present = false;
+int threshold = 12;
 
 // Outcome of one sensor read, kept distinct so release-smoothing covers ONLY a
 // read failure: Touch = valid coords; Lift = a valid read reporting no finger
@@ -218,10 +220,14 @@ void begin() {
                   present ? "(ok)" : "(not found -- no touch)");
     // 12 rather than the default 22: a bare panel misses light taps at 22.
     // Raise it toward 30-40 if a case or film brings phantom touches.
+    Preferences prefs;
+    if(prefs.begin("touch",false)){threshold=prefs.getUChar("threshold",12);prefs.end();}
+    if(threshold<8 || threshold>30)threshold=12;
     Wire.beginTransmission(ADDR);
     Wire.write(ID_G_THGROUP);
-    Wire.write(12);
-    Wire.endTransmission();
+    Wire.write(threshold);
+    const uint8_t err=Wire.endTransmission();
+    Serial.printf("touch: threshold %d (write %s)\n",threshold,err?"failed":"ok");
 }
 
 static Point readSensor() {
@@ -309,6 +315,7 @@ Point read() {
         const Point p = readSensor();
         portENTER_CRITICAL(&eventMux);
         presses.sample(p.any, p.panelX, p.panelY, presses.epoch());
+        latest=p;
         portEXIT_CRITICAL(&eventMux);
         return p; // explicit degraded polling fallback if task allocation failed
     }
@@ -322,6 +329,18 @@ Point read() {
     }
     portEXIT_CRITICAL(&eventMux);
     return p;
+}
+Point observed() { portENTER_CRITICAL(&eventMux); Point p=latest; portEXIT_CRITICAL(&eventMux); return p; }
+int sensitivity(){ return threshold; }
+bool setSensitivity(int value){
+    if(!present || value<8 || value>30)return false;
+    { wsbus::Guard guard;
+      Wire.beginTransmission(ADDR);Wire.write(ID_G_THGROUP);Wire.write(uint8_t(value));
+      if(Wire.endTransmission()!=0)return false;
+    }
+    threshold=value;
+    Preferences prefs;if(!prefs.begin("touch",false))return false;
+    const bool saved=prefs.putUChar("threshold",uint8_t(value))==1;prefs.end();return saved;
 }
 bool takePress(inputevents::Press& p) {
     portENTER_CRITICAL(&eventMux); const bool ok = presses.pop(p); portEXIT_CRITICAL(&eventMux); return ok;

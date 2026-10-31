@@ -125,6 +125,7 @@ public:
             case A::SettingPage:    attunePage_ = h.payload < 0 ? 0 : h.payload; break;
             case A::SettingReset:   r.settingReset = true; break;
             case A::ThemeStep:      r.themeStep = h.payload < 0 ? -1 : 1; break;
+            case A::DisplayControl: /* owned by the display controls adapter */ break;
             case A::OrientToggle:   /* reserved; no-op in the engine prototype */ break;
 
             case A::MeshEnroll:     r.meshEnroll = true; break;

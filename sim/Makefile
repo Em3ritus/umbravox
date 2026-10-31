@@ -335,7 +335,7 @@ test_header: test_header.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
 test_poi: test_poi.cpp ../device/poi.cpp ../device/poi.h $(HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_poi.cpp ../device/poi.cpp $(PAL_DEPS) -lm
 
-TESTS = test_evidence_csv test_probe_ui test_probe_evidence test_client_ui test_clients test_gpx test_mesh_telemetry test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
+TESTS = test_display_controls test_evidence_csv test_probe_ui test_probe_evidence test_client_ui test_clients test_gpx test_mesh_telemetry test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -447,3 +447,10 @@ test_evidence_csv: test_evidence_csv.cpp ../device/evidence_csv.cpp ../device/ev
 
 menu_layout_preview: menu_layout_preview.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
 	$(CXX) $(CXXFLAGS) -o $@ menu_layout_preview.cpp $(PAL_DEPS) ../ui/signatures.cpp -lm
+
+# Native display controls, geometry, transitions and bounded touch trail.
+test_display_controls: test_display_controls.cpp $(HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ $< $(PAL_DEPS) -lm
+
+display_controls_preview: display_controls_preview.cpp $(HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(PAL_DEPS) -lm

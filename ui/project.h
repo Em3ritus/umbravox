@@ -190,8 +190,9 @@ inline void attune(atnpres::AttuneStore& st, const ui::State& s, const Chrome& c
     for (int i = 0; i < rowsPerPage; i++) {
         const int knob = page * rowsPerPage + i;
         if (knob >= uieng::kAttuneKnobs) break;
-        char lbl[16], val[32]; attuneKnob(s.set, knob, lbl, sizeof lbl, val, sizeof val);
-        if(knob==12)snprintf(val,sizeof val,"%s D%lu",s.pcapStatus,(unsigned long)s.pcapDrops);
+        const int id=uieng::attuneKnobIds[knob];
+        char lbl[16], val[32]; attuneKnob(s.set, id, lbl, sizeof lbl, val, sizeof val);
+        if(id==12)snprintf(val,sizeof val,"%s D%lu",s.pcapStatus,(unsigned long)s.pcapDrops);
         st.addRow(lbl, val);
     }
     st.paging(page, pages);

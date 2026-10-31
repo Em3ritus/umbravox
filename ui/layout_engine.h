@@ -120,7 +120,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl };
 // Stable Nav payloads; MENU is in the header and Files is an explicit launcher.
 // Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -433,7 +433,8 @@ inline HitList echoesHits(int W, int H) {
 // floor((bodyH-44)/44) knobs fit per page (3 @480, 2 @320) above a 44px footer
 // (PAGE n/m + CLEAR). The nine knobs paginate; the page COUNT therefore adapts
 // to the profile. No geometry.json oracle; regions asserted vs these rules.
-static constexpr int kAttuneKnobs = 13;   // ALERT DWELL BLE BANDS BRIGHT IDLE AUTOLOG ORIENT BRIDGE
+static constexpr int attuneKnobIds[]={0,1,2,3,6,8,9,10,11,12};
+static constexpr int kAttuneKnobs = 10;   // radio/recording only; display controls have their own page
 inline int attuneRowsPerPage(int H) {
     const Chrome c = chrome(320, H);     // body height is width-independent
     int n = (c.body.h - 44) / 44; if (n < 1) n = 1; if (n > 4) n = 4;
@@ -481,7 +482,8 @@ inline HitList attuneHits(int W, int H, int page) {
     for (int i = 0; i < per; i++) {
         const int knob = page * per + i;
         if (knob >= kAttuneKnobs) break;
-        const int setting = knob>=8 ? knob+1 : knob; // BRIDGE APP uses the remembered app selector
+        const int id=attuneKnobIds[knob];
+        const int setting = id>=8 ? id+1 : id; // BRIDGE APP uses the remembered app selector
         h.add(mslot[i], a.minus[i], Action::SettingStep, -(setting + 1), nullptr, "Step this setting down");
         h.add(pslot[i], a.plus[i],  Action::SettingStep, +(setting + 1), nullptr, "Step this setting up");
     }

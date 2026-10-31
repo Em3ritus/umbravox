@@ -119,7 +119,7 @@ int main(){
         bool status=false,body=false,field=false;scanpres::sceneDirty(w,h,on,store.scene(),status,body,&field);
         assert(status && !body);
 
-        const int per=uieng::attuneRowsPerPage(h),page=8/per;
+        const int per=uieng::attuneRowsPerPage(h),page=5/per;
         const auto hits=uieng::attuneHits(h==240?320:480,h,page);
         bool found=false;for(int i=0;i<hits.count;++i)if(hits.items[i].action==uieng::Action::SettingStep && hits.items[i].payload==10)found=true;
         assert(found);

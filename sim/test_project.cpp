@@ -147,16 +147,16 @@ int main(){
 
     { atnpres::AttuneStore st; attune(st, s, c, /*page*/0, /*rowsPerPage*/3); const auto& o=st.scene();
       expect(o.nRows==3 && !strcmp(o.rows[0].label,"ALERT") && !strcmp(o.rows[0].value,"MED"), "attune: ALERT=MED");
-      expect(o.nPages==5, "attune: 13 knobs / 3 per page -> 5 pages"); }
+      expect(o.nPages==4, "attune: 10 radio/recording knobs / 3 per page -> 4 pages"); }
     { atnpres::AttuneStore st; attune(st, s, c, /*page*/2, /*rowsPerPage*/3); const auto& o=st.scene();
-      expect(o.nRows==3 && !strcmp(o.rows[0].label,"AUTOLOG") && !strcmp(o.rows[1].label,"ORIENT") && !strcmp(o.rows[2].label,"BRIDGE APP"), "attune: page 2 continues knob index (AUTOLOG, ORIENT, BRIDGE)"); }
+      expect(o.nRows==3 && !strcmp(o.rows[0].label,"NODE PROFILE") && !strcmp(o.rows[1].label,"NODE DWELL") && !strcmp(o.rows[2].label,"DISCOVERY TX"), "attune: page 2 maps original setting IDs after display controls move"); }
 
     { auto value=s;value.detailPage=1;value.detail.info.valid=true;value.detail.info.width=80;value.detail.info.phy=3;value.detail.observations=123;
       detpres::DetailStore one,two;detail(one,value,c);value.detail.observations=124;detail(two,value,c);
       expect(one.scene().page==1 && !strcmp(one.scene().facts[1],"OBSERVATIONS 123") && strstr(one.scene().facts[3],"80 MHz"),"AP info page projects observed metadata");
       bool status,body;detpres::sceneDirty(one.scene(),two.scene(),status,body);expect(body&&!status,"AP metadata changes invalidate detail body");
-      for(int height:{240,320}){const int per=uieng::attuneRowsPerPage(height);atnpres::AttuneStore settings;snprintf(value.pcapStatus,sizeof value.pcapStatus,"WRITE ERROR");value.pcapDrops=12;attune(settings,value,c,12/per,per);
-        expect(!strcmp(settings.scene().rows[12%per].label,"RAW PCAP") && strstr(settings.scene().rows[12%per].value,"D12"),"PCAP error/drop status on final settings page at both sizes");}
+      for(int height:{240,320}){const int per=uieng::attuneRowsPerPage(height);atnpres::AttuneStore settings;snprintf(value.pcapStatus,sizeof value.pcapStatus,"WRITE ERROR");value.pcapDrops=12;attune(settings,value,c,9/per,per);
+        expect(!strcmp(settings.scene().rows[9%per].label,"RAW PCAP") && strstr(settings.scene().rows[9%per].value,"D12"),"PCAP error/drop status on final settings page at both sizes");}
     }
 
     { asppres::AspectStore st; aspect(st, s, c); const auto& o=st.scene();

@@ -50,6 +50,8 @@ bool service(int budgetStrips);
 // when the screen changed.
 bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s);
 
+void serviceSettings(); // apply staged hardware settings outside the input-dispatch stack
+
 void sampleCapture(uint32_t capFrames, uint32_t capUniq, uint32_t bleReports);
 const scanpres::PresentMetrics& metrics();
 void clearMetrics();
