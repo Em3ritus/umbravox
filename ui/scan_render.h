@@ -279,19 +279,19 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
     const char* fix=gst==GpsState::Fresh ? (st.gps.mode==3?"3D":st.gps.mode==2?"2D":"FIX") : gst==GpsState::Stale?"STALE":"ACQ";
-    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,7,"GPS",1,pal::DIM);
-    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,23,fix,1,gcol);
+    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,10,"GPS",1,pal::DIM);
+    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,26,fix,1,gcol);
     if(c.statusCells[1].w) {
-        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,7,"MESH",1,pal::DIM);
+        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,10,"MESH",1,pal::DIM);
         snprintf(hb,sizeof hb,"%d",st.nodes);
-        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,23,hb,1,pal::TEXT);
+        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,26,hb,1,pal::TEXT);
     }
     const auto bt=c.bridge;
-    centered(s,bt.x+bt.w/2,7,"BRIDGE",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
-    centered(s,bt.x+bt.w/2,23,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
+    centered(s,bt.x+bt.w/2,10,"BRIDGE",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
+    centered(s,bt.x+bt.w/2,26,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
     if(st.bridgeOn) {
         const int width=Font::width("BRIDGE",1);
-        box(s,bt.x+(bt.w-width)/2,34,width,2,pal::WITCH_HI);
+        box(s,bt.x+(bt.w-width)/2,37,width,2,pal::WITCH_HI);
     }
     // Read-only storage icon; adjacent battery keeps its own >=44px hit.
     const uint16_t sdInk=st.sd==ui::StorageState::Ready?pal::GREEN:st.sd==ui::StorageState::Error?pal::AMBER:pal::DIM;
