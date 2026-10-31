@@ -19,9 +19,9 @@ int main(int argc,char** argv){
   for(int screen=0;screen<3;screen++){
    std::vector<uint16_t> pixels(w*h);
    for(int y=0;y<h;y+=16){S strip{pixels.data()+y*w,w,y,std::min(16,h-y)};
-    sc.gps={true,3,12,300};sc.bridgeOn=true;sc.pmuOk=true;
-    if(screen==1){menr::MenuScene m;m.theme=theme;m.plain=true;m.gps=sc.gps;m.bridgeOn=true;m.pmuOk=true;menr::composeStrip(strip,w,h,m);}
-    else if(screen==2){aspr::AspectScene a;a.theme=theme;a.plain=true;a.gps=sc.gps;a.bridgeOn=true;a.pmuOk=true;a.themeName=pal::themeName(theme);a.sweepName="RADAR";a.alertName=theme==2?"VORTEX":"WARD";a.alertLive=theme==2;aspr::composeStrip(strip,w,h,a);}
+    sc.sd=ui::StorageState::Ready;sc.gps={true,3,12,300};sc.bridgeOn=true;sc.pmuOk=true;
+    if(screen==1){menr::MenuScene m;m.theme=theme;m.sd=sc.sd;m.plain=true;m.gps=sc.gps;m.bridgeOn=true;m.pmuOk=true;menr::composeStrip(strip,w,h,m);}
+    else if(screen==2){aspr::AspectScene a;a.theme=theme;a.sd=sc.sd;a.plain=true;a.gps=sc.gps;a.bridgeOn=true;a.pmuOk=true;a.themeName=pal::themeName(theme);a.sweepName="RADAR";a.alertName=theme==2?"VORTEX":"WARD";a.alertLive=theme==2;aspr::composeStrip(strip,w,h,a);}
     else composeStrip(strip,w,h,sc);
    }
    std::string name=std::string(argv[1])+"/"+(screen==2?"display":screen?"menu":"scan")+"-"+std::to_string(w)+(theme?"-muffin":"")+".png";

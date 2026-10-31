@@ -1292,6 +1292,7 @@ static inline void bootStall(const char* what, uint32_t startUs) {
 
 void loop() {
     static uint32_t frame = 0;
+    static bool storageWriteError=false; // remain visible until reboot
     static ui::Dirty dirty;
     const uint32_t t0 = millis();
     perflog::loopStart(t0);        // the gap between loops is the stall we want to see
@@ -1355,24 +1356,28 @@ void loop() {
         gpx::tick(logging::state()==logging::ACTIVE && logging::wantsActive() ? logging::fileName() : "",
                   fix,now,epoch>=ageSeconds ? epoch-ageSeconds : 0);
         bootStall("gpx tick",start);
-        if(gpx::takeError())elog::event(elog::WARN,"gpx","track write failed: %s; stopped for this session",gpx::fileName());
+        if(gpx::takeError()){storageWriteError=true;elog::event(elog::WARN,"gpx","track write failed: %s; stopped for this session",gpx::fileName());}
     }
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
     {const uint32_t start=micros();
     evidencecsv::tick(logging::state()==logging::ACTIVE && logging::wantsActive()?logging::fileName():"",
                       millis(),ui::Gnss::utcEpoch(millis()),cap::evidenceCsvRow);
     bootStall("evidence csv",start); }
-    if(evidencecsv::takeError())elog::event(elog::WARN,"csv","client/probe export write failed; stopped for this session");
+    if(evidencecsv::takeError()){storageWriteError=true;elog::event(elog::WARN,"csv","client/probe export write failed; stopped for this session");}
     poi::service(millis());
     {const uint32_t start=micros();pcap::service(millis());bootStall("pcap service",start);}
     cap::setRawCapture(pcap::active());
+    if(poi::status(millis())==ui::PoiStatus::WriteError ||
+       !strcmp(pcap::status(),"OPEN ERROR") || !strcmp(pcap::status(),"WRITE ERROR") || !strcmp(pcap::status(),"DAMAGED FILE"))storageWriteError=true;
 #endif
 
     // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
     // low-heap warnings at 40, 24 and 16 KB (each re-armed 8 KB above it) so a
     // slow leak leaves a fingerprint instead of just a silent reboot.
-    if (logging::takeWriteError())
+    if (logging::takeWriteError()){
+        storageWriteError=true;
         elog::event(elog::ERR, "sd", "log write failed (card full or I/O error)");
+    }
     if (logging::takeFileRestart())
         elog::event(elog::WARN, "sd", "log file shorter than written, continuing in %s",
                     logging::fileName());
@@ -1509,6 +1514,7 @@ void loop() {
     // demoState(), which had been setting it.
     s.frame = millis() / 16;
     s.sdOk    = sdlog::present();
+    s.sdWriteError=storageWriteError;
     s.packsSkipped = themeload::skipped();
     cap::fill(s, millis());
     blescan::fill(s, millis());

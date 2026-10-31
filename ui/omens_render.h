@@ -34,6 +34,7 @@ struct OmenScene {
     bool     hasCell = false; int battPct = 0;
     ui::PoiStatus poi = ui::PoiStatus::Ready;
     bool pmuOk = false, charging = false;
+    ui::StorageState sd=ui::StorageState::Missing;
     bool bridgeOn = false;
     Rec      rec = Rec::Off;
     const OmenRow* rows = nullptr; int nRows = 0;
@@ -53,7 +54,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
     using scanr::box; using scanr::txt; using scanr::centered;
     const uieng::LogLayout L = uieng::omens(W, H);
     // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
-    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi}, -1);
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
     // title + total
     txt(s, L.title.x, L.title.y + 2, "OMENS", 2, pal::BRIGHT);

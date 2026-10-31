@@ -27,7 +27,7 @@ inline int iround(double v) { return (int)std::lround(v); }
 struct Chrome {
     Rect status, nav, body;
     Rect statusCells[4], navCells[4];
-    Rect wordmark, stop, bridge, menu;
+    Rect wordmark, stop, bridge, menu, sd;
 };
 inline Chrome chrome(int W, int H) {
     Chrome c;
@@ -35,12 +35,12 @@ inline Chrome chrome(int W, int H) {
     c.menu={0,0,44,44};
     if(W>=400){
         c.wordmark={44,0,164,44};c.statusCells[0]={208,0,56,44};
-        c.statusCells[1]={264,0,48,44};c.bridge={312,0,64,44};c.statusCells[2]={376,0,W-376,44};
+        c.statusCells[1]={264,0,48,44};c.bridge={312,0,64,44};c.sd={376,0,32,44};c.statusCells[2]={408,0,W-408,44};
         for(int i=0;i<4;i++)c.navCells[i]={i*W/5,H-44,(i+1)*W/5-i*W/5,44};
         c.stop={4*W/5,H-44,W-4*W/5,44};
     }else{
         c.wordmark={44,0,104,44};c.statusCells[0]={148,0,48,44};
-        c.statusCells[1]={};c.bridge={196,0,60,44};c.statusCells[2]={256,0,W-256,44};
+        c.statusCells[1]={};c.bridge={196,0,52,44};c.sd={248,0,28,44};c.statusCells[2]={276,0,W-276,44};
         const int edges[]={0,60,140,208,260};
         for(int i=0;i<4;i++)c.navCells[i]={edges[i],H-44,edges[i+1]-edges[i],44};
         c.stop={260,H-44,W-260,44};

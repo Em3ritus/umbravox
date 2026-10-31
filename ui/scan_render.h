@@ -7,6 +7,7 @@
 // element clipped into it), then handed to a Sink once. No full framebuffer, no
 // animation. Host and device compilable (no Arduino deps).
 #pragma once
+#include "storage_status.h"
 #include "poi_state.h"
 #include "radar_geometry.h"
 #include "layout_engine.h"
@@ -64,6 +65,7 @@ struct ScanScene {
     bool     hasCell = false; int battPct = 0;
     ui::PoiStatus poi = ui::PoiStatus::Ready;
     bool pmuOk = false, charging = false;
+    ui::StorageState sd=ui::StorageState::Missing;
     Rec      rec = Rec::Off;
     // counts
     long     wifi = 0, g5 = 0, ble = 0;
@@ -249,6 +251,7 @@ struct ChromeState {
     uint8_t theme = 0;
     bool bridgeOn = false, pmuOk = false, charging = false;
     ui::PoiStatus poi = ui::PoiStatus::Ready;
+    ui::StorageState sd=ui::StorageState::Missing;
 };
 inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
                        const ChromeState& st, int activeTab) {
@@ -290,11 +293,30 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
         const int width=Font::width("BRIDGE",1);
         box(s,bt.x+(bt.w-width)/2,34,width,2,pal::WITCH_HI);
     }
-    const bool level=st.hasCell && st.batt>=0 && st.batt<=100;
-    centered(s,c.statusCells[2].x+c.statusCells[2].w/2,7,level&&st.charging?"CHG":"BAT",1,pal::DIM);
-    if(level) snprintf(hb,sizeof hb,"%d%%",st.batt);
-    else snprintf(hb,sizeof hb,"%s",st.pmuOk&&!st.hasCell?"NO BAT":"N/A");
-    centered(s,c.statusCells[2].x+c.statusCells[2].w/2,23,hb,1,level?pal::TEXT:pal::DIM);
+    // Read-only storage icon; adjacent battery keeps its own >=44px hit.
+    const uint16_t sdInk=st.sd==ui::StorageState::Ready?pal::GREEN:st.sd==ui::StorageState::Error?pal::AMBER:pal::DIM;
+    const int sx=c.sd.x+(c.sd.w-14)/2,sy=13;
+    box(s,sx,sy,10,1,sdInk);box(s,sx,sy,1,17,sdInk);box(s,sx,sy+16,14,1,sdInk);
+    box(s,sx+13,sy+4,1,13,sdInk);
+    for(int i=0;i<4;i++)box(s,sx+10+i,sy+i,1,1,sdInk);
+    if(st.sd==ui::StorageState::Error){box(s,sx+6,sy+4,2,6,sdInk);box(s,sx+6,sy+12,2,2,sdInk);}
+    else{
+        for(int i=0;i<3;i++)box(s,sx+3+i*3,sy+3,1,4,sdInk);
+        if(st.sd==ui::StorageState::Missing)for(int i=0;i<14;i++)box(s,sx+i,sy+14-i,1,2,sdInk);
+    }
+    const bool cell=st.pmuOk&&st.hasCell,level=cell&&st.batt>=0&&st.batt<=100;
+    const auto br=c.statusCells[2];const int bx=br.x+(br.w-24)/2,by=cell?8:16;
+    const uint16_t bi=cell?(st.charging?pal::GREEN:level&&st.batt<=20?pal::AMBER:pal::TEXT):pal::DIM;
+    frame(s,bx,by,22,11,bi);box(s,bx+22,by+3,2,5,bi);
+    if(level&&st.batt>0)box(s,bx+2,by+2,std::max(1,18*st.batt/100),7,bi);
+    if(!st.pmuOk)centered(s,bx+11,by+2,"?",1,pal::DIM);
+    else if(!st.hasCell)for(int i=0;i<20;i++)box(s,bx+1+i,by+10-i/2,1,1,pal::DIM);
+    if(cell){
+        if(level)snprintf(hb,sizeof hb,"%d%%",st.batt);else snprintf(hb,sizeof hb,"?");
+        centered(s,br.x+br.w/2,27,hb,1,bi);
+        // A plus beside the battery identifies charging independently of color.
+        if(st.charging){box(s,bx-5,by+5,3,1,bi);box(s,bx-4,by+4,1,3,bi);}
+    }
 
     // Three destinations, POI action, recording action. Header MENU opens the hub.
     static const char* const nav[3]={"SCAN","DOMAIN","CODEX"};
@@ -335,7 +357,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
 
     // shared design-1 chrome: header (wordmark + GPS/MESH/BAT) + nav (SCAN lit)
     // + the STOP/REC record control. SCAN passes its own 16px body for the dividers.
-    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi}, 0);
+    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, 0);
 
     // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};

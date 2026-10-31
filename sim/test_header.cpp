@@ -32,17 +32,28 @@ int main(){
     const auto req=router.dispatch(list.items[i]);assert(req.settingStep==9 && !req.sweepStep && !req.alertStep && router.screen()==screen);
    }
   }
-  ui::State state;state.set.bleBridge=1;uiproj::Chrome chrome;chrome.hasCell=true;chrome.batt=78;chrome.pmuOk=true;chrome.charging=true;
+  ui::State state;state.sdOk=true;state.set.bleBridge=1;uiproj::Chrome chrome;chrome.hasCell=true;chrome.batt=78;chrome.pmuOk=true;chrome.charging=true;
   scanpres::SceneStore scan;uiproj::scan(scan,state,chrome);
   menpres::MenuStore menu;uiproj::menu(menu,state,chrome);
   assert(menu.scene().bridgeOn && menu.scene().pmuOk && menu.scene().charging);
+  assert(menu.scene().sd==ui::StorageState::Ready && scan.scene().sd==ui::StorageState::Ready);
+  state.sdWriteError=true;uiproj::menu(menu,state,chrome);assert(menu.scene().sd==ui::StorageState::Error);
+  assert(ui::storageState(false,false)==ui::StorageState::Missing);
+  assert(ui::storageState(false,true)==ui::StorageState::Error);
+  state.sdWriteError=false;
+  for(const auto& list:hits)for(int i=0;i<list.count;i++){
+   const auto r=list.items[i].rect;
+   assert(!(r.x<ch.sd.x+ch.sd.w && ch.sd.x<r.x+r.w && r.y<44)); // icon is read-only
+  }
   auto sc=scan.scene();pal::setTheme(sc.theme);auto before=draw(w,h,sc);
-  for(int change=0;change<5;++change){auto next=sc;
+  for(int change=0;change<7;++change){auto next=sc;
    if(change==0)next.bridgeOn=false;
    if(change==1)next.charging=false;
    if(change==2)next.hasCell=false;
    if(change==3){next.hasCell=false;next.pmuOk=false;}
    if(change==4)next.battPct=255;
+   if(change==5)next.sd=ui::StorageState::Missing;
+   if(change==6)next.sd=ui::StorageState::Error;
    bool status,body;scanpres::sceneDirty(w,h,sc,next,status,body);assert(status&&!body);
    auto full=draw(w,h,next),partial=before;
    for(int y=0;y<48;y+=16){S strip{partial.data()+y*w,w,y,16};composeStrip(strip,w,h,next);}

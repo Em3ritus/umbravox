@@ -324,6 +324,7 @@ struct State {
 
     // storage
     bool     sdOk = false;
+    bool     sdWriteError = false; // latched capture/export failure until reboot
     char     logName[12] = {0};   // 8.3-ish, as it lands on the card
     uint8_t  logState = 0;        // 0 idle, 1 active, 2 no-card
 

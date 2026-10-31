@@ -39,6 +39,7 @@ struct MenuScene {
     bool     hasCell = false; int battPct = 0;
     ui::PoiStatus poi = ui::PoiStatus::Ready;
     bool pmuOk = false, charging = false;
+    ui::StorageState sd=ui::StorageState::Missing;
     bool bridgeOn = false;
     Rec      rec = Rec::Off;
     // hub state
@@ -54,7 +55,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
 
     box(s, 0, 0, W, H, pal::VOID);
     // shared design-1 chrome: header + nav (MENU lit, index 3) + STOP/REC control
-    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi}, 3);
+    scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, 3);
 
     for(int i=0;i<L.nCells;i++){
         const auto t=L.cells[i];

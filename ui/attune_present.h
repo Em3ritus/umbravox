@@ -23,6 +23,7 @@ public:
         nr_ = 0; sc_ = AttuneScene{}; sc_.theme = theme; sc_.now = now; sc_.rows = rows_; sc_.nRows = 0;
     }
     void gps(const atnr::GnssFix& f) { sc_.gps = f; }
+    void storage(ui::StorageState sd){sc_.sd=sd;}
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
     void poi(ui::PoiStatus value) { sc_.poi=value; }
     void status(int nodes, bool hasCell, int batt, atnr::Rec rec) {
@@ -52,7 +53,7 @@ inline void sceneDirty(const AttuneScene& a, const AttuneScene& b, bool& status,
     char ra[16], rb[16];
     scanr::ScanScene sa; sa.rec = a.rec; scanr::ScanScene sb; sb.rec = b.rec;
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
-    status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
+    status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
 
     bool same = a.page == b.page && a.nPages == b.nPages && a.nRows == b.nRows;
     for (int i = 0; same && i < a.nRows; i++)

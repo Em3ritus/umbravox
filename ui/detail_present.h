@@ -26,6 +26,7 @@ public:
         cipher_[0]=0; for(auto& f:facts_)f[0]=0;for(auto& row:clientLines_)for(auto& line:row)line[0]=0; wire_();
     }
     void gps(const detr::GnssFix& f) { sc_.gps = f; }
+    void storage(ui::StorageState sd){sc_.sd=sd;}
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
     void poi(ui::PoiStatus value) { sc_.poi=value; }
     void status(int nodes, bool hasCell, int batt, detr::Rec rec) {
@@ -86,7 +87,7 @@ inline void sceneDirty(const DetailScene& a, const DetailScene& b, bool& status,
     char ra[16], rb[16];
     scanr::ScanScene sa; sa.rec = a.rec; scanr::ScanScene sb; sb.rec = b.rec;
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
-    status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging;
+    status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
 
     bool same = a.page==b.page && a.located==b.located && a.lat7==b.lat7 && a.lon7==b.lon7 && a.bestRssi==b.bestRssi
         && !__builtin_strcmp(a.cipher,b.cipher) && !__builtin_strcmp(a.auth,b.auth) && !__builtin_strcmp(a.bandChan,b.bandChan)
