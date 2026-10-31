@@ -8,6 +8,7 @@ constexpr uint32_t FLUSH_MS=5000, SAMPLE_MS=1000;
 void tick(const char* session,const ui::Gnss::Fix& fix,uint32_t now,uint32_t fixEpoch);
 const char* status();
 const char* fileName();
+const char* activeFile(); // includes stop/rollover flush
 uint32_t points(); // successfully committed points, current/last session
 bool takeError();
 }

@@ -285,16 +285,17 @@ inline void files(flspres::FilesStore& st, const ui::State& s, const Chrome& c) 
     char bar[24]; uint16_t ink = pal::DIM;
     if (s.fileResult == 1) { snprintf(bar,sizeof bar,"DELETED"); ink = pal::GREEN; }
     else if (s.fileResult == 2) { snprintf(bar,sizeof bar,"FAILED"); ink = pal::RED; }
-    else if (s.fileSel >= 0 && s.fileSel == s.fileActive) { snprintf(bar,sizeof bar,"LOGGING"); ink = pal::AMBER; }
+    else if (s.fileSel >= 0 && s.fileSel == s.fileActive) { snprintf(bar,sizeof bar,"IN USE"); ink = pal::AMBER; }
     else if (s.fileSel >= 0) { fmtBytes(bar,sizeof bar,s.fileSelSize); ink = pal::BRIGHT; }
-    else if (s.fileCard && s.fileTotal) { snprintf(bar,sizeof bar,"TAP A LOG"); ink = pal::DIM; }
+    else if (s.fileCard && s.fileTotal) { snprintf(bar,sizeof bar,"TAP A FILE"); ink = pal::DIM; }
     else bar[0] = 0;
+    if(s.filePartial || s.fileFound>s.fileTotal){snprintf(bar,sizeof bar,"LIST INCOMPLETE");ink=pal::AMBER;}
     st.bar(bar, ink);
     char csize[12]; fmtBytes(csize, sizeof csize, s.fileSelSize);
     st.modal(s.fileConfirm, s.fileSelName, csize);
     for (int i = 0; i < s.nFileRows && i < (int)ui::FILE_VIS; i++) {
         char sz[12]; fmtBytes(sz, sizeof sz, s.fileRows[i].size);
-        st.addRow(s.fileRows[i].name, sz, (s.fileScroll + i) == s.fileActive);
+        st.addRow(s.fileRows[i].name, sz, s.fileRows[i].active || (s.fileScroll + i) == s.fileActive);
     }
 }
 

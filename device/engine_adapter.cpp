@@ -377,7 +377,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         case uinav::Screen::Detail: h = uieng::detailHits(W_, H_,nav.detailPage==2 && s.detail.band!=ui::BAND_BLE); break;
         case uinav::Screen::Files: {
             const bool deletable = (nav.fileSel >= 0 && nav.fileSel != nav.filesActive);
-            h = uieng::filesHits(W_, H_, nav.fileConfirm, deletable, s.nFileRows);
+            h = uieng::filesHits(W_, H_, nav.fileConfirm, deletable, s.nFileRows, nav.filesN, nav.scroll);
             break;
         }
     }
@@ -457,6 +457,12 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             }
             case uieng::Action::ToggleLabels:      set.labels = set.labels ? 0 : 1; break;
             case uieng::Action::SettingPage:       nav.setPage = (uint8_t)hit.payload; break;
+            case uieng::Action::FileRefresh: nav.filesScanRequested=true;cancelInput();break;
+            case uieng::Action::FilePage: {
+                const int per=uieng::files(W_,H_).nRows;
+                nav.scroll=uiproj::pageOffset(nav.filesN,nav.scroll+(hit.payload<0?-per:per),per);
+                nav.fileSel=-1;nav.fileConfirm=false;cancelInput();break;
+            }
             case uieng::Action::FileSelect:        nav.fileSel = (int8_t)(nav.scroll + hit.payload); break;
             case uieng::Action::FileDelete:        nav.fileConfirm = true; break;
             case uieng::Action::FileConfirmYes:    nav.fileDeleteRequested = true; nav.fileDeleteIdx = nav.fileSel; nav.fileConfirm = false; break;

@@ -287,12 +287,13 @@ struct Echo {
 // first) and publishes only the FILE_VIS rows on screen into State, the way
 // the codex publishes its window of sightings: State is copied by every
 // screen's dirty tracking, so a whole list in it would cost RAM ten times.
-constexpr int FILE_NAME_MAX = 24;   // basename + NUL; "WD-20260127-153012.csv" is 22
+constexpr int FILE_NAME_MAX = 64;   // relative capture path + NUL
 constexpr int MAX_FILE_ROWS = 64;
 constexpr int FILE_VIS      = 5;    // rows on screen at once
 struct FileRow {
-    char     name[FILE_NAME_MAX] = {0};   // bare basename, as on the card
+    char     name[FILE_NAME_MAX] = {0};   // relative capture path, as on the card
     uint32_t size = 0;                    // bytes
+    bool active = false;
 };
 struct FileList {
     FileRow  rows[MAX_FILE_ROWS];
@@ -325,7 +326,7 @@ struct State {
     // storage
     bool     sdOk = false;
     bool     sdWriteError = false; // latched capture/export failure until reboot
-    char     logName[12] = {0};   // 8.3-ish, as it lands on the card
+    char     logName[64] = {0};   // absolute recording path
     uint8_t  logState = 0;        // 0 idle, 1 active, 2 no-card
 
     // chrome

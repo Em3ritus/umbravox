@@ -86,6 +86,6 @@ void fmtKB(uint32_t kb, char* out);
 int fileIndexOf(const FileList& L, const char* name);
 
 // Fill State's FILES fields from the list and the screen state.
-void filesPublish(State& s, const Nav& n, const FileList& L);
+void filesPublish(State& s, const Nav& n, const FileList& L, int visible=FILE_VIS);
 
 } // namespace ui

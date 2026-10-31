@@ -52,6 +52,9 @@ int main(){
  tick("/WD-0009.csv",100000);tick("/WD-0009.csv",105000);const auto good9=files["/WD-0009.gpx"];failTruncate=true;tick("/WD-0009.csv",110000);assert(files["/WD-0009.gpx"]==good9&&gpx::takeError());failTruncate=false;stop(110001);
  // Millisecond wrap preserves sampling and batch deadlines.
  tick("/WD-0010.csv",0xfffffff0u);tick("/WD-0010.csv",0xfffffff0u+1000u);tick("/WD-0010.csv",0xfffffff0u+5000u);assert(gpx::points()==3);stop(6000);complete("/WD-0010.gpx");
+ const char* nested="/umbravox/sessions/WD-20261031-123456/wifi.csv";
+ tick(nested,120000);assert(!strcmp(gpx::activeFile(),"/umbravox/sessions/WD-20261031-123456/track.gpx"));
+ tick(nested,121000);assert(gpx::activeFile()[0]);stop(121001);assert(!gpx::activeFile()[0]);complete("/umbravox/sessions/WD-20261031-123456/track.gpx");
  std::ofstream("/tmp/umbravox-gpx-time.gpx")<<files["/WD-0001.gpx"];
  std::ofstream("/tmp/umbravox-gpx-gap.gpx")<<files["/WD-0002.gpx"];
  std::cout<<"GPX session, batching, timestamps, stale gaps, rollover, failures and wrap PASS\n";

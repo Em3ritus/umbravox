@@ -1,4 +1,5 @@
 #include "pcap.h"
+#include "storage_paths.h"
 #include "sdlog.h"
 #include <atomic>
 #include <cstdio>
@@ -24,7 +25,7 @@ std::atomic<uint32_t> lost{0};
 uint32_t saved=0,bytes=0;
 bool draining=false,broken=false;
 const char* state="OFF";
-char path[40]{};
+char path[64]{};
 void le(uint8_t* p,uint32_t v){for(int i=0;i<4;i++)p[i]=uint8_t(v>>(8*i));}
 // Never wait behind main-loop bookkeeping from the Wi-Fi callback.
 bool take(){return !lock.test_and_set(std::memory_order_acquire);}
@@ -52,8 +53,9 @@ bool start(){
   queue=storage->queue;
  }
  // New files only. Bounded name search; never overwrite an existing capture.
+ if(!(sdlog::isDir(storagepaths::ROOT)||sdlog::makeDir(storagepaths::ROOT)) || !(sdlog::isDir(storagepaths::CAPTURES)||sdlog::makeDir(storagepaths::CAPTURES))){state="OPEN ERROR";return false;}
  static unsigned nextName=1;bool found=false;
- for(unsigned attempt=0;attempt<64 && nextName<=9999;++attempt){snprintf(path,sizeof path,"/capture%04u.pcap",nextName++);if(!sdlog::exists(path)){found=true;break;}}
+ for(unsigned attempt=0;attempt<64 && nextName<=9999;++attempt){snprintf(path,sizeof path,"/umbravox/captures/capture%04u.pcap",nextName++);if(!sdlog::exists(path)){found=true;break;}}
  if(!found){state="NAME LIMIT";return false;}
  uint32_t before=0;if(!sdlog::openAppend(path,before)){state="OPEN ERROR";return false;}
  uint8_t header[24]{};le(header,0xa1b2c3d4);header[4]=2;header[6]=4;le(header+16,SNAP);le(header+20,105); // LINKTYPE_IEEE802_11, no FCS

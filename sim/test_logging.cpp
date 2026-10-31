@@ -11,6 +11,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <set>
 
 // --- fake card (sdlog) ----------------------------------------------------
 namespace {
@@ -18,6 +19,7 @@ bool cardPresent = true;
 uint32_t maxOnCard = 0;
 int forcedMax = -1;
 std::map<std::string, std::string> files;
+std::set<std::string> dirs;bool failMkdir=false;
 std::string openName;
 bool isOpen = false, failWrites = false;
 // A card whose last flush silently fails: the tail of each append never
@@ -49,9 +51,12 @@ uint32_t maxIndex(const char* prefix, const char* suffix) {
     if (forcedMax >= 0) return (uint32_t)forcedMax;
     uint32_t hi = 0, v;
     for (auto& kv : files) if (matchIndex(kv.first.c_str(), prefix, suffix, v) && v > hi) hi = v;
+    for(const auto& d:dirs)if(matchIndex(d.c_str(),prefix,suffix,v)&&v>hi)hi=v;
     return hi;
 }
-bool exists(const char* name) { return cardPresent && files.count(find(name)); }
+bool isDir(const char* name){for(const auto& d:dirs)if(ieq(d,name))return true;return false;}
+bool exists(const char* name) { return cardPresent && (files.count(find(name))||isDir(name)); }
+bool makeDir(const char* p){if(!cardPresent||failMkdir||exists(p))return false;dirs.insert(p);return true;}
 bool openAppend(const char* name, uint32_t& size) {
     if (!cardPresent) return false;
     opens++;
@@ -128,7 +133,7 @@ static logging::Hooks hooks() {
     return h;
 }
 static void fresh() {
-    files.clear(); wifi.v.clear(); ble.v.clear(); wifi.heldRow.clear(); ble.heldRow.clear();
+    dirs.clear();failMkdir=false;files.clear(); wifi.v.clear(); ble.v.clear(); wifi.heldRow.clear(); ble.heldRow.clear();
     cardPresent = true; failWrites = false; maxOnCard = 0; forcedMax = -1; dropTail = 0; verifyClose = true;
     cardMs = 10; stopReports = 0; stopLost = 0; stopReset = false;
     clears = rolls = 0; opens = 0; totalLost = 0;
@@ -252,31 +257,31 @@ int main() {
     fresh();
     begin(false, hooks(), 0, T0);
     start(0, T0);
-    check("dated name is lowercase .csv", strcmp(fileName(), "/WD-20261026-000000.csv") == 0);
-    check("dated name format is exact", !strncmp(fileName(), "/WD-2026", 8) && fileName()[12] == '-');
+    check("dated name is lowercase .csv", strcmp(fileName(), "/umbravox/sessions/WD-20261026-000000/wifi.csv") == 0);
+    check("dated name format is exact", !strncmp(fileName(), "/umbravox/sessions/WD-2026", 24) && strstr(fileName(),"/wifi.csv"));
     fresh();
     begin(false, hooks(), 0, 0);
     start(0, 0);
-    check("dateless name is exactly /WD-0001.csv", strcmp(fileName(), "/WD-0001.csv") == 0);
+    check("dateless name is exactly /WD-0001.csv", strcmp(fileName(), "/umbravox/sessions/WD-0001/wifi.csv") == 0);
 
     printf("dateless counter advances past files already on the card (any case):\n");
     fresh();
     files["/WD-0007.CSV"] = "OLD FIRMWARE\n";          // uppercase, earlier firmware
     begin(false, hooks(), 0, 0);
     start(0, 0);
-    check("old WD-0007.CSV -> WD-0008.csv", strcmp(fileName(), "/WD-0008.csv") == 0);
+    check("old WD-0007.CSV -> WD-0008.csv", strcmp(fileName(), "/umbravox/sessions/WD-0008/wifi.csv") == 0);
     check("old file untouched", files["/WD-0007.CSV"] == "OLD FIRMWARE\n");
     fresh();
     files["/WD-0012.Csv"] = "MIXED\n";
     files["/wd-0003.csv"] = "LOWER PREFIX\n";
     begin(false, hooks(), 0, 0);
     start(0, 0);
-    check("mixed-case .Csv counts -> WD-0013.csv", strcmp(fileName(), "/WD-0013.csv") == 0);
+    check("mixed-case .Csv counts -> WD-0013.csv", strcmp(fileName(), "/umbravox/sessions/WD-0013/wifi.csv") == 0);
     fresh();
     maxOnCard = 7; forcedMax = 7;
     begin(false, hooks(), 0, 0);
     start(0, 0);
-    check("names past WD-0007 -> WD-0008", strcmp(fileName(), "/WD-0008.csv") == 0);
+    check("names past WD-0007 -> WD-0008", strcmp(fileName(), "/umbravox/sessions/WD-0008/wifi.csv") == 0);
 
     printf("a name that already exists is never reused, in any case:\n");
     const char* const exts[] = {".CSV", ".Csv", ".csv"};
@@ -718,15 +723,15 @@ int main() {
         wifi.add(2);
         tick(FLUSH_MS, T0 + 10);
         const std::string s1 = fileName();
-        check("dated session file", s1.rfind("/WD-2026", 0) == 0);
+        check("dated session file", s1.rfind("/umbravox/sessions/WD-2026", 0) == 0);
         files[s1].resize(5);                       // the card lost the tail
         wifi.add(3);                               // rows still owed at STOP
         stop(FLUSH_MS + 5000);
         bool dated = false, dateless = false;
         for (auto& kv : files) {
             if (kv.first == s1) continue;
-            if (kv.first.rfind("/WD-2026", 0) == 0) dated = true;
-            if (kv.first.rfind("/WD-0", 0) == 0) dateless = true;
+            if (kv.first.rfind("/umbravox/sessions/WD-2026", 0) == 0) dated = true;
+            if (kv.first.rfind("/umbravox/sessions/WD-0", 0) == 0) dateless = true;
         }
         check("the restart file is dated, from the session's clock", dated);
         check("no dateless WD-NNNN file was made", !dateless);
@@ -795,6 +800,18 @@ int main() {
     fresh(); begin(false,hooks(),0,T0); start(0,T0); wifi.add(300);
     requestStop(10); stop(20);
     check("reboot can synchronously finish a pending stop", !saving() && state()==IDLE && lastRows()==300);
+
+    fresh();begin(false,hooks(),0,T0);failMkdir=true;wifi.add(1);start(0,T0);
+    check("directory failure refuses empty or old paths",files.empty()&&!fileName()[0]&&takeWriteError());
+    failMkdir=false;tick(FLUSH_MS,T0);check("directory creation retries without losing rows",lastRows()==1&&strstr(fileName(),"/wifi.csv"));stop(FLUSH_MS+1);
+    fresh();forcedMax=0;
+    for(int i=1;i<=200;i++){char dir[64];snprintf(dir,sizeof dir,"/umbravox/sessions/WD-%04d",i);dirs.insert(dir);}
+    begin(false,hooks(),0,0);wifi.add(1);start(0,0);
+    check("exhausted collision budget never appends an existing session",files.empty()&&!fileName()[0]&&takeWriteError());stop(10);
+    fresh();begin(false,hooks(),0,T0);start(0,T0);const std::string protectedName=fileName();wifi.add(300);requestStop(10);
+    check("WiGLE path remains protected during stop drain",saving()&&protectedName==fileName());
+    for(uint32_t t=260;saving()&&t<1000;t+=50)tick(t,T0);
+    check("WiGLE releases path after drain",!saving()&&!fileName()[0]);
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;

@@ -1,6 +1,7 @@
 #include "../device/pcap.h"
 #include "../device/sdlog.h"
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include <cassert>
@@ -11,17 +12,19 @@
 #include <fstream>
 namespace {
 std::map<std::string,std::string> files;
-std::string current;
+std::string current;std::set<std::string> dirs;bool mkdirFail=false;
 bool card=true,shortWrite=false,closeFail=false,rollbackFail=false,openFail=false;
 unsigned writes=0,opens=0,closes=0,maxWrite=0;
 uint32_t now=0;
 void step(uint32_t ms=10){now+=ms;const unsigned w=writes;pcap::service(now);assert(writes-w<=1);}
-void drain(){pcap::stop();unsigned loops=0;while(pcap::pending()){step();assert(++loops<100);}}
+void drain(){pcap::stop();assert(pcap::pending());unsigned loops=0;while(pcap::pending()){step();assert(++loops<100);}}
 void start(){assert(pcap::start());assert(pcap::written()==0&&pcap::dropped()==0&&pcap::batches()==0&&pcap::peakQueue()==0);}
 }
 namespace sdlog {
 bool present(){return card;}
-bool exists(const char* f){return files.count(f);}
+bool exists(const char* f){return files.count(f)||dirs.count(f);}
+bool isDir(const char* f){return dirs.count(f);}
+bool makeDir(const char* f){if(!card||mkdirFail||exists(f))return false;dirs.insert(f);return true;}
 bool openAppend(const char* f,uint32_t& size){if(openFail)return false;assert(current.empty());++opens;current=f;size=files[f].size();return true;}
 bool writeAppend(const char* p,uint32_t n){++writes;if(n>maxWrite)maxWrite=n;assert(!current.empty());files[current].append(p,shortWrite?n/2:n);return !shortWrite;}
 bool closeAppend(){++closes;current.clear();return !closeFail;}
@@ -36,7 +39,10 @@ static unsigned records(const std::string& f){
 }
 int main(){
  card=false;assert(!pcap::start()&&!pcap::active());card=true;
- start();const std::string name=pcap::fileName();auto& f=files[name];assert(records(f)==0);
+ mkdirFail=true;assert(!pcap::start()&&!pcap::active());mkdirFail=false;
+ files["/capture0001.pcap"]="LEGACY";files["/umbravox/captures/capture0001.pcap"]="EXISTING";
+ start();assert(std::string(pcap::fileName())=="/umbravox/captures/capture0002.pcap");assert(files["/capture0001.pcap"]=="LEGACY"&&files["/umbravox/captures/capture0001.pcap"]=="EXISTING");
+ const std::string name=pcap::fileName();auto& f=files[name];assert(records(f)==0);
  std::vector<uint8_t> packet(2000,0);packet[0]=0x80;unsigned before=writes;
  for(int i=0;i<70;i++){packet[1]=i;pcap::receive(packet.data(),packet.size(),12345678+i);}
  assert(writes==before&&pcap::dropped()==6&&pcap::peakQueue()==64);

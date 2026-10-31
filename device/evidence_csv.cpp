@@ -1,4 +1,5 @@
 #include "evidence_csv.h"
+#include "storage_paths.h"
 #include "csv.h"
 #include "sdlog.h"
 #include <cstdio>
@@ -9,7 +10,7 @@ const char* headers[]={
  "snapshot_ms,snapshot_utc,ap_bssid,station_mac,local_mac,channel,station_rssi_dbm,rssi_age_ms,evidence,first_seen_ms,last_seen_ms,observed_frames,queue_drops,table_evictions\r\n",
  "snapshot_ms,snapshot_utc,station_mac,local_mac,channel,rssi_dbm,request_type,ssid_display,ssid_hex,first_seen_ms,last_seen_ms,observed_requests,queue_drops,table_evictions\r\n"};
 struct File {char path[64]{},batch[1024]{};size_t used=0;uint32_t bytes=0,pending=0;};
-File files[2];char session[48]{},row[512]{};
+File files[2];char session[64]{},row[512]{};
 unsigned cursor=0;uint32_t nextAt=0,committed=0;bool running=false,failed=false,error=false,sweeping=false;
 // Shared scratch: main-loop only, avoids consuming scarce loop stack.
 char timeText[24],apText[20],staText[20],rssiText[12],ageText[16],nameText[34],quoted[72],hex[65];
@@ -62,7 +63,7 @@ void tick(const char* name,uint32_t now,uint32_t epoch,Source source){
   const size_t n=strlen(name);
   if(n>=sizeof session||n<4||strcmp(name+n-4,".csv")){fail();running=false;return;}
   memcpy(session,name,n+1);
-  for(unsigned i=0;i<2;i++){auto& f=files[i];f.used=0;f.bytes=0;f.pending=0;snprintf(f.path,sizeof f.path,"%.*s-%s.csv",int(n-4),name,i?"probes":"clients");f.used=strlen(headers[i]);memcpy(f.batch,headers[i],f.used);}
+  for(unsigned i=0;i<2;i++){auto& f=files[i];f.used=0;f.bytes=0;f.pending=0;if(!storagepaths::companion(f.path,sizeof f.path,name,i?"probes.csv":"clients.csv")){fail();return;}f.used=strlen(headers[i]);memcpy(f.batch,headers[i],f.used);}
  }
  if(failed)return;
  if(!sweeping){if(int32_t(now-nextAt)<0)return;sweeping=true;cursor=0;}
@@ -81,4 +82,5 @@ void tick(const char* name,uint32_t now,uint32_t epoch,Source source){
 bool takeError(){bool v=error;error=false;return v;}
 const char* status(){return failed?"WRITE ERROR":running?"RECORDING":"OFF";}
 uint32_t rows(){return committed;}
+const char* activeFile(unsigned index){return running&&index<2?files[index].path:"";}
 }

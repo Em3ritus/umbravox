@@ -509,8 +509,8 @@ int main() {
         filescan::visit(w, "WD-0002.csv", false, 20, 2);
         filescan::visit(w, "WD-20260127-153012.csv", false, 30, 3);
         filescan::visit(w, "WD-0001.CSV", false, 10, 4);
-        filescan::visit(w, "WD-20260127-153012-1234567.csv", false, 10, 4);   // 30 chars: too long for a row
-        check("walk: only logs, newest first", L.n == 3 && L.found == 3 &&
+        filescan::visit(w, "WD-20260127-153012-1234567.csv", false, 10, 4);   // valid long legacy name now fits
+        check("walk: only logs, newest first", L.n == 4 && L.found == 4 &&
               !strcmp(L.rows[0].name, "WD-20260127-153012.csv") && !strcmp(L.rows[1].name, "WD-0002.csv") &&
               !strcmp(L.rows[2].name, "WD-0001.CSV") && L.rows[0].size == 30 && L.card && !L.partial);
         check("walk: active index", filescan::activeIndex(L, "/WD-0002.csv") == 1 &&
@@ -648,16 +648,16 @@ int main() {
         State st; st.fileCard = true; st.fileTotal = 64; st.fileFound = 80;
         char b[24];
         filesCountText(st, b);
-        check("count: 64/80 LOGS", !strcmp(b, "64/80 LOGS"));
+        check("count: 64/80 LOGS", !strcmp(b, "64/80 FILES"));
         st.filePartial = true;
         filesCountText(st, b);
         check("count: a bounded walk reads LIST INCOMPLETE", !strcmp(b, "LIST INCOMPLETE"));
         st.filePartial = false; st.fileTotal = 1; st.fileFound = 1;
         filesCountText(st, b);
-        check("count: 1 LOG", !strcmp(b, "1 LOG"));
+        check("count: 1 LOG", !strcmp(b, "1 FILE"));
         st.fileTotal = 0; st.fileFound = 0;
         filesCountText(st, b);
-        check("count: 0 LOGS", !strcmp(b, "0 LOGS"));
+        check("count: 0 LOGS", !strcmp(b, "0 FILES"));
     }
     // The confirm names the log to the second; row labels never reach REC.
     {

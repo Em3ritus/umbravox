@@ -1,3 +1,4 @@
+#include "../ui/capture_paths.h"
 // sdcmd -- install theme packs and delete files on the SD card over the wired
 // USB console, without pulling the card. Header-only and pure: no Arduino, no
 // SD, no heap. The card is reached through the Io interface (device/main.cpp
@@ -163,9 +164,8 @@ struct LineBuf {
 //   SDPUT  /themes/<folder>/theme.json   (<= themepack::MAX_JSON bytes)
 //          /themes/<folder>/emblem.bin   (<= themepack::MAX_EMBLEM bytes)
 //   SDDEL  the two above, and their .tmp/.old leftovers (an interrupted
-//          upload's), and root session logs /WD-<digits and '-'>.csv (any
-//          case of the extension: older firmware wrote .CSV) except the one
-//          logging is writing now.
+//          upload's), and recognized legacy/organized capture files.
+//          Every active or draining writer is protected.
 //   SDRMDIR /themes/<folder>, only if empty (FAT refuses a non-empty one).
 // <folder> passes themepack::folderNameOk (1-31 of A-Z a-z 0-9 _ -, so no
 // '.', '/' or '\\', and thus no "..") and is not a DOS device name (CON, NUL,
@@ -242,16 +242,8 @@ inline bool themeFile(const char* path, Path& out, bool allowTemp) {
 
 // "/WD-<1..24 of digits and '-'>.csv", any case. canon is the path as given.
 inline bool sessionFile(const char* path, Path& out) {
-    out = Path();
-    if (!path || path[0] != '/') return false;
-    const size_t n = strnlen(path, PATH_IN_MAX + 1);
-    if (n < 9 || n > 1 + 3 + 24 + 4 || !ieq(path, 4, "/wd-") || !ieq(path + n - 4, 4, ".csv")) return false;
-    for (size_t i = 4; i < n - 4; i++)
-        if (!((path[i] >= '0' && path[i] <= '9') || path[i] == '-')) return false;
-    out.kind = K_SESSION;
-    memcpy(out.canon, path, n);
-    out.canon[n] = 0;
-    return true;
+    out=Path();if(capturepaths::classify(path)==capturepaths::None)return false;
+    out.kind=K_SESSION;snprintf(out.canon,sizeof out.canon,"%s",path);return true;
 }
 
 constexpr const char* NOT_ALLOWED = "path not allowed";
@@ -279,6 +271,12 @@ inline const char* delPolicy(const char* path, const char* active, Path& out) {
     }
     out = Path();
     return NOT_ALLOWED;
+}
+
+inline const char* delPolicy(const char* path,const capturepaths::ActiveFiles& active,Path& out){
+    const char* why=delPolicy(path,static_cast<const char*>(nullptr),out);
+    if(why)return why;
+    return active.contains(path)?"file is active or draining":nullptr;
 }
 
 inline const char* rmdirPolicy(const char* folder, Path& out) {
@@ -321,7 +319,7 @@ public:
     // One console line (from LineBuf). Writes a one-line reply (no newline)
     // to `reply` unless NOT_MINE, in which case the caller's own command
     // table runs. `active` is the live logging session file.
-    Action line(const char* line, uint32_t nowMs, const char* active, char* reply, size_t cap) {
+    Action line(const char* line, uint32_t nowMs, const char* active, char* reply, size_t cap, const capturepaths::ActiveFiles* protectedFiles=nullptr) {
         if (cap) reply[0] = 0;
         const Tokens t = split(line);
         const bool isPut = firstIs(line, "SDPUT"), isD = firstIs(line, "D"), isEnd = firstIs(line, "END"),
@@ -352,7 +350,7 @@ public:
             return HANDLED;
         }
         if (up_) { out(reply, cap, "ERR upload in progress (ABORT to cancel)"); return HANDLED; }
-        if (isDel)   { del(t, active, reply, cap); return HANDLED; }
+        if (isDel)   { del(t, active, reply, cap, protectedFiles); return HANDLED; }
         if (isRmdir) { rmdir(t, reply, cap); return HANDLED; }
         return NOT_MINE;
     }
@@ -544,14 +542,16 @@ private:
         out(reply, cap, "ERR %s", why);
     }
 
-    void del(const Tokens& t, const char* active, char* reply, size_t cap) {
+    void del(const Tokens& t, const char* active, char* reply, size_t cap, const capturepaths::ActiveFiles* protectedFiles) {
         if (t.count != 2) { out(reply, cap, "ERR usage: SDDEL <path>"); return; }
         if (t.n[1] > PATH_IN_MAX) { out(reply, cap, "ERR %s", NOT_ALLOWED); return; }
         char path[PATH_IN_MAX + 1];
         memcpy(path, t.p[1], t.n[1]);
         path[t.n[1]] = 0;
         Path p;
-        if (const char* why = delPolicy(path, active, p)) { out(reply, cap, "ERR %s", why); return; }
+        const char* why = delPolicy(path, active, p);
+        if (!why && protectedFiles) why = delPolicy(path, *protectedFiles, p);
+        if (why) { out(reply, cap, "ERR %s", why); return; }
         if (!io_.present()) { out(reply, cap, "ERR no card"); return; }
         if (!io_.exists(p.canon) || io_.isDir(p.canon)) { out(reply, cap, "ERR no such file"); return; }
         if (!io_.remove(p.canon)) { out(reply, cap, "ERR remove failed"); return; }

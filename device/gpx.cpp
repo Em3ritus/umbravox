@@ -1,4 +1,5 @@
 #include "gpx.h"
+#include "storage_paths.h"
 #include "sdlog.h"
 #include "csv.h"
 #include <cstdio>
@@ -9,7 +10,7 @@ constexpr char head[]="<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=
 constexpr char tail[]="</trkseg></trk></gpx>\n";
 constexpr char split[]="</trkseg><trkseg>\n";
 constexpr uint32_t LIMIT=16*1024*1024;
-char session[32]{},path[32]{},batch[2048]{};
+char session[64]{},path[64]{},batch[2048]{};
 uint32_t body=0,count=0,pending=0,lastFix=0,flushedAt=0;
 size_t used=0;
 bool seen=false,gap=false,failed=false,error=false,recording=false;
@@ -45,7 +46,7 @@ void begin(const char* name,uint32_t now){
  const size_t n=strlen(name);
  body=count=pending=0;used=0;seen=gap=failed=false;recording=true;flushedAt=now;
  if(n>=sizeof session || n<4 || strcmp(name+n-4,".csv")){fail();return;}
- memcpy(path+n-4,".gpx",5);
+ if(!storagepaths::companion(path,sizeof path,name,"track.gpx"))fail();
 }
 }
 void tick(const char* name,const ui::Gnss::Fix& f,uint32_t now,uint32_t epoch){
@@ -74,6 +75,7 @@ void tick(const char* name,const ui::Gnss::Fix& f,uint32_t now,uint32_t epoch){
 }
 const char* status(){return failed?"WRITE ERROR":!recording?(count?"SAVED":"OFF"):!seen?"WAIT GPS":"RECORDING";}
 const char* fileName(){return path;}
+const char* activeFile(){return recording?path:"";}
 uint32_t points(){return count;}
 bool takeError(){const bool e=error;error=false;return e;}
 }

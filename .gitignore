@@ -150,3 +150,5 @@ sim/bridge_png
 /sim/test_display_controls
 
 /sim/test_settings_controls
+
+/sim/test_storage_paths

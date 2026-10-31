@@ -146,13 +146,16 @@ bool dump(Print& out, const char* name) {
 uint32_t maxIndex(const char* prefix, const char* suffix) {
     if (!mounted || !prefix || !suffix) return 0;
     // f.name() is the bare basename; matchIndex drops a leading '/' on either side.
-    File root = SD.open("/");
+    char dir[64]="/";const char* base=strrchr(prefix,'/');
+    if(base && base!=prefix){const size_t n=base-prefix;if(n>=sizeof dir)return 0;memcpy(dir,prefix,n);dir[n]=0;}
+    base=base?base+1:prefix;
+    File root = SD.open(dir);
     if (!root) return 0;
-    uint32_t hi = 0;
-    for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+    uint32_t hi = 0,visited=0;const uint32_t started=millis();
+    for (File f = root.openNextFile(); f && visited<512 && millis()-started<1000; f = root.openNextFile(),++visited) {
         uint32_t v;
         // Case-insensitive (matchIndex): earlier firmware wrote ".CSV".
-        if (matchIndex(f.name(), prefix, suffix, v) && v > hi) hi = v;
+        if (matchIndex(f.name(), base, suffix, v) && v > hi) hi = v;
         f.close();
     }
     root.close();

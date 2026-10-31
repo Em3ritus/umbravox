@@ -120,7 +120,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl, SettingsControl };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl, SettingsControl, FilePage, FileRefresh };
 // Stable Nav payloads; MENU is in the header and Files is an explicit launcher.
 // Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -592,7 +592,7 @@ inline HitList detailHits(int W, int H,bool clients=false) {
 // modal) and the bar band carries YES / NO. No geometry.json oracle.
 struct FilesLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
-    Rect list, rows[4], bar, del, yes, no;
+    Rect list, rows[4], bar, del, yes, no, prev, next, refresh;
     int  nRows = 0;
 };
 inline FilesLayout files(int W, int H) {
@@ -605,7 +605,9 @@ inline FilesLayout files(int W, int H) {
     f.nRows = f.list.h / 44; if (f.nRows > 4) f.nRows = 4;
     for (int i = 0; i < f.nRows; i++) f.rows[i] = {c.body.x, c.body.y + i * 44, c.body.w, 44};
     f.bar = {c.body.x, barY, c.body.w, 44};
-    f.del = {c.body.x + c.body.w - 120, barY, 120, 44};
+    f.del = {c.body.x + c.body.w - 88, barY, 88, 44};
+    f.prev={c.body.x,barY,44,44};f.next={c.body.x+48,barY,44,44};
+    f.refresh={c.body.x+96,barY,c.body.w-188,44};
     const int half = (c.body.w - 8) / 2;
     f.yes = {c.body.x, barY, half, 44};
     f.no  = {c.body.x + c.body.w - half, barY, half, 44};
@@ -614,7 +616,7 @@ inline FilesLayout files(int W, int H) {
 // FILES hits. In confirm mode: chrome + YES + NO only. Otherwise: chrome + a
 // FileSelect per visible row (payload = visible index; caller adds scroll) +
 // DELETE only when a deletable log is selected.
-inline HitList filesHits(int W, int H, bool confirm, bool deletable, int nVisible) {
+inline HitList filesHits(int W, int H, bool confirm, bool deletable, int nVisible, int total=0, int first=0) {
     const FilesLayout f = files(W, H);
     HitList h;
     addChromeHits(h, W, H);
@@ -627,6 +629,9 @@ inline HitList filesHits(int W, int H, bool confirm, bool deletable, int nVisibl
     static const char* const rslot[4] = {"file0", "file1", "file2", "file3"};
     for (int i = 0; i < nVisible; i++)
         h.add(rslot[i], f.rows[i], Action::FileSelect, i, nullptr, "Select this log");
+    if(first>0)h.add("files-prev",f.prev,Action::FilePage,-1,nullptr,"Previous files");
+    if(first+f.nRows<total)h.add("files-next",f.next,Action::FilePage,1,nullptr,"Next files");
+    h.add("files-refresh",f.refresh,Action::FileRefresh,0,nullptr,"Refresh files");
     if (deletable) h.add("delete", f.del, Action::FileDelete, 0, nullptr, "Delete the selected log");
     return h;
 }

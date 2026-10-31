@@ -1001,6 +1001,16 @@ static void rebootNow(const ui::Settings& set) {
     esp_restart();
 }
 
+// Snapshot every writer at the point of deletion, including delayed stop flushes.
+static capturepaths::ActiveFiles activeCaptureFiles(){
+ capturepaths::ActiveFiles a;a.set(0,logging::fileName());a.set(1,gpx::activeFile());
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+ a.set(2,evidencecsv::activeFile(0));a.set(3,evidencecsv::activeFile(1));
+ a.set(4,(pcap::active()||pcap::pending())?pcap::fileName():"");
+#endif
+ return a;
+}
+
 // Returns true when REBOOT was received (loop() restarts the board).
 bool pollConsole() {
     static sdcmd::LineBuf lb;
@@ -1021,8 +1031,9 @@ bool pollConsole() {
         }
         const char* line = lb.buf;
         {
+            const auto protectedFiles=activeCaptureFiles();
             const sdcmd::Action a = sdio::console.line(line, millis(), logging::fileName(),
-                                                       reply, sizeof reply);
+                                                       reply, sizeof reply, &protectedFiles);
             if (a == sdcmd::REBOOT) return true;      // rebootNow prints the reply
             if (a == sdcmd::HANDLED) { Serial.println(reply); continue; }
         }
@@ -1175,18 +1186,19 @@ bool pollConsole() {
 //
 // The list is rebuilt only when the screen opens, after a delete, and when
 // the logging session's file changes while it is up -- never per frame. One
-// walk of the root, on this (the loop) task, in one go: at most
+// walk of recognized recording folders, on the loop task: at most
 // filescan::MAX_ENTRIES (512) entries or filescan::BUDGET_MS (1 s) of wall
 // clock. No free-space figure: FatFs's free count (f_getfree, behind
 // SD.usedBytes/totalBytes) scanned the whole FAT for 8.4 s on the 28.9 GB
 // test card, blocking the loop and the SD volume, so nothing in the firmware
 // asks for it. FILES shows the card's capacity (its CSD, read at mount) and
-// the total of the logs the walk already saw. Worst case on opening: the 1 s
-// walk. Capture keeps running in the Wi-Fi/BLE callbacks; the GPS UART
+// the total of the logs the walk already saw. The 1 s budget is checked
+// between SD operations, not a hard I/O deadline. Capture keeps running
+// in the Wi-Fi/BLE callbacks; the GPS UART
 // buffers 2 s; logging's next flush is late. The walk is recorded by sdlog's
 // stall meter. Nothing transmits.
 namespace files {
-// The list (1.8 KB) lives in PSRAM, allocated on first use: internal RAM is
+// The list lives in PSRAM, allocated on first use: internal RAM is
 // what Wi-Fi and BLE run short of. If it cannot be had, FILES reads NO CARD.
 ui::FileList* L = nullptr;
 bool ensure() {
@@ -1199,12 +1211,13 @@ bool ensure() {
     L = new (p) ui::FileList();
     return true;
 }
-char activeSeen[40] = "";      // logging::fileName() at the last scan
-
-struct Ctx { filescan::Walk w; };
-bool onEntry(const char* name, bool isDir, uint32_t size, void* c) {
-    return filescan::visit(((Ctx*)c)->w, name, isDir, size, millis());
+capturepaths::ActiveFiles activeSeen;
+void refreshActive(ui::Nav& nav){
+ if(!L)return;filescan::markActive(*L,activeCaptureFiles());
+ const int sel=nav.fileSel;
+ ui::filesSetActive(nav,sel>=0&&sel<L->n&&L->rows[sel].active?sel:-1);
 }
+uint32_t clockMs(){return millis();}
 
 void scan(ui::Nav& nav) {
     if (!ensure()) {                         // nothing to list into: NO CARD
@@ -1216,17 +1229,14 @@ void scan(ui::Nav& nav) {
     char prev[ui::FILE_NAME_MAX] = "";
     if (nav.fileSel >= 0 && nav.fileSel < list.n) strcpy(prev, list.rows[nav.fileSel].name);
     const uint32_t t0 = millis();
-    static Ctx ctx;
-    filescan::begin(ctx.w, list, t0);
-    if (!sdlog::present() ||
-        !sdlog::listDirSized("/", onEntry, &ctx, filescan::MAX_ENTRIES + 1)) {
-        filescan::reset(list);               // card absent or pulled: NO CARD
-    } else {
-        list.cardMB = sdlog::cardMB();           // the CSD's figure, no FAT scan
+    if(!sdlog::present())filescan::reset(list);
+    else {
+        static filescan::Browser browser;
+        const filescan::BrowseIo io{sdlog::isDir,sdlog::listDirSized,clockMs};
+        browser.scan(list,io);list.cardMB=sdlog::cardMB();
     }
-    snprintf(activeSeen, sizeof activeSeen, "%s", logging::fileName());
-    ui::filesRescanned(nav, list, prev);
-    ui::filesSetActive(nav, filescan::activeIndex(list, logging::fileName()));
+    activeSeen=activeCaptureFiles();
+    ui::filesRescanned(nav,list,prev);refreshActive(nav);
     Serial.printf("files: %u logs listed (%u on card%s) in %lu ms\n", (unsigned)list.n,
                   (unsigned)list.found, list.partial ? ", walk bounded" : "",
                   (unsigned long)(millis() - t0));
@@ -1236,24 +1246,23 @@ bool cardExists(const char* p) { return sdlog::exists(p); }
 bool cardIsDir(const char* p)  { return sdlog::isDir(p); }
 bool cardRemove(const char* p) { return sdlog::removeFile(p); }
 
-// Delete list row `idx`. The index came from the UI, so the policy is
+// Delete the identity frozen from the selected row. The policy is
 // re-checked on the NAME against the live session, and the card goes through
 // SDDEL's sequence (exists, not a directory, remove): filescan::removeLog.
-bool remove(int idx) {
-    if (!L || idx < 0 || idx >= L->n) return false;
-    const ui::FileList& list = *L;
+bool remove(const char* name) {
+    if(!name||!*name)return false;
     char path[ui::FILE_NAME_MAX + 1];
-    if (!filescan::pathOf(list.rows[idx].name, path, sizeof path)) return false;
-    const uint32_t size = list.rows[idx].size;
+    if (!filescan::pathOf(name, path, sizeof path)) return false;
+    const uint32_t size = sdlog::sizeOf(path);
     const filescan::RemoveIo io{cardExists, cardIsDir, cardRemove};
-    switch (filescan::removeLog(path, logging::fileName(), io)) {
+    switch (filescan::removeLog(path, activeCaptureFiles(), io)) {
         case filescan::RM_OK:
             elog::event(elog::INFO, "files", "deleted %s (%lu bytes) from the screen", path,
                         (unsigned long)size);
             return true;
         case filescan::RM_REFUSED:
             elog::event(elog::WARN, "files", "refused to delete %s from the screen: %s", path,
-                        filescan::deleteCheck(path, logging::fileName()));
+                        filescan::deleteCheck(path, activeCaptureFiles()));
             return false;
         case filescan::RM_MISSING:
             elog::event(elog::WARN, "files", "delete %s from the screen: no such file", path);
@@ -1742,19 +1751,23 @@ void loop() {
     // FILES: scan on opening; delete what YES asked for (re-checked by name);
     // rescan when the session's file changes under the screen.
     if (nav.screen == ui::SCR_FILES) {
+        // Freeze identity before a requested rescan can reorder the list.
+        char deleteName[ui::FILE_NAME_MAX]{};
+        if(nav.fileDeleteRequested && files::L && nav.fileDeleteIdx>=0 && nav.fileDeleteIdx<files::L->n)
+            snprintf(deleteName,sizeof deleteName,"%s",files::L->rows[nav.fileDeleteIdx].name);
         if (nav.filesScanRequested) {
             nav.filesScanRequested = false;
             files::scan(nav);
         }
         if (nav.fileDeleteRequested) {
             nav.fileDeleteRequested = false;
-            const bool ok = files::remove(nav.fileDeleteIdx);
+            const bool ok = files::remove(deleteName);
             nav.fileDeleteIdx = -1;
             files::scan(nav);
             ui::filesResult(nav, ok, millis());
         }
-        if (strcmp(files::activeSeen, logging::fileName()) != 0) files::scan(nav);
-        if (files::L) ui::filesSetActive(nav, filescan::activeIndex(*files::L, logging::fileName()));
+        if (!(files::activeSeen==activeCaptureFiles())) files::scan(nav);
+        files::refreshActive(nav);
     } else {
         nav.filesScanRequested = nav.fileDeleteRequested = false;
     }
@@ -1928,7 +1941,13 @@ void loop() {
             s.nTrack = (uint8_t)n;
         }
     } else if (nav.screen == ui::SCR_FILES) {
-        if (files::L) ui::filesPublish(s, nav, *files::L);
+        if (files::L) {
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+            ui::filesPublish(s,nav,*files::L,uieng::files(board::PANEL_W,board::PANEL_H).nRows);
+#else
+            ui::filesPublish(s,nav,*files::L);
+#endif
+        }
     } else if (nav.screen == ui::SCR_DETAIL) {
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
         bool ble=false;uint8_t mac[6];

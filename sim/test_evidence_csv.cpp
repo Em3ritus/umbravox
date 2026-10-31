@@ -61,6 +61,12 @@ int main(){
  // Slot reuse is serialized from current contents, never cached by slot number.
  c.last.sta[5]=0xab;c.first=120000;c.last.at=120000;
  run("/WD-0009.csv",120000);evidencecsv::stop();assert(files["/WD-0009-clients.csv"].find("02:00:00:00:00:AB")!=std::string::npos);
+ const char* nested="/umbravox/sessions/WD-20261031-123456/wifi.csv";
+ run(nested,130000,2);assert(!strcmp(evidencecsv::activeFile(0),"/umbravox/sessions/WD-20261031-123456/clients.csv"));
+ assert(!strcmp(evidencecsv::activeFile(1),"/umbravox/sessions/WD-20261031-123456/probes.csv"));
+ run("",130002,1);assert(evidencecsv::activeFile(0)[0]&&evidencecsv::activeFile(1)[0]);
+ run("",130003,1);assert(evidencecsv::activeFile(1)[0]);run("",130004,1);assert(!evidencecsv::activeFile(0)[0]&&!evidencecsv::activeFile(1)[0]);
+ assert(files.count("/umbravox/sessions/WD-20261031-123456/clients.csv")&&files.count("/umbravox/sessions/WD-20261031-123456/probes.csv"));
  std::ofstream("/tmp/umbravox-clients.csv")<<files["/WD-0001-clients.csv"];
  std::ofstream("/tmp/umbravox-probes.csv")<<files["/WD-0001-probes.csv"];
  std::cout<<"Evidence CSV formatting, lossless SSIDs, bounds, batching, stop, rollover and failure recovery PASS\n";

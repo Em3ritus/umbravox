@@ -13,5 +13,6 @@ void tick(const char* session,uint32_t now,uint32_t epoch,Source source);
 void stop(); // drains the two batches; shutdown only
 bool takeError();
 const char* status();
+const char* activeFile(unsigned index); // includes stop/rollover flush
 uint32_t rows(); // committed rows, not unique records
 }

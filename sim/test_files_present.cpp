@@ -31,7 +31,7 @@ int main(){
 
         // normal mode, a deletable selection: chrome + rows + DELETE
         HitList h = filesHits(W,H,/*confirm*/false,/*deletable*/true,/*nVisible*/f.nRows);
-        expect(h.count == (W>=400?10:9) + f.nRows + 1, "normal: chrome + rows + DELETE");
+        expect(h.count == (W>=400?10:9) + f.nRows + 2, "normal: chrome + rows + DELETE + REFRESH");
         bool ok=true; int sel=0; const Hit* del=nullptr;
         for(int j=0;j<h.count;j++){ const Rect r=h.items[j].rect;
             if(r.x<0||r.y<0||r.x+r.w>W||r.y+r.h>H||r.w<44||r.h<44) ok=false;
@@ -45,7 +45,7 @@ int main(){
         // not deletable: DELETE omitted
         HitList hnd = filesHits(W,H,false,false,f.nRows);
         bool noDel=true; for(int j=0;j<hnd.count;j++) if(hnd.items[j].action==Action::FileDelete) noDel=false;
-        expect(hnd.count==(W>=400?10:9)+f.nRows && noDel, "not deletable: no DELETE hit");
+        expect(hnd.count==(W>=400?10:9)+f.nRows+1 && noDel, "not deletable: no DELETE hit");
 
         // confirm mode: chrome + YES + NO only (rows + DELETE suppressed)
         HitList hc = filesHits(W,H,/*confirm*/true,true,f.nRows);
