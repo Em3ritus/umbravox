@@ -18,6 +18,9 @@ namespace cap {
 void bridgePlan(char* out, unsigned cap);
 int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint32_t now);
 
+// Main-loop bounded CSV snapshot source; slot 0..767.
+size_t evidenceCsvRow(unsigned slot,char* out,size_t capacity,uint32_t now,uint32_t epoch);
+
 void begin();
 
 // Advance the channel hop. Call every loop; it decides when to move.

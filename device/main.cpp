@@ -6,6 +6,7 @@ static unsigned consoleDwell=220;
 #include "poi.h"
 #include "pcap.h"
 #include "gpx.h"
+#include "evidence_csv.h"
 #include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
@@ -981,6 +982,10 @@ static void rebootNow(const ui::Settings& set) {
     const bool was = logging::wantsActive();
     logging::stop(millis());
     gpx::tick("",ui::Gnss::fix(),millis(),0);
+
+#if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    evidencecsv::stop();
+#endif
     prefs::setLogging(was);
     prefs::flush(set);
     elog::event(elog::INFO, "sys", "reboot requested on the console%s",
@@ -1025,6 +1030,7 @@ bool pollConsole() {
                 Serial.printf("pcap: %s %s (uptime timestamps)\n",pcap::status(),pcap::fileName());
             }else if(!strcmp(line,"PCAP OFF")) {pcap::stop();cap::setRawCapture(false);Serial.println("pcap: draining queued frames");}
             else if(!strcmp(line,"PCAP")){Serial.printf("pcap: %s file=%s written=%lu dropped=%lu batches=%lu queue_peak=%lu\n",pcap::status(),pcap::fileName(),(unsigned long)pcap::written(),(unsigned long)pcap::dropped(),(unsigned long)pcap::batches(),(unsigned long)pcap::peakQueue());}
+            else if(!strcmp(line,"EVIDENCE CSV")){Serial.printf("evidence csv: %s committed rows=%lu\n",evidencecsv::status(),(unsigned long)evidencecsv::rows());}
             else
 #endif
             if (!strcmp(line,"GPX")) {
@@ -1348,6 +1354,11 @@ void loop() {
         if(gpx::takeError())elog::event(elog::WARN,"gpx","track write failed: %s; stopped for this session",gpx::fileName());
     }
 #if defined(WS_C5_35) && defined(UMBRAVOX_SCAN_ENGINE)
+    {const uint32_t start=micros();
+    evidencecsv::tick(logging::state()==logging::ACTIVE && logging::wantsActive()?logging::fileName():"",
+                      millis(),ui::Gnss::utcEpoch(millis()),cap::evidenceCsvRow);
+    bootStall("evidence csv",start); }
+    if(evidencecsv::takeError())elog::event(elog::WARN,"csv","client/probe export write failed; stopped for this session");
     poi::service(millis());
     {const uint32_t start=micros();pcap::service(millis());bootStall("pcap service",start);}
     cap::setRawCapture(pcap::active());

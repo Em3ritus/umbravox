@@ -1,3 +1,4 @@
+#include "evidence_csv.h"
 #include "ble_bridge_protocol.h"
 #include "active_discovery.h"
 #include "sight_order.h"
@@ -1291,3 +1292,19 @@ void fillClients(ui::State& s,int offset,int limit,uint32_t now){
 #endif
 }
 }
+
+#if defined(UMBRAVOX_SCAN_ENGINE)
+namespace cap {
+size_t evidenceCsvRow(unsigned slot,char* out,size_t capacity,uint32_t now,uint32_t epoch){
+ uint32_t drops=0;
+ if(slot<clients::CAPACITY){
+  if(!clientStore)return 0;
+  portENTER_CRITICAL(&mux);drops=clientStore->queue.drops;portEXIT_CRITICAL(&mux);
+  return evidencecsv::client(out,capacity,clientStore->table.rows[slot],now,epoch,drops,clientStore->table.evictions);
+ }
+ slot-=clients::CAPACITY;if(slot>=evidence::PROBES||!evidenceStore)return 0;
+ portENTER_CRITICAL(&mux);drops=evidenceStore->queue.dropped;portEXIT_CRITICAL(&mux);
+ return evidencecsv::probe(out,capacity,evidenceStore->store.probes[slot],now,epoch,drops,evidenceStore->store.evicted);
+}
+}
+#endif
