@@ -132,6 +132,17 @@ int main() {
         check("fmtKB: card sizes", ok);
     }
 
+    // Native adapter uses the same entry function as legacy navigation.
+    {
+        Nav n; n.screen=SCR_FILES; n.scroll=12; n.fileSel=14;
+        n.fileConfirm=true; n.fileDeleteRequested=true; n.fileDeleteIdx=14;
+        n.filesScanRequested=false;
+        filesEnter(n);
+        check("native entry requests scan and clears stale delete/selection",
+              n.filesScanRequested && n.scroll==0 && n.fileSel==-1 &&
+              !n.fileConfirm && !n.fileDeleteRequested && n.fileDeleteIdx==-1);
+    }
+
     // ---- the way in, and back ----------------------------------------------
     {
         FileList L = makeList(5);

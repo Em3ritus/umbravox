@@ -30,6 +30,7 @@
 #include "../ui/aspect_present.h"
 #include "../ui/detail_present.h"
 #include "../ui/files_present.h"
+#include "../ui/files.h"
 
 namespace engineadapter {
 namespace {
@@ -399,7 +400,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         switch (hit.action) {
             case uieng::Action::Nav:
                 display_.editor=-1;display_.count=0;settings_.editor=-1;
-                if(nav.screen==ui::SCR_FILES){nav.scroll=0;nav.fileSel=-1;nav.fileConfirm=false;}
+                if(nav.screen==ui::SCR_FILES)ui::filesEnter(nav);
                 break;
             case uieng::Action::MeshPage: nav.meshPage=(nav.meshPage+1)%(s.nNodes+1);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
