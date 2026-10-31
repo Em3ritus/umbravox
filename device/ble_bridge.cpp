@@ -193,10 +193,16 @@ void tick(uint32_t now){
         // setMode requests disconnect first; never change discovery while connected.
         if(connection!=NO_CONN)return;
         const Mode mode=Mode(selected.load());
-        const bool ok=selectServices(mode,[](bool biscuit,bool visible){
-            auto* svc=biscuit?biscuitService:wdService;
-            return svc && ble_gatts_svc_set_visibility(svc->getHandle(),visible?1:0)==0;
+        uint16_t handles[2]{};
+        const BLEUUID wdUuid(WD_SERVICE),bisUuid(BIS_SERVICE);
+        const int wdRc=ble_gatts_find_svc(&wdUuid.getNative()->u,&handles[0]);
+        const int bisRc=ble_gatts_find_svc(&bisUuid.getNative()->u,&handles[1]);
+        const bool ok=wdRc==0 && bisRc==0 && selectServices(mode,[&](bool biscuit,bool visible){
+            const int rc=ble_gatts_svc_set_visibility(handles[biscuit?1:0],visible?1:0);
+            if(rc)Serial.printf("bridge: visibility handle=%u visible=%u rc=%d\n",handles[biscuit?1:0],unsigned(visible),rc);
+            return rc==0;
         });
+        if(wdRc || bisRc)Serial.printf("bridge: lookup wd=%d biscuit=%d\n",wdRc,bisRc);
         if(!ok){selected=OFF;Serial.println("bridge: service visibility failed; advertising remains off");return;}
         modelInfo->setValue(identity(mode).model);
         ble_svc_gatt_changed(1,0xFFFF); // let bonded peers invalidate cached discovery
