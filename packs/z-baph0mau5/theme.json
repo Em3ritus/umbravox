@@ -4,7 +4,7 @@
   "author": "slickrick773",
   "header": "BAPH0MAU5",
   "dial": "large",
-  "centrepiece": "mascot",
+  "centrepiece": "radar-emblem",
   "sweeps": [
     "radar",
     "pulse",
@@ -34,5 +34,7 @@
     "green": "#39FF88",
     "amber": "#FFE24A",
     "red": "#FF2F6A"
-  }
+  },
+  "artOpacity": 100,
+  "artScale": 64
 }

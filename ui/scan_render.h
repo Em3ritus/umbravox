@@ -217,12 +217,12 @@ inline void radarTrail(S& s,int cx,int cy,int r,uint32_t phase){
     line(s,cx,cy,cx+r*lx/1024,cy+r*ly/1024,pal::SWEEP_HI);
 }
 
-inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100) {   // same mask/scale as motif::drawEmblem
+inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px || !e.ncol || e.ncol>16) return;
     const int d=2*r;
     uint16_t colors[16];for(int i=0;i<e.ncol;i++)colors[i]=ui::Canvas::mix(pal::VOID,e.pal[i],opacity,100);
     for (int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++){ const int dy=y-cy;
-        for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(dx*dx+dy*dy>r*r) continue;
+        for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(circular && dx*dx+dy*dy>r*r) continue;
             int sx=(x-(cx-r))*e.w/d, sy=(y-(cy-r))*e.h/d;
             if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
             const uint16_t color=e.pal[e.px[sy*e.w+sx]];
@@ -430,11 +430,14 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         txt(s, t.x+12, t.y + (t.h>=60?28:22), num, ns, pal::BRIGHT); }
 
     // hero: readout / framed field (theme artwork + contacts) / labelled spectrum.
-    // Proposal mockup (scan page): "LIVE FIELD" at the left, the channel at the
-    // right -- no "SCANNING" / band line. "LIVE FIELD" is the contract rev-3 name
-    // for this view.
+    // Channel readout and theme identity above the radar.
     const uieng::Rect hr = L.hero;
-    txt(s, hr.x+4, hr.y+6, "LIVE FIELD", 1, pal::DIM);
+    // Theme identity occupies the former field heading, independently of radar clipping.
+    if (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || sc.theme==pal::TH_COSMICMUFFIN) {
+        const auto* headingEmblem=pal::emblem(sc.theme);
+        const int badgeR=W>=400?27:24;
+        if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),sc.theme==pal::TH_COSMICMUFFIN);
+    }
     txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,2), hr.y+4, sc.ch, 2, pal::BRIGHT);  // channel, right
 
     const HeroSub hs = heroSub(hr);
@@ -471,8 +474,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         }
         if(cvlt || mascot || orbit || sigil)crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0);
         const themepack::Emblem* e = pal::emblem(sc.theme);
-        if(logo && e)emblemInto(s,*e,fcx,fcy,fr*pal::artScale(sc.theme)/100,true,pal::artOpacity(sc.theme));
-        else if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
+        if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
         } else if(!clean) {
             const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east

@@ -116,8 +116,8 @@ int main() {
     scanpres::recordingHits(hits,scanr::Rec::Saving);assert(hits.count==count-1);
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
-    // Body goldens: approved 16px spectrum, expanded compact radar and Cvlt seal.
-    const uint64_t golden[2][3]={{9111283009185874775ull,5355564530629816857ull,11772361060095058718ull},{9583751849701587141ull,11576811030950465143ull,2990852478405497640ull}};
+    // Body goldens: approved emblem heading, no LIVE FIELD label, 16px spectrum and Cvlt seal.
+    const uint64_t golden[2][3]={{1146081116921973907ull,13540596851408026256ull,17758537092499423455ull},{13445043617499426441ull,14811837353025386190ull,3659635031684012353ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

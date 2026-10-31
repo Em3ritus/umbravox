@@ -4,7 +4,7 @@
   "author": "slickrick773",
   "header": "EM3RITUS",
   "dial": "compact",
-  "centrepiece": "sigil",
+  "centrepiece": "radar-emblem",
   "sweeps": [
     "radar",
     "candle",
@@ -33,5 +33,7 @@
     "green": "#8FA05A",
     "amber": "#E8A838",
     "red": "#C6352F"
-  }
+  },
+  "artOpacity": 100,
+  "artScale": 64
 }

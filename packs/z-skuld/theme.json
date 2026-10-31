@@ -31,5 +31,7 @@
     "green": "#68D9B2",
     "amber": "#FFC45D",
     "red": "#FF6D79"
-  }
+  },
+  "artOpacity": 100,
+  "artScale": 64
 }
