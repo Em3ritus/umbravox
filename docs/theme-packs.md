@@ -379,3 +379,17 @@ rule is applied to the last path component and `.` is not a valid folder name.
 | The device resets repeatedly after you select a pack | Take the SD card out and boot. Choose another theme (the selection is saved by name), then remove or fix the pack. |
 | Folder not found after copy | The card is not FAT32, or `themes` is not at the card root. |
 | The designer page will not load | The browser is older than the minimums in limitation 10. |
+
+## Native radar and header badge extension
+
+The native renderer accepts `"centrepiece": "radar"` for a seal-free field:
+three rings, centre cross and the native fading radar sweep. Use `"sweeps":
+["radar"]` for this style; other native clean-field sweep variants are not yet
+implemented. Existing heptagram/emblem packs and their defaults are unchanged.
+The legacy canvas omits the centrepiece and retains its existing search animation.
+
+Optional `"badge": "diamond"` draws an outlined diamond before the native header
+wordmark. Default is `"none"`; unknown values and duplicate keys are rejected.
+These options apply by pack data, not by theme name. The current browser designer
+has no controls for these extensions yet; author them in JSON. Older firmware
+rejects the unknown `radar` centrepiece rather than drawing the wrong artwork.

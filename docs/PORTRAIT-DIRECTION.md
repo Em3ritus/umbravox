@@ -35,3 +35,6 @@ c++ -std=c++17 -O2 -Wall -Wextra -fsanitize=address,undefined sim/portrait_theme
 mkdir -p /tmp/slick-preview
 /tmp/portrait-theme-preview packs/slick/theme.json /tmp/slick-preview
 ```
+
+SLICK visual revision: orange diamond and clean radar now replace the initial
+electric-blue heptagram direction. See SLICK-CLEAN-RADAR.md.

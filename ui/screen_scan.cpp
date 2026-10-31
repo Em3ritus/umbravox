@@ -807,7 +807,9 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
 
     const pal::Centrepiece cp = pal::centrepiece(s.set.theme);
     const themepack::Emblem* emb = cp == pal::CP_EMBLEM ? pal::emblem(s.set.theme) : nullptr;
-    if (cp == pal::CP_SEAL) {
+    if(cp==pal::CP_RADAR){
+        for(int k=1;k<=3;k++)c.dottedCircle(cx,cy,rField*k/3,pal::EDGE,1);
+    } else if (cp == pal::CP_SEAL) {
         // heat is alertConf * 85, and alertConf is one of CONF_LOW..CONF_OFF
         // (0..3), so heat only ever takes the values 0, 85, 170 or 255.
         // seal.cpp's blink gate depends on that discreteness: a continuous

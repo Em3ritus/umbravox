@@ -116,8 +116,8 @@ int main() {
     scanpres::recordingHits(hits,scanr::Rec::Saving);assert(hits.count==count-1);
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
-    // Updated only for the approved recording/header chrome changes.
-    const uint64_t golden[2][3]={{0x58ce70f943f88c98ull,0x2facd2c9a82266e1ull,0x2d574e101854efd3ull},{0x1dafe803a7ec8e39ull,0xf07e4058c4908280ull,0x2c4c147f6423c210ull}};
+    // Body goldens updated for the approved compact 21-channel spectrum.
+    const uint64_t golden[2][3]={{13146520544081172232ull,470220667227810589ull,12806502433216106219ull},{10584663885296049188ull,6305631667154806508ull,14618175897313386900ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

@@ -177,7 +177,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
         p.header[themepack::MAX_HEADER] = 0;
     }
     if (p.dial != themepack::DIAL_LARGE) p.dial = themepack::DIAL_COMPACT;
-    if (p.centre != themepack::CENTRE_EMBLEM) p.centre = themepack::CENTRE_HEPTAGRAM;
+    if (p.centre != themepack::CENTRE_EMBLEM && p.centre != themepack::CENTRE_RADAR) p.centre = themepack::CENTRE_HEPTAGRAM;
     if ((unsigned)p.rite > (unsigned)themepack::RITE_LOCKON) p.rite = themepack::RITE_WARD;
     // The starting sweep must be one the pack offers, or clampSettings could
     // fall back to a sweep that is itself withdrawn.
@@ -194,7 +194,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     Row r = THEMES[p.dial == DIAL_LARGE ? TH_COSMICMUFFIN : TH_UMBRAVOX];   // geometry
     r.name = p.name;
     r.header = p.header;
-    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : CP_HEPTAGRAM;
+    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : p.centre == CENTRE_RADAR ? CP_RADAR : CP_HEPTAGRAM;
     r.sweeps = p.sweeps;
     const uint16_t* c = p.color;
     r.void_ = c[R_VOID];   r.panel = c[R_PANEL];     r.grid = c[R_GRID];
@@ -235,6 +235,8 @@ uint8_t resolveSaved(const char* name, uint8_t savedId) {
     }
     return savedId < TH_COUNT ? savedId : (uint8_t)TH_UMBRAVOX;
 }
+
+bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].diamond;}
 
 Centrepiece centrepiece(uint8_t id) { return row(id).centre; }
 const char* header(uint8_t id)      { return row(id).header; }

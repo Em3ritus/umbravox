@@ -201,9 +201,9 @@ bool sweepList(P& p, Pack& out) {
 
 bool parseObject(P& p, Pack& out) {
     enum { K_FORMAT, K_NAME, K_AUTHOR, K_HEADER, K_DIAL, K_CENTRE, K_SWEEPS,
-           K_SWEEP, K_ALERT, K_COLORS, K_N };
+           K_SWEEP, K_ALERT, K_COLORS, K_BADGE, K_N };
     static const char* const keys[K_N] = {"format", "name", "author", "header", "dial",
-        "centrepiece", "sweeps", "sweep", "alert", "colors"};
+        "centrepiece", "sweeps", "sweep", "alert", "colors", "badge"};
     bool seen[K_N] = {};
     char sweepName[12] = {};
     bool haveSweepName = false;
@@ -271,7 +271,8 @@ bool parseObject(P& p, Pack& out) {
                 if (!str(p, tmp, 31, &tl)) return false;
                 if (tl <= 31 && strcmp(tmp, "emblem") == 0) out.centre = CENTRE_EMBLEM;
                 else if (tl <= 31 && strcmp(tmp, "heptagram") == 0) out.centre = CENTRE_HEPTAGRAM;
-                else return fail(p, "centrepiece must be emblem or heptagram");
+                else if (tl <= 31 && strcmp(tmp,"radar")==0) out.centre=CENTRE_RADAR;
+                else return fail(p, "centrepiece must be emblem, heptagram or radar");
                 break;
             case K_SWEEPS:
                 if (!sweepList(p, out)) return false;
@@ -289,6 +290,12 @@ bool parseObject(P& p, Pack& out) {
                 else if (tl <= 31 && strcmp(tmp, "comet") == 0) out.rite = RITE_COMET;
                 else if (tl <= 31 && strcmp(tmp, "lockon") == 0) out.rite = RITE_LOCKON;
                 else return fail(p, "unknown or unavailable alert");
+                break;
+            case K_BADGE:
+                if (!str(p,tmp,31,&tl)) return false;
+                if(tl<=31 && strcmp(tmp,"diamond")==0)out.diamond=true;
+                else if(tl<=31 && strcmp(tmp,"none")==0)out.diamond=false;
+                else return fail(p,"badge must be none or diamond");
                 break;
             case K_COLORS:
                 if (!colors(p, out, 1)) return false;

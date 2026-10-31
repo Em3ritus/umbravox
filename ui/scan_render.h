@@ -15,6 +15,7 @@
 #include "themepack.h"
 #include "font5x7.h"
 #include "gnss.h"
+#include "canvas.h"
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -194,6 +195,27 @@ inline void heptaInto(S& s, int cx, int cy, int r, uint16_t ring, uint16_t star)
     for (int i=0;i<7;i++){ double t=(-90.0+i*360.0/7)*3.14159265/180.0; vx[i]=cx+(int)(r*std::cos(t)); vy[i]=cy+(int)(r*std::sin(t)); }
     int k=0; for (int n=0;n<7;n++){ int nk=(k+3)%7; line(s,vx[k],vy[k],vx[nk],vy[nk],star); k=nk; }
 }
+// Procedural badge: no bitmap or heap allocation.
+inline void diamondInto(S& s,int cx,int cy,int r,uint16_t color){
+    line(s,cx,cy-r,cx+r,cy,color);line(s,cx+r,cy,cx,cy+r,color);
+    line(s,cx,cy+r,cx-r,cy,color);line(s,cx-r,cy,cx,cy-r,color);
+}
+// 45-degree fading trail. Integer cross-products inside the current strip;
+// no atan2, sqrt, allocations, or framebuffer-sized scratch work per pixel.
+inline void radarTrail(S& s,int cx,int cy,int r,uint32_t phase){
+    if(r<1 || cy+r<s.y0 || cy-r>=s.y0+s.h)return;
+    const double a=(int(phase%72)*5-90)*3.14159265/180.0;
+    const int lx=int(cos(a)*1024),ly=int(sin(a)*1024);
+    const int tx=int(cos(a-3.14159265/4)*1024),ty=int(sin(a-3.14159265/4)*1024);
+    uint16_t fade[8];for(int k=0;k<8;k++)fade[k]=ui::Canvas::mix(pal::VOID,pal::SWEEP,k+1,32);
+    for(int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++)for(int x=std::max(0,cx-r);x<=std::min(s.W-1,cx+r);x++){
+        int dx=x-cx,dy=y-cy;if(dx*dx+dy*dy>r*r)continue;
+        int c0=tx*dy-ty*dx,c1=dx*ly-dy*lx;
+        if(c0>=0 && c1>=0 && c0+c1>0)pt(s,x,y,fade[std::min(7,c0*8/(c0+c1))]);
+    }
+    line(s,cx,cy,cx+r*lx/1024,cy+r*ly/1024,pal::SWEEP_HI);
+}
+
 inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px) return;
     const int d=2*r;
@@ -206,6 +228,7 @@ inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r) 
 // Honor the theme's artwork, same policy as motif::drawMotif: a bitmap emblem
 // when the theme carries one, else the {7/3} heptagram.
 inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
+    if(pal::centrepiece(theme)==pal::CP_RADAR)return;
     const themepack::Emblem* e = pal::emblem(theme);
     if (e && pal::centrepiece(theme) == pal::CP_EMBLEM) emblemInto(s, *e, cx, cy, r);
     else heptaInto(s, cx, cy, r, pal::GRID, pal::EDGE_LIT);
@@ -220,9 +243,10 @@ inline HeroSub heroSub(uieng::Rect hr) {
     const int hdrH = 30, specH = 40;               // header clears the readout (text max y+26)
     HeroSub h;
     h.field    = {hr.x+2, hr.y+hdrH, hr.w-4, hr.h-hdrH-specH};
-    h.spectrum = {hr.x+4, hr.y+hr.h-specH, hr.w-8, specH};
+    const int sw=std::min(168,hr.w-8);
+    h.spectrum = {hr.x+(hr.w-sw)/2, hr.y+hr.h-specH, sw, specH};
     h.barBase  = hr.y+hr.h-11;
-    h.barMax   = specH-16;                          // tallest fixture bar == barMax (24)
+    h.barMax   = 16;                          // compact 16px amplitude; every channel retained
     return h;
 }
 
@@ -269,12 +293,15 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
     if(activeTab==3)box(s,10,39,24,2,pal::WITCH_HI);
     // Fixed title box: theme names fit without moving any controls.
     char title[64]; snprintf(title,sizeof title,"%s",pal::themeName(st.theme));
-    const int titleScale=fitScale(title,c.wordmark.w-8,2);
-    const int maxChars=(c.wordmark.w-8)/(6*titleScale);
+    const int badge=pal::diamondBadge(st.theme)?18:0;
+    const int titleScale=fitScale(title,c.wordmark.w-8-badge,2);
+    const int maxChars=(c.wordmark.w-8-badge)/(6*titleScale);
     if ((int)strlen(title)>maxChars && maxChars>=3) {
         title[maxChars]=0; title[maxChars-1]='.'; title[maxChars-2]='.'; title[maxChars-3]='.';
     }
-    centered(s,c.wordmark.x+c.wordmark.w/2,(44-7*titleScale)/2,title,titleScale,pal::BRIGHT);
+    const int titleX=c.wordmark.x+(c.wordmark.w-Font::width(title,titleScale)-badge)/2;
+    if(badge)diamondInto(s,titleX+7,21,7,pal::WITCH);
+    txt(s,titleX+badge,(44-7*titleScale)/2,title,titleScale,pal::BRIGHT);
     char hb[24];
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
@@ -392,6 +419,8 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // the seal tone (EDGE_LIT = #574465) at 0.72r with verts from east, a sweep
     // ray, and a bright centre cross.
     if (fr>6 && fcy+fr >= s.y0 && fcy-fr < s.y0+s.h) {
+        const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR;
+        if(clean)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepPhase(sc.now):27);
         for (int k=1;k<=3;k++){ const int rr=fr*(k*23)/69;
             int count=0;
             const auto* ring=radargeometry::ring(rr,count);
@@ -409,7 +438,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
-        } else {
+        } else if(!clean) {
             const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east
             const auto* star = h7==49 ? radargeometry::star49 : h7==19 ? radargeometry::star19 : nullptr;
             for (int i=0;i<7;i++) {
@@ -419,11 +448,11 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             }
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
         }
-        if (sc.animateSweep) {
+        if (!clean && sc.animateSweep) {
             const double angle = ((int)sweepPhase(sc.now)*5-90)*3.14159265/180.0;
             const int length = fr*4/5;
             line(s,fcx,fcy,fcx+(int)(length*std::cos(angle)),fcy+(int)(length*std::sin(angle)),pal::WITCH);
-        } else line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
+        } else if(!clean) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
         box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];

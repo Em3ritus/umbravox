@@ -60,6 +60,7 @@ void heptagram(Canvas& c, int cx, int cy, int r, uint16_t col) {
 
 void drawMotif(Canvas& c, uint8_t theme, int cx, int cy, int r, uint32_t frame,
                int lift, uint16_t col) {
+    if(pal::centrepiece(theme)==pal::CP_RADAR)return;
     const themepack::Emblem* e = pal::emblem(theme);
     if (e) drawEmblem(c, *e, cx, cy, r, frame, lift);
     else   heptagram(c, cx, cy, r, col);
