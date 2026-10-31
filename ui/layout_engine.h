@@ -120,7 +120,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl, SettingsControl, FilePage, FileRefresh, AlertTest, AlertPage };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl, SettingsControl, FilePage, FileRefresh, AlertTest, AlertPage, AlertOpen, AlertClose };
 // Stable Nav payloads; MENU is in the header and Files is an explicit launcher.
 // Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -411,7 +411,7 @@ inline LogLayout logBody(int W, int H) {
 }
 inline LogLayout omens(int W, int H) {
     auto g=logBody(W,H);const int y=g.body.y+g.body.h-44;
-    g.list.h=y-g.list.y;g.nRows=g.list.h/g.rowH;if(g.nRows>6)g.nRows=6;
+    g.list.h=y-g.list.y;g.rowH=44;g.nRows=g.list.h/g.rowH;if(g.nRows>6)g.nRows=6;
     g.prev={g.body.x,y,44,44};g.next={g.body.x+g.body.w-44,y,44,44};g.page={g.body.x+48,y,g.body.w-96,44};return g;
 }
 inline LogLayout echoes(int W, int H) {
@@ -424,11 +424,15 @@ inline HitList logHits(int W, int H) {        // chrome only; the list is a scro
     addChromeHits(h, W, H);
     return h;
 }
-inline HitList omensHits(int W, int H) {
+inline HitList omensHits(int W, int H, const char* const* keys=nullptr, int count=0, bool detail=false) {
     auto h=logHits(W,H);const auto g=omens(W,H);
     h.add("alert-prev",g.prev,Action::AlertPage,-1,nullptr,"Previous alerts");
     h.add("alert-next",g.next,Action::AlertPage,1,nullptr,"Next alerts");
-    h.add("alert-test",g.page,Action::AlertTest,0,nullptr,"Add clearly labeled simulated alert");return h;
+    h.add("alert-center",g.page,detail?Action::AlertClose:Action::AlertTest,0,nullptr,detail?"Back to alerts":"Add simulated alert");
+    static const char* slots[]={"alert-row-0","alert-row-1","alert-row-2","alert-row-3","alert-row-4","alert-row-5"};
+    if(!detail)for(int i=0;keys && i<count && i<g.nRows;i++)
+        h.add(slots[i],{g.list.x,g.list.y+i*g.rowH,g.list.w,g.rowH},Action::AlertOpen,i,keys[i],"Alert details");
+    return h;
 }
 inline HitList echoesHits(int W, int H) {
     auto h=logHits(W,H);const auto g=echoes(W,H);

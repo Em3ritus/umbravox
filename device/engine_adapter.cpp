@@ -66,6 +66,9 @@ codpres::CodexEngine  eCodex_;
 menpres::MenuEngine   eMenu_;
 mshpres::MeshEngine   eMesh_;
 omnpres::OmenEngine   eOmens_;
+ui::Omen alertDetail_;
+bool alertDetailOpen_=false;
+int alertDetailPage_=0;
 echpres::EchoEngine   eEchoes_;
 atnpres::AttuneEngine eAttune_;
 asppres::AspectEngine eAspect_;
@@ -146,6 +149,9 @@ void saveVisibleRows() {
     if(cur_==uinav::Screen::Codex){const auto& sc=eCodex_.scene();
         for(int i=0;i<sc.nRows && i<ui::MAX_SIGHTS;++i)
             snprintf(visibleKeys_[visibleRows_++],20,"%s",sc.rows[i].key);
+    } else if(cur_==uinav::Screen::Omens){const auto& sc=eOmens_.scene();
+        if(!sc.detail)for(int i=0;i<sc.nRows && i<ui::MAX_SIGHTS;++i)
+            snprintf(visibleKeys_[visibleRows_++],20,"%s",sc.rows[i].key);
     } else if(cur_==uinav::Screen::Domain){const auto& sc=eDomain_.scene();
         for(int i=0;i<sc.nRows && i<ui::MAX_SIGHTS;++i)
             snprintf(visibleKeys_[visibleRows_++],20,"%s",sc.rows[i].key);
@@ -177,7 +183,7 @@ void enter(uint8_t uiScreen) {
         case uinav::Screen::Codex:  eCodex_.enter(); break;
         case uinav::Screen::Menu:   eMenu_.enter(); break;
         case uinav::Screen::Mesh:   eMesh_.enter(); break;
-        case uinav::Screen::Omens:  eOmens_.enter(); break;
+        case uinav::Screen::Omens:  alertDetailOpen_=false;alertDetailPage_=0;eOmens_.enter(); break;
         case uinav::Screen::Echoes: eEchoes_.enter(); break;
         case uinav::Screen::Attune: eAttune_.enter(); break;
         case uinav::Screen::Aspect: eAspect_.enter(); break;
@@ -262,7 +268,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
         case uinav::Screen::Codex:  uiproj::codex(eCodex_.back(), s, c, W_, H_);   eCodex_.commit();  break;
         case uinav::Screen::Menu:   uiproj::menu(eMenu_.back(), s, c);     eMenu_.commit();   break;
         case uinav::Screen::Mesh:   uiproj::mesh(eMesh_.back(), s, c);     eMesh_.commit();   break;
-        case uinav::Screen::Omens:  uiproj::omens(eOmens_.back(), s, c);   eOmens_.commit();  break;
+        case uinav::Screen::Omens:  uiproj::omens(eOmens_.back(), s, c); if(alertDetailOpen_)eOmens_.back().detail(alertDetail_,alertDetailPage_); eOmens_.commit();  break;
         case uinav::Screen::Echoes: uiproj::echoes(eEchoes_.back(), s, c); eEchoes_.commit(); break;
         case uinav::Screen::Attune: {
             uiproj::attune(eAttune_.back(),s,c,0,1);
@@ -353,6 +359,8 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
         rowCount=0;
         if(cur_==uinav::Screen::Codex){const auto& sc=eCodex_.scene();rowCount=sc.nRows;
             for(int i=0;i<rowCount;++i)rowKeys[i]=sc.rows[i].key;}
+        if(cur_==uinav::Screen::Omens){const auto& sc=eOmens_.scene();rowCount=sc.nRows;
+            for(int i=0;i<rowCount;++i)rowKeys[i]=sc.rows[i].key;}
         if(cur_==uinav::Screen::Domain){const auto& sc=eDomain_.scene();rowCount=sc.nRows;
             for(int i=0;i<rowCount;++i)rowKeys[i]=sc.rows[i].key;}
     }
@@ -372,7 +380,10 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             h=uieng::codexHits(W_,H_,ctx);break;
         case uinav::Screen::Menu:   h = uieng::menuHits(W_, H_); break;
         case uinav::Screen::Mesh:   h = uieng::meshHits(W_, H_); break;
-        case uinav::Screen::Omens:  h = uieng::omensHits(W_, H_); break;
+        case uinav::Screen::Omens: {
+            const auto& sc=eOmens_.scene();
+            h=uieng::omensHits(W_,H_,rowKeys,rowCount,sc.detail!=nullptr);break;
+        }
         case uinav::Screen::Echoes: h = uieng::echoesHits(W_, H_); break;
         case uinav::Screen::Attune: h = settingsctl::hits(W_, H_, settings_); break;
         case uinav::Screen::Aspect: h = displayctl::hits(W_, H_, display_, s.set.theme == pal::TH_COSMICMUFFIN); break;
@@ -460,7 +471,16 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             case uieng::Action::ToggleLabels:      set.labels = set.labels ? 0 : 1; break;
             case uieng::Action::SettingPage:       nav.setPage = (uint8_t)hit.payload; break;
             case uieng::Action::AlertTest: alertlog::pushTest(millis());nav.scroll=0;cancelInput();break;
-            case uieng::Action::AlertPage: {const int per=uieng::omens(W_,H_).nRows;
+            case uieng::Action::AlertOpen: {
+                uint32_t id=0;if(hit.key)for(const char* p=hit.key;*p;p++){if(*p<'0'||*p>'9'){id=0;break;}id=id*10+uint32_t(*p-'0');}
+                alertDetailOpen_=alertlog::find(id,millis(),alertDetail_);alertDetailPage_=0;cancelInput();break;
+            }
+            case uieng::Action::AlertClose:alertDetailOpen_=false;cancelInput();break;
+            case uieng::Action::AlertPage: {if(alertDetailOpen_){
+                int pages=omnr::detailPageCount(W_,H_,eOmens_.scene().detail);
+                alertDetailPage_+=hit.payload<0?-1:1;if(alertDetailPage_<0)alertDetailPage_=0;if(alertDetailPage_>=pages)alertDetailPage_=pages>0?pages-1:0;
+                cancelInput();break;
+            }const int per=uieng::omens(W_,H_).nRows;
                 nav.scroll=uiproj::pageOffset(alertlog::count(),nav.scroll+(hit.payload<0?-per:per),per);cancelInput();break;}
             case uieng::Action::FileRefresh: nav.filesScanRequested=true;cancelInput();break;
             case uieng::Action::FilePage: {

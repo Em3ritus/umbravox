@@ -7,6 +7,7 @@
 #pragma once
 #include <stdint.h>
 #include "ap_info.h"
+#include "signatures.h"
 
 namespace ui {
 
@@ -265,6 +266,10 @@ struct Omen {
     uint32_t agoS = 0;
     bool     located = false;
     bool test = false;
+    uint32_t id=0;
+    uint8_t mac[6]{};
+    AlertAddress address=AlertAddress::Missing;
+    char why[32]{};
 };
 
 // A probe request: a client asking after a network by name. Directed probes

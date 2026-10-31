@@ -5,6 +5,7 @@
 #include "omens_render.h"
 #include "scan_present.h"
 #include "model.h"
+#include "oui.h"
 #include <cstdint>
 
 namespace omnpres {
@@ -32,17 +33,40 @@ public:
     }
     void level(uint8_t v){sc_.level=v;}
     void total(int t) { sc_.total = t; }
-    bool addRow(const char* omen, const char* source, uint8_t conf, uint32_t agoS, bool located, bool test=false) {
+    bool addRow(const char* omen, const char* source, uint8_t conf, uint32_t agoS, bool located, bool test=false, uint32_t id=0) {
         if (nr_ >= MAXROWS) return false;
         copy_(oBuf_[nr_], STRMAX, omen); copy_(sBuf_[nr_], STRMAX, source);
         rows_[nr_] = OmenRow{ oBuf_[nr_], sBuf_[nr_], conf, agoS, located, test };
+        snprintf(keys_[nr_],sizeof keys_[nr_],"%u",unsigned(id));rows_[nr_].key=keys_[nr_];
         nr_++; sc_.nRows = nr_; return true;
+    }
+    void detail(const ui::Omen& o,int page){
+        const char* confidence=o.conf>=2?"HIGH":o.conf==1?"MEDIUM":"LOW";
+        if(o.test)snprintf(detail_,sizeof detail_,"TEST ALERT\nSIMULATED - NO RF\nNo device identity or vendor.\nNot exported as a detection.");
+        else {
+            const char* role="NO ADDRESS";oui::Match match;
+            switch(o.address){
+                case ui::AlertAddress::WifiBssid:role="WIFI BSSID";break;
+                case ui::AlertAddress::WifiTarget:role="WIFI TARGET (NOT SENDER)";break;
+                case ui::AlertAddress::BlePublic:role="BLE PUBLIC";break;
+                case ui::AlertAddress::BleRandom:role="BLE RANDOM";break;
+                default:break;
+            }
+            if(o.address!=ui::AlertAddress::Missing && o.address!=ui::AlertAddress::BleRandom)match=oui::identify(o.mac);
+            char prefix[64];oui::formatPrefix(match,prefix,sizeof prefix);
+            char mac[24]="NOT RECORDED";
+            if(o.address!=ui::AlertAddress::Missing)snprintf(mac,sizeof mac,"%02X:%02X:%02X:%02X:%02X:%02X",o.mac[0],o.mac[1],o.mac[2],o.mac[3],o.mac[4],o.mac[5]);
+            snprintf(detail_,sizeof detail_,"%s / %s\n%s\n%s\nREASON: %s\nVENDOR: %s\nPREFIX: %s\nVendor is registrant, not product proof.",ui::threatName(o.threat),confidence,role,mac,o.why[0]?o.why:"NOT RECORDED",o.address==ui::AlertAddress::BleRandom?"UNIDENTIFIED (RANDOM ADDRESS)":match.vendor,prefix);
+        }
+        sc_.detail=detail_;sc_.detailPage=page;
     }
     const OmenScene& scene() const { return sc_; }
     int rowCount() const { return nr_; }
 
 private:
     static void copy_(char* d, int cap, const char* src){ int k=0; for(;src&&src[k]&&k<cap-1;k++) d[k]=src[k]; d[k]=0; }
+    char keys_[MAXROWS][12]{};
+    char detail_[1024]{};
     OmenRow rows_[MAXROWS];
     char    oBuf_[MAXROWS][STRMAX], sBuf_[MAXROWS][STRMAX];
     int     nr_ = 0;
@@ -57,9 +81,9 @@ inline void sceneDirty(const OmenScene& a, const OmenScene& b, bool& status, boo
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
 
-    bool same = a.level == b.level && a.total == b.total && a.nRows == b.nRows;
+    bool same = a.detailPage==b.detailPage && !__builtin_strcmp(a.detail?a.detail:"",b.detail?b.detail:"") && a.level == b.level && a.total == b.total && a.nRows == b.nRows;
     for (int i = 0; same && i < a.nRows; i++)
-        same = a.rows[i].test == b.rows[i].test && a.rows[i].conf == b.rows[i].conf && a.rows[i].agoS == b.rows[i].agoS
+        same = !__builtin_strcmp(a.rows[i].key?a.rows[i].key:"",b.rows[i].key?b.rows[i].key:"") && a.rows[i].test == b.rows[i].test && a.rows[i].conf == b.rows[i].conf && a.rows[i].agoS == b.rows[i].agoS
                && a.rows[i].located == b.rows[i].located
                && !__builtin_strcmp(a.rows[i].omen?a.rows[i].omen:"", b.rows[i].omen?b.rows[i].omen:"")
                && !__builtin_strcmp(a.rows[i].source?a.rows[i].source:"", b.rows[i].source?b.rows[i].source:"");

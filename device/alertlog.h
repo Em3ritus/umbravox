@@ -22,6 +22,7 @@ void push(const ui::AlertRec& a, uint32_t nowMs, uint32_t epoch,
 void pushTest(uint32_t nowMs); // explicit synthetic history test; never a detection
 
 void fill(ui::State& s, int offset, uint32_t nowMs);
+bool find(uint32_t id,uint32_t nowMs,ui::Omen& out);
 uint16_t count();
 void clear();
 

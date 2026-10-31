@@ -51,6 +51,7 @@ struct Extra {
     int8_t   bestRssi;
     uint8_t  threat, conf;
     bool     located, hasFirst, following;
+    bool publicAddress=false;
 };
 
 // --- following -----------------------------------------------------------
@@ -159,6 +160,7 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
             alert_.threat = sig.threat;
             alert_.conf   = sig.conf;
             alert_.why    = sig.why;
+            memcpy(alert_.mac,a,6);alert_.address=dev.getAddressType()==0?ui::AlertAddress::BlePublic:ui::AlertAddress::BleRandom;
             // Named by the tail of the address, as the codex rows are.
             static const char* HD = "0123456789ABCDEF";
             int k = 0;
@@ -206,6 +208,7 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
         // Name and position, recorded at the strongest sighting.
         if (slot >= 0) {
             extra[slot].lastMs = millis();
+            extra[slot].publicAddress=dev.getAddressType()==0;
             if (sig.threat != ui::TH_NONE && sig.conf >= extra[slot].conf) {
                 extra[slot].threat = sig.threat;
                 extra[slot].conf   = sig.conf;
@@ -499,6 +502,7 @@ void tick(uint32_t nowMs) {
         alert_.threat = ui::TH_FOLLOW;
         alert_.conf   = ui::CONF_HIGH;
         alert_.why    = "TRAVELLED WITH YOU";
+        memcpy(alert_.mac,addrs[slot],6);alert_.address=e.publicAddress?ui::AlertAddress::BlePublic:ui::AlertAddress::BleRandom;
         if (e.name[0]) {
             int k = 0;
             for (; k < ui::ALERT_NAME - 1 && e.name[k]; k++) alert_.name[k] = e.name[k];

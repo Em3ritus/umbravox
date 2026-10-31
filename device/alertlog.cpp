@@ -1,4 +1,6 @@
 #include "alertlog.h"
+#include <cstring>
+#include <cstdio>
 
 
 namespace alertlog {
@@ -16,14 +18,21 @@ struct Entry {
     bool     located;
     bool     used;
     bool     test;
+    uint32_t id;
+    uint8_t mac[6];
+    ui::AlertAddress address;
+    char why[32];
 };
 
 Entry ring[DEPTH];
 int   head = 0;          // next slot to write
 uint16_t total = 0;
+uint32_t nextId=0;
+uint32_t newId(){if(++nextId==0)++nextId;return nextId;}
 
 bool sameAs(const Entry& e, const ui::AlertRec& a) {
-    if (e.test || e.threat != a.threat) return false;
+    if (e.test || e.threat != a.threat || e.address!=a.address) return false;
+    if(a.address!=ui::AlertAddress::Missing && memcmp(e.mac,a.mac,6))return false;
     for (int i = 0; i < ui::SSID_MAX; i++) {
         if (e.name[i] != a.name[i]) return false;
         if (!e.name[i]) break;
@@ -41,7 +50,10 @@ void push(const ui::AlertRec& a, uint32_t nowMs, uint32_t epoch,
     if (ring[last].used && sameAs(ring[last], a) &&
         (nowMs - ring[last].atMs) < COALESCE_MS) {
         ring[last].atMs = nowMs;                  // still here; just refresh
-        if (a.conf > ring[last].conf) ring[last].conf = a.conf;
+        if (a.conf >= ring[last].conf) {
+            ring[last].conf = a.conf;
+            snprintf(ring[last].why,sizeof ring[last].why,"%s",a.why?a.why:"");
+        }
         return;
     }
 
@@ -55,7 +67,8 @@ void push(const ui::AlertRec& a, uint32_t nowMs, uint32_t epoch,
     e.lon7    = lon7;
     e.located = located;
     e.used    = true;
-    e.test    = false;
+    e.test    = false;e.id=newId();e.address=a.address;memcpy(e.mac,a.mac,6);
+    snprintf(e.why,sizeof e.why,"%s",a.why?a.why:"");
     head = (head + 1) % DEPTH;
     if (total < 0xFFFF) total++;
 }
@@ -69,10 +82,20 @@ void pushTest(uint32_t nowMs) {
         for(int j=k;j>1;j--)ring[(head-j+DEPTH)%DEPTH]=ring[(head-j+1+DEPTH)%DEPTH];
         ring[(head-1+DEPTH)%DEPTH]=test;return;
     }
-    Entry& e=ring[head];e=Entry{};e.used=true;e.test=true;e.atMs=nowMs;
+    Entry& e=ring[head];e=Entry{};e.used=true;e.test=true;e.atMs=nowMs;e.id=newId();
     const char* label="SIMULATED - NO RF";
     for(int i=0;label[i]&&i<ui::SSID_MAX-1;i++)e.name[i]=label[i];
     head=(head+1)%DEPTH;
+}
+
+static void project(const Entry& e,ui::Omen& o,uint32_t nowMs){
+    o=ui::Omen{};o.threat=e.threat;o.conf=e.conf;memcpy(o.name,e.name,sizeof o.name);
+    o.epoch=e.epoch;o.agoS=(nowMs-e.atMs)/1000;o.located=e.located;o.test=e.test;
+    o.id=e.id;o.address=e.address;memcpy(o.mac,e.mac,6);memcpy(o.why,e.why,sizeof o.why);
+}
+bool find(uint32_t id,uint32_t nowMs,ui::Omen& out){
+    if(id)for(const auto& e:ring)if(e.used&&e.id==id){project(e,out,nowMs);return true;}
+    return false;
 }
 
 void fill(ui::State& s, int offset, uint32_t nowMs) {
@@ -84,13 +107,7 @@ void fill(ui::State& s, int offset, uint32_t nowMs) {
         if (!e.used) continue;
         if (skipped < offset) { skipped++; continue; }
         ui::Omen& o = s.omens[n++];
-        o.threat = e.threat;
-        o.conf   = e.conf;
-        for (int i = 0; i < ui::SSID_MAX; i++) o.name[i] = e.name[i];
-        o.epoch   = e.epoch;
-        o.agoS    = (nowMs - e.atMs) / 1000;
-        o.located = e.located;
-        o.test = e.test;
+        project(e,o,nowMs);
     }
     s.nOmens = (uint8_t)n;
 }

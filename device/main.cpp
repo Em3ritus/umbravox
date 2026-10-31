@@ -1816,6 +1816,7 @@ void loop() {
     if (pollConsole()) rebootNow(set);
 
     constexpr uint32_t ALERT_MS = 6000;
+    ui::AlertRec historyAlert;bool haveHistoryAlert=false;
     s.alertActive = false;
     if (testAlert(s, millis())) {
         // a test alert is up; leave it alone
@@ -1828,6 +1829,7 @@ void loop() {
             (millis() - b.atMs) < ALERT_MS &&
             (!have || b.atMs > best.atMs))  { best = b; have = true; }
         if (have) {
+            historyAlert=best;haveHistoryAlert=true;
             s.alertActive = true;
             s.alertThreat = best.threat;
             s.alertConf   = best.conf;
@@ -1867,13 +1869,9 @@ void loop() {
         }
     }
 
-    if (s.alertActive && testStep < 0) {
-        ui::AlertRec rec;
-        rec.threat = s.alertThreat;
-        rec.conf   = s.alertConf;
-        for (int k = 0; k < ui::SSID_MAX; k++) rec.name[k] = s.alertName[k];
+    if (s.alertActive && testStep < 0 && haveHistoryAlert) {
         const ui::Gnss::Fix& fx = ui::Gnss::fix();
-        alertlog::push(rec, millis(), ui::Gnss::utcEpoch(millis()),
+        alertlog::push(historyAlert, millis(), ui::Gnss::utcEpoch(millis()),
                        ui::Gnss::fresh(millis()), fx.lat7, fx.lon7);
     }
 

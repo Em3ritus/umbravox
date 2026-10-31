@@ -132,7 +132,7 @@ public:
             case A::MeshEnroll:     r.meshEnroll = true; break;
             case A::MeshResetNet:   r.meshReset  = true; break;
 
-            case A::AlertTest: case A::AlertPage: case A::FilePage: case A::FileRefresh: break; // adapter owns file paging
+            case A::AlertOpen: case A::AlertClose: case A::AlertTest: case A::AlertPage: case A::FilePage: case A::FileRefresh: break; // adapter owns file paging
             case A::FileSelect:     fileSel_ = h.payload; break;        // visible index; caller adds scroll
             case A::FileDelete:     fileConfirm_ = true; break;         // open the modal
             case A::FileConfirmYes: r.fileDelete = true; fileConfirm_ = false; break;

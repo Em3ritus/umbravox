@@ -382,6 +382,7 @@ void flagTwin(int slot, const char* name) {
         alert_.threat = ui::TH_ROGUE;
         alert_.conf   = ui::CONF_MED;
         alert_.why    = "SSID AUTH CLASH";
+        memcpy(alert_.mac,table_[slot].mac,6);alert_.address=ui::AlertAddress::WifiBssid;
         int k = 0;
         for (; k < ui::ALERT_NAME - 1 && name[k]; k++) alert_.name[k] = name[k];
         alert_.name[k] = 0;
@@ -406,6 +407,8 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             alert_.threat = sig.threat;
             alert_.conf   = sig.conf;
             alert_.why    = sig.why;
+            memcpy(alert_.mac,bssid,6);alert_.address=ui::AlertAddress::WifiBssid;
+            memset(alert_.name,0,sizeof alert_.name);
             for (int k = 0; k < ui::ALERT_NAME - 1 && name[k]; k++) alert_.name[k] = name[k];
             alert_.atMs   = millis();
         }
@@ -736,6 +739,7 @@ void tick(uint32_t nowMs) {
             alert_.threat = ui::TH_DEAUTH;
             alert_.conf   = ui::CONF_HIGH;
             alert_.why    = "FLOOD";
+            memcpy(alert_.mac,deauthTarget,6);alert_.address=ui::AlertAddress::WifiTarget;
             snprintf(alert_.name, ui::ALERT_NAME, "%02X:%02X:%02X %lu/S",
                      deauthTarget[3], deauthTarget[4], deauthTarget[5],
                      (unsigned long)(deauthRate * 1000 / DEAUTH_WINDOW_MS));

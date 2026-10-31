@@ -154,3 +154,5 @@ sim/bridge_png
 /sim/test_storage_paths
 
 /sim/test_alert_history
+
+/sim/test_oui_registry

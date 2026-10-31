@@ -20,7 +20,7 @@ int main(){
         expect(g.body==Rect{8,52,W-16,H-104}, P?"320 body":"480 body");
         expect(g.title.y==g.body.y && g.header.y==g.body.y+20 && g.list.y==g.body.y+32, "title/header/list stack");
         expect(g.list.x==g.body.x && g.list.w==g.body.w && g.list.y+g.list.h==g.body.y+g.body.h-44, "list ends above controls");
-        expect(g.nRows>=1 && g.rowH==14, "log shows at least one compact row");
+        expect(g.nRows>=1 && g.rowH==44, "log shows at least one touch row");
 
         HitList h = omensHits(W,H);
         expect(h.count==(W>=400?13:12), "omens hits: chrome nav only (log is scroll, not taps)");

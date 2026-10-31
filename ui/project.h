@@ -137,7 +137,7 @@ inline void omens(omnpres::OmenStore& st, const ui::State& s, const Chrome& c) {
     st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     st.total(s.omenTotal);st.level(s.set.alertMin);
     for (int i = 0; i < s.nOmens; i++)
-        st.addRow(s.omens[i].test?"TEST ALERT":ui::threatName(s.omens[i].threat), s.omens[i].name, s.omens[i].conf, s.omens[i].agoS, s.omens[i].located,s.omens[i].test);
+        st.addRow(s.omens[i].test?"TEST ALERT":ui::threatName(s.omens[i].threat), s.omens[i].name, s.omens[i].conf, s.omens[i].agoS, s.omens[i].located,s.omens[i].test,s.omens[i].id);
 }
 
 // --- ECHOES ------------------------------------------------------------------
