@@ -1,5 +1,5 @@
 import {ESPLoader,Transport} from './vendor/esptool-js-0.7.0.js';
-import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs';
+import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs?v=20261101-2';
 const $=id=>document.getElementById(id);
 let loader,transport,manifest,base,busy=false;
 function status(s){$('status').textContent=s;}
