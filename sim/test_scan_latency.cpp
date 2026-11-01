@@ -126,7 +126,7 @@ int main() {
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
     // Body goldens: accepted per-size radar positions; CVLT has two rings and a quiet seal.
-    const uint64_t golden[2][3]={{9248154531956547406ull,437666352304452431ull,3863943504657656766ull},{10901866208411352173ull,12349037646100620601ull,4266813576137956039ull}};
+    const uint64_t golden[2][3]={{3804890134860932238ull,13960939069491462959ull,2857356024564699678ull},{968414736510125997ull,14632419227772201257ull,1045063722206322167ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

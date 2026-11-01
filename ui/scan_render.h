@@ -337,16 +337,16 @@ struct ChromeState {
     ui::PoiStatus poi = ui::PoiStatus::Ready;
     ui::StorageState sd=ui::StorageState::Missing;
 };
-inline void drawChrome(S& s, int W, int H, const uieng::Rect& body,
+inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
                        const ChromeState& st, int activeTab) {
     const uieng::Chrome c = uieng::chrome(W, H);
     // lay the full VOID ground (every screen's body sits on this), then the
-    // status/nav surfaces + design #1 inset dividers (body-relative)
+    // status/nav surfaces and full-width one-pixel dividers.
     box(s, 0, 0, W, H, pal::VOID);
     box(s, 0, 0, W, 44, pal::PANEL);
     box(s, 0, H - 44, W, 44, pal::PANEL);
-    box(s, 8, 43, W-16, 1, pal::EDGE);
-    box(s, body.x, H - 46, body.w, 1, pal::EDGE);
+    box(s, 0, 43, W, 1, pal::EDGE);
+    box(s, 0, H - 46, W, 1, pal::EDGE);
 
     for(int y:{8,13,18})box(s,14,y,16,2,activeTab==3?pal::BRIGHT:pal::TEXT);
     centered(s,22,28,"MENU",1,activeTab==3?pal::BRIGHT:pal::TEXT);
