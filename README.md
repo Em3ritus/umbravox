@@ -1,5 +1,21 @@
 # UMBRAVOX
 
+## Browser installation — native UI builds
+
+Install from **https://slickrick773.github.io/umbravox/** using desktop Chrome
+or Edge and a USB data cable. Select NM-CYD-C5, Waveshare 3.5-inch or Waveshare
+2.8-inch explicitly. The installer verifies ESP32-C5 / 16 MiB flash, checks
+download hashes, installs the matching boot and partition files, and verifies
+the written firmware. It does not perform a full-chip erase.
+
+NM now has a native 320x240 shared-engine target (`nm-cyd-c5-engine`); its first
+installation migrates the old 3 MiB app slot to 6 MiB. NM hardware acceptance
+is pending. Preserve internal data before migration. External SD is untouched.
+ZIP downloads and command-line instructions are available on the installer.
+See [NM integration](docs/NM-NATIVE-ENGINE.md) and
+[installer source](web/native/README.md).
+
+
 **A passive, dual-band wardriver for the ESP32-C5 — with a summoning-circle console instead of a dashboard.**
 
 ![UMBRAVOX](docs/umbravox.png)
