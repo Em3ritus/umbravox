@@ -1,5 +1,6 @@
-import {ESPLoader,Transport} from './vendor/esptool-js-0.7.0.js';
-import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs?v=20261101-2';
+import {Transport} from './vendor/esptool-js-0.7.0.js';
+import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs?v=20261101-3';
+import {C5Loader} from './c5-loader.mjs?v=20261101-3';
 const $=id=>document.getElementById(id);
 let loader,transport,manifest,base,busy=false;
 function status(s){$('status').textContent=s;}
@@ -18,7 +19,7 @@ $('connect').onclick=async()=>{
  busy=true;controls();$('log').textContent='';status('Choose the board’s USB serial port.');
  try{
   const port=await navigator.serial.requestPort();transport=new Transport(port);
-  loader=new ESPLoader({transport,baudrate:115200,romBaudrate:115200,terminal:{clean:()=>{},write:log,writeLine:log}});
+  loader=new C5Loader({transport,baudrate:115200,romBaudrate:115200,terminal:{clean:()=>{},write:log,writeLine:log}});
   const info=await inspectDevice(loader);
   base=new URL(`firmware/${$('board').value}/manifest.json`,location.href);
   const response=await fetch(base);if(!response.ok)throw Error('Firmware manifest unavailable');manifest=validateManifest(await response.json());

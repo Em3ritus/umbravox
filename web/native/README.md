@@ -18,3 +18,7 @@ The resulting directory is a self-contained GitHub Pages site including ZIP
 fallback downloads, same-origin firmware, manifests and SITE-SHA256SUMS.txt.
 Run `node --test web/native/test/flash.test.mjs` before deployment.
 Browser UI and mocked protocol checks do not replace physical-board acceptance.
+
+C5 ROM compatibility: `c5-loader.mjs` adds the missing zero encryption word
+to 16-byte FLASH_DEFL_BEGIN packets only. Tests exercise the pinned vendor
+packet builder and command status handling; stub and other-chip packets stay unchanged.
