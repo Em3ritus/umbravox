@@ -1,7 +1,8 @@
 // Host test for the WiGLE row formatters (device/wiglerow.h), shared by the
-// SD append path and the console WIGLE dump. Golden rows are copied verbatim
-// from the user's field CSV (written by the old whole-file exporter), so the
-// append logger must produce the same bytes for the same data.
+// SD append path and the console WIGLE dump. Golden rows use synthetic values
+// (made-up MACs, SSIDs, times and coordinates) in the exact WigleWifi-1.6 column
+// layout the old whole-file exporter wrote, so the append logger must produce
+// the same bytes for the same data.
 #include "../device/wiglerow.h"
 #include <stdio.h>
 #include <string.h>
@@ -16,41 +17,41 @@ int main() {
     char buf[256];
     printf("WiFi rows match the field CSV byte for byte:\n");
     {
-        const uint8_t m[6] = {0xB0, 0x39, 0x56, 0x1A, 0x25, 0x71};
-        // 2026-10-23 18:37:21 UTC
-        const int n = wiglerow::wifi(buf, sizeof buf, m, "NETGEAR79", "[WPA2-PSK-CCMP][ESS]",
-                                     1792780641u, 4, -88, 420535600, -710599890);
-        check("NETGEAR79 row", strcmp(buf, "B0:39:56:1A:25:71,\"NETGEAR79\",[WPA2-PSK-CCMP][ESS],"
-              "2026-10-23 18:37:21,4,2427,-88,42.0535600,-71.0599890,0,30,,,WIFI\n") == 0);
+        const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+        // 2026-01-01 00:00:00 UTC
+        const int n = wiglerow::wifi(buf, sizeof buf, m, "TESTNET-A", "[WPA2-PSK-CCMP][ESS]",
+                                     1767225600u, 4, -88, 123456789, -987654321);
+        check("TESTNET-A row", strcmp(buf, "02:00:00:00:00:01,\"TESTNET-A\",[WPA2-PSK-CCMP][ESS],"
+              "2026-01-01 00:00:00,4,2427,-88,12.3456789,-98.7654321,0,30,,,WIFI\n") == 0);
         check("length returned", n == (int)strlen(buf));
     }
     {
-        const uint8_t m[6] = {0x68, 0x8F, 0xC9, 0xF8, 0x16, 0x8A};
-        wiglerow::wifi(buf, sizeof buf, m, "CARLINK-181EE1", "[WPA2-PSK-CCMP][ESS]",
-                       1793044703u, 36, -80, 421017968, -710194615);
-        check("5 GHz row (channel 36 -> 5180)", strcmp(buf, "68:8F:C9:F8:16:8A,\"CARLINK-181EE1\","
-              "[WPA2-PSK-CCMP][ESS],2026-10-26 19:58:23,36,5180,-80,42.1017968,-71.0194615,0,30,,,WIFI\n") == 0);
+        const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02};
+        wiglerow::wifi(buf, sizeof buf, m, "TESTNET-5G", "[WPA2-PSK-CCMP][ESS]",
+                       1767229261u, 36, -80, 123456800, -987654400);
+        check("5 GHz row (channel 36 -> 5180)", strcmp(buf, "02:00:00:00:00:02,\"TESTNET-5G\","
+              "[WPA2-PSK-CCMP][ESS],2026-01-01 01:01:01,36,5180,-80,12.3456800,-98.7654400,0,30,,,WIFI\n") == 0);
     }
     {
-        const uint8_t m[6] = {0xFA, 0x8F, 0xCA, 0x78, 0xBC, 0x6F};
-        wiglerow::wifi(buf, sizeof buf, m, "GoogleHome8056.k,", "[OPEN][ESS]",
-                       1793045046u, 6, -97, 421275143, -710094355);
-        check("SSID with a comma stays quoted", strcmp(buf, "FA:8F:CA:78:BC:6F,\"GoogleHome8056.k,\","
-              "[OPEN][ESS],2026-10-26 20:04:06,6,2437,-97,42.1275143,-71.0094355,0,30,,,WIFI\n") == 0);
+        const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x03};
+        wiglerow::wifi(buf, sizeof buf, m, "Test,Net,", "[OPEN][ESS]",
+                       1767312045u, 6, -97, 123457000, -987655000);
+        check("SSID with a comma stays quoted", strcmp(buf, "02:00:00:00:00:03,\"Test,Net,\","
+              "[OPEN][ESS],2026-01-02 00:00:45,6,2437,-97,12.3457000,-98.7655000,0,30,,,WIFI\n") == 0);
     }
     {
-        const uint8_t m[6] = {0x1E, 0x46, 0xA7, 0x6B, 0x37, 0xBA};
+        const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x04};
         wiglerow::wifi(buf, sizeof buf, m, "", "[WPA3-SAE-CCMP][ESS]",
-                       1793044702u, 6, -93, 421017660, -710195598);
-        check("hidden network: empty quoted SSID", strcmp(buf, "1E:46:A7:6B:37:BA,\"\","
-              "[WPA3-SAE-CCMP][ESS],2026-10-26 19:58:22,6,2437,-93,42.1017660,-71.0195598,0,30,,,WIFI\n") == 0);
+                       1767232801u, 6, -93, 123456790, -987654330);
+        check("hidden network: empty quoted SSID", strcmp(buf, "02:00:00:00:00:04,\"\","
+              "[WPA3-SAE-CCMP][ESS],2026-01-01 02:00:01,6,2437,-93,12.3456790,-98.7654330,0,30,,,WIFI\n") == 0);
     }
     printf("BLE row keeps the WigleWifi-1.6 column set:\n");
     {
-        const uint8_t m[6] = {0x38, 0x4B, 0xC2, 0x01, 0x02, 0x03};
-        wiglerow::ble(buf, sizeof buf, m, "Tile", 1793044702u, -71, 421017660, -710195598);
-        check("BLE row", strcmp(buf, "38:4B:C2:01:02:03,\"Tile\",Misc [LE],2026-10-26 19:58:22,"
-              "0,0,-71,42.1017660,-71.0195598,0,30,,,BLE\n") == 0);
+        const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x05};
+        wiglerow::ble(buf, sizeof buf, m, "Tile", 1767232801u, -71, 123456790, -987654330);
+        check("BLE row", strcmp(buf, "02:00:00:00:00:05,\"Tile\",Misc [LE],2026-01-01 02:00:01,"
+              "0,0,-71,12.3456790,-98.7654330,0,30,,,BLE\n") == 0);
     }
     printf("worst case fits applog's row buffer:\n");
     {

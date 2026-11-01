@@ -36,7 +36,7 @@ struct Fake { uint8_t pad[80]; int32_t lat7, lon7; bool located; };   // ~92 B, 
 
 int main() {
     using namespace plotproj;
-    const int32_t LAT = 421017660, LON = -710195598;      // the field drive
+    const int32_t LAT = 420000000, LON = -300000000;      // synthetic origin (42N, mid-Atlantic)
 
     printf("agreement with the old projection (random points, every range):\n");
     {
