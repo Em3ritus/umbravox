@@ -16,6 +16,10 @@ export async function inspectDevice(loader) {
   const size = await loader.detectFlashSize();
   const capacity = /^(16|32|64|128)MB$/.test(size || '') ? Number(size.slice(0,-2))*1024*1024 : 0;
   if(capacity < 16777216) throw Error(`Requires at least 16MB flash; detected ${size || 'unknown'}. Nothing written.`);
+  // Configure the ROM's flash geometry with the detected capacity BEFORE any FLASH_(DEFL_)BEGIN.
+  // Without this the C5 ROM keeps its default geometry and rejects the full app-region erase
+  // (status 1,6). A failure here throws, so install()/writeFlash never runs.
+  await loader.flashSetParameters(capacity);
   return {chip:loader.chip.CHIP_NAME, size, mac:await loader.chip.readMac(loader)};
 }
 export async function loadParts(manifest, base, fetcher=fetch, cryptoApi=crypto) {

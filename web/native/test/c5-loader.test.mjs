@@ -83,3 +83,22 @@ test('real C5Loader DEFL_BEGIN ROM rejection propagates without retry',async()=>
   await assert.rejects(l.flashDeflBegin(20800,13140,0x2000),/status 1,5/);
   assert.equal(calls,1);
 });
+// SPI_SET_PARAMS (0x0b): the pinned vendor has no such command, so the C5 ROM keeps its
+// default flash geometry and rejects the ~3 MB app-region erase (status 1,6). flashSetParameters
+// mirrors Python's flash_set_parameters <IIIIII> fl_id,total_size,block,sector,page,status_mask.
+test('real C5Loader flashSetParameters emits SPI_SET_PARAMS (0x0b) with the six ROM fields',async()=>{
+  for(const cap of [0x1000000,0x2000000]){ // 16 MB and 32 MB devices
+    let pkt;const l=romLoader(async(op,d)=>{pkt={op,len:d.length,
+      fields:Array.from({length:d.length/4},(_,i)=>new DataView(d.buffer,d.byteOffset,d.byteLength).getUint32(i*4,true))};
+      return [0,new Uint8Array([0,0])];});
+    await l.flashSetParameters(cap);
+    assert.equal(pkt.op,0x0b);
+    assert.equal(pkt.len,24); // six uint32, no pad
+    assert.deepEqual(pkt.fields,[0,cap,0x10000,0x1000,0x100,0xffff]); // fl_id,total,block,sector,page,mask
+  }
+});
+test('real C5Loader SPI_SET_PARAMS failure propagates without retry',async()=>{
+  let calls=0;const l=romLoader(async()=>{calls++;return [0,new Uint8Array([1,6])];});
+  await assert.rejects(l.flashSetParameters(0x1000000),/status 1,6/);
+  assert.equal(calls,1);
+});
