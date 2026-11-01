@@ -1,6 +1,6 @@
 import {Transport} from './vendor/esptool-js-0.7.0.js';
-import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs?v=20261101-6';
-import {C5Loader} from './c5-loader.mjs?v=20261101-6';
+import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs?v=20261101-7';
+import {C5Loader} from './c5-loader.mjs?v=20261101-7';
 const $=id=>document.getElementById(id);
 let loader,transport,manifest,base,busy=false;
 function status(s){$('status').textContent=s;}
