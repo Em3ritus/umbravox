@@ -162,3 +162,7 @@ sim/bridge_png
 /sim/test_ws28_touch
 
 /sim/test_bundled_themes
+
+# OS and Python caches, never source
+.DS_Store
+__pycache__/

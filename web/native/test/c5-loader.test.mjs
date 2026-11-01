@@ -40,3 +40,46 @@ test('real C5Loader constructor emits the Python ROM FLASH_DEFL_BEGIN packet',as
   assert.equal(pkt.len,20); // four ROM params + encryption word
   assert.deepEqual(pkt.fields,[21504,13,1024,8192,0]); // erase_size,num_blocks,block_size(0x400),offset,enc
 });
+// Build the real loader so IS_STUB, FLASH_WRITE_SIZE, opcodes and packet framing all
+// come from the code under test; only the transport/command wire is intercepted.
+function romLoader(command){
+  const loader=new C5Loader({transport:{getInfo:()=>({})},baudrate:115200,romBaudrate:115200,
+    terminal:{clean(){},write(){},writeLine(){}}});
+  loader.chip={CHIP_NAME:'ESP32-C5'}; // state after detectChip(); installer never loads a stub
+  if(command)loader.command=command;
+  return loader;
+}
+test('real C5Loader SPI_ATTACH sends the 8-byte ROM form',async()=>{
+  let pkt;const l=romLoader(async(op,d)=>{pkt={op,bytes:[...d]};return [0,new Uint8Array([0,0])];});
+  await l.flashSpiAttach(0);
+  assert.equal(pkt.op,0x0d);
+  assert.deepEqual(pkt.bytes,[0,0,0,0,0,0,0,0]); // arg word + reserved word
+});
+test('real writeFlash emits DEFL_BEGIN then DEFL_DATA at the ROM block size',async()=>{
+  const ops=[];let begin;
+  const l=romLoader(async(op,d)=>{const dv=new DataView(d.buffer,d.byteOffset,d.byteLength);
+    if(op===0x10)begin=Array.from({length:d.length/4},(_,i)=>dv.getUint32(i*4,true));
+    ops.push({op,len:d.length});return [0,new Uint8Array([0,0])];});
+  const data=new Uint8Array(0x400*3+37);crypto.getRandomValues(data); // incompressible payload: multiple blocks + a final partial
+  await l.writeFlash({fileArray:[{data,address:0x2000}],flashSize:'keep',flashMode:'keep',flashFreq:'keep',eraseAll:false,compress:true});
+  assert.equal(ops[0].op,0x10);                 // BEGIN first
+  assert.equal(ops[0].len,20);                  // four params + encryption word
+  assert.equal(begin[2],1024);                  // block_size = 0x400, not the stub's 0x4000
+  assert.equal(begin[3],0x2000);                // offset
+  assert.ok(ops.filter(o=>o.op===0x11).length>=2); // multiple DEFL_DATA blocks incl. a final partial
+  assert.ok(!ops.some(o=>o.op===0x12));         // ROM path sends no DEFL_END
+});
+test('real flashMd5sum ROM reply decodes to the hex digest',async()=>{
+  const md5='0123456789abcdef0123456789abcdef';
+  const resp=new Uint8Array(34);for(let i=0;i<32;i++)resp[i]=md5.charCodeAt(i); // 32 ASCII hex bytes + [0,0] status
+  const l=romLoader(async()=>[0,resp]);
+  let actual=await l.flashMd5sum(0x2000,1024);
+  assert.equal(actual.length,64); // vendor hex-encodes the 32 ASCII bytes
+  if(/^[a-f0-9]{64}$/i.test(actual))actual=String.fromCharCode(...actual.match(/../g).map(x=>parseInt(x,16)));
+  assert.equal(actual,md5); // install()'s normalization recovers the digest
+});
+test('real C5Loader DEFL_BEGIN ROM rejection propagates without retry',async()=>{
+  let calls=0;const l=romLoader(async()=>{calls++;return [0,new Uint8Array([1,5])];});
+  await assert.rejects(l.flashDeflBegin(20800,13140,0x2000),/status 1,5/);
+  assert.equal(calls,1);
+});

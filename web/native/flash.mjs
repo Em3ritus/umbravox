@@ -42,5 +42,7 @@ export async function install(loader,manifest,files,progress) {
     if(/^[a-f0-9]{64}$/i.test(actual)) actual=String.fromCharCode(...actual.match(/../g).map(x=>parseInt(x,16)));
     if(actual.toLowerCase()!==p.md5) throw Error(`Flash verification failed: ${p.path}. Do not disconnect; retry installation.`);
   }
-  await loader.after('hard_reset');
+  // No automatic reset: the bundled RTS reset does not reliably restart a C5 over
+  // USB-Serial/JTAG, and attempting it here would let a post-verify failure mask a
+  // successful install. The caller reports verification; the user presses RESET.
 }
