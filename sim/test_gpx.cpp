@@ -1,5 +1,6 @@
 #include "../device/gpx.h"
 #include "../device/sdlog.h"
+#include <cstring>
 #include <map>
 #include <string>
 #include <cassert>

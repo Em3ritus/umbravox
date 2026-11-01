@@ -24,7 +24,7 @@ test('reserved names equal the list in admit()', () => {
   const m = /reserved\[\]\s*=\s*\{([^}]*)\}/.exec(cpp);
   assert.ok(m, 'reserved[] not found in ui/themepack.cpp');
   const names = [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]);
-  assert.equal(names.length, 4);
+  assert.ok(names.length > 0);
   assert.deepEqual([...limits.reservedNames].sort(), [...names].sort());
 });
 

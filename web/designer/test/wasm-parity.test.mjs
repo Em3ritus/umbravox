@@ -1,3 +1,4 @@
+import { BUILTIN_COUNT } from './_util.mjs';
 // The designer's live preview is the device's own ui/ code compiled to
 // WebAssembly (web/designer/wasm/bridge.cpp, built by
 // tools/build-designer-wasm.sh). This proves it: every frame the wasm draws
@@ -166,7 +167,7 @@ test('the module reports the canvas size and the built-in themes', () => {
   assert.equal(M._uv_width(), W);
   assert.equal(M._uv_height(), H);
   M._uv_clear_packs();
-  assert.equal(M._uv_theme_count(), 3);
+  assert.equal(M._uv_theme_count(), BUILTIN_COUNT);
 });
 
 for (const [label, id] of Object.entries(BUILTINS)) {
@@ -179,7 +180,7 @@ for (const [label, id] of Object.entries(BUILTINS)) {
 for (const dir of PACKS) {
   test(`pack ${dir}: loaded through uv_load_pack, wasm equals the simulator`, () => {
     const id = loadFixture(dir);
-    assert.equal(id, 3, `uv_load_pack: ${id < 0 ? err() : ''}`);
+    assert.equal(id, BUILTIN_COUNT, `uv_load_pack: ${id < 0 ? err() : ''}`);
     checkTheme(dir, id, dir);
   });
 }
@@ -210,8 +211,8 @@ test('the comparison is not vacuous: themes, frames and screens draw different p
 
 test('loading a draft replaces the previous one', () => {
   M._uv_clear_packs();
-  assert.equal(loadFixture(PACKS[0]), 3);
-  assert.equal(loadFixture(PACKS[1]), 3);
+  assert.equal(loadFixture(PACKS[0]), BUILTIN_COUNT);
+  assert.equal(loadFixture(PACKS[1]), BUILTIN_COUNT);
   assert.equal(M._uv_theme_count(), 4);
 });
 
@@ -219,7 +220,7 @@ test('loading a draft replaces the previous one', () => {
 
 test('uv_load_pack rejects hostile input cleanly and keeps the current draft', () => {
   M._uv_clear_packs();
-  assert.equal(loadFixture('sim/packs/cosmic-clone'), 3);
+  assert.equal(loadFixture('sim/packs/cosmic-clone'), BUILTIN_COUNT);
   const before = wasmRender(3, 'scan', 24, -1, -1);
   const count = M._uv_theme_count();
 
@@ -245,5 +246,5 @@ test('uv_load_pack rejects hostile input cleanly and keeps the current draft', (
   }
   // The failed loads must not have clobbered the live draft's emblem buffer.
   same('draft after hostile loads', wasmRender(3, 'scan', 24, -1, -1), before);
-  assert.equal(loadFixture(PACKS[0]), 3, 'a good pack still loads after failures');
+  assert.equal(loadFixture(PACKS[0]), BUILTIN_COUNT, 'a good pack still loads after failures');
 });
