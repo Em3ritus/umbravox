@@ -1,0 +1,46 @@
+# Release and deployment maintenance
+
+The fork's current development and default branch is `ws-c5-28`.
+The public installer is https://slickrick773.github.io/umbravox/ and is served
+from the root of `gh-pages`. Source lives in `web/native/`.
+
+## Preserve the working installer
+
+Documentation and CI updates do not require redeploying the installer or rebuilding
+published firmware. For an intentional installer update, run all native installer
+tests, assemble into a fresh empty directory with
+`tools/assemble-native-installer.py OUTPUT NM_ZIP WS35_ZIP WS28_ZIP`, and verify
+`SITE-SHA256SUMS.txt`. Use the reviewed board ZIPs; assembly does not compile firmware.
+Review the site diff, manifests, board order, revision identifiers and checksums
+before updating `gh-pages`. Verify the served revision after Pages finishes.
+Never substitute the legacy `web/dist` output for this native site.
+
+The manual legacy web preview workflow only uploads an Actions artifact. It has
+no Pages deployment job. CI builds the three native engine targets as well as
+legacy CYD, node and coordinator targets, and tests the native installer separately.
+A successful build is not hardware acceptance.
+
+## Release evidence
+
+A release tag identifies its source revision. Each firmware ZIP identifies its own
+build revision and includes matching source, checksums and all four installation
+images. Existing binaries may be reused unchanged in a combined release; state
+those revisions explicitly rather than implying they were rebuilt from its tag.
+Waveshare 2.8-inch and 3.5-inch browser installation and boot have been confirmed.
+The NM native UI candidate still requires hardware validation.
+
+Before publication, verify project identity and destination for both Git and API
+writes, run the installed privacy checks, review the final text and images, and
+verify asset hashes. Local hooks are clone-specific and do not protect API writes.
+Do not publish private guard configuration or captured field data.
+
+## Historical references
+
+`main`, `ws-c5-35`, and `ui-input-presentation` are retained historical branches;
+use `ws-c5-28` for current work. `gh-pages` contains deployment output only.
+Earlier prereleases remain available for provenance and recovery. Their historical
+board support and validation notes apply to those artifacts, not the current set.
+Use the combined `f963f3a` prerelease for the current published package set.
+Do not delete branches, replace firmware assets, move tags or rewrite history as
+part of routine documentation cleanup. Design journals and implementation plans
+record past decisions and are not the current product specification.

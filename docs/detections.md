@@ -1,8 +1,10 @@
 # What UMBRAVOX detects
 
-UMBRAVOX is a **passive, receive-only** scanner. It never transmits, probes, or
-connects — it only listens to the WiFi and BLE a device already broadcasts and
-decides whether that radio is worth naming.
+UMBRAVOX classifies Wi-Fi and BLE observations using signatures. Passive Wi-Fi
+listens without scan probes; optional active Wi-Fi scanning sends probe requests.
+BLE scanning, the phone bridge, and node communication have their own radio
+behavior, so the application as a whole must not be described as receive-only.
+A signature match is evidence with a confidence level, not proof of device identity.
 
 ## How confidence works
 

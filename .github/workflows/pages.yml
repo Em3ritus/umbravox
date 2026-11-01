@@ -1,26 +1,8 @@
-name: Deploy web flasher
+name: Build legacy web preview (no deployment)
 
-# Builds the three firmwares, merges each into a single browser-flashable image,
-# builds and tests the theme designer (web/designer, with its WebAssembly
-# preview), and publishes the ESP Web Tools flasher (web/) and the designer to
-# GitHub Pages. Enable Pages
-# in the repo settings with "Source: GitHub Actions" for this to deploy.
+# Historical ESP Web Tools preview only. The public native installer is served
+# from gh-pages; see docs/RELEASE-MAINTENANCE.md. This workflow cannot deploy it.
 on:
-  push:
-    branches: [master, main]
-    paths:
-      - "web/**"
-      - "device/**"
-      - "ui/**"
-      - "platformio.ini"
-      - "tools/make-web-flasher.sh"
-      - "sim/Makefile"
-      - "tools/assemble-designer.sh"
-      - "tools/build-designer-wasm.sh"
-      - "tools/emsdk-version.txt"
-      - "docs/theme-packs.md"
-      - "package.json"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -66,20 +48,7 @@ jobs:
         run: pip install platformio "esptool>=5"
       - name: Build firmwares and assemble flasher
         run: bash tools/make-web-flasher.sh
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: legacy-web-preview
           path: web/dist
-
-  deploy:
-    name: Deploy to Pages
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4

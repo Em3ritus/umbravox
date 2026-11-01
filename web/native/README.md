@@ -16,9 +16,12 @@ The partition table is migrated; preserve internal data before installation.
 Assemble with tools/assemble-native-installer.py using the three reviewed ZIPs.
 The resulting directory is a self-contained GitHub Pages site including ZIP
 fallback downloads, same-origin firmware, manifests and SITE-SHA256SUMS.txt.
-Run `node --test web/native/test/flash.test.mjs` before deployment.
+Run `node --test web/native/test/*.test.mjs` before deployment.
 Browser UI and mocked protocol checks do not replace physical-board acceptance.
 
-C5 ROM compatibility: `c5-loader.mjs` adds the missing zero encryption word
-to 16-byte FLASH_DEFL_BEGIN packets only. Tests exercise the pinned vendor
-packet builder and command status handling; stub and other-chip packets stay unchanged.
+C5 ROM compatibility: `c5-loader.mjs` uses 1024-byte download blocks, appends
+the ROM encryption word to FLASH_DEFL_BEGIN and the reserved word to SPI_ATTACH,
+and configures SPI flash geometry with SPI_SET_PARAMS using detected capacity.
+Tests exercise the real loader constructor and pinned vendor packet builder.
+
+Public deployment and historical branch policy: [release maintenance](../../docs/RELEASE-MAINTENANCE.md).
