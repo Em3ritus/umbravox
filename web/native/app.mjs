@@ -10,6 +10,8 @@ $('board').onchange=async()=>{
  $('package').hidden=true;$('version').textContent='';
  $('boardinfo').textContent=$('board').value==='nm-cyd-c5-engine'?'NM: shared native UI at 320×240, resistive touch and UART GPS. No battery sensing. Build-tested; NM hardware acceptance pending.':'Choose the exact board size. All three models use ESP32-C5, so chip detection alone cannot distinguish them.';
  controls();status('Ready to connect.');
+ const key=$('board').value;if(!key)return;
+ try{const r=await fetch(new URL(`firmware/${key}/manifest.json`,location.href));if(!r.ok)throw Error('Download unavailable');const m=validateManifest(await r.json());if(key!==$('board').value)return;if(m.boardKey!==key)throw Error('Board manifest mismatch');$('package').href=m.packageUrl;$('package').hidden=false;$('version').textContent=`Commit ${m.commit.slice(0,7)}`;}catch(e){status(e.message);}
 };
 $('ack').onchange=controls;
 $('connect').onclick=async()=>{
