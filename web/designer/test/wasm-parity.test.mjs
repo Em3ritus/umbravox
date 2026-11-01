@@ -213,7 +213,7 @@ test('loading a draft replaces the previous one', () => {
   M._uv_clear_packs();
   assert.equal(loadFixture(PACKS[0]), BUILTIN_COUNT);
   assert.equal(loadFixture(PACKS[1]), BUILTIN_COUNT);
-  assert.equal(M._uv_theme_count(), 4);
+  assert.equal(M._uv_theme_count(), BUILTIN_COUNT + 1);
 });
 
 // ---- hostile input -----------------------------------------------------------
