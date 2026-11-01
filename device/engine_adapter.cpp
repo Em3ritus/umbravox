@@ -1,10 +1,10 @@
 // engine_adapter.cpp -- device glue for the whole UI engine. See engine_adapter.h.
 //
 // Compiled always (device/*.cpp), but its body exists only under the opt-in so
-// the default WS build and the NM path carry none of it.
+// legacy targets carry none of it.
 #include "engine_adapter.h"
 
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
 
 #include <Arduino.h>
 #include "poi.h"
@@ -526,4 +526,4 @@ void clearMetrics() { metrics_.clear(); }
 
 }  // namespace engineadapter
 
-#endif  // WS_C5_35 && UMBRAVOX_SCAN_ENGINE
+#endif  // UMBRAVOX_SCAN_ENGINE

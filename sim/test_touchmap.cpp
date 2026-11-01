@@ -13,6 +13,17 @@ static void check(const char* what, bool ok) {
 using namespace touchmap;
 
 int main() {
+    {
+        bool exact=true;
+        for(int y=0;y<240;++y) for(int x=0;x<320;++x) {
+            int px,py;
+            toPanel(3,3,x,y,px,py);
+            if(px!=x || py!=y)exact=false;
+            toPanel(3,1,x,y,px,py);
+            if(px!=319-x || py!=239-y)exact=false;
+        }
+        check("native NM hit coordinates preserve every pixel, including 180-degree mounting",exact);
+    }
     printf("native round trips:\n");
     {
         bool ok = true;

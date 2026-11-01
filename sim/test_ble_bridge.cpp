@@ -13,6 +13,14 @@ struct FakeScanner {
     bool start(int,decltype(nullptr),bool){++starts;active=startOk;return startOk;}
 };
 int main(){
+#if defined(NM_CYD_C5)
+    const char* expectedModel="Umbravox NM CYD C5";
+    assert(strstr(WD_CAPS,"board_name=Umbravox_NM_CYD_C5"));
+#elif defined(WS_C5_28)
+    const char* expectedModel="Umbravox WS C5 28";
+#else
+    const char* expectedModel="Umbravox WS C5 35";
+#endif
     const uint8_t primary[6]={0x10,0xbd,0xa3,0x11,0x22,0x33};
     const uint8_t secondary[6]={0x10,0xbd,0xa3,0x44,0x55,0x66};
     char first[24],second[24];
@@ -25,7 +33,7 @@ int main(){
         assert(selectServices(mode,[&](bool biscuit,bool visible){++calls;(biscuit?bs:wd)=visible;return true;}));
         assert(wd==(mode==WARDRIVEGO) && bs==(mode==BISCUIT) && !(wd&&bs));
         assert(calls==(mode==OFF?2:3));
-        assert(!strcmp(identity(mode).model,mode==BISCUIT?"Biscuit DIY":"Umbravox WS C5 35"));
+        assert(!strcmp(identity(mode).model,mode==BISCUIT?"Biscuit DIY":expectedModel));
         for(int fail=1;fail<=calls;++fail){int n=0;assert(!selectServices(mode,[&](bool,bool){return ++n!=fail;}));assert(n==fail);}
     }
 
@@ -47,7 +55,13 @@ int main(){
 
     assert(!strcmp(FW_VERSION,"99.99.99"));
     assert(strstr(WD_CAPS,"fw=99.99.99 ") && strstr(WD_CAPS,"ota=0 "));
+#if defined(NM_CYD_C5)
+    assert(strstr(WD_CAPS,"board_name=Umbravox_NM_CYD_C5"));
+#elif defined(WS_C5_28)
+    assert(strstr(WD_CAPS,"board_name=Umbravox_WS_C5_28"));
+#else
     assert(strstr(WD_CAPS,"board_name=Umbravox_WS_C5_35"));
+#endif
     assert(!restartRound(false,120000,0)); // a large table cannot starve its tail
     assert(!restartRound(true,59999,0) && restartRound(true,60000,0));
     Command c;uint8_t b[256];

@@ -1,15 +1,7 @@
-// engine_adapter -- drives the WHOLE declarative UI engine on the Waveshare
-// panel: every screen composed natively at 480x320 in bounded strips, touch
-// routed through uinav::Router, data projected live from ui::State via
-// ui/project.h. Device-only glue around the pure engine core; its body compiles
-// only under the opt-in, so the default WS build and the NM path carry none of
-// it and keep the legacy canvas renderer + screens.
-//
-//   -DWS_C5_35 -DUMBRAVOX_SCAN_ENGINE   builds and wires this in.
-//
-// This supersedes scan_adapter (SCAN-only) for the engine build: main.cpp drives
-// this for all screens. scan_adapter.* is left in the tree but unused by this
-// path. Nothing here touches device/ capture/mesh/detection internals.
+// Shared native UI device adapter for Waveshare and NM-CYD-C5 engine targets.
+// Every screen uses layout(W,H), full-panel hit geometry and bounded rendering.
+// Legacy targets without UMBRAVOX_SCAN_ENGINE retain their canvas renderer.
+// Physical display, GPS, backlight and touch controllers remain board-specific.
 #pragma once
 #include <stdint.h>
 #include "../ui/model.h"

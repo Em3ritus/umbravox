@@ -1,5 +1,5 @@
 #include "ble_bridge.h"
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
 #include "ble_bridge_protocol.h"
 #include "ble_bridge_init.h"
 #include "capture.h"

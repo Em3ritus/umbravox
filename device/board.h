@@ -115,7 +115,11 @@ constexpr uint8_t ROTATION_LANDSCAPE = 3;
 constexpr uint8_t ROTATION_PORTRAIT  = 0;
 constexpr uint8_t ROTATION      = FLIP_180 ? (ROTATION_LANDSCAPE + 2) & 3 : ROTATION_LANDSCAPE;
 constexpr uint8_t ROTATION_TALL = FLIP_180 ? (ROTATION_PORTRAIT  + 2) & 3 : ROTATION_PORTRAIT;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+constexpr bool    HAS_PORTRAIT  = false; // native engine currently uses landscape geometry
+#else
 constexpr bool    HAS_PORTRAIT  = true;
+#endif
 
 constexpr int PANEL_W = 320;
 constexpr int PANEL_H = 240;

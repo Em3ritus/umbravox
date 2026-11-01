@@ -38,9 +38,9 @@ static unsigned consoleDwell=220;
 #include "dedup.h"
 #include "meshlive.h"
 #include "perflog.h"
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
 #include "../ui/project.h"
-#include "engine_adapter.h"   // WS cutover: the whole UI engine, all screens
+#include "engine_adapter.h"   // Shared native UI engine, all screens
 #endif
 #include "alertlog.h"
 #include "meshcore.h"
@@ -98,7 +98,7 @@ static constexpr int    GPS_BAUD   = board::GPS_BAUD;
 // faster -- only smaller, which is what the dirty rectangles are for.
 static constexpr int32_t SPI_HZ  = 40000000;
 
-#if (defined(WS_C5_35) || defined(WS_C5_28))
+#if defined(WS_C5_35) || defined(WS_C5_28) || defined(UMBRAVOX_SCAN_ENGINE)
 // Through Arduino's SPI class rather than Arduino_GFX's register-level ESP32
 // bus, so the panel and the SD card share one owner of the bus (the global SPI
 // instance). A soft reset leaves the bus's SPI block holding the previous
@@ -122,7 +122,7 @@ static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, board::ROTATION, fals
                                              240, 320);
 #endif
 
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
 // Only idle animation/orientation still need the legacy canvas in this build.
 // Allocate after Arduino has initialized PSRAM; never fall back to scarce SRAM.
 static ui::Canvas* canvasStorage = nullptr;
@@ -676,7 +676,7 @@ void setup() {
     delay(200);
     Serial.println();
     Serial.println("UMBRAVOX bring-up");
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     void* legacyPixels = heap_caps_malloc(sizeof(ui::Canvas), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!legacyPixels) {
         Serial.println("ui: FATAL -- no PSRAM for legacy animation canvas");
@@ -714,9 +714,13 @@ void setup() {
     // before the panel can be initialised at all.
     exio::begin();
 #endif
-#if defined(WS_C5_28)
+#if defined(WS_C5_28) || defined(NM_CYD_C5)
     pinMode(board::PIN_SD_CS,OUTPUT);
     digitalWrite(board::PIN_SD_CS,HIGH); // deselect SD before the first display transaction
+#endif
+#if defined(NM_CYD_C5)
+    pinMode(board::PIN_TOUCH_CS,OUTPUT);
+    digitalWrite(board::PIN_TOUCH_CS,HIGH);
 #endif
     if (!gfx->begin(SPI_HZ)) {
         Serial.println("gfx->begin() FAILED");
@@ -724,10 +728,10 @@ void setup() {
     }
     gfx->fillScreen(RGB565_BLACK);
 
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
-    // The native-resolution engine composes the whole 480x320 panel in bounded
-    // strips for EVERY screen (no 2x canvas, no letterbox). Opt-in only; the
-    // default WS build and NM keep the legacy canvas renderer + screens.
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // The native engine composes the whole board-sized panel in bounded
+    // strips for every screen. Targets without the engine flag keep the
+    // legacy canvas renderer.
     engineadapter::begin(gfx, PANEL_W, PANEL_H);
 #endif
 
@@ -779,7 +783,7 @@ void setup() {
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
     // Theme packs: after the card and the log (skips are logged), and before
     // loop()'s first prefs::load(), so a saved pack name finds its pack.
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     if (!touch::startSampling()) Serial.println("touch: sampler creation FAILED");
 #endif
     themeload::scan();
@@ -996,7 +1000,7 @@ static void rebootNow(const ui::Settings& set) {
     logging::stop(millis());
     gpx::tick("",ui::Gnss::fix(),millis(),0);
 
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     evidencecsv::stop();
 #endif
     prefs::setLogging(was);
@@ -1012,7 +1016,7 @@ static void rebootNow(const ui::Settings& set) {
 // Snapshot every writer at the point of deletion, including delayed stop flushes.
 static capturepaths::ActiveFiles activeCaptureFiles(){
  capturepaths::ActiveFiles a;a.set(0,logging::fileName());a.set(1,gpx::activeFile());
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
  a.set(2,evidencecsv::activeFile(0));a.set(3,evidencecsv::activeFile(1));
  a.set(4,(pcap::active()||pcap::pending())?pcap::fileName():"");
 #endif
@@ -1380,7 +1384,7 @@ void loop() {
         bootStall("gpx tick",start);
         if(gpx::takeError()){storageWriteError=true;elog::event(elog::WARN,"gpx","track write failed: %s; stopped for this session",gpx::fileName());}
     }
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     {const uint32_t start=micros();
     evidencecsv::tick(logging::state()==logging::ACTIVE && logging::wantsActive()?logging::fileName():"",
                       millis(),ui::Gnss::utcEpoch(millis()),cap::evidenceCsvRow);
@@ -1523,7 +1527,7 @@ void loop() {
     // glass -- uptime, battery, and an SD status claiming a card was present
     // with a log file name to match. Anything not filled below now shows its
     // honest default instead.
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     // Loop-owned snapshot: leave stack room for nested rendering and SDK calls.
     // Reconstruct in place to preserve the old fresh-State semantics each pass,
     // without a full-sized automatic temporary or per-frame allocation.
@@ -1654,7 +1658,7 @@ void loop() {
     // one UI frame so the panel is not left showing the animation.
     const bool screenOff = ipNow.suspend && !animStep.exit;
 
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     // Wake detection for the engine, computed BEFORE the screenOff early-return
     // below so an OFF/ANIM sleep (which returns early) is not missed. "Asleep"
     // covers DIM and the suspended OFF/ANIM states; the wake forces a full
@@ -1677,7 +1681,7 @@ void loop() {
     int visible = nav.screen == ui::SCR_FILES  ? ui::FILE_VIS
                       : nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
                       : nav.screen == ui::SCR_ECHOES ? ui::MAX_ECHO_ROWS : ui::ROWS;
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     if(nav.screen==ui::SCR_OMENS)visible=uieng::omens(board::PANEL_W,board::PANEL_H).nRows;
     if(nav.screen==ui::SCR_FILES)visible=uieng::files(board::PANEL_W,board::PANEL_H).nRows;
     if(nav.screen==ui::SCR_ECHOES)visible=uieng::echoes(board::PANEL_W,board::PANEL_H).nRows;
@@ -1685,7 +1689,7 @@ void loop() {
 #endif
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
     bool switched;
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     {
         // The engine composes EVERY screen natively; its status strip and side
         // controls lie OUTSIDE the 2x canvas, where touch::read leaves
@@ -1743,7 +1747,7 @@ void loop() {
 
     if (nav.logToggleRequested) {
         const bool wasWanted = logging::wantsActive();
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         if (!logging::saving()) {
             if (logging::state() == logging::IDLE) logging::start(millis(), ui::Gnss::utcEpoch(millis()));
             else logging::requestStop(millis());
@@ -1899,7 +1903,7 @@ void loop() {
     s.scroll = nav.scroll;
     s.setPage = nav.setPage;
     if (nav.screen == ui::SCR_CODEX) {
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         const int total=nav.filter==ui::F_LOCATED?cap::locatedCount():nav.filter==ui::F_BLE?blescan::sightCount():cap::sightCount(nav.filter==ui::F_5G);
         nav.scroll=uiproj::pageOffset(total,nav.scroll,uieng::codex(board::PANEL_W,board::PANEL_H).nRows);
         s.scroll=nav.scroll;
@@ -1907,10 +1911,10 @@ void loop() {
         if (nav.filter == ui::F_BLE) blescan::fillSights(s,nav.scroll);
         else cap::fillSights(s,nav.scroll,nav.filter==ui::F_5G,nav.filter==ui::F_LOCATED);
     } else if (nav.screen == ui::SCR_ECHOES) {
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         nav.scroll=uiproj::pageOffset(cap::echoCount(),nav.scroll,uieng::echoes(board::PANEL_W,board::PANEL_H).nRows);s.scroll=nav.scroll;
 #endif
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         cap::fillEchoes(s, nav.scroll, millis(),uieng::echoes(board::PANEL_W,board::PANEL_H).nRows);
 #else
         cap::fillEchoes(s, nav.scroll, millis());
@@ -1922,7 +1926,7 @@ void loop() {
         const ui::Gnss::Fix& fx = ui::Gnss::fix();
         int mapRadius=ui::MAP_R;
         int mapRange=ui::RANGES[nav.rangeIdx % ui::RANGE_N];
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         mapRadius=domr::radarGeom(uieng::domain(board::PANEL_W,board::PANEL_H).map).r;
         mapRange=domr::rangeAt(nav.rangeIdx);
         cap::fillSights(s,0,false,true); // same located Wi-Fi scope as DOMAIN's map
@@ -1950,14 +1954,14 @@ void loop() {
         }
     } else if (nav.screen == ui::SCR_FILES) {
         if (files::L) {
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
             ui::filesPublish(s,nav,*files::L,uieng::files(board::PANEL_W,board::PANEL_H).nRows);
 #else
             ui::filesPublish(s,nav,*files::L);
 #endif
         }
     } else if (nav.screen == ui::SCR_DETAIL) {
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         bool ble=false;uint8_t mac[6];
         s.detail=ui::Detail{};
         if(uiproj::decodeContactKey(nav.detailKey,ble,mac)) {
@@ -2027,7 +2031,7 @@ void loop() {
         // polling -- far faster than a finger.
         delay(5);
 
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         // A SCAN restoration queued by an external paint (animStep.exit while
         // the panel is still dark) is sliced, so the pass that queued it leaves
         // most rows unpainted and this early-return would skip the rest. The
@@ -2096,8 +2100,8 @@ void loop() {
         lastTheme = s.set.theme;
         themeChanged = true;
     }
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
-    // Engine SCAN: compose the whole panel natively (480x320) in bounded
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // Engine: compose the whole board-sized panel natively in bounded
     // strips and skip the 2x canvas path entirely for this screen. The scene is
     // snapshotted + committed once per frame (stable across the sliced redraw);
     // the transfer is sliced so capture keeps the CPU between slices.
@@ -2128,9 +2132,14 @@ void loop() {
                                 : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
                                 : logging::lastStopLoss() ? scanr::Rec::Incomplete
                                 :                                        scanr::Rec::Off;
+#if defined(WS_C5_35) || defined(WS_C5_28)
             const uint32_t pmuStart=micros();
             const pmu::Batt b = pmu::read(millis());
             bootStall("pmu read",pmuStart);
+#else
+            // NM has no battery sensing; never fabricate a charge level.
+            struct { bool ok=false,cell=false,charging=false; int pct=0; } b;
+#endif
             { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis(), b.ok, b.charging); bootStall("engine snapshot", _s); }
         }
         const uint32_t tD = millis();

@@ -895,7 +895,7 @@ int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint
 
 void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {
     s.totalSights = locatedOnly ? locatedCount() : sightCount(only5);
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     static sightorder::Cache ranking;
     if (!ranking.rows) {
         ranking.rows = static_cast<sightorder::Entry*>(heap_caps_malloc(
@@ -921,7 +921,7 @@ void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {
 
     int n = 0, skipped = 0;
     // Native lists use the global RSSI snapshot; legacy keeps its index contract.
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     (void)skipped;
     for (uint32_t i = offset < 0 ? 0u : (uint32_t)offset; i < ranking.count && n < ui::MAX_SIGHTS; ++i) {
         const uint16_t slot = ranking.rows[i].slot;
@@ -938,7 +938,7 @@ void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {
         for (; k < ui::AP_SSID_MAX - 1 && nd.ssid[k]; k++) g.ssid[k] = nd.ssid[k];
         g.ssid[k] = 0;
         for (int m = 0; m < 6; m++) g.mac[m] = nd.mac[m];
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         g.rssi = ranking.rows[i].rssi;
 #else
         g.rssi = nd.rssi;

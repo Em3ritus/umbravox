@@ -364,7 +364,7 @@ uint16_t sightCount() { return (uint16_t)(nOrder > 65535 ? 65535 : nOrder); }
 
 void fillSights(ui::State& s, int offset) {
     s.totalSights = sightCount();
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     static sightorder::Cache ranking;
     if (!ranking.rows) {
         ranking.rows = static_cast<sightorder::Entry*>(heap_caps_malloc(
@@ -388,7 +388,7 @@ void fillSights(ui::State& s, int offset) {
 #endif
 
     int n = 0, skipped = 0;
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
     (void)skipped;
     for (uint32_t i = offset < 0 ? 0u : (uint32_t)offset; i < ranking.count && n < ui::MAX_SIGHTS; ++i) {
         const uint16_t slot = ranking.rows[i].slot;
@@ -418,7 +418,7 @@ void fillSights(ui::State& s, int offset) {
             g.ssid[k] = 0;
         }
         for (int m = 0; m < 6; m++) g.mac[m] = a[m];
-#if (defined(WS_C5_35) || defined(WS_C5_28)) && defined(UMBRAVOX_SCAN_ENGINE)
+#if defined(UMBRAVOX_SCAN_ENGINE)
         g.rssi = ranking.rows[i].rssi;
 #else
         g.rssi = rssis[slot];

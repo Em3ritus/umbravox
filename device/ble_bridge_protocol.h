@@ -13,6 +13,8 @@ constexpr size_t MAX_LINE=384, MAX_CMD=192, HEADER=12;
 constexpr const char* FW_VERSION="99.99.99";
 #if defined(WS_C5_28)
 constexpr const char* WD_CAPS="WD:CAPS fw=99.99.99 chip=esp32c5 bands=2g,5g ota=0 bt=0 gps=0 cap=0 usb=0 board_name=Umbravox_WS_C5_28 link=ble";
+#elif defined(NM_CYD_C5)
+constexpr const char* WD_CAPS="WD:CAPS fw=99.99.99 chip=esp32c5 bands=2g,5g ota=0 bt=0 gps=0 cap=0 usb=0 board_name=Umbravox_NM_CYD_C5 link=ble";
 #else
 constexpr const char* WD_CAPS="WD:CAPS fw=99.99.99 chip=esp32c5 bands=2g,5g ota=0 bt=0 gps=0 cap=0 usb=0 board_name=Umbravox_WS_C5_35 link=ble";
 #endif
@@ -33,6 +35,8 @@ struct Identity {bool wdVisible,biscuitVisible;const char* model;};
 inline Identity identity(Mode mode){
 #if defined(WS_C5_28)
     constexpr const char* boardName="Umbravox WS C5 28";
+#elif defined(NM_CYD_C5)
+    constexpr const char* boardName="Umbravox NM CYD C5";
 #else
     constexpr const char* boardName="Umbravox WS C5 35";
 #endif

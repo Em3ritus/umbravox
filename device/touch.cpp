@@ -6,6 +6,7 @@
 
 #if defined(NM_CYD_C5)
 #include <SPI.h>
+#include <atomic>
 
 namespace touch {
 namespace {
@@ -38,7 +39,7 @@ constexpr uint16_t CAL_Y_RIGHT  = 240,  CAL_Y_LEFT = 3640;   // rawY -> screen X
 // The calibration above was measured with the display at this rotation; the
 // display's current one is `rot` (setRotation).
 constexpr int CAL_ROTATION = 3;
-uint8_t rot = board::ROTATION;
+std::atomic<uint8_t> rot{board::ROTATION};
 
 // Below this the panel is not being pressed, it is just noise.
 constexpr uint16_t Z_THRESHOLD = 400;
@@ -84,7 +85,7 @@ int16_t mapInv(uint16_t raw, uint16_t lo, uint16_t hi, int16_t out) {
 
 } // namespace
 
-void setRotation(uint8_t r) { rot = (uint8_t)(r & 3); }
+void setRotation(uint8_t r) { rot.store(uint8_t(r & 3)); }
 
 void begin() {
     pinMode(PIN_CS, OUTPUT);
@@ -95,7 +96,7 @@ void begin() {
     Serial.println("touch: XPT2046 on CS 1, polled (no IRQ line on this board)");
 }
 
-Point read() {
+Point readSensor() {
     Point p;
 
     SPI.beginTransaction(SPISettings(SPI_HZ, MSBFIRST, SPI_MODE0));
@@ -124,9 +125,11 @@ Point read() {
         const int lx = mapInv(ry, CAL_Y_RIGHT,  CAL_Y_LEFT, 2 * ui::W);
         const int ly = mapInv(rx, CAL_X_BOTTOM, CAL_X_TOP,  2 * ui::H);
         int cx, cy;
-        touchmap::toCanvas(CAL_ROTATION, rot, lx, ly, cx, cy);
-        p.x = (int16_t)cx;
-        p.y = (int16_t)cy;
+        touchmap::toPanel(CAL_ROTATION, rot.load(), lx, ly, cx, cy);
+        p.panelX = (int16_t)cx;
+        p.panelY = (int16_t)cy;
+        p.x = (int16_t)(cx / 2);
+        p.y = (int16_t)(cy / 2);
     }
     return p;
 }
@@ -319,6 +322,10 @@ static Point readSensor() {
     return p;
 }
 
+} // namespace touch
+#endif // Waveshare sensors
+
+namespace touch {
 #if defined(UMBRAVOX_SCAN_ENGINE)
 namespace {
 portMUX_TYPE eventMux = portMUX_INITIALIZER_UNLOCKED;
@@ -349,7 +356,9 @@ void sampler(void*) {
 }
 bool startSampling() {
     if (sampling) return true;
+#if defined(WS_C5_35) || defined(WS_C5_28)
     (void)wsbus::mutex();
+#endif
     sampling = xTaskCreate(sampler, "touch", 4096, nullptr, 3, nullptr) == pdPASS;
     return sampling;
 }
@@ -374,9 +383,15 @@ Point read() {
     return p;
 }
 Point observed() { portENTER_CRITICAL(&eventMux); Point p=latest; portEXIT_CRITICAL(&eventMux); return p; }
-int sensitivity(){ return threshold; }
+int sensitivity(){
+#if defined(NM_CYD_C5)
+    return -1; // XPT2046 pressure threshold is calibrated, not an FT6336 register.
+#else
+    return threshold;
+#endif
+}
 bool setSensitivity(int value){
-#if defined(WS_C5_28)
+#if defined(WS_C5_28) || defined(NM_CYD_C5)
     (void)value;return false;
 #else
     if(!present || value<8 || value>30)return false;
@@ -404,4 +419,3 @@ Point read() { return readSensor(); }
 #endif
 
 } // namespace touch
-#endif // WS_C5_35
