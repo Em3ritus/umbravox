@@ -213,6 +213,13 @@ bool onTapPortrait(Nav& n, Settings& st, int x, int y) {
 // Returns true if the tap changed the screen.
 bool onTap(Nav& n, Settings& st, int x, int y) {
     if (st.orient == ORIENT_PORTRAIT) return onTapPortrait(n, st, x, y);
+    // drawFooter draws the record control live on every screen but FILES, where
+    // it is drawn dim and inert, so a tap works wherever it looks tappable. No
+    // other control reaches the footer row.
+    if (n.screen != SCR_SCAN && n.screen != SCR_FILES && hit(x, y, LOG_X, LOG_Y, LOG_W, LOG_H)) {
+        n.logToggleRequested = true;
+        return false;
+    }
     if (n.screen == SCR_SCAN) {
         // The three tiles are the navigation. Each opens the codex filtered
         // to whatever that tile counts, which is the obvious meaning of

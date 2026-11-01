@@ -229,10 +229,26 @@ int main() {
         check("log: tap above the footer does not toggle",
               !tapAt(LOG_X + LOG_W / 2, LOG_Y - 3).logToggleRequested);
 
-        Nav o; o.screen = SCR_OMENS; Settings os;
-        navTouch(o, os, true,  (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
-        navTouch(o, os, false, (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
-        check("log: the same spot on another screen does not toggle", !o.logToggleRequested);
+        // The footer draws the control live on every screen but FILES, so a
+        // tap there works on every screen but FILES, and never leaves it.
+        for (int scr = 0; scr < SCR_COUNT; scr++) {
+            Nav o; o.screen = (uint8_t)scr; Settings os;
+            navTouch(o, os, true,  (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
+            navTouch(o, os, false, (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
+            const bool want = scr != SCR_FILES;
+            char what[64];
+            snprintf(what, sizeof what, "log: screen %d %s on a footer tap", scr,
+                     want ? "toggles" : "is inert (FILES)");
+            check(what, o.logToggleRequested == want && o.screen == scr);
+        }
+
+        // A drag that ends on the control is a scroll, not a tap.
+        Nav d; d.screen = SCR_OMENS; d.maxScroll = 20; Settings ds;
+        navTouch(d, ds, true,  (int16_t)(LOG_X + 5), (int16_t)(BODY_Y + 10));
+        navTouch(d, ds, true,  (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
+        navTouch(d, ds, true,  (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
+        navTouch(d, ds, false, (int16_t)(LOG_X + 5), (int16_t)(LOG_Y + 5));
+        check("log: a drag ending on the control does not toggle", !d.logToggleRequested);
     }
 
     printf("cosmic alerts:\n");
