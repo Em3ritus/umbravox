@@ -14,7 +14,8 @@ export async function inspectDevice(loader) {
   if(loader.chip.postConnect) await loader.chip.postConnect(loader);
   await loader.flashSpiAttach(0);
   const size = await loader.detectFlashSize();
-  if(size !== '16MB') throw Error(`Expected 16MB flash; detected ${size || 'unknown'}. Nothing written.`);
+  const capacity = /^(16|32|64|128)MB$/.test(size || '') ? Number(size.slice(0,-2))*1024*1024 : 0;
+  if(capacity < 16777216) throw Error(`Requires at least 16MB flash; detected ${size || 'unknown'}. Nothing written.`);
   return {chip:loader.chip.CHIP_NAME, size, mac:await loader.chip.readMac(loader)};
 }
 export async function loadParts(manifest, base, fetcher=fetch, cryptoApi=crypto) {

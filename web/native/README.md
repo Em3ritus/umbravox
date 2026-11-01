@@ -5,7 +5,7 @@ bundle served from the same origin. Source: https://github.com/espressif/esptool
 The vendor directory retains its licenses. No remote executable CDN imports.
 
 The installer connects to the ROM with detectChip(), not main()/runStub().
-It checks ESP32-C5 and 16 MiB flash before enabling installation. Exact board
+It checks ESP32-C5 and at least 16 MiB flash before enabling installation. Exact board
 selection is the user's responsibility: chip detection cannot distinguish NM
 from the two Waveshare models. Firmware downloads are checked against SHA-256
 before any write, then all four device regions are verified using ROM MD5.

@@ -4,7 +4,7 @@
 
 Install from **https://slickrick773.github.io/umbravox/** using desktop Chrome
 or Edge and a USB data cable. Select NM-CYD-C5, Waveshare 3.5-inch or Waveshare
-2.8-inch explicitly. The installer verifies ESP32-C5 / 16 MiB flash, checks
+2.8-inch explicitly. The installer verifies ESP32-C5 / at least 16 MiB flash, checks
 download hashes, installs the matching boot and partition files, and verifies
 the written firmware. It does not perform a full-chip erase.
 
