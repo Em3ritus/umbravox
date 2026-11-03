@@ -31,6 +31,13 @@ c2bf4e5 node images, and reported **Verified: all four images hashed OK**.
 The tested browser flow wrote bootloader, partitions, boot_app0 and application;
 no command-line flashing substituted for this check. Handheld firmware remains
 unchanged, with its separate 16 MB minimum and 6 MiB application limit.
+After reset, the spare booted as UMBRAVOX, enrolled on the handheld's network,
+received 20 channels and applied Passive/220 ms. In the follow-up observation,
+handheld accepted reports increased from 24 to 120 while the node's sent-record
+counter increased from 252 to 805 with zero node queue drops/send failures.
+The handheld's two pre-enrollment magic/network rejects did not increase;
+version, length and no-slot rejects remained zero. These are bounded bench
+results, not unique-network counts or a multi-node capacity claim.
 
 ## Saved recording check: passed
 
