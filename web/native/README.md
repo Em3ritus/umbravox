@@ -24,4 +24,7 @@ the ROM encryption word to FLASH_DEFL_BEGIN and the reserved word to SPI_ATTACH,
 and configures SPI flash geometry with SPI_SET_PARAMS using detected capacity.
 Tests exercise the real loader constructor and pinned vendor packet builder.
 
-Public deployment and historical branch policy: [release maintenance](../../docs/RELEASE-MAINTENANCE.md).
+Standalone CLI version and setup: [flashing tools](../../docs/FLASHING-TOOLS.md).
+Python esptool versions do not apply to this JavaScript vendor bundle.
+
+Public deployment and release maintenance: [release maintenance](../../docs/RELEASE-MAINTENANCE.md).

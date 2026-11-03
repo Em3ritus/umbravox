@@ -166,3 +166,6 @@ sim/bridge_png
 # OS and Python caches, never source
 .DS_Store
 __pycache__/
+
+# Standalone flashing-tool virtual environment
+.venv-flash/

@@ -4,6 +4,12 @@ The fork's current development and default branch is `main`.
 The public installer is https://slickrick773.github.io/umbravox/ and is served
 from the root of `gh-pages`. Source lives in `web/native/`.
 
+## Flashing tool versions
+
+The standalone C5 CLI is pinned in `tools/requirements-flash.txt`. See
+[flashing tools](FLASHING-TOOLS.md) before building installation instructions.
+Keep historical package source and firmware hashes intact when updating guidance.
+
 ## Preserve the working installer
 
 Documentation and CI updates do not require redeploying the installer or rebuilding

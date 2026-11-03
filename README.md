@@ -87,7 +87,9 @@ state are separate controls.
 Local GPS-dependent recordings need a valid board GPS fix. Phone GPS supplies
 the phone app's records and is not assumed to feed back into the board.
 Native portrait mode and direct WiGLE / WDG Wars / Wardrift API uploads are not
-included. No XIAO node binary is bundled in the handheld prerelease.
+included. The XIAO ESP32-C5 node is available as a separate download on the
+[handheld prerelease](https://github.com/slickrick773/umbravox/releases/tag/f963f3a).
+See [XIAO node installation](docs/XIAO-NODE.md) for flashing and enrollment.
 
 ## Development
 
@@ -102,7 +104,8 @@ npm test
 ```
 
 Designer tests require the Emscripten version pinned in `tools/emsdk-version.txt`.
-See `platformio.ini` for board-specific build environments. Choose the native
+See [flashing tools](docs/FLASHING-TOOLS.md) for the validated CLI version and
+setup. See `platformio.ini` for board-specific build environments. Choose the native
 engine target for your board; legacy build targets remain in the source tree.
 
 ## License & credit
