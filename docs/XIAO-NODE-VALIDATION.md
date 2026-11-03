@@ -23,6 +23,15 @@ Waveshare ESP32-C5-Touch-LCD-3.5 handheld firmware bce092c.
   transfer errors in the observed diagnostics. This establishes the connection
   issue seen on this bench; it does not rule out other I2C faults.
 
+## Browser installation on a spare XIAO: passed
+
+A second XIAO ESP32-C5 was installed using desktop Chrome and the native browser
+installer. The page detected ESP32-C5 with 8 MB flash, downloaded the existing
+c2bf4e5 node images, and reported **Verified: all four images hashed OK**.
+The tested browser flow wrote bootloader, partitions, boot_app0 and application;
+no command-line flashing substituted for this check. Handheld firmware remains
+unchanged, with its separate 16 MB minimum and 6 MiB application limit.
+
 ## Saved recording check: passed
 
 A real-GPS recording was stopped using the handheld control, then all four files

@@ -4,7 +4,7 @@ import {webcrypto,createHash} from 'node:crypto';
 import {validateManifest,inspectDevice,loadParts,install} from '../flash.mjs';
 import {C5Loader} from '../c5-loader.mjs';
 const data=new Uint8Array([1,2,3,4]);
-const m={chip:'ESP32-C5',flashBytes:16777216,parts:['bootloader.bin','partitions.bin','boot_app0.bin','firmware.bin'].map((path,i)=>({path,offset:[8192,32768,57344,65536][i],bytes:4,sha256:createHash('sha256').update(data).digest('hex'),md5:createHash('md5').update(data).digest('hex')}))};
+const m={boardKey:'ws-c5-35-engine',chip:'ESP32-C5',flashBytes:16777216,parts:['bootloader.bin','partitions.bin','boot_app0.bin','firmware.bin'].map((path,i)=>({path,offset:[8192,32768,57344,65536][i],bytes:4,sha256:createHash('sha256').update(data).digest('hex'),md5:createHash('md5').update(data).digest('hex')}))};
 const fetcher=async()=>({ok:true,arrayBuffer:async()=>data.buffer});
 function loader(size='16MB',chip='ESP32-C5'){return {chip:{CHIP_NAME:chip,readMac:async()=> '02:00:00:00:00:01'},detectChip:async()=>{},flashSpiAttach:async()=>{},detectFlashSize:async()=>size,flashSetParameters:async()=>{}};}
 // Real C5Loader with only the serial-touching chip methods stubbed; flashSetParameters,
@@ -46,4 +46,25 @@ test('a SPI_SET_PARAMS failure aborts before any write',async()=>{
   await assert.rejects(inspectDevice(l),/status 1,6/);
   assert.ok(ops.includes(0x0b),'attempted config');
   assert.ok(!ops.includes(0x10)&&!ops.includes(0x02),'no BEGIN after config failure');
+});
+
+const nodeManifest=()=>({...structuredClone(m),boardKey:'xiao-c5-node',flashBytes:8388608});
+test('XIAO accepts 8MB, handhelds still reject 8MB, and both reject wrong chips',async()=>{
+ const n=nodeManifest();validateManifest(n);await inspectDevice(loader('8MB'),n);
+ await assert.rejects(inspectDevice(loader('8MB'),m),/16MB/);
+ await assert.rejects(inspectDevice(loader('4MB'),n),/8MB/);
+ await assert.rejects(inspectDevice(loader('8MB','ESP32-S3'),n));
+});
+test('board identity fixes capacity and application partition bounds',()=>{
+ for(const patch of [{boardKey:'unknown'},{flashBytes:16777216}])assert.throws(()=>validateManifest({...nodeManifest(),...patch}));
+ const n=nodeManifest();n.parts[3].bytes=0x300004;assert.throws(()=>validateManifest(n),/region/);
+ const h=structuredClone(m);h.flashBytes=8388608;assert.throws(()=>validateManifest(h));
+});
+test('XIAO configures detected 8MB geometry and uses the four verified writes',async()=>{
+ const n=nodeManifest();let total;
+ const l=realLoader(async(op,d)=>{if(op===0x0b)total=new DataView(d.buffer,d.byteOffset,d.byteLength).getUint32(4,true);return [0,new Uint8Array([0,0])];},'8MB');
+ await inspectDevice(l,n);assert.equal(total,8388608);
+ let verified=0;l.writeFlash=async o=>{assert.equal(o.eraseAll,false);assert.equal(o.flashSize,'keep');assert.equal(o.fileArray.length,4);};
+ l.flashMd5sum=async()=>{verified++;return n.parts[0].md5;};
+ await install(l,n,await loadParts(n,'https://example.test/',fetcher,webcrypto),()=>{});assert.equal(verified,4);
 });

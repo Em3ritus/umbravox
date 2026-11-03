@@ -47,6 +47,7 @@ jobs:
         with:
           node-version: "22"
       - run: node --test web/native/test/*.test.mjs
+      - run: python3 tools/test_assemble_native_installer.py
 
   device-build:
     name: Build ${{ matrix.environment }}

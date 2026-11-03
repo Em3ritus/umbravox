@@ -15,8 +15,8 @@ Keep historical package source and firmware hashes intact when updating guidance
 Documentation and CI updates do not require redeploying the installer or rebuilding
 published firmware. For an intentional installer update, run all native installer
 tests, assemble into a fresh empty directory with
-`tools/assemble-native-installer.py OUTPUT NM_ZIP WS35_ZIP WS28_ZIP`, and verify
-`SITE-SHA256SUMS.txt`. Use the reviewed board ZIPs; assembly does not compile firmware.
+`tools/assemble-native-installer.py OUTPUT NM_ZIP WS35_ZIP WS28_ZIP XIAO_ZIP`, and verify
+`SITE-SHA256SUMS.txt`. Include the reviewed XIAO node ZIP as the fourth package. Use the reviewed board ZIPs; assembly does not compile firmware.
 Review the site diff, manifests, board order, revision identifiers and checksums
 before updating `gh-pages`. Verify the served revision after Pages finishes.
 Never substitute the legacy `web/dist` output for this native site.
