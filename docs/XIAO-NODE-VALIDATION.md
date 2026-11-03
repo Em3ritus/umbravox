@@ -58,9 +58,27 @@ send/drop counters were not observed for that entire interval; continuing report
 delivery was verified at the handheld. No claim of zero end-to-end packet loss
 is made. The test was stationary, not a moving field run or capacity benchmark.
 
+## Two-node power-loss and recovery check: passed
+
+With two XIAO nodes joined to the Waveshare 3.5-inch handheld, one node was
+powered off. The handheld expired it after 75 seconds of silence and assigned
+all 20 scanning channels to the remaining node. Reports continued arriving.
+
+After power was restored, the second node rejoined automatically. The handheld
+assigned 12 channels (2–13) to one node and eight channels (starting at 36) to
+the other, and reported two live nodes. The USB-observed node applied the
+12-channel assignment and retained Passive scanning with a 220 ms dwell.
+
+Across the 95-second observation, handheld accepted reports increased from
+1,999 to 2,504. The observed node's dropped-record counter stayed at zero and
+its send-failure counter stayed at 45; those failures predated this observation.
+Handheld rejection counters did not increase. Only one node's serial counters
+were available; aggregate handheld counters do not establish per-node delivery
+or zero end-to-end loss.
+
 ## Validation boundaries
 
-One node and one Waveshare 3.5-inch handheld were used. This does not establish
-multi-node capacity or physical acceptance with the NM and Waveshare 2.8-inch
+Two nodes and one Waveshare 3.5-inch handheld were used for the recovery check. This does not establish
+capacity beyond two nodes or physical acceptance with the NM and Waveshare 2.8-inch
 handhelds. The saved-file check above used a real GPS fix. The firmware ZIP contains the earlier validation snapshot; this
 page and the release notes record the follow-up checks without replacing binaries.

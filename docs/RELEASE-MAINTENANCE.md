@@ -32,8 +32,11 @@ A release tag identifies its source revision. Each firmware ZIP identifies its o
 build revision and includes matching source, checksums and all four installation
 images. Existing binaries may be reused unchanged in a combined release; state
 those revisions explicitly rather than implying they were rebuilt from its tag.
-Waveshare 2.8-inch, Waveshare 3.5-inch, and NM-CYD-C5 browser installation and boot
-have been confirmed.
+Waveshare 2.8-inch, Waveshare 3.5-inch and XIAO ESP32-C5 browser installation
+and boot have been confirmed. NM-CYD-C5 flashing and operation are confirmed;
+the installation method and image-verification evidence were not reported.
+See [node validation](XIAO-NODE-VALIDATION.md) for the two-node recovery and
+stationary GPS recording checks; a moving field run remains open.
 
 Before publication, verify project identity and destination for both Git and API
 writes, run the installed privacy checks, review the final text and images, and
