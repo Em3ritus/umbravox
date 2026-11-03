@@ -23,10 +23,28 @@ Waveshare ESP32-C5-Touch-LCD-3.5 handheld firmware bce092c.
   transfer errors in the observed diagnostics. This establishes the connection
   issue seen on this bench; it does not rule out other I2C faults.
 
+## Saved recording check: passed
+
+A real-GPS recording was stopped using the handheld control, then all four files
+were read back from SD without publishing their contents:
+
+| File | Result |
+| --- | --- |
+| wifi.csv | 427 rows, all with location fields; consistent 14-column structure |
+| clients.csv | 367 rows; consistent 14-column structure |
+| probes.csv | 1,301 rows; consistent 14-column structure |
+| track.gpx | Valid XML, 332 points over 411 seconds; coordinates in range and timestamps ordered |
+
+GPS held a 3D fix during the recording observation. GPS I2C and transfer-failure
+counters remained zero, as did handheld node-packet rejection counters.
+The XIAO USB serial port was unavailable during this longer run, so node-side
+send/drop counters were not observed for that entire interval; continuing report
+delivery was verified at the handheld. No claim of zero end-to-end packet loss
+is made. The test was stationary, not a moving field run or capacity benchmark.
+
 ## Validation boundaries
 
 One node and one Waveshare 3.5-inch handheld were used. This does not establish
 multi-node capacity or physical acceptance with the NM and Waveshare 2.8-inch
-handhelds. Location-tagged recording requires a real GPS fix and separate saved-file
-verification. The firmware ZIP contains the earlier validation snapshot; this
+handhelds. The saved-file check above used a real GPS fix. The firmware ZIP contains the earlier validation snapshot; this
 page and the release notes record the follow-up checks without replacing binaries.
