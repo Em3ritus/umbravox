@@ -36,11 +36,12 @@ Do not publish private guard configuration or captured field data.
 
 ## Historical references
 
-`ws-c5-28`, `ws-c5-35`, and `ui-input-presentation` are retained historical branches;
-use `main` for current work. `gh-pages` contains deployment output only.
+All board history lives in `main`. The former `ws-c5-28`, `ws-c5-35`, and
+`ui-input-presentation` branches were removed on 2026-11-02 after verifying every
+commit is reachable from `main` (recovery SHAs 3548d43, 0e9266a, 8d7e455).
+`gh-pages` contains deployment output only.
 Earlier prereleases remain available for provenance and recovery. Their historical
 board support and validation notes apply to those artifacts, not the current set.
 Use the combined `f963f3a` prerelease for the current published package set.
-Do not delete branches, replace firmware assets, move tags or rewrite history as
-part of routine documentation cleanup. Design journals and implementation plans
+Design journals and implementation plans
 record past decisions and are not the current product specification.
