@@ -1,6 +1,6 @@
 # Release and deployment maintenance
 
-The fork's current development and default branch is `ws-c5-28`.
+The fork's current development and default branch is `main`.
 The public installer is https://slickrick773.github.io/umbravox/ and is served
 from the root of `gh-pages`. Source lives in `web/native/`.
 
@@ -36,8 +36,8 @@ Do not publish private guard configuration or captured field data.
 
 ## Historical references
 
-`main`, `ws-c5-35`, and `ui-input-presentation` are retained historical branches;
-use `ws-c5-28` for current work. `gh-pages` contains deployment output only.
+`ws-c5-28`, `ws-c5-35`, and `ui-input-presentation` are retained historical branches;
+use `main` for current work. `gh-pages` contains deployment output only.
 Earlier prereleases remain available for provenance and recovery. Their historical
 board support and validation notes apply to those artifacts, not the current set.
 Use the combined `f963f3a` prerelease for the current published package set.
