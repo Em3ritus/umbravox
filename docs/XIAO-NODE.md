@@ -44,3 +44,5 @@ pinned in platformio.ini. The included source archive is the exact tracked sourc
 revision. SHA256SUMS.txt covers every package file except itself. manifest.json
 records image offsets, sizes and hashes. This package does not update the
 handheld firmware or browser installer.
+
+Current bench results: [XIAO node validation](XIAO-NODE-VALIDATION.md).
