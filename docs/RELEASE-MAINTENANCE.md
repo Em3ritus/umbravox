@@ -26,8 +26,8 @@ A release tag identifies its source revision. Each firmware ZIP identifies its o
 build revision and includes matching source, checksums and all four installation
 images. Existing binaries may be reused unchanged in a combined release; state
 those revisions explicitly rather than implying they were rebuilt from its tag.
-Waveshare 2.8-inch and 3.5-inch browser installation and boot have been confirmed.
-The NM native UI candidate still requires hardware validation.
+Waveshare 2.8-inch, Waveshare 3.5-inch, and NM-CYD-C5 browser installation and boot
+have been confirmed.
 
 Before publication, verify project identity and destination for both Git and API
 writes, run the installed privacy checks, review the final text and images, and

@@ -20,7 +20,7 @@ demonstration data. These are not hardware photographs.
 | --- | --- | --- |
 | Waveshare ESP32-C5-Touch-LCD-3.5 | 480×320 | Browser installation, all four image hashes, and boot confirmed |
 | Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed |
-| NerdMinder NM-CYD-C5 | 320×240 shared engine | Build-tested; hardware validation pending |
+| NerdMinder NM-CYD-C5 | 320×240 shared engine | Browser installation, all four image hashes, and boot confirmed |
 
 The published firmware packages use `bce092c` for Waveshare and `45e7ed3` for NM.
 The prerelease tag `f963f3a` identifies the installer/release source. Subsequent
