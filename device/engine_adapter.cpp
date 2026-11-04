@@ -125,20 +125,25 @@ uint8_t fromNav(uinav::Screen s) {
 
 // Compose one screen's dirty rows into the shared buffer and push them.
 template <class Scene>
-void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, int, const Scene&)) {
+void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, int, const Scene&), int wlo = 0, int whi = -1) {
     if(y0<stagedY0_)stagedY0_=y0;
     if(y1>stagedY1_)stagedY1_=y1;
+    // A column window (sweep-only frame) composes and stages just those columns, but only against a valid
+    // panel mirror: with no mirror the whole frame must be repainted.
+    const bool win = whi > wlo && (!buffered_ || frame_.valid());
     for (int sy = y0; sy < y1; sy += 16) {
         const int sh = (sy + 16 > y1) ? (y1 - sy) : 16;
         // Compose hot drawing primitives in internal SRAM, then copy sequentially
         // to PSRAM. Never expose the partially composed frame to the panel.
-        scanr::S s{ buf_, W_, sy, sh };
+        scanr::S s = win ? scanr::S{ buf_, W_, sy, sh, wlo, whi } : scanr::S{ buf_, W_, sy, sh };
         cs(s, W_, H_, sc);
         if (buffered_) {
             const uint32_t t=micros();
-            frame_.stage(sy,buf_,sh);
+            if (win) frame_.stageWindow(sy,buf_,sh,wlo,whi-wlo);
+            else frame_.stage(sy,buf_,sh);
             sliceCompareUs_ += micros()-t;
         }
+        else if (win) sink_.strip(wlo, sy, whi-wlo, sh, buf_);
         else sink_.strip(0, sy, W_, sh, buf_);
     }
 }
@@ -303,7 +308,7 @@ bool service(int budgetStrips) {
     sliceTransferUs_ = sliceCompareUs_ = 0;
     bool done = false;
     switch (cur_) {
-        case uinav::Screen::Scan:   { auto sl = eScan_.nextSlice(budgetStrips);   if (sl.y1 > sl.y0) renderSliceT<scanr::ScanScene>(eScan_.scene(), sl.y0, sl.y1, &scanr::composeStrip); done = sl.done; break; }
+        case uinav::Screen::Scan:   { auto sl = eScan_.nextSlice(budgetStrips);   int wl=0,wh=-1; if(!eScan_.window(wl,wh)){wl=0;wh=-1;} if (sl.y1 > sl.y0) renderSliceT<scanr::ScanScene>(eScan_.scene(), sl.y0, sl.y1, &scanr::composeStrip, wl, wh); done = sl.done; break; }
         case uinav::Screen::Domain: { auto sl = eDomain_.nextSlice(budgetStrips); if (sl.y1 > sl.y0) renderSliceT<domr::DomainScene>(eDomain_.scene(), sl.y0, sl.y1, &domr::composeStrip); done = sl.done; break; }
         case uinav::Screen::Codex:  { auto sl = eCodex_.nextSlice(budgetStrips);  if (sl.y1 > sl.y0) renderSliceT<codr::CodexScene>(eCodex_.scene(), sl.y0, sl.y1, &codr::composeStrip); done = sl.done; break; }
         case uinav::Screen::Menu:   { auto sl = eMenu_.nextSlice(budgetStrips);   if (sl.y1 > sl.y0) renderSliceT<menr::MenuScene>(eMenu_.scene(), sl.y0, sl.y1, &menr::composeStrip); done = sl.done; break; }

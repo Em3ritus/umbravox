@@ -153,18 +153,27 @@ inline uint16_t recLabel(const ScanScene& s, char* buf, int n) {
 }
 
 // --- strip drawing (all coords global; writes clipped to the strip) -----------
-struct S { uint16_t* px; int W, y0, h; };
+// A strip surface: rows [y0,y0+h) of a W-wide frame. By default it is the full width. A column window
+// [lo,hi) makes the buffer hold ONLY those columns (packed, stride hi-lo) while every primitive keeps
+// using absolute frame coordinates, so the same drawing code redraws just one region of the screen.
+struct S {
+    uint16_t* px; int W, y0, h;
+    int lo, hi, stride;
+    S(uint16_t* p, int w, int y, int hh, int xlo = 0, int xhi = -1)
+        : px(p), W(w), y0(y), h(hh), lo(xlo), hi(xhi < 0 ? w : xhi), stride(hi - lo) {}
+};
 inline void pt(S& s, int x, int y, uint16_t c) {
-    if (x < 0 || x >= s.W || y < s.y0 || y >= s.y0 + s.h) return;
-    s.px[(y - s.y0) * s.W + x] = c;
+    if (x < s.lo || x >= s.hi || y < s.y0 || y >= s.y0 + s.h) return;
+    s.px[(y - s.y0) * s.stride + (x - s.lo)] = c;
 }
 inline void box(S& s, int rx, int ry, int rw, int rh, uint16_t c) {
-    int x0 = rx<0?0:rx, x1 = rx+rw>s.W?s.W:rx+rw;
+    int x0 = rx<s.lo?s.lo:rx, x1 = rx+rw>s.hi?s.hi:rx+rw;
     int y0 = ry<s.y0?s.y0:ry, y1 = (ry+rh>s.y0+s.h)?s.y0+s.h:ry+rh;
-    for (int y=y0; y<y1; y++){ uint16_t* r=s.px+(y-s.y0)*s.W; for (int x=x0;x<x1;x++) r[x]=c; }
+    for (int y=y0; y<y1; y++){ uint16_t* r=s.px+(y-s.y0)*s.stride; for (int x=x0;x<x1;x++) r[x-s.lo]=c; }
 }
 inline void txt(S& s, int gx, int gy, const char* t, int sc, uint16_t fg) {
     if (gy >= s.y0+s.h || gy+Font::H*sc <= s.y0) return;
+    if (s.lo > 0 || s.hi < s.W) { int n = 0; while (t[n]) n++; if (gx >= s.hi || gx + n*Font::ADV*sc <= s.lo) return; }   // a window skips whole labels
     for (int i=0;t[i];i++) for (int ry=0;ry<Font::H;ry++){ uint8_t b=Font::row(t[i],ry);
         for (int cx=0;cx<Font::W;cx++){ if(!(b&(0x10>>cx))) continue;
             for (int ky=0;ky<sc;ky++) for (int kx=0;kx<sc;kx++)
@@ -219,7 +228,7 @@ inline SweepDir sweepDir(uint16_t a) {
 inline int trailLevel(const SweepDir& d, int dx, int dy, int levels) {
     const int c0 = d.tx * dy - d.ty * dx, c1 = dx * d.ly - dy * d.lx;
     if (c0 < 0 || c1 < 0 || c0 + c1 <= 0) return 0;
-    const int f = int((long long)c0 * 1024 / (c0 + c1));            // 0 at the tail end, 1024 at the head
+    const int f = c0 * 1024 / (c0 + c1);                              // 0 at the tail end, 1024 at the head (32-bit: the C5 has no 64-bit divide)
     return 1 + ((f * f >> 10) * (levels - 1) >> 10);                  // quadratic: bright head, long soft tail
 }
 inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
@@ -227,8 +236,15 @@ inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
     const SweepDir d = sweepDir(angle);
     uint16_t fade[kTailLevels + 1]; fade[0] = pal::VOID;
     for (int k = 1; k <= kTailLevels; k++) fade[k] = ui::Canvas::mix(pal::VOID, pal::SWEEP, k, kTailLevels + 8);
-    for (int y = std::max(cy - r, s.y0); y <= std::min(cy + r, s.y0 + s.h - 1); y++)
-        for (int x = std::max(0, cx - r); x <= std::min(s.W - 1, cx + r); x++) {
+    // The wedge covers about a quarter of the circle: scan only its bounding box (the centre, both edge tips
+    // and any compass point the arc passes through), not the whole disc.
+    int bx0 = 0, bx1 = 0, by0 = 0, by1 = 0;
+    auto grow = [&](int x, int y) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; };
+    grow(r * d.lx / 1024, r * d.ly / 1024); grow(r * d.tx / 1024, r * d.ty / 1024);
+    static const int card[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+    for (const auto& c : card) if (trailLevel(d, c[0] * r, c[1] * r, 2)) grow(c[0] * r, c[1] * r);
+    for (int y = std::max(cy + by0 - 2, s.y0); y <= std::min(cy + by1 + 2, std::min(cy + r, s.y0 + s.h - 1)); y++)
+        for (int x = std::max(s.lo, std::max(cx - r, cx + bx0 - 2)); x <= std::min(s.hi - 1, std::min(cx + r, cx + bx1 + 2)); x++) {
             const int dx = x - cx, dy = y - cy;
             if (dx * dx + dy * dy > r * r) continue;
             const int lv = trailLevel(d, dx, dy, kTailLevels);
@@ -247,6 +263,7 @@ inline void radarNeedle(S& s, int cx, int cy, int r, uint16_t angle) {
 
 inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true, bool smooth=false) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px || !e.ncol || e.ncol>16) return;
+    if (cx + r < s.lo || cx - r >= s.hi) return;      // outside the column window
     const int d=2*r;
     uint16_t colors[16];for(int i=0;i<e.ncol;i++)colors[i]=ui::Canvas::mix(pal::VOID,e.pal[i],opacity,100);
     for (int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++){ const int dy=y-cy;
@@ -563,8 +580,8 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     if (fcy+ring[i].y < s.y0) continue;
                     if (fcy+ring[i].y >= s.y0+s.h) break; // sorted rows
                     const int x=fcx+ring[i].x, y=fcy+ring[i].y;
-                    if(x>=0 && x<s.W){
-                        auto& dst=s.px[(y-s.y0)*s.W+x];
+                    if(x>=s.lo && x<s.hi){
+                        auto& dst=s.px[(y-s.y0)*s.stride+(x-s.lo)];
                         dst=ui::Canvas::mix(dst,pal::EDGE,ring[i].coverage,16);
                     }
                 }

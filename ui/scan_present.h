@@ -315,10 +315,14 @@ public:
     // are stale) and force a full repaint; the commit that follows paints the
     // CURRENT scene. leave() likewise drops the pending frame so a stale one can
     // never resume on re-entry.
-    void enter()        { trans_.enter(); forceFull_ = true; sched_.reset(H_); }
-    void wake()         { trans_.enter(); forceFull_ = true; sched_.reset(H_); }
-    void themeChanged() { trans_.enter(); forceFull_ = true; sched_.reset(H_); }
-    void leave()        { trans_.leave(); sched_.reset(H_); }
+    void enter()        { trans_.enter(); forceFull_ = true; win_ = false; sched_.reset(H_); }
+    void wake()         { trans_.enter(); forceFull_ = true; win_ = false; sched_.reset(H_); }
+    void themeChanged() { trans_.enter(); forceFull_ = true; win_ = false; sched_.reset(H_); }
+    void leave()        { trans_.leave(); win_ = false; sched_.reset(H_); }
+
+    // True when the pending frame changed ONLY the radar (a sweep step): the caller may compose and stage
+    // just the columns [lo,hi) of the returned rows instead of the full width.
+    bool window(int& lo, int& hi) const { lo = wlo_; hi = whi_; return win_; }
 
     bool acceptsTouch() const { return trans_.acceptsTouch(); }
     bool pending()      const { return sched_.pending(); }
@@ -333,6 +337,8 @@ public:
     // snapshot is populated -- so a slice is never served against a stale scene.
     void commit() {
         const ScanScene& nw = store_[cur_ ^ 1].scene();
+        const bool wasPending = sched_.pending(), wasWin = win_;
+        win_ = false;
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
         } else {
@@ -352,7 +358,12 @@ public:
             char ra[16], rb[16];
             scanr::recLabel(store_[cur_].scene(), ra, 16);
             scanr::recLabel(nw, rb, 16);
-            if (__builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi) sched_.invalidate(navTop, H_);
+            const bool navDirty = __builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi;
+            if (navDirty) sched_.invalidate(navTop, H_);
+            if (!st && bd && fieldOnly && !navDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
+                const auto r = scanr::radarBounds(W_, H_);
+                win_ = true; wlo_ = r.x < 0 ? 0 : r.x; whi_ = r.x + r.w > W_ ? W_ : r.x + r.w;
+            }
         }
         cur_ ^= 1; haveFront_ = true; forceFull_ = false;
     }
@@ -378,6 +389,7 @@ private:
     Transition       trans_;
     PresentMetrics   metrics_;
     int  W_ = 0, H_ = 0, cur_ = 0;
+    bool win_ = false; int wlo_ = 0, whi_ = 0;
     bool haveFront_ = false, forceFull_ = true;
 };
 

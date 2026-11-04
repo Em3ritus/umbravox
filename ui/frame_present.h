@@ -35,6 +35,26 @@ public:
         }
         std::memcpy(back_+y0*w_,pixels,w_*count*sizeof(uint16_t));
     }
+    // Stage ONLY the columns [x0,x0+bw) of rows [y0,y0+count): `pixels` holds just those columns, packed.
+    // The rest of the back frame keeps what it had, so this is valid only after a presented frame.
+    void stageWindow(int y0, const uint16_t* pixels, int count, int x0, int bw) {
+        for (int y=y0; y<y0+count; ++y) {
+            const uint16_t* src=pixels+(y-y0)*bw;
+            const uint16_t* old=front_+y*w_+x0;
+            int lo=0,hi=bw;
+            if (valid_) {
+                if (std::memcmp(old,src,bw*sizeof(uint16_t))==0) hi=0;
+                else {
+                    while(lo<hi && old[lo]==src[lo]) ++lo;
+                    while(hi>lo && old[hi-1]==src[hi-1]) --hi;
+                }
+            }
+            if (h_ <= MaxRows) { left_[y]=x0+lo; right_[y]=hi?x0+hi:0; }
+            std::memcpy(back_+y*w_+x0,src,bw*sizeof(uint16_t));
+        }
+        if (h_ <= MaxRows) staged_=true;
+    }
+    bool valid() const { return valid_; }
     uieng::Rect changed(uieng::Rect r) const {
         if (!valid_) return r;
         int x0 = r.x+r.w, y0 = r.y+r.h, x1 = r.x, y1 = r.y;
