@@ -8,6 +8,15 @@ static bool overlap(uieng::Rect a,uieng::Rect b){return a.x<b.x+b.w&&b.x<a.x+a.w
 static std::vector<uint16_t> render(int w,int h,const atnr::AttuneScene& sc){std::vector<uint16_t> p(w*h);for(int y=0;y<h;y+=16){scanr::S s{p.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(s,w,h,sc);}return p;}
 int main(int argc,char**argv){
  pal::setTheme(0);const char* names[]={"scanning","recording","bridge","nodes"};
+ { // LINK STATUS row: the pairing code outranks the connection state, and only while the bridge is on.
+  Data d;d.settings.bleBridge=1;char b[32];
+  value(d,10,b,sizeof b);assert(!strcmp(b,"NO PHONE"));
+  d.connected=true;value(d,10,b,sizeof b);assert(!strcmp(b,"CONNECTED"));
+  d.pin=4217;value(d,10,b,sizeof b);assert(!strcmp(b,"PIN 004217"));
+  d.pin=0;value(d,10,b,sizeof b);assert(!strcmp(b,"PIN 000000"));
+  d.pin=-1;d.streaming=true;value(d,10,b,sizeof b);assert(!strcmp(b,"STREAMING"));
+  d.pin=123456;d.settings.bleBridge=0;value(d,10,b,sizeof b);assert(!strcmp(b,"OFF"));
+ }
  for(int w:{320,480}){int h=w==320?240:320;
   for(int tab=0;tab<4;tab++)for(int ed=-1;ed<16;ed++){
    if(ed>=0&&!validEditor(ed))continue;
