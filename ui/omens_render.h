@@ -38,6 +38,7 @@ struct OmenScene {
     bool pmuOk = false, charging = false;
     ui::StorageState sd=ui::StorageState::Missing;
     bool bridgeOn = false;
+    bool plain = false;   // label mode: false = on-brand (OMENS), true = plain (ALERTS)
     Rec      rec = Rec::Off;
     const OmenRow* rows = nullptr; int nRows = 0;
     int      total = 0;                         // everything recorded (>= nRows)
@@ -76,18 +77,18 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
     if(sc.detail){
-        txt(s,L.title.x,L.title.y+2,"ALERT DETAIL",2,pal::BRIGHT);
+        txt(s,L.title.x,L.title.y+2,sc.plain?"ALERT DETAIL":"OMEN DETAIL",2,pal::BRIGHT);
         int pages=detailPageCount(W,H,sc.detail);if(pages<1)pages=1;
         int page=sc.detailPage;if(page>=pages)page=pages-1;if(page<0)page=0;
         int scale=W>=400?2:1;int per=(L.prev.y-L.body.y-24)/(scale==2?18:11);
         detailLines(sc.detail,(L.body.w-8)/(6*scale),page*per,per,&s,L.body.x+4,L.body.y+24,scale);
         centered(s,L.prev.x+22,L.prev.y+15,"<",2,pal::TEXT);
         centered(s,L.next.x+22,L.next.y+15,">",2,pal::TEXT);
-        centered(s,L.page.x+L.page.w/2,L.page.y+5,"BACK TO ALERTS",1,pal::BRIGHT);
+        centered(s,L.page.x+L.page.w/2,L.page.y+5,sc.plain?"BACK TO ALERTS":"BACK TO OMENS",1,pal::BRIGHT);
         char pageText[24];snprintf(pageText,sizeof pageText,"%d / %d",page+1,pages);
         centered(s,L.page.x+L.page.w/2,L.page.y+24,pageText,1,pal::DIM);return;
     }
-    txt(s, L.title.x, L.title.y + 2, "ALERTS", 2, pal::BRIGHT);
+    txt(s, L.title.x, L.title.y + 2, sc.plain?"ALERTS":"OMENS", 2, pal::BRIGHT);
     const char* levels[]={"LOW","MEDIUM","HIGH","OFF"};
     char level[24];snprintf(level,sizeof level,"LEVEL %s",levels[sc.level<4?sc.level:3]);
     txt(s,L.title.x+L.title.w-Font::width(level,1),L.title.y+4,level,1,sc.level==3?pal::AMBER:pal::DIM);

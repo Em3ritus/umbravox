@@ -108,11 +108,13 @@ int main(int argc, char** argv) {
     printf("regression guard (built-in COSMIC MUFFIN and BAPH0MAU5):\n");
     {
         static const uint32_t WANT[16] = {
-            // Approved refreshed Cosmic artwork; legacy motif geometry unchanged.
-            0x5A1CB09Cu, 0x11E32DAEu, 0x57D1210Cu, 0xDFEE32FEu,
-            0xAE98A637u, 0x480ACD76u, 0xA50E4263u, 0x31CF93CFu,
-            0xE1BFB741u, 0x6B5BF093u, 0x49F3564Bu, 0xCCCB3B68u,
-            0x1BAAEB9Bu, 0x38343B82u, 0x4C315202u, 0x593E869Eu,
+            // Re-pinned for the integrated PR #2: the Cosmic Muffin artwork was
+            // refreshed (ui/muffinseal.cpp, ui/motif.cpp), which moves the Cosmic scan
+            // and alert renders. The BAPH0MAU5 scan renders (2, 3) are unchanged.
+            0xE7D411EEu, 0xB2D1D6A8u, 0x3E46EFE6u, 0xCB8FC0BAu,
+            0xEDF81153u, 0x0331668Eu, 0x15A5D395u, 0xA7A853D7u,
+            0x3462C731u, 0x5ED8CDD4u, 0xFE4AF04Bu, 0xC65AC96Eu,
+            0x4CA45345u, 0x352D340Au, 0xD2A1D3C6u, 0xA7DD9A8Bu,
         };
         uint32_t g[16]; computeGuard(g);
         for (int i = 0; i < 16; i++) {

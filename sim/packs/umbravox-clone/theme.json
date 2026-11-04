@@ -9,13 +9,13 @@
   "sweep": "radar",
   "alert": "ward",
   "colors": {
-    "void": "#0B0C13", "panel": "#171823", "grid": "#23242F",
-    "edge": "#363444", "edgeLit": "#574465",
-    "dim": "#A9A2B7", "text": "#E1DCE9", "bright": "#FAF5FF",
-    "witch": "#B79AFF", "witchHi": "#D6C2FF", "bone": "#C9B897",
-    "sweep": "#B79AFF", "sweepHi": "#D6C2FF",
-    "live": "#D6C2FF", "liveHi": "#FAF5FF",
-    "magenta": "#DC8EC8", "ice": "#89CCE9", "green": "#78D9AD",
+    "void": "#07040E", "panel": "#130B22", "grid": "#180F2C",
+    "edge": "#2E1F52", "edgeLit": "#563697",
+    "dim": "#6B4F9E", "text": "#C2ABE4", "bright": "#F2E8FF",
+    "witch": "#9D7BFF", "witchHi": "#D6C2FF", "bone": "#C9B897",
+    "sweep": "#9D7BFF", "sweepHi": "#D6C2FF",
+    "live": "#D6C2FF", "liveHi": "#F2E8FF",
+    "magenta": "#D02BB4", "ice": "#6FD3F5", "green": "#4ADE80",
     "amber": "#F59E0B", "red": "#EF4444"
   }
 }

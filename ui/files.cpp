@@ -250,7 +250,7 @@ void filesCountText(const State& s, char* out) {
     }
     putU(out, i, s.fileTotal);
     if (s.fileFound > s.fileTotal) { out[i++] = '/'; putU(out, i, s.fileFound); }
-    const char* w = (s.fileTotal == 1 && s.fileFound <= 1) ? " FILE" : " FILES";
+    const char* w = (s.fileTotal == 1 && s.fileFound <= 1) ? " LOG" : " LOGS";
     while (*w) out[i++] = *w++;
     out[i] = 0;
 }

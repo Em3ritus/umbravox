@@ -88,7 +88,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const FilesScene& sc) {
     }
 
     if (!sc.card || sc.nRows == 0) {
-        const char* msg = sc.card ? "NO FILES" : "NO CARD";
+        const char* msg = sc.card ? "NO LOGS" : "NO CARD";
         centered(s, L.list.x + L.list.w / 2, L.list.y + L.list.h / 2 - 3, msg, 1, sc.card ? pal::DIM : pal::RED);
     } else {
         for (int i = 0; i < sc.nRows && i < L.nRows; i++) {
