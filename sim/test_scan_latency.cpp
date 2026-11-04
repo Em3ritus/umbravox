@@ -58,8 +58,10 @@ static void profile(int w,int h,int theme,uint64_t expected) {
     auto next=sc;next.now+=50;
     scanpres::sceneDirty(w,h,sc,next,status,body,&field);
     assert(!status && body && field);
-    auto same=sc;same.now+=1;
-    scanpres::sceneDirty(w,h,sc,same,status,body,&field);assert(!status && !body);
+    // A clock tick that changes nothing visible must not repaint. The animated sweep is continuous
+    // (1/1024 turn), so any tick may move it; the guarantee holds for a static radar.
+    auto still=sc;still.animateSweep=false;auto stillLater=still;stillLater.now+=1;
+    scanpres::sceneDirty(w,h,still,stillLater,status,body,&field);assert(!status && !body);
     const auto r=scanr::radarBounds(w,h);
     // Every sweep position, restoring the old ray from the same scene/artwork.
     for(int phase=0;phase<72;++phase) {
@@ -127,7 +129,8 @@ int main() {
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
     // Body goldens: accepted per-size radar positions; CVLT has two rings and a quiet seal.
     // Re-pinned on integration: the three built-in themes keep their original (violet) colours.
-    const uint64_t golden[2][3]={{4757013573906380003ull,6724682339629965124ull,9830211916530939412ull},{12428363427845690611ull,8104407744330909326ull,936506772271808986ull}};
+    // CVLT and the clean radars re-pinned again when the sweep got a continuous head and a 90-degree tail.
+    const uint64_t golden[2][3]={{4757013573906380003ull,8393814456361602004ull,11054490386637207921ull},{12428363427845690611ull,2694010981012313806ull,15782517572673418883ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

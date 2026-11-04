@@ -141,7 +141,7 @@ inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
                                      && ma.sizePx == mb.sizePx && ma.band == mb.band));
     }
     const bool sweepSame = a.animateSweep == b.animateSweep &&
-        (!b.animateSweep || scanr::sweepPhase(a.now) == scanr::sweepPhase(b.now));
+        (!b.animateSweep || scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now));
     body = !countSame || !chSame || !chanSame || !markSame || !sweepSame;
     if (fieldOnly) *fieldOnly = body && countSame && chSame && chanSame;
 }

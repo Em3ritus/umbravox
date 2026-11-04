@@ -201,20 +201,43 @@ inline void diamondInto(S& s,int cx,int cy,int r,uint16_t color){
     line(s,cx,cy-r,cx+r,cy,color);line(s,cx+r,cy,cx,cy+r,color);
     line(s,cx,cy+r,cx-r,cy,color);line(s,cx-r,cy,cx,cy-r,color);
 }
-// 45-degree fading trail. Integer cross-products inside the current strip;
-// no atan2, sqrt, allocations, or framebuffer-sized scratch work per pixel.
-inline void radarTrail(S& s,int cx,int cy,int r,uint32_t phase){
-    if(r<1 || cy+r<s.y0 || cy-r>=s.y0+s.h)return;
-    const double a=(int(phase%72)*5-90)*3.14159265/180.0;
-    const int lx=int(cos(a)*1024),ly=int(sin(a)*1024);
-    const int tx=int(cos(a-3.14159265/4)*1024),ty=int(sin(a-3.14159265/4)*1024);
-    uint16_t fade[8];for(int k=0;k<8;k++)fade[k]=ui::Canvas::mix(pal::VOID,pal::SWEEP,k+1,32);
-    for(int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++)for(int x=std::max(0,cx-r);x<=std::min(s.W-1,cx+r);x++){
-        int dx=x-cx,dy=y-cy;if(dx*dx+dy*dy>r*r)continue;
-        int c0=tx*dy-ty*dx,c1=dx*ly-dy*lx;
-        if(c0>=0 && c1>=0 && c0+c1>0)pt(s,x,y,fade[std::min(7,c0*8/(c0+c1))]);
-    }
-    line(s,cx,cy,cx+r*lx/1024,cy+r*ly/1024,pal::SWEEP_HI);
+// --- sweep geometry -----------------------------------------------------------
+// The head angle is continuous (1/1024 turn, 0 = up, clockwise) and driven by the
+// millisecond clock, so the sweep moves as smoothly as frames arrive. The tail is
+// a 90-degree wedge behind the head whose brightness falls off with angular
+// distance. Integer cross-products only inside the strip: no atan2, sqrt,
+// allocations or framebuffer-sized scratch per pixel.
+static constexpr uint32_t kSweepPeriodMs = 3000;
+static constexpr int      kTailLevels    = 32;
+inline uint16_t sweepAngle(uint32_t now) { return (uint16_t)((now % kSweepPeriodMs) * 1024u / kSweepPeriodMs); }
+struct SweepDir { int lx, ly, tx, ty; };   // head and tail-end directions, x1024
+inline SweepDir sweepDir(uint16_t a) {
+    const double t = a * 2.0 * 3.14159265358979 / 1024.0 - 3.14159265358979 / 2.0;
+    return { int(std::cos(t) * 1024), int(std::sin(t) * 1024), int(std::sin(t) * 1024), int(-std::cos(t) * 1024) };
+}
+// 0 = outside the tail, else 1..levels (levels = at the head).
+inline int trailLevel(const SweepDir& d, int dx, int dy, int levels) {
+    const int c0 = d.tx * dy - d.ty * dx, c1 = dx * d.ly - dy * d.lx;
+    if (c0 < 0 || c1 < 0 || c0 + c1 <= 0) return 0;
+    const int f = int((long long)c0 * 1024 / (c0 + c1));            // 0 at the tail end, 1024 at the head
+    return 1 + ((f * f >> 10) * (levels - 1) >> 10);                  // quadratic: bright head, long soft tail
+}
+inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
+    if (r < 1 || cy + r < s.y0 || cy - r >= s.y0 + s.h) return;
+    const SweepDir d = sweepDir(angle);
+    uint16_t fade[kTailLevels + 1]; fade[0] = pal::VOID;
+    for (int k = 1; k <= kTailLevels; k++) fade[k] = ui::Canvas::mix(pal::VOID, pal::SWEEP, k, kTailLevels + 8);
+    for (int y = std::max(cy - r, s.y0); y <= std::min(cy + r, s.y0 + s.h - 1); y++)
+        for (int x = std::max(0, cx - r); x <= std::min(s.W - 1, cx + r); x++) {
+            const int dx = x - cx, dy = y - cy;
+            if (dx * dx + dy * dy > r * r) continue;
+            const int lv = trailLevel(d, dx, dy, kTailLevels);
+            if (lv) pt(s, x, y, fade[lv]);
+        }
+    const int ex = cx + r * d.lx / 1024, ey = cy + r * d.ly / 1024;   // 2 px head line
+    line(s, cx, cy, ex, ey, pal::SWEEP_HI);
+    line(s, cx + 1, cy, ex + 1, ey, pal::SWEEP_HI);
+    line(s, cx, cy + 1, ex, ey + 1, pal::SWEEP_HI);
 }
 
 inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true, bool smooth=false) {   // same mask/scale as motif::drawEmblem
@@ -318,7 +341,7 @@ inline uieng::Rect radarBounds(int W, int H) {
     const int r = W>=400 ? 85 : std::min(f.w/2-4,(bottom-top)/2);
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
-inline uint32_t sweepPhase(uint32_t now) { return (now / 50u) % 72u; } // 20 Hz, 3.6 s turn
+inline uint32_t sweepPhase(uint32_t now) { return uint32_t(sweepAngle(now)) * 72u / 1024u; }   // coarse, kept for callers that want a step count
 
 // --- shared design-1 chrome (header + nav): composed by EVERY engine screen ---
 // The UMBRAVOX wordmark + single-line GPS/MESH/BAT readouts, the four nav tabs
@@ -524,7 +547,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         const bool sigil=pal::centrepiece(sc.theme)==pal::CP_SIGIL;
         const bool logo=pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM;
         const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR || cvlt || mascot || orbit || sigil || logo;
-        if(clean)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepPhase(sc.now):27);
+        if(clean||sc.animateSweep)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // every theme sweeps with a tail when animated
         for (int k=1;k<=3;k++){
             if(cvlt && k==1)continue; // two range rings leave the quiet seal uncluttered
             const int rr=fr*(k*23)/69;
@@ -559,11 +582,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             }
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
         }
-        if (!clean && sc.animateSweep) {
-            const double angle = ((int)sweepPhase(sc.now)*5-90)*3.14159265/180.0;
-            const int length = fr*4/5;
-            line(s,fcx,fcy,fcx+(int)(length*std::cos(angle)),fcy+(int)(length*std::sin(angle)),pal::WITCH);
-        } else if(!clean) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);
+        if(!clean && !sc.animateSweep) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);   // static ray; animated radars draw it via radarTrail
         if(cvlt){box(s,fcx-2,fcy,5,1,pal::DIM);box(s,fcx,fcy-2,1,5,pal::DIM);}
         if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
