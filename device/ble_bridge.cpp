@@ -12,6 +12,7 @@
 #include <esp_mac.h>
 #include <esp_random.h>
 #include <atomic>
+#include <stdarg.h>
 #include <new>
 #include <host/ble_hs.h>
 #include <services/gap/ble_svc_gap.h>
@@ -45,6 +46,13 @@ struct State {
     bool roundDone=false;
 };
 State* st=nullptr;
+// Every bridge line carries the uptime in ms, so security events can be ordered against each other
+// and against the phone's actions. Never pass a pairing code to this.
+void blog(const char* fmt,...) __attribute__((format(printf,1,2)));
+void blog(const char* fmt,...){
+    char buf[160];va_list ap;va_start(ap,fmt);vsnprintf(buf,sizeof buf,fmt,ap);va_end(ap);
+    Serial.printf("[%lu] bridge: %s\n",(unsigned long)millis(),buf);
+}
 bridgeauth::PinWindow pinWin;
 bridgeauth::PairLimiter pairLimiter;
 uint32_t bondsAt=0;int bondsCached=-1;   // loop task only: cached bond count
@@ -70,20 +78,21 @@ class SecurityCallbacks:public BLESecurityCallbacks {
             // checked (a bonded phone reconnects with its stored keys and never gets here).
             const uint16_t c=connection.load();
             if(c!=NO_CONN)ble_gap_terminate(c,BLE_ERR_REM_USER_CONN_TERM);
+            blog("new pairing refused: locked out");
             return;
         }
         const bool started=pinWin.offer(passkey,millis());
-        if(started)Serial.println("bridge: phone is pairing; the code is on ATTUNE > BRIDGE > LINK STATUS");   // never log the code itself
+        if(started)blog("phone is pairing; the code is on ATTUNE > BRIDGE > LINK STATUS");   // never log the code itself
     }
     void onAuthenticationComplete(ble_gap_conn_desc* d) override {
         if(!d)return;
-        Serial.printf("bridge: link security encrypted=%d authenticated=%d bonded=%d\n",(int)d->sec_state.encrypted,(int)d->sec_state.authenticated,(int)d->sec_state.bonded);
+        blog("link security encrypted=%d authenticated=%d bonded=%d",(int)d->sec_state.encrypted,(int)d->sec_state.authenticated,(int)d->sec_state.bonded);
         if(d->sec_state.encrypted && d->sec_state.authenticated){pairLimiter.noteSuccess();pinWin.clear();}
         else{
             // A failed pairing retires its code: the window ends and tick() rotates it, so
             // no code is ever reused after a failure. Three failures also lock out new pairing.
             pinWin.clear();
-            if(pairLimiter.noteFailure(millis()))Serial.println("bridge: pairing locked out after repeated failures; try again shortly");
+            if(pairLimiter.noteFailure(millis()))blog("pairing locked out after repeated failures; try again shortly");
         }
     }
 } securityCallbacks;
@@ -178,8 +187,8 @@ bool init(){
     server->start();
     return server->isStarted();
     });
-    if(!result.configured)Serial.println("bridge: GATT initialization failed; bridge remains off");
-    if(!result.resumed)Serial.println("bridge: BLE scan resume failed; scanner recovery remains active");
+    if(!result.configured)blog("GATT initialization failed; bridge remains off");
+    if(!result.resumed)blog("BLE scan resume failed; scanner recovery remains active");
     return result.configured && result.resumed;
 }
 void advertise(){
@@ -190,7 +199,7 @@ void advertise(){
     data.setCompleteServices(BLEUUID(selected==BISCUIT?BIS_SERVICE:WD_SERVICE));response.setName(gap);
     adv->setAdvertisementData(data);adv->setScanResponseData(response);adv->setScanResponse(true);
     adv->setMinPreferred(24);adv->setMaxPreferred(48);
-    if(!adv->start())Serial.println("bridge: advertising start failed; will retry");
+    if(!adv->start())blog("advertising start failed; will retry");
 }
 void greet(){
     if(selected==WARDRIVEGO){
@@ -248,16 +257,16 @@ void setMode(uint8_t mode){
     selected=mode;
     if(server){BLEDevice::getAdvertising()->stop();if(connection!=NO_CONN)server->disconnect(connection.load());}
     subscribed=false;streaming=false;resetRx();++epoch;
-    if(mode && !init()){selected=OFF;Serial.println("bridge: initialization unavailable");return;}
+    if(mode && !init()){selected=OFF;blog("initialization unavailable");return;}
     if(st){clearSession(millis());st->seenEpoch=epoch.load();}
-    Serial.printf("bridge: %s\n",mode==1?"WarDriveGo enabled":mode==2?"Biscuit enabled":"off");
+    blog("%s",mode==1?"WarDriveGo enabled":mode==2?"Biscuit enabled":"off");
 }
 void tick(uint32_t now){
     if(!st || !server || selected==OFF)return;
 #if UMBRAVOX_BRIDGE_AUTH
     {uint32_t shown;
      // The window ended (expired, or a phone paired): the next phone gets a new code.
-     if(codeShown.load() && !pinWin.get(now,shown)){codeShown=false;BLESecurity::setPassKey(true,newCode());}}
+     if(codeShown.load() && !pinWin.get(now,shown)){codeShown=false;BLESecurity::setPassKey(true,newCode());blog("pairing code rotated");}}
 #endif
     if(st->seenEpoch!=epoch.load()){clearSession(now);st->seenEpoch=epoch.load();}
     if(identityMode!=selected.load()){
@@ -270,11 +279,11 @@ void tick(uint32_t now){
         const int bisRc=ble_gatts_find_svc(&bisUuid.getNative()->u,&handles[1]);
         const bool ok=wdRc==0 && bisRc==0 && selectServices(mode,[&](bool biscuit,bool visible){
             const int rc=ble_gatts_svc_set_visibility(handles[biscuit?1:0],visible?1:0);
-            if(rc)Serial.printf("bridge: visibility handle=%u visible=%u rc=%d\n",handles[biscuit?1:0],unsigned(visible),rc);
+            if(rc)blog("visibility handle=%u visible=%u rc=%d",handles[biscuit?1:0],unsigned(visible),rc);
             return rc==0;
         });
-        if(wdRc || bisRc)Serial.printf("bridge: lookup wd=%d biscuit=%d\n",wdRc,bisRc);
-        if(!ok){selected=OFF;Serial.println("bridge: service visibility failed; advertising remains off");return;}
+        if(wdRc || bisRc)blog("lookup wd=%d biscuit=%d",wdRc,bisRc);
+        if(!ok){selected=OFF;blog("service visibility failed; advertising remains off");return;}
         modelInfo->setValue(identity(mode).model);
         ble_svc_gatt_changed(1,0xFFFF); // let bonded peers invalidate cached discovery
         identityMode=mode;
@@ -289,12 +298,13 @@ void tick(uint32_t now){
         // passkey dialog), and drop it if it never does so it cannot hold the slot.
         if(!securityRequested){
             securityRequested=true;int rc=0;const bool ok=BLESecurity::startSecurity(connection.load(),&rc);
-            Serial.printf("bridge: phone connected unpaired; security request %s rc=%d\n",ok?"sent":"failed",rc);
+            blog("phone connected unpaired; security request %s rc=%d",ok?"sent":"failed",rc);
         }
         // Only a connection that never secures itself is dropped. A lockout never drops a link
         // here: a bonded phone is briefly "unsecure" while it re-encrypts with its stored keys.
         if(!dropRequested && bridgeauth::pairingExpired(now,st->connectedAt)){
             dropRequested=true;server->disconnect(connection.load());   // never paired: free the slot
+            blog("dropping a connection that never paired");
         }
         return;
     }
@@ -322,7 +332,7 @@ void tick(uint32_t now){
     }
     transmit(now);
     if(uint32_t(now-st->diagAt)>=10000){
-        st->diagAt=now;Serial.printf("[bridge] mode %u stream %u queued %lu queue %u rx-drop %lu tx-retry %lu heap %u stale-visits %lu tx-lines %lu mtu %u\n",unsigned(selected.load()),unsigned(streaming.load()),(unsigned long)st->sent,st->out.count,(unsigned long)st->rxDrops,(unsigned long)st->notifyFails,unsigned(ESP.getFreeHeap()),(unsigned long)st->staleVisits,(unsigned long)st->txLines,unsigned(mtu.load()));
+        st->diagAt=now;Serial.printf("[bridge] t %lu mode %u stream %u queued %lu queue %u rx-drop %lu tx-retry %lu heap %u stale-visits %lu tx-lines %lu mtu %u\n",(unsigned long)millis(),unsigned(selected.load()),unsigned(streaming.load()),(unsigned long)st->sent,st->out.count,(unsigned long)st->rxDrops,(unsigned long)st->notifyFails,unsigned(ESP.getFreeHeap()),(unsigned long)st->staleVisits,(unsigned long)st->txLines,unsigned(mtu.load()));
     }
 }
 const char* deviceName(){return name[0]?name:"NOT STARTED";}
@@ -345,7 +355,7 @@ void forgetPhones(){
     bondsAt=0;bondsCached=0;
     const uint16_t c=connection.load();
     if(c!=NO_CONN)server->disconnect(c);
-    Serial.printf("bridge: forgot all paired phones rc=%d\n",rc);
+    blog("forgot all paired phones rc=%d",rc);
 }
 const char* status(){return selected==OFF?"OFF":streaming?"STREAMING":connection!=NO_CONN?"CONNECTED":"ADVERTISING";}
 }
