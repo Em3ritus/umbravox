@@ -75,6 +75,33 @@ int main() {
                 { fprintf(stderr,"theme %d %dx%d: needle hidden at %d px above centre\n", theme, w, h, dy); assert(false); }
         }
     }
+
+    // 5. Contacts: bigger when live, and they flare when the sweep passes them.
+    {
+        const Marker m = placeMarker(0, 60, 0, 1000, 85);            // bearing 0 = right of centre
+        assert(blipLook(m, sweepDir(0), 480).size >= m.sizePx + 2);
+        assert(blipLook(m, sweepDir(0), 320).size >= m.sizePx + 1);
+        const int near = blipLook(m, sweepDir(276), 480).flare;       // head 7 degrees past the contact
+        const int mid  = blipLook(m, sweepDir(256 + 128), 480).flare; // head 45 degrees past it
+        assert(near > mid && mid > 0);
+        assert(blipLook(m, sweepDir(768), 480).flare == 0);           // head on the far side: not lit
+        assert(blipLook(m, sweepDir(200), 480).flare == 0);           // head has not reached it yet
+        // On screen: the same contact is brighter and has a halo while the sweep is on it.
+        auto lum = [](uint16_t p) { return ((p >> 11) & 31) * 2 + ((p >> 5) & 63) + (p & 31) * 2; };
+        for (int theme = 0; theme < pal::TH_COUNT; theme++) {
+            pal::setTheme(theme);
+            const FieldBlip bl[1] = {{0, 60, 0, 0}};
+            auto draw = [&](uint32_t now, bool withBlip) {
+                auto sc = scanfix::demo(theme, now); sc.animateSweep = true; sc.blips = bl; sc.nBlips = withBlip ? 1 : 0;
+                Compositor comp; Fb fb(480, 320); comp.renderFull(480, 320, sc, fb); return fb;
+            };
+            const auto rb = radarBounds(480, 320); const int fr = (rb.w - 5) / 2, cx = rb.x + fr + 2 + 51, cy = rb.y + fr + 2;
+            const auto lit = draw(809, true), dark = draw(2250, true), bare = draw(809, false);   // 809 ms: head just past it; 2250 ms: far side
+            if (lum(lit.p[cy * 480 + cx]) <= lum(dark.p[cy * 480 + cx])) { fprintf(stderr, "theme %d: swept contact not brighter\n", theme); assert(false); }
+            const int halo = cx + 4;                                  // just outside the 6 px core, inside the glow arm
+            if (lit.p[cy * 480 + halo] == bare.p[cy * 480 + halo]) { fprintf(stderr, "theme %d: no halo\n", theme); assert(false); }
+        }
+    }
     puts("test_sweep_tail: ok");
     return 0;
 }

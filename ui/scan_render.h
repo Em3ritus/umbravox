@@ -243,7 +243,13 @@ inline void wedgeBox(const SweepDir& d, int r, int& bx0, int& by0, int& bx1, int
 // Every pixel the sweep (tail + needle) can touch at this head angle, in frame coordinates.
 inline uieng::Rect sweepBounds(int cx, int cy, int r, uint16_t angle) {
     int bx0, by0, bx1, by1; wedgeBox(sweepDir(angle), r, bx0, by0, bx1, by1);
-    return { cx + bx0 - 2, cy + by0 - 2, bx1 - bx0 + 5, by1 - by0 + 5 };
+    return { cx + bx0 - 8, cy + by0 - 8, bx1 - bx0 + 17, by1 - by0 + 17 };   // 8 px margin: a flaring contact's halo
+}
+// Live (animated) contact look: larger than the static marker, and lit by the sweep. `flare` is the tail
+// level over the contact (1..kTailLevels while the sweep has just passed it, 0 otherwise).
+struct BlipLook { int size; int flare; };
+inline BlipLook blipLook(const Marker& m, const SweepDir& d, int W) {
+    return { m.sizePx + (W >= 400 ? 2 : 1), trailLevel(d, m.dx, m.dy, kTailLevels) };
 }
 inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
     if (r < 1 || cy + r < s.y0 || cy - r >= s.y0 + s.h) return;
@@ -617,11 +623,26 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         if(clean||sc.animateSweep)radarNeedle(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // over the artwork
         if(cvlt){box(s,fcx-2,fcy,5,1,pal::DIM);box(s,fcx,fcy-2,1,5,pal::DIM);}
         if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
+        const SweepDir liveDir = sweepDir(sc.animateSweep ? sweepAngle(sc.now) : uint16_t(0));
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
             if (m.shown && m.band>=0 && m.band<3) {    // small SQUARE markers, not round dots
-                const int sq = m.sizePx; if(cvlt || mascot || orbit || sigil || logo)box(s,fcx+m.dx-sq/2-1,fcy+m.dy-sq/2-1,sq+2,sq+2,pal::VOID); box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
+                if (sc.animateSweep) {                  // live: bigger, and flaring while the sweep is on them
+                    const BlipLook lk = blipLook(m, liveDir, W);
+                    const int sq = lk.size, px = fcx + m.dx, py = fcy + m.dy;
+                    uint16_t ink = band[m.band];
+                    if (lk.flare) {
+                        const uint16_t halo = ui::Canvas::mix(pal::VOID, ink, lk.flare, kTailLevels * 2);
+                        box(s, px - sq/2 - 2, py - sq/2, sq + 4, sq, halo);       // plus-shaped glow, soft corners
+                        box(s, px - sq/2, py - sq/2 - 2, sq, sq + 4, halo);
+                        ink = ui::Canvas::mix(ink, pal::BRIGHT, lk.flare, kTailLevels);
+                    }
+                    if (cvlt || mascot || orbit || sigil || logo) box(s, px - sq/2 - 1, py - sq/2 - 1, sq + 2, sq + 2, pal::VOID);
+                    box(s, px - sq/2, py - sq/2, sq, sq, ink);
+                } else {
+                    const int sq = m.sizePx; if(cvlt || mascot || orbit || sigil || logo)box(s,fcx+m.dx-sq/2-1,fcy+m.dy-sq/2-1,sq+2,sq+2,pal::VOID); box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
+                }
             }
         }
     }
