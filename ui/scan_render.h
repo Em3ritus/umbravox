@@ -234,7 +234,12 @@ inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
             const int lv = trailLevel(d, dx, dy, kTailLevels);
             if (lv) pt(s, x, y, fade[lv]);
         }
-    const int ex = cx + r * d.lx / 1024, ey = cy + r * d.ly / 1024;   // 2 px head line
+}
+// The needle: a 3-line (2 px) head drawn AFTER the artwork, so it shows over any emblem, seal or star.
+inline void radarNeedle(S& s, int cx, int cy, int r, uint16_t angle) {
+    if (r < 1 || cy + r < s.y0 || cy - r >= s.y0 + s.h) return;
+    const SweepDir d = sweepDir(angle);
+    const int ex = cx + r * d.lx / 1024, ey = cy + r * d.ly / 1024;
     line(s, cx, cy, ex, ey, pal::SWEEP_HI);
     line(s, cx + 1, cy, ex + 1, ey, pal::SWEEP_HI);
     line(s, cx, cy + 1, ex, ey + 1, pal::SWEEP_HI);
@@ -582,7 +587,8 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             }
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
         }
-        if(!clean && !sc.animateSweep) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);   // static ray; animated radars draw it via radarTrail
+        if(!clean && !sc.animateSweep) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);   // static ray
+        if(clean||sc.animateSweep)radarNeedle(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // over the artwork
         if(cvlt){box(s,fcx-2,fcy,5,1,pal::DIM);box(s,fcx,fcy-2,1,5,pal::DIM);}
         if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers

@@ -1,6 +1,9 @@
 // Smooth sweep: a continuous head angle and a 90-degree tail that fades with
 // angular distance behind the head. Pure geometry, no framebuffer.
 #include "../ui/scan_render.h"
+#include "../ui/palette.h"
+#include "scan_fixture.h"
+#include <vector>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -12,6 +15,14 @@ static int behind(const SweepDir& d, double deg, int levels) {
     const double a = (-90.0 - deg) * M_PI / 180.0;
     return trailLevel(d, (int)lround(40 * cos(a)), (int)lround(40 * sin(a)), levels);
 }
+
+struct Fb : Sink {
+    int w, h; std::vector<uint16_t> p;
+    Fb(int W, int H) : w(W), h(H), p(W * H) {}
+    void strip(int x, int y, int W, int H, const uint16_t* b) override {
+        for (int j = 0; j < H; j++) for (int i = 0; i < W; i++) p[(y + j) * w + x + i] = b[j * W + i];
+    }
+};
 
 int main() {
     // 1. The head angle is continuous: 10 ms never moves it more than ~1.5 degrees,
@@ -49,6 +60,21 @@ int main() {
     const SweepDir r = sweepDir(256);         // head pointing right (a quarter turn)
     assert(trailLevel(r, 40, -4, L) > trailLevel(r, 28, -28, L));   // near head > 45 deg back
     assert(trailLevel(r, 28, 28, L) == 0);                           // ahead of it
+
+    // 4. The needle is drawn LAST: it shows over a centre emblem / seal / art on every theme.
+    for (int theme = 0; theme < pal::TH_COUNT; theme++) for (auto wh : {std::pair<int,int>{480,320},{320,240}}) {
+        const int w = wh.first, h = wh.second;
+        pal::setTheme(theme);
+        Compositor comp; auto sc = scanfix::demo(theme);
+        sc.animateSweep = true; sc.now = 0; sc.nBlips = 0;   // head straight up, no contact in the way
+        Fb fb(w, h); comp.renderFull(w, h, sc, fb);
+        const auto r = radarBounds(w, h);
+        const int fr = (r.w - 5) / 2, fcx = r.x + fr + 2, fcy = r.y + fr + 2;
+        for (int dy : {8, fr / 3, fr / 2}) {
+            if (fb.p[(fcy - dy) * w + fcx] != pal::SWEEP_HI)
+                { fprintf(stderr,"theme %d %dx%d: needle hidden at %d px above centre\n", theme, w, h, dy); assert(false); }
+        }
+    }
     puts("test_sweep_tail: ok");
     return 0;
 }
