@@ -113,7 +113,7 @@ inline int fieldRadius(int W, int H) {
 // fades or expires over time repaints even with no new packets, while a clock
 // tick that changes nothing visible does not. Pure.
 inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
-                       bool& status, bool& body, bool* fieldOnly = nullptr) {
+                       bool& status, bool& body, bool* fieldOnly = nullptr, bool* sweepOnly = nullptr) {
     char la[16], lb[16];
     const bool gpsSame = scanr::gpsLabel(a.gps, la, 16) == scanr::gpsLabel(b.gps, lb, 16)
                          && !__builtin_strcmp(la, lb);
@@ -144,6 +144,7 @@ inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
         (!b.animateSweep || scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now));
     body = !countSame || !chSame || !chanSame || !markSame || !sweepSame;
     if (fieldOnly) *fieldOnly = body && countSame && chSame && chanSame;
+    if (sweepOnly) *sweepOnly = body && countSame && chSame && chanSame && markSame;   // nothing but the sweep moved
 }
 
 // --- resumable, bounded strip scheduler --------------------------------------
@@ -342,14 +343,26 @@ public:
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
         } else {
-            bool st = false, bd = false, fieldOnly = false;
-            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly);
+            bool st = false, bd = false, fieldOnly = false, sweepOnly = false;
+            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly, &sweepOnly);
+            // Sweep and nothing else: redraw only where the old and new wedge are, not the whole radar.
+            const auto radar = scanr::radarBounds(W_, H_);
+            uieng::Rect box = radar;
+            const ScanScene& pv = store_[cur_].scene();
+            if (sweepOnly && !wasPending && pv.animateSweep && nw.animateSweep) {
+                const int fr = (radar.w - 5) / 2, fcx = radar.x + fr + 2, fcy = radar.y + fr + 2;
+                const auto a = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(pv.now));
+                const auto b = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(nw.now));
+                int x0 = std::max(radar.x, std::min(a.x, b.x)), y0 = std::max(radar.y, std::min(a.y, b.y));
+                int x1 = std::min(radar.x + radar.w, std::max(a.x + a.w, b.x + b.w)), y1 = std::min(radar.y + radar.h, std::max(a.y + a.h, b.y + b.h));
+                if (x1 > x0 && y1 > y0) box = { x0, y0, x1 - x0, y1 - y0 };
+            }
             const uieng::ScanLayout L = uieng::scan(W_, H_);
             const int statusBottom = L.statusCells[0].y + L.statusCells[0].h;
             const int navTop       = L.navCells[0].y;
             if (st) sched_.invalidate(0, statusBottom);
             if (bd) {
-                if (fieldOnly) { const auto r=scanr::radarBounds(W_,H_); sched_.invalidate(r.y,r.y+r.h); }
+                if (fieldOnly) sched_.invalidate(box.y, box.y + box.h);
                 else sched_.invalidate(statusBottom, navTop);
             }
             // design #1 SCAN carries the REC/STOP control on the NAV bar, which
@@ -361,8 +374,7 @@ public:
             const bool navDirty = __builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi;
             if (navDirty) sched_.invalidate(navTop, H_);
             if (!st && bd && fieldOnly && !navDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
-                const auto r = scanr::radarBounds(W_, H_);
-                win_ = true; wlo_ = r.x < 0 ? 0 : r.x; whi_ = r.x + r.w > W_ ? W_ : r.x + r.w;
+                win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;
             }
         }
         cur_ ^= 1; haveFront_ = true; forceFull_ = false;

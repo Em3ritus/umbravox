@@ -231,18 +231,27 @@ inline int trailLevel(const SweepDir& d, int dx, int dy, int levels) {
     const int f = c0 * 1024 / (c0 + c1);                              // 0 at the tail end, 1024 at the head (32-bit: the C5 has no 64-bit divide)
     return 1 + ((f * f >> 10) * (levels - 1) >> 10);                  // quadratic: bright head, long soft tail
 }
+// Bounding box (relative to the centre) of the tail wedge and needle: the centre, both edge tips and any
+// compass point the arc passes through.
+inline void wedgeBox(const SweepDir& d, int r, int& bx0, int& by0, int& bx1, int& by1) {
+    bx0 = by0 = bx1 = by1 = 0;
+    auto grow = [&](int x, int y) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; };
+    grow(r * d.lx / 1024, r * d.ly / 1024); grow(r * d.tx / 1024, r * d.ty / 1024);
+    static const int card[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+    for (const auto& c : card) if (trailLevel(d, c[0] * r, c[1] * r, 2)) grow(c[0] * r, c[1] * r);
+}
+// Every pixel the sweep (tail + needle) can touch at this head angle, in frame coordinates.
+inline uieng::Rect sweepBounds(int cx, int cy, int r, uint16_t angle) {
+    int bx0, by0, bx1, by1; wedgeBox(sweepDir(angle), r, bx0, by0, bx1, by1);
+    return { cx + bx0 - 2, cy + by0 - 2, bx1 - bx0 + 5, by1 - by0 + 5 };
+}
 inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
     if (r < 1 || cy + r < s.y0 || cy - r >= s.y0 + s.h) return;
     const SweepDir d = sweepDir(angle);
     uint16_t fade[kTailLevels + 1]; fade[0] = pal::VOID;
     for (int k = 1; k <= kTailLevels; k++) fade[k] = ui::Canvas::mix(pal::VOID, pal::SWEEP, k, kTailLevels + 8);
-    // The wedge covers about a quarter of the circle: scan only its bounding box (the centre, both edge tips
-    // and any compass point the arc passes through), not the whole disc.
-    int bx0 = 0, bx1 = 0, by0 = 0, by1 = 0;
-    auto grow = [&](int x, int y) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; };
-    grow(r * d.lx / 1024, r * d.ly / 1024); grow(r * d.tx / 1024, r * d.ty / 1024);
-    static const int card[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
-    for (const auto& c : card) if (trailLevel(d, c[0] * r, c[1] * r, 2)) grow(c[0] * r, c[1] * r);
+    // The wedge covers about a quarter of the circle: scan only its bounding box, not the whole disc.
+    int bx0, by0, bx1, by1; wedgeBox(d, r, bx0, by0, bx1, by1);
     for (int y = std::max(cy + by0 - 2, s.y0); y <= std::min(cy + by1 + 2, std::min(cy + r, s.y0 + s.h - 1)); y++)
         for (int x = std::max(s.lo, std::max(cx - r, cx + bx0 - 2)); x <= std::min(s.hi - 1, std::min(cx + r, cx + bx1 + 2)); x++) {
             const int dx = x - cx, dy = y - cy;

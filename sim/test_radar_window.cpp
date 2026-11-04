@@ -37,6 +37,7 @@ static void fill(scanpres::SceneStore& st, int theme, uint32_t now, long wifi) {
     for (int i = 0; i < 21; i++) st.setChannel(i, scanfix::CHANNELS[i]);
     for (const auto& b : scanfix::BLIPS) st.addBlip(b.bearing, b.dist, b.band, b.lastSeen);
 }
+static double g_area = 0, g_full = 0;   // composed window area vs the radar square, summed over sweep-only frames
 static int pipeline(int theme, int w, int h) {
     pal::setTheme(theme);
     std::vector<uint16_t> front(w * h), back(w * h), panel(w * h, 0);
@@ -45,12 +46,14 @@ static int pipeline(int theme, int w, int h) {
     std::vector<uint16_t> buf(w * 16);
     int windowed = 0;
     for (int k = 0; k < 40; k++) {
-        fill(e.back(), theme, 1000 + k * 41, k < 25 ? 1665 : 1666);        // a count changes at k=25: that frame is full-width
+        fill(e.back(), theme, 1000 + k * 41 + (k % 7 == 3 ? 500 : 0) + (k > 30 ? 700 : 0), k < 25 ? 1665 : 1666);   // some big clock jumps: old and new wedge far apart        // a count changes at k=25: that frame is full-width
         e.commit();
         int lo = 0, hi = -1; const bool win = e.window(lo, hi) && f.valid();
-        if (k >= 1 && k != 25) { assert(win); windowed++; } else assert(!win);   // sweep-only frames use the window, others never do
+        if (k >= 1 && k != 25) { assert(win); windowed++; g_full += double(((radarBounds(w, h).y + radarBounds(w, h).h + 15) / 16 * 16 - radarBounds(w, h).y / 16 * 16)) * (radarBounds(w, h).w); } else assert(!win);   // sweep-only frames use the window, others never do
+        const auto rb = radarBounds(w, h);
         while (e.pending()) {
             const auto sl = e.nextSlice(4);
+            if (win) { g_area += double(sl.y1 - sl.y0) * (hi - lo); }
             for (int sy = sl.y0; sy < sl.y1; sy += 16) {
                 const int sh = std::min(16, sl.y1 - sy);
                 S s = win ? S{buf.data(), w, sy, sh, lo, hi} : S{buf.data(), w, sy, sh};
@@ -87,6 +90,9 @@ int main() {
     }
     int windowed = 0;
     for (int theme = 0; theme < pal::TH_COUNT; theme++) for (auto wh : {std::pair<int,int>{480,320},{320,240}}) windowed += pipeline(theme, wh.first, wh.second);
+    // The wedge-only window composes well under the whole radar square on a sweep-only frame.
+    printf("window area = %.0f%% of the radar square\n", 100 * g_area / g_full);
+    assert(g_area < 0.6 * g_full);
     printf("test_radar_window: %d frames identical; %d pipeline frames used the window and matched the panel\n", checked, windowed);
     return 0;
 }
