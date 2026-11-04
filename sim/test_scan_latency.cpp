@@ -131,8 +131,8 @@ int main() {
     // Re-pinned on integration: the three built-in themes keep their original (violet) colours.
     // CVLT and the clean radars re-pinned again when the sweep got a continuous head, a 90-degree tail and a needle drawn over the artwork;
     // the 480x320 hashes were re-pinned for layout A (slim count column, 102 px radar, runic ring, right-hand spectrum); 320x240 is unchanged.
-    // 480x320 CVLT and Cosmic Muffin re-pinned when their radars got the CYD artwork (goat-face seal, muffin picture); the compact hashes did not move.
-    const uint64_t golden[2][3]={{7005059053505719851ull,1798794640952268538ull,3999786260451110288ull},{12428363427845690611ull,17369461422928189184ull,4114383012582005418ull}};
+    // 480x320 CVLT and Cosmic Muffin re-pinned when their radars got the CYD artwork (the full BIG seal, the muffin picture and no muffin header badge); the compact hashes did not move.
+    const uint64_t golden[2][3]={{7005059053505719851ull,528492652723590852ull,7947605078850474508ull},{12428363427845690611ull,17369461422928189184ull,4114383012582005418ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

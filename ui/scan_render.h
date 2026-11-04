@@ -400,37 +400,32 @@ inline void crewArt(S& s,int cx,int cy,int radius,int style,int opacity=100){
       if(end>x)box(s,x,y,end-x,endY-y,opacity==100?colors[a.c()]:ui::Canvas::mix(pal::VOID,colors[a.c()],opacity,100));
     }
 }
-// The CVLT goat face, the same 4-bit bitmap the CYD blits, read in chalk and scaled up with whole-pixel steps.
-// One box per run of equal levels; rows outside the strip are skipped; the disc edge uses an integer square root
-// (the C5 has no FPU).
-inline void faceInto(S& s, int cx, int cy, int clipR, const uint8_t* bm, int bw, int bh, int scale) {
+// The CVLT seal: the same 4-bit bitmap the CYD blits (ui/sigil.h), read in chalk and scaled to a destination
+// diameter with nearest-neighbour steps. One box per run of equal levels; only the strip's column window is walked.
+inline void bitmapInto(S& s, int cx, int cy, int clipR, const uint8_t* bm, int bw, int bh) {
+    static constexpr int kMaxD = 256;
+    const int D = 2 * clipR;
+    if (D <= 0 || D > kMaxD) return;
     uint16_t ink[16];
     for (int lv = 1; lv < 16; lv++) {
         auto ramp = [](int l) { const int p = l * 3, i = p / 15, f = p % 15;
             return i >= 3 ? pal::RAMP[3] : ui::Canvas::mix(pal::RAMP[i], pal::RAMP[i + 1], f, 15); };
         ink[lv] = ui::Canvas::mix(ramp(lv), ramp(lv < 13 ? lv + 2 : 15), 118, 255);       // the CYD's resting heartbeat lift
     }
-    const int x0 = cx - bw * scale / 2, y0 = cy - bh * scale / 2;
-    for (int j = 0; j < bh; j++) {
-        const int ry = y0 + j * scale;
-        if (ry + scale <= s.y0 || ry >= s.y0 + s.h) continue;
-        for (int sub = 0; sub < scale; sub++) {
-            const int y = ry + sub;
-            if (y < s.y0 || y >= s.y0 + s.h) continue;
-            const int dy = y - cy; if (dy * dy >= clipR * clipR) continue;
-            const int hw = isqrt(clipR * clipR - dy * dy);
-            for (int i = 0; i < bw;) {
-                const int k = j * bw + i, lv = (bm[k >> 1] >> (4 - 4 * (k & 1))) & 15;
-                int n = 1;
-                while (i + n < bw) { const int k2 = j * bw + i + n; if (((bm[k2 >> 1] >> (4 - 4 * (k2 & 1))) & 15) != lv) break; n++; }
-                if (lv) {
-                    int xa = x0 + i * scale, xb = xa + n * scale;
-                    if (xa < cx - hw) xa = cx - hw;
-                    if (xb > cx + hw + 1) xb = cx + hw + 1;
-                    if (xb > xa) box(s, xa, y, xb - xa, 1, ink[lv]);
-                }
-                i += n;
-            }
+    int16_t sxTab[kMaxD + 1];                           // D + 1 entries: the middle row reaches x0 + D
+    for (int i = 0; i <= D; i++) sxTab[i] = (int16_t)std::min(bw - 1, i * bw / D);
+    const int x0 = cx - clipR, y0 = cy - clipR;
+    for (int y = std::max(y0, s.y0); y <= std::min(y0 + D - 1, s.y0 + s.h - 1); y++) {
+        const int dy = y - cy; if (dy * dy >= clipR * clipR) continue;
+        const int hw = isqrt(clipR * clipR - dy * dy);
+        const int xa = std::max(cx - hw, s.lo), xb = std::min(cx + hw, s.hi - 1);
+        const int sy = (y - y0) * bh / D;
+        auto level = [&](int x) { const int k = sy * bw + sxTab[x - x0]; return (bm[k >> 1] >> (4 - 4 * (k & 1))) & 15; };
+        for (int x = xa; x <= xb;) {
+            const int lv = level(x); int n = 1;
+            while (x + n <= xb && level(x + n) == lv) n++;
+            if (lv) box(s, x, y, n, 1, ink[lv]);
+            x += n;
         }
     }
 }
@@ -676,7 +671,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // Channel readout and theme identity above the radar.
     const uieng::Rect hr = L.hero;
     // Theme identity occupies the former field heading, independently of radar clipping.
-    if (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || sc.theme==pal::TH_COSMICMUFFIN) {
+    if (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || (sc.theme==pal::TH_COSMICMUFFIN && W<400)) {   // the muffin picture fills the wide radar, so no badge there
         const auto* headingEmblem=pal::emblem(sc.theme);
         const int badgeR=W>=400?27:22;
         if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),false,true);
@@ -705,6 +700,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         if(picture)emblemInto(s,*picture,fcx,fcy,fr-1);
         if(clean||sc.animateSweep)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384),picture!=nullptr);   // every theme sweeps with a tail when animated
         for (int k=1;k<=3;k++){
+            if(cvlt && W>=400)continue;  // the seal carries its own circles
             if(cvlt && k==1)continue; // two range rings leave the quiet seal uncluttered
             if(picture)continue;      // the picture is the dial; rings over it only add clutter
             const int rr=fr*(k*23)/69;
@@ -734,9 +730,8 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
         }
-        if(cvlt && W>=400){
-            const int scale = fr >= 90 ? 3 : 2;                              // 50 px face: 3x on the 102 px radar
-            faceInto(s,fcx,fcy,fr-1,ui::FACE,ui::FACE_W,ui::FACE_H,scale);
+        if(cvlt && W>=400){                                                  // the whole CYD seal (face, figure, circles, runes) on the wide radar
+            bitmapInto(s,fcx,fcy,fr-1,ui::BIG,ui::BIG_W,ui::BIG_H);
         } else if(cvlt || mascot || sigil || (orbit && !picture))crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0,100);   // compact panels keep their pinned art
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
