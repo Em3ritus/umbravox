@@ -85,7 +85,7 @@ struct Command {
         memcpy(text,p,n);used=n;text[n]=0;return 1;
     }
 };
-enum Action { INVALID, START, STOP, TIME_SYNC, UNSUPPORTED };
+enum Action { INVALID, START, STOP, TIME_SYNC, IDENTITY, UNSUPPORTED };
 struct ChannelFilter {
     bool enabled=false; uint8_t bits[32]{};
     bool allows(uint8_t ch) const {return ch && (!enabled || (bits[ch/8] & (1u<<(ch%8))));}
@@ -115,6 +115,11 @@ inline Parsed parse(const char* input,Mode mode) {
                 if(*p++!=',' || !*p)return r;
             }
             r.channels.enabled=true;r.action=START;
+        }
+        else if(!strncmp(s,"iam a ",6) && s[6]){
+            for(const unsigned char* p=reinterpret_cast<const unsigned char*>(s+6);*p;++p)
+                if(*p<32 || *p>126)return r;
+            r.action=IDENTITY;
         }
         else if(!strcmp(s,"stop")||!strcmp(s,"wdstream stop"))r.action=STOP;
         else r.action=UNSUPPORTED;

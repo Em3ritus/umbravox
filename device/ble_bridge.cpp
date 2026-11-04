@@ -160,6 +160,7 @@ void command(const Rx& rx,uint32_t now){
         if(selected==WARDRIVEGO)st->out.put("",st->reply,4);
     }else if(parsed.action==TIME_SYNC){st->timeSynced=true;}
     else if(selected==BISCUIT){snprintf(reply,sizeof reply,"RSP:%s:ERROR:unsupported\n",parsed.name[0]?parsed.name:"command");st->out.put(reply);}
+    else if(parsed.action==IDENTITY){ /* WDGO phone announcement; framed ACK already queued. */ }
     else st->out.put("Unsupported command",st->reply,5,1);
 }
 void transmit(uint32_t now){

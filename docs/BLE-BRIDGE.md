@@ -20,6 +20,8 @@ advertisement scanner; BRIDGE separately controls the phone peripheral.
   exported observations. The list accepts decimal channels 1–196; malformed
   lists are rejected. This does not retune the handheld or change node channel
   assignments. A start without `-ch` clears the filter.
+  `iam a <phone name>` is accepted as a startup identity announcement; it does
+  not change scanning or retain the phone name.
   `wdstream stop` or `stop` stops it.
 - **Biscuit:** advertises the compatibility name `Biscuit`. Its Device Information
   model is `Biscuit DIY`, manufacturer is `Umbravox`. The app uses

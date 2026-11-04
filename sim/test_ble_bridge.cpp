@@ -90,6 +90,10 @@ int main(){
     const uint8_t bad[]={'s','t','o','p',0,'x'};assert(c.accept(bad,sizeof bad,0)==-1);
     assert(parse("stop\nwdstream start -wifi",WARDRIVEGO).action==INVALID);
     assert(parse("wdstream start -wifi EXTRA",WARDRIVEGO).action==UNSUPPORTED);
+    assert(parse("iam a motorolaedge2024",WARDRIVEGO).action==IDENTITY);
+    assert(parse("iam a ",WARDRIVEGO).action!=IDENTITY);
+    assert(parse("iam a phone\nstop",WARDRIVEGO).action==INVALID);
+    assert(parse("unknown command",WARDRIVEGO).action==UNSUPPORTED);
     auto selected=parse("wdstream start -wifi -ch 1,6,11,36,161",WARDRIVEGO);
     assert(selected.action==START && selected.channels.enabled);
     assert(selected.channels.allows(1) && selected.channels.allows(161));
