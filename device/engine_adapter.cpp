@@ -148,6 +148,36 @@ void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, in
     }
 }
 
+// SCAN on a wide panel: compose and stage only the dirty REGIONS (count tiles, channel readout, spectrum,
+// radar or its wedge, header and nav bands) that touch each strip, instead of full-width rows. Needs a valid
+// panel mirror: with none, repaint the whole strip.
+void renderScanRegions(const scanr::ScanScene& sc, int y0, int y1, const uieng::Rect* rg, int nr) {
+    if(y0<stagedY0_)stagedY0_=y0;
+    if(y1>stagedY1_)stagedY1_=y1;
+    const bool ok = !buffered_ || frame_.valid();
+    for (int sy = y0; sy < y1; sy += 16) {
+        const int sh = (sy + 16 > y1) ? (y1 - sy) : 16;
+        if (!ok) {                                           // no mirror to diff against: full-width strip
+            scanr::S s{ buf_, W_, sy, sh };
+            scanr::composeStrip(s, W_, H_, sc);
+            if (buffered_) frame_.stage(sy, buf_, sh); else sink_.strip(0, sy, W_, sh, buf_);
+            continue;
+        }
+        for (int i = 0; i < nr; ++i) {
+            if (rg[i].y >= sy + sh || rg[i].y + rg[i].h <= sy) continue;
+            const int lo = rg[i].x < 0 ? 0 : rg[i].x, hi = rg[i].x + rg[i].w > W_ ? W_ : rg[i].x + rg[i].w;
+            if (hi <= lo) continue;
+            scanr::S s{ buf_, W_, sy, sh, lo, hi };          // buf_ holds just this region's columns, packed
+            scanr::composeStrip(s, W_, H_, sc);
+            if (buffered_) {
+                const uint32_t t=micros();
+                frame_.stageRegion(sy, buf_, sh, lo, hi-lo);
+                sliceCompareUs_ += micros()-t;
+            } else sink_.strip(lo, sy, hi-lo, sh, buf_);
+        }
+    }
+}
+
 // Bind taps to the rows actually presented, not the next live collection.
 char visibleKeys_[ui::MAX_SIGHTS][20]{};
 int visibleRows_=0;
@@ -308,7 +338,11 @@ bool service(int budgetStrips) {
     sliceTransferUs_ = sliceCompareUs_ = 0;
     bool done = false;
     switch (cur_) {
-        case uinav::Screen::Scan:   { auto sl = eScan_.nextSlice(budgetStrips);   int wl=0,wh=-1; if(!eScan_.window(wl,wh)){wl=0;wh=-1;} if (sl.y1 > sl.y0) renderSliceT<scanr::ScanScene>(eScan_.scene(), sl.y0, sl.y1, &scanr::composeStrip, wl, wh); done = sl.done; break; }
+        case uinav::Screen::Scan:   { auto sl = eScan_.nextSlice(budgetStrips);
+            uieng::Rect rg[scanpres::Engine::kMaxRegions]; const int nr = eScan_.regions(rg, scanpres::Engine::kMaxRegions);
+            if (nr > 0) { if (sl.y1 > sl.y0) renderScanRegions(eScan_.scene(), sl.y0, sl.y1, rg, nr); }
+            else { int wl=0,wh=-1; if(!eScan_.window(wl,wh)){wl=0;wh=-1;} if (sl.y1 > sl.y0) renderSliceT<scanr::ScanScene>(eScan_.scene(), sl.y0, sl.y1, &scanr::composeStrip, wl, wh); }
+            done = sl.done; break; }
         case uinav::Screen::Domain: { auto sl = eDomain_.nextSlice(budgetStrips); if (sl.y1 > sl.y0) renderSliceT<domr::DomainScene>(eDomain_.scene(), sl.y0, sl.y1, &domr::composeStrip); done = sl.done; break; }
         case uinav::Screen::Codex:  { auto sl = eCodex_.nextSlice(budgetStrips);  if (sl.y1 > sl.y0) renderSliceT<codr::CodexScene>(eCodex_.scene(), sl.y0, sl.y1, &codr::composeStrip); done = sl.done; break; }
         case uinav::Screen::Menu:   { auto sl = eMenu_.nextSlice(budgetStrips);   if (sl.y1 > sl.y0) renderSliceT<menr::MenuScene>(eMenu_.scene(), sl.y0, sl.y1, &menr::composeStrip); done = sl.done; break; }

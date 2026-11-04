@@ -37,8 +37,52 @@ static void fill(scanpres::SceneStore& st, int theme, uint32_t now, long wifi) {
     for (int i = 0; i < 21; i++) st.setChannel(i, scanfix::CHANNELS[i]);
     for (const auto& b : scanfix::BLIPS) st.addBlip(b.bearing, b.dist, b.band, b.lastSeen);
 }
-static double g_area = 0, g_full = 0;   // composed window area vs the radar square, summed over sweep-only frames
+static double g_area = 0, g_full = 0;   // composed region area vs the radar square, summed over sweep-only frames
 static int pipeline(int theme, int w, int h) {
+    pal::setTheme(theme);
+    std::vector<uint16_t> front(w * h), back(w * h), panel(w * h, 0);
+    framepresent::Frame f; f.begin(front.data(), back.data(), w, h);
+    scanpres::Engine e; e.reset(w, h); e.enter();
+    std::vector<uint16_t> buf(w * 16);
+    int sweepOnly = 0;
+    for (int k = 0; k < 40; k++) {
+        fill(e.back(), theme, 1000 + k * 41 + (k % 7 == 3 ? 500 : 0) + (k > 30 ? 700 : 0), k < 25 ? 1665 : 1666);   // some big clock jumps; a count changes at k=25
+        e.commit();
+        uieng::Rect rg[8]; const int nr = e.regions(rg, 8);
+        const auto rb = radarBounds(w, h);
+        if (k == 0) assert(nr == 0);                                       // entry: a plain full-width frame
+        else if (k == 25) {                                                // WIFI tile + the sweep
+            assert(nr == 2 && rg[0].x == uieng::scan(w, h).tiles[0].x && rg[0].w == uieng::scan(w, h).tiles[0].w);
+        } else {                                                           // sweep only: ONE narrow region inside the radar square
+            if (nr != 1) { fprintf(stderr, "theme %d %dx%d frame %d: %d regions:", theme, w, h, k, nr); for (int i = 0; i < nr; i++) fprintf(stderr, " {%d,%d,%d,%d}", rg[i].x, rg[i].y, rg[i].w, rg[i].h); fprintf(stderr, "\n"); }
+            assert(nr == 1 && rg[0].x >= rb.x && rg[0].y >= rb.y && rg[0].x + rg[0].w <= rb.x + rb.w && rg[0].y + rg[0].h <= rb.y + rb.h);
+            sweepOnly++;
+        }
+        double area = 0;
+        while (e.pending()) {
+            const auto sl = e.nextSlice(4);
+            for (int sy = sl.y0; sy < sl.y1; sy += 16) {
+                const int sh = std::min(16, sl.y1 - sy);
+                if (nr > 0) for (int i = 0; i < nr; i++) {
+                    if (rg[i].y >= sy + sh || rg[i].y + rg[i].h <= sy) continue;
+                    S s{buf.data(), w, sy, sh, rg[i].x, rg[i].x + rg[i].w};
+                    composeStrip(s, w, h, e.scene());
+                    f.stageRegion(sy, buf.data(), sh, rg[i].x, rg[i].w); area += double(rg[i].w) * sh;
+                } else { S s{buf.data(), w, sy, sh}; composeStrip(s, w, h, e.scene()); f.stage(sy, buf.data(), sh); }
+            }
+            if (sl.done) f.present(false, [&](uieng::Rect r, const uint16_t* px, int stride) {
+                for (int y = r.y; y < r.y + r.h; y++) for (int x = r.x; x < r.x + r.w; x++) panel[y * w + x] = px[y * stride + x];
+            }, 0, h);
+        }
+        if (nr == 1) { g_area += area; g_full += double(((rb.y + rb.h + 15) / 16 * 16 - rb.y / 16 * 16)) * rb.w; }
+        if (panel != full(w, h, e.scene())) { fprintf(stderr, "theme %d %dx%d frame %d: panel != full render\n", theme, w, h, k); assert(false); }
+    }
+    return sweepOnly;
+}
+
+// 320x240 panels keep the single column window (no dirty regions).
+static double g_cArea = 0, g_cFull = 0;   // composed window area vs the radar square, summed over sweep-only frames
+static int pipelineCompact(int theme, int w, int h) {
     pal::setTheme(theme);
     std::vector<uint16_t> front(w * h), back(w * h), panel(w * h, 0);
     framepresent::Frame f; f.begin(front.data(), back.data(), w, h);
@@ -49,11 +93,11 @@ static int pipeline(int theme, int w, int h) {
         fill(e.back(), theme, 1000 + k * 41 + (k % 7 == 3 ? 500 : 0) + (k > 30 ? 700 : 0), k < 25 ? 1665 : 1666);   // some big clock jumps: old and new wedge far apart        // a count changes at k=25: that frame is full-width
         e.commit();
         int lo = 0, hi = -1; const bool win = e.window(lo, hi) && f.valid();
-        if (k >= 1 && k != 25) { assert(win); windowed++; g_full += double(((radarBounds(w, h).y + radarBounds(w, h).h + 15) / 16 * 16 - radarBounds(w, h).y / 16 * 16)) * (radarBounds(w, h).w); } else assert(!win);   // sweep-only frames use the window, others never do
+        if (k >= 1 && k != 25) { assert(win); windowed++; g_cFull += double(((radarBounds(w, h).y + radarBounds(w, h).h + 15) / 16 * 16 - radarBounds(w, h).y / 16 * 16)) * (radarBounds(w, h).w); } else assert(!win);   // sweep-only frames use the window, others never do
         const auto rb = radarBounds(w, h);
         while (e.pending()) {
             const auto sl = e.nextSlice(4);
-            if (win) { g_area += double(sl.y1 - sl.y0) * (hi - lo); }
+            if (win) { g_cArea += double(sl.y1 - sl.y0) * (hi - lo); }
             for (int sy = sl.y0; sy < sl.y1; sy += 16) {
                 const int sh = std::min(16, sl.y1 - sy);
                 S s = win ? S{buf.data(), w, sy, sh, lo, hi} : S{buf.data(), w, sy, sh};
@@ -67,6 +111,51 @@ static int pipeline(int theme, int w, int h) {
         if (panel != full(w, h, e.scene())) { fprintf(stderr, "theme %d %dx%d frame %d: panel != full render\n", theme, w, h, k); assert(false); }
     }
     return windowed;
+}
+
+// Live data: counts tick, channel loads move, the channel changes, contacts come and go, the header
+// changes -- as on the real board. Each frame the engine hands out dirty REGIONS; the panel mirror must
+// equal a full render after every frame, and a frame must cost far less than repainting the whole body.
+static void fillLive(scanpres::SceneStore& st, int theme, int k) {
+    st.begin(theme, 1000 + k * 43); st.animate(true);
+    st.gps({true, 3, 12, 500}); st.status(3 + k / 40, true, 78, Rec::Off);
+    st.counts(1665 + k / 3, 418 + k / 5, 2903 + k / 2);
+    st.channel(k < 20 ? "CH 06" : k < 40 ? "CH 11" : "CH 165", k < 40 ? "2.4 GHz" : "5 GHz");   // the string grows to 6 glyphs
+    for (int i = 0; i < 21; i++) st.setChannel(i, (scanfix::CHANNELS[i] + (k / 2) * (i + 1)) % 100);
+    for (const auto& b : scanfix::BLIPS) st.addBlip(b.bearing, b.dist, b.band, b.lastSeen);
+    if (k % 17 >= 8) st.addBlip((k * 37) % 360, 20 + k % 60, k % 3, 1000 + k * 43 - 500);   // a contact that comes and goes
+}
+static double g_composed = 0, g_sent = 0; static int g_frames = 0;
+static void live(int theme, int w, int h) {
+    pal::setTheme(theme);
+    std::vector<uint16_t> front(w * h), back(w * h), panel(w * h, 0), buf(w * 16);
+    framepresent::Frame f; f.begin(front.data(), back.data(), w, h);
+    scanpres::Engine e; e.reset(w, h); e.enter();
+    for (int k = 0; k < 60; k++) {
+        fillLive(e.back(), theme, k); e.commit();
+        uieng::Rect rg[8]; const int nr = e.regions(rg, 8);
+        double composed = 0, sent = 0;
+        while (e.pending()) {
+            const auto sl = e.nextSlice(4);
+            for (int sy = sl.y0; sy < sl.y1; sy += 16) {
+                const int sh = std::min(16, sl.y1 - sy);
+                if (nr > 0 && f.valid()) {
+                    for (int i = 0; i < nr; i++) {
+                        if (rg[i].y >= sy + sh || rg[i].y + rg[i].h <= sy) continue;
+                        S s{buf.data(), w, sy, sh, rg[i].x, rg[i].x + rg[i].w};
+                        composeStrip(s, w, h, e.scene());
+                        f.stageRegion(sy, buf.data(), sh, rg[i].x, rg[i].w); composed += double(rg[i].w) * sh;
+                    }
+                } else { S s{buf.data(), w, sy, sh}; composeStrip(s, w, h, e.scene()); f.stage(sy, buf.data(), sh); composed += double(w) * sh; }
+            }
+            if (sl.done) f.present(false, [&](uieng::Rect r, const uint16_t* px, int stride) {
+                sent += double(r.w) * r.h;
+                for (int y = r.y; y < r.y + r.h; y++) for (int x = r.x; x < r.x + r.w; x++) panel[y * w + x] = px[y * stride + x];
+            }, 0, h);
+        }
+        if (panel != full(w, h, e.scene())) { fprintf(stderr, "theme %d %dx%d live frame %d: panel != full render\n", theme, w, h, k); assert(false); }
+        if (k >= 2) { g_composed += composed; g_sent += sent; g_frames++; }
+    }
 }
 
 int main() {
@@ -88,11 +177,18 @@ int main() {
             prev = want; checked++;
         }
     }
+    for (int theme = 0; theme < pal::TH_COUNT; theme++) live(theme, 480, 320);
+    fprintf(stderr, "live data, 480x320: composed %.0f px/frame, sent %.0f px/frame (a full-width body is %d px)\n", g_composed / g_frames, g_sent / g_frames, 480 * 216);
+    // The old path repainted the whole full-width body (480x216) on any change besides the sweep, and in this
+    // scene something else changes nearly every frame. Regions must cost at most about half of that to draw
+    // and under a third to send.
+    assert(g_composed / g_frames < 0.55 * 480 * 216 && g_sent / g_frames < 0.30 * 480 * 216);
     int windowed = 0;
-    for (int theme = 0; theme < pal::TH_COUNT; theme++) for (auto wh : {std::pair<int,int>{480,320},{320,240}}) windowed += pipeline(theme, wh.first, wh.second);
+    for (int theme = 0; theme < pal::TH_COUNT; theme++) { windowed += pipeline(theme, 480, 320); windowed += pipelineCompact(theme, 320, 240); }
     // The wedge-only window composes well under the whole radar square on a sweep-only frame.
-    printf("window area = %.0f%% of the radar square\n", 100 * g_area / g_full);
-    assert(g_area < 0.6 * g_full);
+    fprintf(stderr, "sweep-only region area = %.0f%% of the radar square (480x320); compact window = %.0f%%\n", 100 * g_area / g_full, 100 * g_cArea / g_cFull);
+    assert(g_area < 0.6 * g_full);       // wide: the sweep region
+    assert(g_cArea < 0.7 * g_cFull);     // compact: the small radar makes the fixed 8 px halo margin a bigger share
     printf("test_radar_window: %d frames identical; %d pipeline frames used the window and matched the panel\n", checked, windowed);
     return 0;
 }

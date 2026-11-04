@@ -112,23 +112,24 @@ inline int fieldRadius(int W, int H) {
 // state (markers projected with each scene's own clock), so a contact that
 // fades or expires over time repaints even with no new packets, while a clock
 // tick that changes nothing visible does not. Pure.
-inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
-                       bool& status, bool& body, bool* fieldOnly = nullptr, bool* sweepOnly = nullptr) {
+// Which parts of the scene changed (what the panel would SHOW): the header chrome, each count tile, the
+// channel readout, the spectrum, the contacts, and the sweep. Pure.
+struct ScanParts { bool status = false, count[3] = {false, false, false}, ch = false, chan = false, marks = false, sweep = false; };
+inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b) {
+    ScanParts p;
     char la[16], lb[16];
     const bool gpsSame = scanr::gpsLabel(a.gps, la, 16) == scanr::gpsLabel(b.gps, lb, 16)
                          && !__builtin_strcmp(la, lb);
     char ra[16], rb[16];
     const bool recSame = scanr::recLabel(a, ra, 16) == scanr::recLabel(b, rb, 16)
                          && !__builtin_strcmp(ra, rb);
-    status = !gpsSame || !recSame || a.nodes != b.nodes
+    p.status = !gpsSame || !recSame || a.nodes != b.nodes
              || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
-
-    const bool countSame = a.wifi == b.wifi && a.g5 == b.g5 && a.ble == b.ble;   // count tiles
-    const bool chSame = !__builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "")
-                        && !__builtin_strcmp(a.chBand ? a.chBand : "", b.chBand ? b.chBand : "");
+    p.count[0] = a.wifi != b.wifi; p.count[1] = a.g5 != b.g5; p.count[2] = a.ble != b.ble;
+    p.ch = __builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "") || __builtin_strcmp(a.chBand ? a.chBand : "", b.chBand ? b.chBand : "");
     bool chanSame = a.nChannels == b.nChannels;
     for (int i = 0; chanSame && i < a.nChannels; i++) chanSame = a.channels[i] == b.channels[i];
-
+    p.chan = !chanSame;
     const int fr = fieldRadius(W, H);
     bool markSame = a.nBlips == b.nBlips;
     for (int i = 0; markSame && i < a.nBlips; i++) {
@@ -140,11 +141,19 @@ inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
                    && (!ma.shown || (ma.dx == mb.dx && ma.dy == mb.dy
                                      && ma.sizePx == mb.sizePx && ma.band == mb.band));
     }
-    const bool sweepSame = a.animateSweep == b.animateSweep &&
-        (!b.animateSweep || scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now));
-    body = !countSame || !chSame || !chanSame || !markSame || !sweepSame;
-    if (fieldOnly) *fieldOnly = body && countSame && chSame && chanSame;
-    if (sweepOnly) *sweepOnly = body && countSame && chSame && chanSame && markSame;   // nothing but the sweep moved
+    p.marks = !markSame;
+    p.sweep = !(a.animateSweep == b.animateSweep &&
+        (!b.animateSweep || scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now)));
+    return p;
+}
+inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
+                       bool& status, bool& body, bool* fieldOnly = nullptr, bool* sweepOnly = nullptr) {
+    const ScanParts p = sceneParts(W, H, a, b);
+    status = p.status;
+    const bool counts = p.count[0] || p.count[1] || p.count[2];
+    body = counts || p.ch || p.chan || p.marks || p.sweep;
+    if (fieldOnly) *fieldOnly = body && !counts && !p.ch && !p.chan;
+    if (sweepOnly) *sweepOnly = body && !counts && !p.ch && !p.chan && !p.marks;   // nothing but the sweep moved
 }
 
 // --- resumable, bounded strip scheduler --------------------------------------
@@ -316,14 +325,24 @@ public:
     // are stale) and force a full repaint; the commit that follows paints the
     // CURRENT scene. leave() likewise drops the pending frame so a stale one can
     // never resume on re-entry.
-    void enter()        { trans_.enter(); forceFull_ = true; win_ = false; sched_.reset(H_); }
-    void wake()         { trans_.enter(); forceFull_ = true; win_ = false; sched_.reset(H_); }
-    void themeChanged() { trans_.enter(); forceFull_ = true; win_ = false; sched_.reset(H_); }
-    void leave()        { trans_.leave(); win_ = false; sched_.reset(H_); }
+    void enter()        { trans_.enter(); forceFull_ = true; win_ = false; nreg_ = 0; sched_.reset(H_); }
+    void wake()         { trans_.enter(); forceFull_ = true; win_ = false; nreg_ = 0; sched_.reset(H_); }
+    void themeChanged() { trans_.enter(); forceFull_ = true; win_ = false; nreg_ = 0; sched_.reset(H_); }
+    void leave()        { trans_.leave(); win_ = false; nreg_ = 0; sched_.reset(H_); }
 
     // True when the pending frame changed ONLY the radar (a sweep step): the caller may compose and stage
     // just the columns [lo,hi) of the returned rows instead of the full width.
     bool window(int& lo, int& hi) const { lo = wlo_; hi = whi_; return win_; }
+
+    // Wide panels: the pending frame's dirty REGIONS (count tiles, channel readout, spectrum, radar or its
+    // wedge, header and nav bands). Returns 0 when the frame is a plain full-width one (entry, theme change,
+    // compact panels, or a commit while a frame was still pending); then rows come from the scheduler alone.
+    static constexpr int kMaxRegions = 8;
+    int regions(uieng::Rect* out, int cap) const {
+        const int n = nreg_ < cap ? nreg_ : cap;
+        for (int i = 0; i < n; i++) out[i] = reg_[i];
+        return n;
+    }
 
     bool acceptsTouch() const { return trans_.acceptsTouch(); }
     bool pending()      const { return sched_.pending(); }
@@ -339,9 +358,36 @@ public:
     void commit() {
         const ScanScene& nw = store_[cur_ ^ 1].scene();
         const bool wasPending = sched_.pending(), wasWin = win_;
-        win_ = false;
+        win_ = false; nreg_ = 0;
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
+        } else if (W_ >= 400 && !wasPending) {
+            // Wide panel: dirty REGIONS. Each changed part of the scene repaints only its own rectangle.
+            const ScanScene& pv = store_[cur_].scene();
+            const ScanParts p = sceneParts(W_, H_, pv, nw);
+            const uieng::ScanLayout L = uieng::scan(W_, H_);
+            const int statusBottom = L.statusCells[0].y + L.statusCells[0].h, navTop = L.navCells[0].y;
+            auto add = [&](const uieng::Rect& r) { if (nreg_ < kMaxRegions && r.w > 0 && r.h > 0) { reg_[nreg_++] = r; sched_.invalidate(r.y, r.y + r.h); } };
+            if (p.status) add({0, 0, W_, statusBottom});
+            for (int i = 0; i < 3; i++) if (p.count[i]) add(L.tiles[i]);
+            if (p.ch)   add(scanr::chRect(W_, H_));
+            if (p.chan) add(scanr::specRect(W_, H_));
+            if (p.marks || p.sweep) {
+                const auto radar = scanr::radarBounds(W_, H_);
+                uieng::Rect box = radar;
+                if (!p.marks && pv.animateSweep && nw.animateSweep) {      // sweep only: just the old and new wedge
+                    const int fr = (radar.w - 5) / 2, fcx = radar.x + fr + 2, fcy = radar.y + fr + 2;
+                    const auto a = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(pv.now));
+                    const auto b = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(nw.now));
+                    int x0 = std::max(radar.x, std::min(a.x, b.x)), y0 = std::max(radar.y, std::min(a.y, b.y));
+                    int x1 = std::min(radar.x + radar.w, std::max(a.x + a.w, b.x + b.w)), y1 = std::min(radar.y + radar.h, std::max(a.y + a.h, b.y + b.h));
+                    if (x1 > x0 && y1 > y0) box = { x0, y0, x1 - x0, y1 - y0 };
+                }
+                add(box);
+            }
+            char ra[16], rb[16];
+            scanr::recLabel(pv, ra, 16); scanr::recLabel(nw, rb, 16);
+            if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, navTop, W_, H_ - navTop});   // REC/STOP and POI live on the nav
         } else {
             bool st = false, bd = false, fieldOnly = false, sweepOnly = false;
             sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly, &sweepOnly);
@@ -402,6 +448,7 @@ private:
     PresentMetrics   metrics_;
     int  W_ = 0, H_ = 0, cur_ = 0;
     bool win_ = false; int wlo_ = 0, whi_ = 0;
+    uieng::Rect reg_[kMaxRegions]; int nreg_ = 0;
     bool haveFront_ = false, forceFull_ = true;
 };
 
