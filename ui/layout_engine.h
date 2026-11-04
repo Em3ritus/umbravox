@@ -74,8 +74,9 @@ inline ScanLayout scan(int W, int H) {
     s.wordmark = c.wordmark; s.stop = c.stop;
 
     if (wide) {
-        for (int i = 0; i < 3; i++) s.tiles[i] = {16, 52 + i * 70, 132, 62};
-        s.hero = {156, 52, W - 156 - M, H - 104};
+        // Layout A: a slim count column so the radar can take the middle of the screen.
+        for (int i = 0; i < 3; i++) s.tiles[i] = {16, 52 + i * 72, 100, 68};
+        s.hero = {124, 52, W - 124 - M, H - 104};
     } else {
         const int th = (H - 104) / 3;
         for (int i = 0; i < 3; i++) s.tiles[i] = {8, 52 + i * th, 88, (i < 2) ? th : (H - 104 - 2 * th)};

@@ -18,7 +18,7 @@ int main(){std::ifstream file("../packs/z-ember/theme.json");std::string j((std:
 std::ifstream bf(std::string(folders[i])+"emblem.bin",std::ios::binary);artwork[i].assign(std::istreambuf_iterator<char>(bf),{});assert(themepack::parseEmblem(artwork[i].data(),artwork[i].size(),emblems[i],why,sizeof why));assert(emblems[i].w==64&&emblems[i].h==64);logos[i]=pal::addPack(pack,&emblems[i]);assert(logos[i]>=0&&pal::centrepiece(logos[i])==pal::CP_RADAR_EMBLEM);}
  std::ifstream sf("../packs/z-em3ritus/theme.json");std::string sj((std::istreambuf_iterator<char>(sf)),{});themepack::Pack sp{};assert(themepack::parse(sj.data(),sj.size(),sp,why,sizeof why));assert(sp.centre==themepack::CENTRE_RADAR_EMBLEM);sp.centre=themepack::CENTRE_SIGIL;snprintf(sp.name,sizeof sp.name,"TEST SIGIL");int sigil=pal::addPack(sp,nullptr);assert(sigil>=0&&pal::centrepiece(sigil)==pal::CP_SIGIL);
  Compositor comp;for(int theme:{id,int(pal::TH_BAPH0MAU5),mascot,int(pal::TH_COSMICMUFFIN),logos[0],logos[1],logos[2],logos[3],sigil}){pal::setTheme(theme);for(auto wh:{std::pair<int,int>{480,320},{320,240}}){int w=wh.first,h=wh.second;auto sc=scanfix::demo(theme);sc.animateSweep=true;sc.now=1000;Fb first(w,h),full(w,h),partial(w,h);comp.renderFull(w,h,sc,first);for(int phase=0;phase<72;phase++){partial.p=first.p;sc.now=3600+phase*50;comp.renderFull(w,h,sc,full);comp.renderRegion(w,h,sc,radarBounds(w,h),partial);assert(full.p==partial.p);}assert(first.p!=full.p);
- auto hs=heroSub(uieng::scan(w,h).hero);assert(hs.spectrum.w<=(w>=400?168:140)&&hs.barMax==(w>=400?16:8));
+ auto hs=heroSub(uieng::scan(w,h).hero);assert(hs.spectrum.w<=(w>=400?168:140)&&hs.barMax==(w>=400?56:8));
  }
  }
  // Every supported landscape/portrait geometry must avoid the trig fallback.
@@ -26,9 +26,9 @@ std::ifstream bf(std::string(folders[i])+"emblem.bin",std::ios::binary);artwork[
    const auto b=radarBounds(wh.first,wh.second);const int r=(b.w-5)/2;
    const auto hero=uieng::scan(wh.first,wh.second).hero;const auto hs=heroSub(hero);
    const int cy=b.y+r+2,top=hero.y+4,bottom=hs.barBase-hs.barMax-2;
-   assert(cy==(top+bottom)/2-(wh.first>=400?0:2));
-   assert(b.y>=hero.y && b.y+b.h<=hs.barBase-hs.barMax);
-   if(wh.second==240)assert(r==55);if(wh.first==480)assert(r==85);
+   if(wh.first<400)assert(cy==(top+bottom)/2-2);   // layout A centres the wide radar on the hero instead
+   assert(b.y>=hero.y && (wh.first>=400 ? b.y+b.h<=hero.y+hero.h : b.y+b.h<=hs.barBase-hs.barMax));
+   if(wh.second==240)assert(r==55);if(wh.first==480)assert(r==102);
    for(int k=1;k<=3;k++){int n=0;assert(radargeometry::ring(r*k/3,n)&&n>0);}
  }
  // Artwork resampling is identical whether composed full-height or in strips,

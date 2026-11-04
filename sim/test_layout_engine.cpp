@@ -42,9 +42,9 @@ static void testLayout() {
         ckRect("nav", s.nav, 0,H-44,W,44);
         ckRect("body", s.body, P?8:16, 52, P?304:448, H-104);
     }
-    ckRect("counts480",   scan(480,320).counts, 16,52,132,216);
-    ckRect("hero480",     scan(480,320).hero,   156,52,308,216);
-    ckRect("tile2_480",   scan(480,320).tiles[2], 16,192,132,62);
+    ckRect("counts480",   scan(480,320).counts, 16,52,100,216);
+    ckRect("hero480",     scan(480,320).hero,   124,52,340,216);
+    ckRect("tile2_480",   scan(480,320).tiles[2], 16,196,100,68);
     ckRect("stop480",     scan(480,320).stop, 384,276,96,44);
     ckRect("wordmark480", scan(480,320).wordmark, 44,0,164,44);
     ckRect("counts320",   scan(320,240).counts, 8,52,88,136);

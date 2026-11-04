@@ -184,6 +184,13 @@ inline void line(S& s, int x0,int y0,int x1,int y1, uint16_t c) {
     for(;;){ pt(s,x0,y0,c); if(x0==x1&&y0==y1) break; int e2=2*e;
              if(e2>=dy){e+=dy;x0+=sx;} if(e2<=dx){e+=dx;y0+=sy;} }
 }
+// A count for a tile: the full number up to 99,999, then 106K, 1.2M (never wider than 5 glyphs).
+inline void fmtCount(long v, char* out, int n) {
+    if (v < 0) v = 0;
+    if (v < 100000) snprintf(out, n, "%ld", v);
+    else if (v < 1000000) snprintf(out, n, "%ldK", v / 1000);
+    else { const long t = v / 100000; snprintf(out, n, "%ld.%ldM", t / 10, t % 10); }
+}
 inline int  fitScale(const char* t, int maxW, int hi) {         // largest scale <= hi that fits
     for (int s=hi; s>1; --s) if (Font::width(t,s) <= maxW) return s; return 1;
 }
@@ -353,29 +360,42 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
 // spectrum separation and no-intrusion invariants are host-testable. The channel
 // plan is FIXED (count is size-independent); bar width/pitch adapt.
 static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz; one spectrum bar each
-struct HeroSub { uieng::Rect field, spectrum; int barBase, barMax; };
+// Hero sub-layout. Wide panels (layout A) keep the radar big in the middle and put the channel readout and
+// the spectrum in a right-hand column (`side`); compact panels keep the spectrum under the radar.
+struct HeroSub { uieng::Rect field, spectrum, side; int barBase, barMax; };
 inline HeroSub heroSub(uieng::Rect hr) {
     const bool compact = hr.w < 280;
     const int hdrH = compact ? 16 : 30, specH = compact ? 26 : 44;               // compact uses a 1x channel heading; wide keeps the 2x readout
-    HeroSub h;
+    HeroSub h{};
     h.field    = {hr.x+2, hr.y+hdrH, hr.w-4, hr.h-hdrH-specH};
-    const int sw=std::min(compact ? 140 : 168,hr.w-8);
+    if (!compact) {
+        h.side     = {hr.x+hr.w-66, hr.y, 66, hr.h};
+        h.barMax   = 56;                                      // a real equaliser, 3 px per channel
+        h.barBase  = hr.y+hr.h-14;
+        h.spectrum = {h.side.x+1, h.barBase-h.barMax-4, 63, h.barMax+4+14};
+        return h;
+    }
+    const int sw=std::min(140,hr.w-8);
     h.spectrum = {hr.x+(hr.w-sw)/2, hr.y+hr.h-specH, sw, specH};
     h.barBase  = hr.y+hr.h-11;
-    h.barMax   = compact ? 8 : 16;                          // compact half-height amplitude; every channel retained
+    h.barMax   = 8;                                           // compact half-height amplitude; every channel retained
     return h;
 }
 
 // Shared geometry for drawing and narrow animation invalidation.
 inline uieng::Rect radarBounds(int W, int H) {
     const auto hr=uieng::scan(W,H).hero;
+    if (W>=400) {                                   // layout A: a big radar, left of the right-hand column
+        const int r=102, cx=hr.x+168, cy=hr.y+hr.h/2;
+        return {cx-r-2,cy-r-2,2*r+5,2*r+5};
+    }
     const auto hs=heroSub(hr);
     const auto f=hs.field;
-    const int cx = W>=400 ? 311 : f.x+f.w/2;
+    const int cx = f.x+f.w/2;
     const int top = hr.y+4, bottom = hs.barBase-hs.barMax-2;
-    // Compact panels retain the accepted optical lift; wide panels stay centered.
-    const int cy = (top+bottom)/2 - (W>=400 ? 0 : 2);
-    const int r = W>=400 ? 85 : std::min(f.w/2-4,(bottom-top)/2);
+    // Compact panels retain the accepted optical lift.
+    const int cy = (top+bottom)/2 - 2;
+    const int r = std::min(f.w/2-4,(bottom-top)/2);
     return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
 }
 inline uint32_t sweepPhase(uint32_t now) { return uint32_t(sweepAngle(now)) * 72u / 1024u; }   // coarse, kept for callers that want a step count
@@ -551,7 +571,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         box(s, t.x, t.y, 3, t.h, band[i]);
         frame(s, t.x, t.y, t.w, t.h, pal::EDGE);
         txt(s, t.x+12, t.y+9, tlab[i], 1, pal::DIM);
-        snprintf(num, sizeof num, "%ld", vals[i]);
+        fmtCount(vals[i], num, sizeof num);
         int ns = fitScale(num, t.w-16, t.h>=60?3:2);
         txt(s, t.x+12, t.y + (t.h>=60?28:22), num, ns, pal::BRIGHT); }
 
@@ -591,13 +611,21 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             int count=0;
             const auto* ring=radargeometry::ring(rr,count);
             if (ring) {
+                const bool thick = W>=400;       // layout A: 2 px rings (each table point also paints the pixel inward)
+                auto plot=[&](int x,int y,int cov){
+                    if(y<s.y0 || y>=s.y0+s.h || x<s.lo || x>=s.hi)return;
+                    auto& dst=s.px[(y-s.y0)*s.stride+(x-s.lo)];
+                    dst=ui::Canvas::mix(dst,pal::EDGE,cov,16);
+                };
                 for (int i=0;i<count;++i) {
-                    if (fcy+ring[i].y < s.y0) continue;
-                    if (fcy+ring[i].y >= s.y0+s.h) break; // sorted rows
-                    const int x=fcx+ring[i].x, y=fcy+ring[i].y;
-                    if(x>=s.lo && x<s.hi){
-                        auto& dst=s.px[(y-s.y0)*s.stride+(x-s.lo)];
-                        dst=ui::Canvas::mix(dst,pal::EDGE,ring[i].coverage,16);
+                    const int ry=ring[i].y, rx=ring[i].x;
+                    if (fcy+ry < s.y0-1) continue;
+                    if (fcy+ry >= s.y0+s.h+1) break; // sorted rows (+1: the inward pixel sits one row closer)
+                    plot(fcx+rx, fcy+ry, ring[i].coverage);
+                    if (thick) {
+                        const int ax = rx<0?-rx:rx, ay = ry<0?-ry:ry;
+                        const int ix = rx - (ax>=ay ? (rx>0?1:(rx<0?-1:0)) : 0), iy = ry - (ax<ay ? (ry>0?1:(ry<0?-1:0)) : 0);
+                        plot(fcx+ix, fcy+iy, ring[i].coverage);
                     }
                 }
             } else { // other logical sizes retain the original geometry
@@ -611,7 +639,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
         } else if(!clean) {
             const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east
-            const auto* star = h7==61 ? radargeometry::star61 : h7==49 ? radargeometry::star49 : h7==19 ? radargeometry::star19 : nullptr;
+            const auto* star = h7==73 ? radargeometry::star73 : h7==61 ? radargeometry::star61 : h7==49 ? radargeometry::star49 : h7==19 ? radargeometry::star19 : nullptr;
             for (int i=0;i<7;i++) {
                 if (star) { vx[i]=fcx+star[i].x; vy[i]=fcy+star[i].y; }
                 else { const double t=i*2.0*3.14159265/7.0;
@@ -655,7 +683,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     // thin divider + a label under each group read it as data, not vibe.
     const int sx0   = hs.spectrum.x;
     const int pitch = (hs.spectrum.w / kChannels >= 2) ? hs.spectrum.w / kChannels : 2;
-    const int bw    = (pitch > 2) ? pitch - 2 : 1;             // readable bar, small gap (don't merge)
+    const int bw    = (pitch > 3) ? pitch - 2 : (pitch > 2 ? pitch - 1 : 1);   // readable bar, small gap (don't merge)
     if (sc.channels && sc.nChannels == kChannels)
         for (int i = 0; i < kChannels; i++) {
             int a = sc.channels[i]; a = a < 0 ? 0 : (a > 100 ? 100 : a);
@@ -665,8 +693,9 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     const int boundX = sx0 + kCh24 * pitch;                   // 2.4 | 5 GHz split (start of bar 13)
     box(s, boundX - 1, hs.barBase - hs.barMax, 1, hs.barMax, pal::EDGE);   // thin band divider
     const int labY = hr.y + hr.h - 8;
-    txt(s, sx0,        labY, "2.4 GHZ", 1, pal::DIM);          // under the 2.4 GHz (pink) group
-    txt(s, boundX + 2, labY, "5 GHZ",   1, pal::DIM);          // under the 5 GHz (cyan) group
+    const bool shortLab = pitch < 4;                           // the narrow right-hand column
+    txt(s, sx0,        labY, shortLab ? "2.4G" : "2.4 GHZ", 1, pal::DIM);   // under the 2.4 GHz (pink) group
+    txt(s, boundX + 2, labY, shortLab ? "5G" : "5 GHZ", 1, pal::DIM);   // under the 5 GHz (cyan) group
     // nav bar + STOP/REC drawn by drawChrome above (shared design-1 chrome).
 }
 

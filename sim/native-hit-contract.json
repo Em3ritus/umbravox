@@ -1,5 +1,5 @@
 {
-  "note": "Approved header MENU and explicit SCAN footer, preserving DOMAIN/CODEX/POI/REC order. Body geometry unchanged. Independent expected rectangles for both sizes and all states.",
+  "note": "Approved header MENU and explicit SCAN footer, preserving DOMAIN/CODEX/POI/REC order. Body geometry unchanged. Independent expected rectangles for both sizes and all states. (480x320 scan tiles and threat target updated for layout A.)",
   "screens": [
     {
       "name": "scan-active-480",
@@ -81,26 +81,26 @@
           "rect": [
             16,
             52,
-            132,
-            62
+            100,
+            68
           ]
         },
         {
           "id": "5 GHZ",
           "rect": [
             16,
-            122,
-            132,
-            62
+            124,
+            100,
+            68
           ]
         },
         {
           "id": "BLE",
           "rect": [
             16,
-            192,
-            132,
-            62
+            196,
+            100,
+            68
           ]
         },
         {
@@ -203,26 +203,26 @@
           "rect": [
             16,
             52,
-            132,
-            62
+            100,
+            68
           ]
         },
         {
           "id": "5 GHZ",
           "rect": [
             16,
-            122,
-            132,
-            62
+            124,
+            100,
+            68
           ]
         },
         {
           "id": "BLE",
           "rect": [
             16,
-            192,
-            132,
-            62
+            196,
+            100,
+            68
           ]
         },
         {
@@ -325,26 +325,26 @@
           "rect": [
             16,
             52,
-            132,
-            62
+            100,
+            68
           ]
         },
         {
           "id": "5 GHZ",
           "rect": [
             16,
-            122,
-            132,
-            62
+            124,
+            100,
+            68
           ]
         },
         {
           "id": "BLE",
           "rect": [
             16,
-            192,
-            132,
-            62
+            196,
+            100,
+            68
           ]
         },
         {
@@ -447,26 +447,26 @@
           "rect": [
             16,
             52,
-            132,
-            62
+            100,
+            68
           ]
         },
         {
           "id": "5 GHZ",
           "rect": [
             16,
-            122,
-            132,
-            62
+            124,
+            100,
+            68
           ]
         },
         {
           "id": "BLE",
           "rect": [
             16,
-            192,
-            132,
-            62
+            196,
+            100,
+            68
           ]
         },
         {
@@ -569,34 +569,34 @@
           "rect": [
             16,
             52,
-            132,
-            62
+            100,
+            68
           ]
         },
         {
           "id": "5 GHZ",
           "rect": [
             16,
-            122,
-            132,
-            62
+            124,
+            100,
+            68
           ]
         },
         {
           "id": "BLE",
           "rect": [
             16,
-            192,
-            132,
-            62
+            196,
+            100,
+            68
           ]
         },
         {
           "id": "threat",
           "rect": [
-            156,
+            124,
             52,
-            308,
+            340,
             44
           ]
         },

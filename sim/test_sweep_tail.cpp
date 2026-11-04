@@ -95,7 +95,7 @@ int main() {
                 auto sc = scanfix::demo(theme, now); sc.animateSweep = true; sc.blips = bl; sc.nBlips = withBlip ? 1 : 0;
                 Compositor comp; Fb fb(480, 320); comp.renderFull(480, 320, sc, fb); return fb;
             };
-            const auto rb = radarBounds(480, 320); const int fr = (rb.w - 5) / 2, cx = rb.x + fr + 2 + 51, cy = rb.y + fr + 2;
+            const auto rb = radarBounds(480, 320); const int fr = (rb.w - 5) / 2, cx = rb.x + fr + 2 + fr * 60 / 100, cy = rb.y + fr + 2;
             const auto lit = draw(809, true), dark = draw(2250, true), bare = draw(809, false);   // 809 ms: head just past it; 2250 ms: far side
             if (lum(lit.p[cy * 480 + cx]) <= lum(dark.p[cy * 480 + cx])) { fprintf(stderr, "theme %d: swept contact not brighter\n", theme); assert(false); }
             const int halo = cx + 4;                                  // just outside the 6 px core, inside the glow arm
