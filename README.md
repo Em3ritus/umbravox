@@ -20,12 +20,16 @@ demonstration data. These are not hardware photographs.
 | --- | --- | --- |
 | Waveshare ESP32-C5-Touch-LCD-3.5 | 480×320 | Browser installation, all four image hashes, and boot confirmed |
 | Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed |
-| NerdMinder NM-CYD-C5 | 320×240 shared engine | Browser installation, all four image hashes, and boot confirmed |
+| NerdMinder NM-CYD-C5 | 320×240 shared engine | Earlier firmware flashing and operation confirmed; latest build compile-checked |
 
-The published firmware packages use `bce092c` for Waveshare and `45e7ed3` for NM.
-The prerelease tag `f963f3a` identifies the installer/release source. Subsequent
-branch commits correct documentation and CI checks; they do not replace those
-published binaries. Each board ZIP includes its matching source snapshot.
+Current firmware packages use source `a66bd3b` and include matching source snapshots.
+The retained prerelease tag `f963f3a` identifies the original release source;
+the release notes identify current firmware and installer revisions separately.
+Latest hardware follow-up covers the Waveshare 3.5-inch WDGO fixes, ten XIAO nodes,
+and a fifteen-minute stationary mesh/bridge observation. Latest Waveshare 2.8-inch
+and NM images are compile-checked; earlier images have the hardware evidence above.
+See [node validation](docs/XIAO-NODE-VALIDATION.md) and
+[GPS recovery](docs/FLASHING-TOOLS.md#external-gps-after-flashing) for boundaries.
 
 ## Installation
 

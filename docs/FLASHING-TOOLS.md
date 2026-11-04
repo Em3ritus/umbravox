@@ -34,3 +34,11 @@ Historical bench notes describe the tools and workarounds used at their recorded
 revision. They are evidence of those sessions, not the current installation guide.
 
 Source: https://pypi.org/project/esptool/5.6.0/
+
+## External GPS after flashing
+
+A board reset does not remove power from an attached LC76G. If GPS I2C transfer
+errors continue after flashing or repeated resets, fully remove handheld and GPS
+power (USB and battery) for 30 seconds, then restart and verify fresh GPS data.
+This recovered the tested Waveshare 3.5-inch setup; it is an operational recovery,
+not a guarantee that every I2C fault has the same cause.

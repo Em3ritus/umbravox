@@ -121,3 +121,20 @@ Recurring I2C errors were present during the observation. A follow-up GPS status
 query confirmed transfer failures; this is an unresolved peripheral issue and
 prevents describing the complete hardware setup as error-free. The successful
 mesh/bridge check does not establish current GPS reliability.
+
+### GPS recovery follow-up
+
+The intermittent GPS I2C errors persisted across software resets. A complete
+30-second power removal from the handheld and GPS restored normal NMEA delivery
+on the unchanged GPS driver. Timing-only experiments were rejected and reverted;
+no GPS firmware root-cause fix is claimed. If GPS transfer errors persist after
+flashing, remove both USB and battery power before restarting. A software reset
+alone does not power-cycle the external receiver. Follow-up counters are recorded
+separately from the ten-node mesh soak.
+
+After the full power cycle, the unchanged driver delivered fresh NMEA with a 3D
+fix. Two consecutive captures recorded counters increasing from 132 to 2,070
+cycles and 14,256 to 261,760 bytes, while cycle failures, all write failures,
+short reads, recovery attempts, wakes and budget overruns remained zero. The
+captures span more than four minutes with ten nodes and WDGO active. This
+supports the recovery procedure; the underlying warm-reset fault remains open.
