@@ -116,3 +116,19 @@ start/stop, disconnect/reconnect, and OFF. Exercise touch, scrolling and SD reco
 while linked. Record `[bridge]` queue/retry/drop counters and `[mem]` free/minimum/
 largest-block/stack readings during a sustained run. Test at least one reconnect
 and confirm SD recording continues when the phone stream stops.
+
+## Follow-up validation (2026-11-03)
+
+The channel-qualified start command and phone identity announcement were exercised
+with WardriveGo Android 3.1.339. The latest startup terminal exchange acknowledged
+the starts, continued streaming, and contained no unsupported-command response.
+Older errors remain in the app terminal history. This hardware check used the
+Waveshare 3.5-inch handheld; other board builds are compile checks only.
+
+A moving session was saved on the handheld and Android. The handheld CSV contained
+9,177 distinct Wi-Fi identifiers and 337 BLE identifiers; the Android CSV contained
+7,442 distinct Wi-Fi identifiers, with 6,436 Wi-Fi identifiers shared. Android also
+scanned independently and applied its own geofence, so these sets do not measure
+bridge loss. The app reported successful submissions to WiGLE, WDGWars and Wardrift.
+The GPX parsed with 681 points over 1,023 seconds and one one-second backward time
+step. Client and probe CSV structures were consistent. Raw captures stay private.

@@ -82,3 +82,21 @@ Two nodes and one Waveshare 3.5-inch handheld were used for the recovery check. 
 capacity beyond two nodes or physical acceptance with the NM and Waveshare 2.8-inch
 handhelds. The saved-file check above used a real GPS fix. The firmware ZIP contains the earlier validation snapshot; this
 page and the release notes record the follow-up checks without replacing binaries.
+
+## Pending-observation coalescing check (2026-11-03)
+
+With Discovery / Active / 100 ms applied, the original 5 GHz node accumulated
+new queue drops during a stationary two-node observation. The candidate queue
+keeps one pending record per BSSID, refreshing signal, channel and age while
+preserving a learned name across hidden-name repeats. This is per-report queue
+coalescing, not permanent deduplication or durable delivery.
+
+The first candidate node completed a 70-second observation without queue drops
+or send failures. After updating both nodes, a 65-second joint observation showed
+zero node queue drops and send failures, increasing handheld accepted reports,
+no handheld packet rejections, and an active WDGO stream without bridge receive
+drops or notification retries. This is bounded stationary evidence, not a field
+comparison or proof of lossless delivery. Seen and sent counts now differ by
+coalescing as well as other causes; their difference must not be called loss.
+Host tests exercise duplicate bursts, full queues, distinct BSSIDs, metadata
+preservation and refreshing records in a full queue.
