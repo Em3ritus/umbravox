@@ -100,3 +100,24 @@ comparison or proof of lossless delivery. Seen and sent counts now differ by
 coalescing as well as other causes; their difference must not be called loss.
 Host tests exercise duplicate bursts, full queues, distinct BSSIDs, metadata
 preservation and refreshing records in a full queue.
+
+## Ten-node stationary check (2026-11-03)
+
+All ten XIAO nodes were flashed and individually enrolled. Both groups of five
+were observed with handheld report delivery and WDGO streaming. Bringing all ten
+online produced ten assignments of two channels each in Discovery / Active /
+100 ms mode. A joint node power interruption was followed by ten-node recovery;
+expiry events occurred around the interruption and must not be omitted.
+
+The subsequent stationary observation lasted at least 913 seconds. It recorded
+no node-expiry messages or crashes, 6,466 additional accepted mesh reports, no
+increase in packet rejection counters, and zero bridge receive drops or
+notification retries. Free heap fluctuated between 33,680 and 40,964 bytes in
+sampled bridge diagnostics. These are aggregate counters; per-node internal
+counters were not collected simultaneously, and this is not proof of lossless
+delivery, improved unique discovery, or moving performance with ten nodes.
+
+Recurring I2C errors were present during the observation. A follow-up GPS status
+query confirmed transfer failures; this is an unresolved peripheral issue and
+prevents describing the complete hardware setup as error-free. The successful
+mesh/bridge check does not establish current GPS reliability.
