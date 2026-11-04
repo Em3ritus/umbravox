@@ -135,6 +135,8 @@ volatile uint32_t nFrames = 0, nLocal = 0, nUnique24 = 0, nUnique5 = 0;
 // Bumped whenever the table is cleared, so caches built from it (the map)
 // know to rebuild.
 uint32_t tableGen = 0;
+// Only table clears invalidate the bridge cursor; name updates must not rewind it.
+uint32_t bridgeGen = 0;
 
 // Devices first discovered by each source, kept as a running count rather
 // than derived on demand: scanning 8192 slots per node per frame to answer
@@ -879,13 +881,13 @@ void bridgePlan(char* out, unsigned cap) {
     }
 }
 
-int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint32_t now) {
-    if(generation!=tableGen){generation=tableGen;cursor=0;}
+int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint32_t now, uint32_t& staleVisits) {
+    if(generation!=bridgeGen){generation=bridgeGen;cursor=0;}
     for(int examined=0;examined<32;++examined){
         portENTER_CRITICAL(&mux);
         if(cursor>=nOrder){portEXIT_CRITICAL(&mux);return -1;}
         const Node& nd=table_[order_[cursor++]];
-        if(uint32_t(now-nd.lastMs)>60000){portEXIT_CRITICAL(&mux);continue;}
+        if(uint32_t(now-nd.lastMs)>bridgewire::AP_FRESH_MS){++staleVisits;portEXIT_CRITICAL(&mux);continue;}
         memcpy(out.mac,nd.mac,6);memcpy(out.ssid,nd.ssid,32);out.ssid[32]=0;
         out.rssi=nd.rssi;out.channel=nd.chan;out.auth=nd.auth;out.at=nd.lastMs;
         portEXIT_CRITICAL(&mux);return 1;
@@ -1230,6 +1232,7 @@ void reset() {
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     alert_ = ui::AlertRec{};
     tableGen++;
+    bridgeGen++;
     portEXIT_CRITICAL(&mux);
 }
 
@@ -1247,6 +1250,7 @@ void rollover() {
     twinJob.active = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     tableGen++;
+    bridgeGen++;
     portEXIT_CRITICAL(&mux);
 }
 

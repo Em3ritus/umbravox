@@ -8,6 +8,12 @@
 
 namespace bridgewire {
 constexpr size_t MAX_LINE=384, MAX_CMD=192, HEADER=12;
+// Producer follows bounded outbox capacity, not a second per-AP rate limit.
+// Reserve six lines for control replies. ATT transmission retains its own pacing.
+inline bool apReady(uint32_t now,uint32_t connectedAt,unsigned freeLines){
+    return uint32_t(now-connectedAt)>=3000 && freeLines>=6;
+}
+constexpr uint32_t AP_FRESH_MS=60000;
 // Compatibility sentinel from slickrick773's ESP32Marauder PR #1671.
 // Not the Umbravox software version. Never replace with a normal release number.
 constexpr const char* FW_VERSION="99.99.99";

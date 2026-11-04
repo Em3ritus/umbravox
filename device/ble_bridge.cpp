@@ -31,7 +31,8 @@ struct State {
     unsigned seenEpoch=0;bool greeted=false,timeSynced=false;
     ChannelFilter channels;
     uint8_t band=0;uint32_t reply=1,cursor=0,generation=0,sent=0;
-    uint32_t connectedAt=0,lastTx=0,lastAp=0,roundAt=0,timeAt=0,diagAt=0,advAt=0,notifyFails=0;
+    uint32_t connectedAt=0,lastTx=0,roundAt=0,timeAt=0,diagAt=0,advAt=0,notifyFails=0;
+    uint32_t staleVisits=0,txLines=0;
     bool roundDone=false;
 };
 State* st=nullptr;
@@ -42,7 +43,7 @@ int identityMode=-1;
 char name[24]{};
 void clearSession(uint32_t now){
     st->out.clear();st->command.reset();st->greeted=false;st->timeSynced=false;
-    st->reply=1;st->cursor=0;st->sent=0;st->band=0;st->channels=ChannelFilter{};st->roundDone=false;st->connectedAt=now;
+    st->staleVisits=st->txLines=0;st->reply=1;st->cursor=0;st->sent=0;st->band=0;st->channels=ChannelFilter{};st->roundDone=false;st->connectedAt=now;
     streaming=false;
 }
 void resetRx(){if(st){portENTER_CRITICAL(&rxMux);st->rxHead=st->rxCount=0;portEXIT_CRITICAL(&rxMux);}}
@@ -175,7 +176,7 @@ void transmit(uint32_t now){
     int rc=buffer?ble_gatts_notify_custom(connection.load(),(wd?wdTx:bisTx)->getHandle(),buffer):BLE_HS_ENOMEM;
     st->lastTx=now;
     if(rc){++st->notifyFails;return;} // same bytes retained; never advance on failure
-    line->offset+=n;if(line->offset==line->len)st->out.pop();
+    line->offset+=n;if(line->offset==line->len){st->out.pop();++st->txLines;}
 }
 }
 void setMode(uint8_t mode){
@@ -226,19 +227,18 @@ void tick(uint32_t now){
     if(selected==BISCUIT && !st->timeSynced && uint32_t(now-st->timeAt)>=5000 && st->out.free()){
         st->out.put("TIME:REQUEST:\n");st->timeAt=now;
     }
-    if(streaming && uint32_t(now-st->connectedAt)>=3000 && st->out.free()>=6 && uint32_t(now-st->lastAp)>=100){
+    if(streaming && apReady(now,st->connectedAt,st->out.free())){
         if(restartRound(st->roundDone,now,st->roundAt)){st->roundDone=false;st->cursor=0;st->roundAt=now;}
         {
-            Ap ap;const int result=cap::bridgeNext(st->cursor,st->generation,ap,now);
-            if(result<0)st->lastAp=now;
+            Ap ap;const int result=cap::bridgeNext(st->cursor,st->generation,ap,now,st->staleVisits);
             if(result<0 && !st->roundDone){st->roundDone=true;
                 if(selected==WARDRIVEGO){char line[80];snprintf(line,sizeof line,"WD:STATUS aps=%lu scans=0\n",(unsigned long)st->sent);st->out.put(line,st->reply);}}
-            else if(result>0 && allows(st->band,ap.channel) && st->channels.allows(ap.channel)){st->roundDone=false;if(apLine(st->scratch,sizeof st->scratch,ap,Mode(selected.load()))){st->out.put(st->scratch,st->reply);++st->sent;st->lastAp=now;}}
+            else if(result>0 && allows(st->band,ap.channel) && st->channels.allows(ap.channel)){st->roundDone=false;if(apLine(st->scratch,sizeof st->scratch,ap,Mode(selected.load()))){st->out.put(st->scratch,st->reply);++st->sent;}}
         }
     }
     transmit(now);
     if(uint32_t(now-st->diagAt)>=10000){
-        st->diagAt=now;Serial.printf("[bridge] mode %u stream %u queued %lu queue %u rx-drop %lu tx-retry %lu heap %u\n",unsigned(selected.load()),unsigned(streaming.load()),(unsigned long)st->sent,st->out.count,(unsigned long)st->rxDrops,(unsigned long)st->notifyFails,unsigned(ESP.getFreeHeap()));
+        st->diagAt=now;Serial.printf("[bridge] mode %u stream %u queued %lu queue %u rx-drop %lu tx-retry %lu heap %u stale-visits %lu tx-lines %lu mtu %u\n",unsigned(selected.load()),unsigned(streaming.load()),(unsigned long)st->sent,st->out.count,(unsigned long)st->rxDrops,(unsigned long)st->notifyFails,unsigned(ESP.getFreeHeap()),(unsigned long)st->staleVisits,(unsigned long)st->txLines,unsigned(mtu.load()));
     }
 }
 const char* deviceName(){return name[0]?name:"NOT STARTED";}

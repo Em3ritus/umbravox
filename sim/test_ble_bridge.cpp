@@ -167,5 +167,34 @@ int main(){
         bool found=false;for(int i=0;i<hits.count;++i)if(hits.items[i].action==uieng::Action::SettingStep && hits.items[i].payload==10)found=true;
         assert(found);
     }
+    // Dense stationary burst: old 100ms producer loses fresh rows even with
+    // a healthy notification sink. Exercise the production outbox admission
+    // and packet fragmentation with both a normal and a small negotiated MTU.
+    for(unsigned attMtu:{247u,80u}){
+        auto run=[&](bool legacy){
+            Outbox q; unsigned next=0,delivered=0,expired=0;
+            uint32_t lastAp=0,lastTx=0;
+            for(uint32_t now=0;now<120000;++now){
+                if(next<1000 && apReady(now,0,q.free()) && (!legacy || now-lastAp>=100)){
+                    if(now>AP_FRESH_MS){expired+=1000-next;next=1000;}
+                    else { assert(q.put("WD:AP ts=0 bssid=02:00:00:00:00:01 ssid_hex=74657374 rssi=-70 ch=6 auth=WPA2 hidden=0\n"));++next;lastAp=now; }
+                }
+                if(q.front() && now-lastTx>=15){
+                    uint8_t bytes[244];size_t consumed=0;
+                    assert(packet(*q.front(),WARDRIVEGO,attMtu,bytes,sizeof bytes,consumed));
+                    q.front()->offset+=consumed;lastTx=now;
+                    if(q.front()->offset==q.front()->len){q.pop();++delivered;}
+                }
+            }
+            assert(q.dropped==0);
+            return std::pair<unsigned,unsigned>{delivered,expired};
+        };
+        const auto old=run(true),fixed=run(false);
+        assert(old.first<600 && old.second>400);
+        assert(fixed.first==1000 && fixed.second==0);
+    }
+    // Congestion must stop the producer, while startup and millis wrap remain bounded.
+    assert(!apReady(4000,0,5));assert(apReady(4000,0,6));
+    assert(!apReady(2999,0,12));assert(apReady(2000,UINT32_MAX-2000,12));
     puts("bridge protocol, bounds, fragmentation, packet retry, queues and UI: PASS");
 }

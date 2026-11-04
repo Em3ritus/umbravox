@@ -64,7 +64,8 @@ A cursor examines at most 32 table entries per call, copying each eligible row
 under the capture lock. Records older than 60 seconds are skipped. Newly appended
 APs remain eligible after the cursor reaches the current end; existing records
 are revisited on completed passes no more frequently than once a minute. A large
-pass finishes before restarting, and table rollover resets the cursor generation.
+pass finishes before restarting, and table rollover resets the cursor generation. Learning a hidden AP name does
+not restart the bridge cursor.
 The exported plan is the collector's locally enabled, accepted channel set;
 mesh-supplied observations can cover additional channels.
 
@@ -72,7 +73,8 @@ mesh-supplied observations can cover additional channels.
 - Command assembly at most 192 bytes, with a three-second fragment timeout.
 - Twelve outgoing lines, each at most 383 bytes; state and queues live in PSRAM.
 - At most one RX command and one notification per loop pass. Notifications are
-  separated by at least 15 ms; AP enqueueing is paced to at most ten per second.
+  separated by at least 15 ms. AP enqueueing follows outbox capacity, with six
+  slots reserved for control traffic; there is no additional ten-AP/s throttle.
 - Packetization honors negotiated ATT MTU, including the 12-byte GhostLink header.
   A failed host enqueue retains the same bytes for retry. Host acceptance is not
   a claim that the phone received or persisted the data.
@@ -132,3 +134,42 @@ scanned independently and applied its own geofence, so these sets do not measure
 bridge loss. The app reported successful submissions to WiGLE, WDGWars and Wardrift.
 The GPX parsed with 681 points over 1,023 seconds and one one-second backward time
 step. Client and probe CSV structures were consistent. Raw captures stay private.
+
+## Dense-route bridge pacing regression (November 4)
+
+A fifteen-minute iPhone comparison contained 9,474 distinct handheld Wi-Fi IDs
+and 5,511 phone Wi-Fi IDs, all of the latter present in the handheld file.
+There were 3,963 handheld-only IDs; 165 had first-seen times before the phone's
+observed window and 3,798 fell within it. First-seen times are not recording
+button times, and these aggregates alone do not establish transport loss.
+
+The old 100 ms AP producer delay capped output at 600 records/minute before
+fragmentation, repeated observations, or other traffic. The handheld file had
+nine minute bins above 600 newly seen Wi-Fi IDs, peaking at 1,095. A bounded
+1,000-row burst regression reproduces unsent rows aging beyond the 60-second
+freshness cutoff despite zero outbox drops. Capacity-driven admission delivers
+all 1,000 in the tested 247- and 80-byte ATT MTU simulations, preserving the
+15 ms notification pacing and reserved control capacity. This demonstrates a
+failure mechanism, not an exact reconstruction of the field run.
+
+Diagnostics now include negotiated MTU, completed host-enqueued lines, and
+stale table visits. Stale visits can count the same row on later passes; they
+are not unique losses. Completed lines include control traffic and do not prove
+phone persistence. Freshness filtering remains intentional: replaying old
+observations at the phone's current location would misrepresent their position.
+Very small MTUs, a slow loop, congestion, or a slow receiver can still exceed
+capacity. Physical phone validation and a matched field comparison are required
+before claiming the drive's gap is resolved.
+
+Candidate validation: the full host test target and all three native handheld
+builds passed. The connected WS3.5 application write verified, rebooted, and
+resumed phone streaming at negotiated MTU 247. With ten nodes powered, one
+sampled ten-second interval queued 145 AP records (above the former 100-record
+ceiling), with zero RX command drops or notification retries. The sampled
+performance rows showed ten nodes and seven to eight reports/second; mesh packet
+rejection counters remained zero. Stale visits did occur (47 cumulative in the
+observed bridge session); they are not unique losses or proof of the new run's
+delivery completeness. WDGO was paused during this bench check, so there is no phone recording to
+export or compare. These results establish transport activity only; application
+recording and field-gap closure remain unverified. This candidate has not updated
+public downloads.
