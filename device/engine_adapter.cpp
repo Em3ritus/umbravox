@@ -44,6 +44,8 @@ uinav::Screen cur_ = uinav::Screen::Scan;  // the screen currently composed
 uinav::Router router_;                     // navigation authority (remembers DETAIL origin)
 scanr::Rec sceneRec_ = scanr::Rec::Off;
 inputevents::PendingHit pendingHit_;
+settingsctl::ForgetArm forgetArm_;   // two-tap confirm for PAIRED PHONES
+bool holdToBridge_ = false;   // a long press on the header bridge chip is waiting to navigate
 uint32_t inputEpoch_ = 0;
 framepresent::Frame frame_;
 bool buffered_ = false;
@@ -162,6 +164,10 @@ void saveVisibleRows() {
 
 void begin(Arduino_TFT* gfx, int W, int H) {
     gfx_ = gfx; W_ = W; H_ = H; stagedY0_=H; stagedY1_=0;
+    {   // The header bridge chip: tap toggles the bridge, a hold jumps to its settings card.
+        const auto chip = uieng::chrome(W, H).bridge;
+        touch::setHoldTarget(chip.x, chip.y, chip.w, chip.h);
+    }
     auto* front = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
     auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
     buffered_ = front && back;
@@ -273,7 +279,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
         case uinav::Screen::Attune: {
             uiproj::attune(eAttune_.back(),s,c,0,1);
             settingsctl::Data d;d.view=settings_;d.settings=s.set;d.netId=s.netId;
-            const auto bs=blebridge::stats();d.connected=bs.connected;d.streaming=bs.streaming;d.pin=bs.pin;
+            const auto bs=blebridge::stats();d.connected=bs.connected;d.streaming=bs.streaming;d.pin=bs.pin;d.phones=bs.bonds;d.forgetArmed=forgetArm_.armed(millis());
             snprintf(d.name,sizeof d.name,"%s",blebridge::deviceName());
             snprintf(d.pcap,sizeof d.pcap,"%s",s.pcapStatus);
             eAttune_.back().controls(d);eAttune_.commit();break;
@@ -398,12 +404,22 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     scanpres::recordingHits(h, sceneRec_);
     if (!pendingHit_.pending()) {
         inputevents::Press p;
-        if (touch::takePress(p) && p.epoch == inputEpoch_)
-            pendingHit_.observe(h, p.x, p.y, p.epoch);
+        if (touch::takePress(p) && p.epoch == inputEpoch_) {
+            if (p.hold) holdToBridge_ = true;   // long press on the header chip
+            else pendingHit_.observe(h, p.x, p.y, p.epoch);
+        }
     }
     const uint8_t before = nav.screen;
     uieng::Hit hit{};
-    if (pendingHit_.take(acceptsTouch(), inputEpoch_, h, hit)) {
+    bool haveHit = false;
+    if (holdToBridge_ && acceptsTouch()) {
+        holdToBridge_ = false;
+        hit.slot = "bridge-hold"; hit.action = uieng::Action::Nav; hit.payload = int(uieng::ScreenId::Attune);
+        haveHit = true;
+    } else {
+        haveHit = pendingHit_.take(acceptsTouch(), inputEpoch_, h, hit);
+    }
+    if (haveHit) {
         const uinav::Requests rq = router_.dispatch(hit);
 
         // screen first (covers Nav, filter->Codex, located, detail open, Back, OpenMesh)
@@ -414,6 +430,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 display_.editor=-1;display_.count=0;settings_.editor=-1;
                 if(nav.screen==ui::SCR_FILES)ui::filesEnter(nav);
                 if(hit.slot && !strcmp(hit.slot,"node-tune"))settings_.tab=3;
+                if(hit.slot && !strcmp(hit.slot,"bridge-hold"))settings_.tab=2;   // ATTUNE > BRIDGE
                 break;
             case uieng::Action::MeshPage: nav.meshPage=uieng::meshNavigate(nav.meshPage,s.nNodes,hit.payload);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
@@ -443,7 +460,10 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 break;
             }
             case uieng::Action::SettingsControl:
-                settingsctl::apply(settings_,set,hit.payload);cancelInput();break;
+                if(hit.payload==settingsctl::FORGET_PHONES){
+                    if(forgetArm_.tap(millis()))blebridge::forgetPhones();   // second tap within ARM_MS confirms
+                }else settingsctl::apply(settings_,set,hit.payload);
+                cancelInput();break;
             case uieng::Action::DisplayControl: {
                 const int p=hit.payload;display_.error=false;
                 if(p>=0&&p<3){display_.tab=p;display_.editor=-1;}

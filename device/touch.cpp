@@ -344,7 +344,7 @@ void sampler(void*) {
         const uint32_t now = millis();
         portENTER_CRITICAL(&eventMux);
         latest = p;
-        presses.sample(p.any, p.panelX, p.panelY, epoch);
+        presses.sample(p.any, p.panelX, p.panelY, epoch, now);
         if (now - last > sampleGapMax) sampleGapMax = now - last;
         const uint32_t wait = deadline.complete(now);
         deadlineMisses = deadline.missed();
@@ -366,7 +366,7 @@ Point read() {
     if (!sampling) {
         const Point p = readSensor();
         portENTER_CRITICAL(&eventMux);
-        presses.sample(p.any, p.panelX, p.panelY, presses.epoch());
+        presses.sample(p.any, p.panelX, p.panelY, presses.epoch(), millis());
         latest=p;
         portEXIT_CRITICAL(&eventMux);
         return p; // explicit degraded polling fallback if task allocation failed
@@ -407,6 +407,7 @@ bool setSensitivity(int value){
 bool takePress(inputevents::Press& p) {
     portENTER_CRITICAL(&eventMux); const bool ok = presses.pop(p); portEXIT_CRITICAL(&eventMux); return ok;
 }
+void setHoldTarget(int x, int y, int w, int h) { portENTER_CRITICAL(&eventMux); presses.setHold(x, y, w, h); portEXIT_CRITICAL(&eventMux); }
 void newScreen() { portENTER_CRITICAL(&eventMux); presses.navigate(); portEXIT_CRITICAL(&eventMux); }
 void cancelPresses() { portENTER_CRITICAL(&eventMux); presses.cancel(); portEXIT_CRITICAL(&eventMux); }
 void samplingStats(uint32_t& gap, uint32_t& missed, uint32_t& dropped) {

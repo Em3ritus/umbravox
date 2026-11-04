@@ -47,6 +47,7 @@ struct State {
 State* st=nullptr;
 bridgeauth::PinWindow pinWin;
 bridgeauth::PairLimiter pairLimiter;
+uint32_t bondsAt=0;int bondsCached=-1;   // loop task only: cached bond count
 bool securityRequested=false,dropRequested=false;   // loop task only: one Security Request and at most one drop per connection
 std::atomic<bool> codeShown{false};   // a pairing attempt has displayed the current code
 // One code per pairing window: the stack gets a static passkey, so a phone that
@@ -63,18 +64,26 @@ bool linkSecure(uint16_t conn){
 // Runs on the BLE host task: only record the code and the result.
 class SecurityCallbacks:public BLESecurityCallbacks {
     void onPassKeyNotify(uint32_t passkey) override {
-        if(pairLimiter.blocked(millis()))return;   // locked out after repeated failures: show nothing
+        codeShown=true;   // this code has now been used for a pairing: tick() rotates it
+        if(pairLimiter.blocked(millis())){
+            // Locked out: refuse the NEW pairing at the link layer, before any guess is
+            // checked (a bonded phone reconnects with its stored keys and never gets here).
+            const uint16_t c=connection.load();
+            if(c!=NO_CONN)ble_gap_terminate(c,BLE_ERR_REM_USER_CONN_TERM);
+            return;
+        }
         const bool started=pinWin.offer(passkey,millis());
-        codeShown=true;
         if(started)Serial.println("bridge: phone is pairing; the code is on ATTUNE > BRIDGE > LINK STATUS");   // never log the code itself
     }
     void onAuthenticationComplete(ble_gap_conn_desc* d) override {
         if(!d)return;
         Serial.printf("bridge: link security encrypted=%d authenticated=%d bonded=%d\n",(int)d->sec_state.encrypted,(int)d->sec_state.authenticated,(int)d->sec_state.bonded);
         if(d->sec_state.encrypted && d->sec_state.authenticated){pairLimiter.noteSuccess();pinWin.clear();}
-        else if(pairLimiter.noteFailure(millis())){
-            pinWin.clear();   // window over; tick() rotates the code
-            Serial.println("bridge: pairing locked out after repeated failures; try again shortly");
+        else{
+            // A failed pairing retires its code: the window ends and tick() rotates it, so
+            // no code is ever reused after a failure. Three failures also lock out new pairing.
+            pinWin.clear();
+            if(pairLimiter.noteFailure(millis()))Serial.println("bridge: pairing locked out after repeated failures; try again shortly");
         }
     }
 } securityCallbacks;
@@ -282,8 +291,10 @@ void tick(uint32_t now){
             securityRequested=true;int rc=0;const bool ok=BLESecurity::startSecurity(connection.load(),&rc);
             Serial.printf("bridge: phone connected unpaired; security request %s rc=%d\n",ok?"sent":"failed",rc);
         }
-        if(!dropRequested && (pairLimiter.blocked(now) || bridgeauth::pairingExpired(now,st->connectedAt))){
-            dropRequested=true;server->disconnect(connection.load());   // lockout, or never paired: free the slot
+        // Only a connection that never secures itself is dropped. A lockout never drops a link
+        // here: a bonded phone is briefly "unsecure" while it re-encrypts with its stored keys.
+        if(!dropRequested && bridgeauth::pairingExpired(now,st->connectedAt)){
+            dropRequested=true;server->disconnect(connection.load());   // never paired: free the slot
         }
         return;
     }
@@ -318,12 +329,26 @@ const char* deviceName(){return name[0]?name:"NOT STARTED";}
 Stats stats(){
     Stats s;s.mode=selected.load();s.connected=connection!=NO_CONN;s.streaming=streaming.load();
     {uint32_t p=0;if(pinWin.get(millis(),p))s.pin=(int32_t)p;}
+    if(st && server){   // bonded-phone count, refreshed at most once a second
+        const uint32_t now=millis();
+        if(bondsAt==0 || (int32_t)(now-bondsAt)>=1000){int n=0;bondsCached=ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC,&n)==0?n:-1;bondsAt=now?now:1;}
+        s.bonds=bondsCached;
+    }
     if(st){s.queued=st->out.count;s.txRetries=st->notifyFails;portENTER_CRITICAL(&rxMux);s.rxDrops=st->rxDrops;portEXIT_CRITICAL(&rxMux);}
     return s;
 }
 uint8_t mode(){return selected.load();}
+void forgetPhones(){
+    if(!st || !server)return;   // BLE stack never started: nothing is bonded through us
+    const int rc=ble_store_clear();
+    pinWin.clear();
+    bondsAt=0;bondsCached=0;
+    const uint16_t c=connection.load();
+    if(c!=NO_CONN)server->disconnect(c);
+    Serial.printf("bridge: forgot all paired phones rc=%d\n",rc);
+}
 const char* status(){return selected==OFF?"OFF":streaming?"STREAMING":connection!=NO_CONN?"CONNECTED":"ADVERTISING";}
 }
 #else
-namespace blebridge {const char* deviceName(){return "UNAVAILABLE";} Stats stats(){return {};} uint8_t mode(){return 0;} void setMode(uint8_t){} void tick(uint32_t){} const char* status(){return "UNAVAILABLE";}}
+namespace blebridge {const char* deviceName(){return "UNAVAILABLE";} Stats stats(){return {};} uint8_t mode(){return 0;} void setMode(uint8_t){} void tick(uint32_t){} void forgetPhones(){} const char* status(){return "UNAVAILABLE";}}
 #endif

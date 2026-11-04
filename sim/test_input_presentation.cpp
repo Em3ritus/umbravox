@@ -66,4 +66,32 @@ static void render(int w,int h) {
     assert(panel==front); f.present(false,sink);assert(panel==back);
     f.invalidate();calls=0; f.present(false,sink);assert(calls==3 && panel==back);
 }
-int main(){input();render(480,320);render(320,240);puts("input/presentation: all assertions passed (both sizes)");}
+static void hold() {
+    const uint32_t H = PressQueue::HOLD_MS; Press p;
+    PressQueue q; q.setHold(100, 0, 60, 40);
+    // Outside the hold target nothing changes: a tap fires on touch-down.
+    q.sample(true, 10, 100, q.epoch(), 1000); assert(q.pop(p) && !p.hold && p.x == 10);
+    q.sample(false, -1, -1, q.epoch(), 1050);
+    // A quick tap inside it waits for release, then is delivered as an ordinary tap.
+    q.sample(true, 120, 20, q.epoch(), 2000); assert(!q.pop(p));
+    q.sample(true, 120, 20, q.epoch(), 2100); assert(!q.pop(p));
+    q.sample(false, -1, -1, q.epoch(), 2200); assert(q.pop(p) && !p.hold && p.x == 120 && p.y == 20); assert(!q.pop(p));
+    // Held for HOLD_MS: one hold event, and no tap when the finger lifts.
+    q.sample(true, 120, 20, q.epoch(), 3000); q.sample(true, 121, 21, q.epoch(), 3000 + H - 1); assert(!q.pop(p));
+    q.sample(true, 121, 21, q.epoch(), 3000 + H); assert(q.pop(p) && p.hold && p.x == 121); assert(!q.pop(p));
+    q.sample(true, 121, 21, q.epoch(), 3000 + H + 500); assert(!q.pop(p));
+    q.sample(false, -1, -1, q.epoch(), 3000 + H + 600); assert(!q.pop(p));
+    // Sliding off the target before the hold completes cancels both the tap and the hold.
+    q.sample(true, 120, 20, q.epoch(), 5000); q.sample(true, 300, 200, q.epoch(), 5100);
+    q.sample(true, 300, 200, q.epoch(), 5000 + H + 50); q.sample(false, -1, -1, q.epoch(), 6000); assert(!q.pop(p));
+    // The hold timer is a signed difference, so it works across the 32-bit wrap.
+    q.sample(true, 120, 20, q.epoch(), 0xFFFFFFF0u); q.sample(true, 120, 20, q.epoch(), 0xFFFFFFF0u + H - 1); assert(!q.pop(p));
+    q.sample(true, 120, 20, q.epoch(), 0xFFFFFFF0u + H); assert(q.pop(p) && p.hold);
+    q.sample(false, -1, -1, q.epoch(), 0xFFFFFFF0u + H + 10);
+    // Navigating while a touch is pending drops the deferred tap (no click-through).
+    q.sample(true, 120, 20, q.epoch(), 8000); q.navigate(); q.sample(false, -1, -1, q.epoch(), 8050); assert(!q.pop(p));
+    // A touch that started on an old screen epoch never starts a hold.
+    auto old = q.epoch(); q.navigate(); q.sample(true, 120, 20, old, 9000); q.sample(true, 120, 20, q.epoch(), 9000 + H + 10); assert(!q.pop(p));
+    q.sample(false, -1, -1, q.epoch(), 9900);
+}
+int main(){input();hold();render(480,320);render(320,240);puts("input/presentation: all assertions passed (both sizes)");}

@@ -8,6 +8,25 @@ static bool overlap(uieng::Rect a,uieng::Rect b){return a.x<b.x+b.w&&b.x<a.x+a.w
 static std::vector<uint16_t> render(int w,int h,const atnr::AttuneScene& sc){std::vector<uint16_t> p(w*h);for(int y=0;y<h;y+=16){scanr::S s{p.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(s,w,h,sc);}return p;}
 int main(int argc,char**argv){
  pal::setTheme(0);const char* names[]={"scanning","recording","bridge","nodes"};
+ { // PAIRED PHONES card (bridge tab, 4th card): count, armed confirm, and a tap target.
+  Data d;d.settings.bleBridge=1;char b[32];
+  assert(!strcmp(title(11),"PAIRED PHONES"));
+  d.phones=-1;value(d,11,b,sizeof b);assert(!strcmp(b,"UNKNOWN"));
+  d.phones=0;value(d,11,b,sizeof b);assert(!strcmp(b,"NONE"));
+  d.phones=1;value(d,11,b,sizeof b);assert(!strcmp(b,"1 PHONE"));
+  d.phones=3;value(d,11,b,sizeof b);assert(!strcmp(b,"3 PHONES"));
+  d.forgetArmed=true;value(d,11,b,sizeof b);assert(!strcmp(b,"TAP AGAIN"));      // armed beats the count
+  for(int w:{320,480}){State v{2,-1};auto hs=hits(w,w==320?240:320,v);int found=0;
+   for(int i=0;i<hs.count;i++)if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload==FORGET_PHONES){found++;assert(hs.items[i].rect.w>=44&&hs.items[i].rect.h>=44);}
+   assert(found==1);                                                           // exactly one forget target, on the bridge tab
+   for(int tab:{0,1,3}){State o{tab,-1};auto oh=hits(w,w==320?240:320,o);for(int i=0;i<oh.count;i++)assert(!(oh.items[i].payload==FORGET_PHONES&&oh.items[i].action==uieng::Action::SettingsControl));}}
+  // Two-tap confirm: the first tap arms, a second inside ARM_MS forgets; a late second tap only re-arms.
+  ForgetArm a;assert(!a.armed(1000));
+  assert(!a.tap(1000)&&a.armed(1000)&&a.armed(1000+ARM_MS-1)&&!a.armed(1000+ARM_MS));
+  assert(a.tap(1000+ARM_MS-1)&&!a.armed(1000+ARM_MS-1));                         // confirmed, disarmed
+  assert(!a.tap(9000)&&!a.tap(9000+ARM_MS)&&a.armed(9000+ARM_MS));               // too late: re-armed, nothing forgotten
+  ForgetArm w2;w2.tap(0xFFFFFFF0u);assert(w2.tap(0x00000010u));                  // across the 32-bit wrap
+ }
  { // LINK STATUS row: the pairing code outranks the connection state, and only while the bridge is on.
   Data d;d.settings.bleBridge=1;char b[32];
   value(d,10,b,sizeof b);assert(!strcmp(b,"NO PHONE"));
