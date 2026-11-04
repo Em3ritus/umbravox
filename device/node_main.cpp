@@ -13,6 +13,7 @@
 #include <atomic>
 #include "mesh.h"
 #include "mesh_timing.h"
+#include "node_queue.h"
 #include "active_discovery.h"
 #include "rehome.h"
 #include "wifi_auth.h"
@@ -90,31 +91,27 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (!assigned || !listening) {portEXIT_CRITICAL(&mux);return;}
     const uint8_t cur = chans[hop];
     seen++;
-    if (qN < QUEUE) {
-        qAt[qN] = millis();
-        mesh::Rec& r = queue_[qN++];
-        if(qN>queuePeak)queuePeak=qN;
-        for (int i = 0; i < 6; i++) r.bssid[i] = f[16 + i];
-        r.rssi = (int8_t)p->rx_ctrl.rssi;
-        r.chan = cur;
-        r.band = is5(cur) ? 1 : 0;
-        r.ssidLen = 0;
-        r.ssid[0] = 0;
-        r.auth = ui::parseAuth(f + 24, (int)p->rx_ctrl.sig_len - 24);
-        if (p->rx_ctrl.sig_len >= 38 && f[36] == 0) {
-            uint8_t n = f[37];
-            if (n > 20) n = 20;
-            if (36 + 2 + f[37] <= p->rx_ctrl.sig_len) {
-                for (uint8_t k = 0; k < n; k++) {
-                    const char c = (char)f[38 + k];
-                    r.ssid[k] = (c >= 32 && c < 127) ? c : '.';
-                }
-                r.ssidLen = n;
+    mesh::Rec r{};
+    memcpy(r.bssid,f+16,6);
+    r.rssi = (int8_t)p->rx_ctrl.rssi;
+    r.chan = cur;
+    r.band = is5(cur) ? 1 : 0;
+    r.ssidLen = 0;
+    r.ssid[0] = 0;
+    r.auth = ui::parseAuth(f + 24, (int)p->rx_ctrl.sig_len - 24);
+    if (p->rx_ctrl.sig_len >= 38 && f[36] == 0) {
+        uint8_t n = f[37];
+        if (n > 20) n = 20;
+        if (36 + 2 + f[37] <= p->rx_ctrl.sig_len) {
+            for (uint8_t k = 0; k < n; k++) {
+                const char c = (char)f[38 + k];
+                r.ssid[k] = (c >= 32 && c < 127) ? c : '.';
             }
+            r.ssidLen = n;
         }
-    } else {
-        dropped++;
     }
+    if(!nodequeue::put(queue_,qAt,qN,r,millis()))++dropped;
+    if(qN>queuePeak)queuePeak=qN;
     portEXIT_CRITICAL(&mux);
 }
 
@@ -245,11 +242,12 @@ void receivePending(){
     portENTER_CRITICAL(&mux);listening=assigned;portEXIT_CRITICAL(&mux);
 }
 void activeRecord(const wifi_ap_record_t& ap){
+    mesh::Rec r{};memcpy(r.bssid,ap.bssid,6);r.rssi=ap.rssi;r.chan=ap.primary;r.band=ap.primary>14;
+    r.ssidLen=strnlen((const char*)ap.ssid,20);memcpy(r.ssid,ap.ssid,r.ssidLen);r.auth=discovery::auth(ap);
     portENTER_CRITICAL(&mux);
-    if(qN<QUEUE){
-        mesh::Rec& r=queue_[qN];r={};memcpy(r.bssid,ap.bssid,6);r.rssi=ap.rssi;r.chan=ap.primary;r.band=ap.primary>14;
-        r.ssidLen=strnlen((const char*)ap.ssid,20);memcpy(r.ssid,ap.ssid,r.ssidLen);r.auth=discovery::auth(ap);qAt[qN++]=millis();seen++;if(qN>queuePeak)queuePeak=qN;
-    }else dropped++;
+    ++seen;
+    if(!nodequeue::put(queue_,qAt,qN,r,millis()))++dropped;
+    if(qN>queuePeak)queuePeak=qN;
     portEXIT_CRITICAL(&mux);
 }
 
