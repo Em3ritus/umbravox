@@ -127,7 +127,7 @@ int main() {
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
     // Body goldens: accepted per-size radar positions; CVLT has two rings and a quiet seal.
     // Re-pinned on integration: the three built-in themes keep their original (violet) colours.
-    const uint64_t golden[2][3]={{4757013573906380003ull,6724682339629965124ull,514837398785333383ull},{12428363427845690611ull,8104407744330909326ull,4760207979872787174ull}};
+    const uint64_t golden[2][3]={{4757013573906380003ull,6724682339629965124ull,9830211916530939412ull},{12428363427845690611ull,8104407744330909326ull,936506772271808986ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

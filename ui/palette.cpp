@@ -253,7 +253,7 @@ bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 ? PACKS[s].diam
 Centrepiece centrepiece(uint8_t id) { return row(id).centre; }
 const char* header(uint8_t id) {
     // General palettes retain the product identity, including older SD overrides.
-    if(id==TH_EMBER || (id>=TH_PHOSPHOR && id<TH_COUNT))return "UMBRAVOX";
+    if(id==TH_EMBER || (id>=TH_PHOSPHOR && id<TH_COSMIC2))return "UMBRAVOX";
     return row(id).header;
 }
 

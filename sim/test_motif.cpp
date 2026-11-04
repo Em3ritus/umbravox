@@ -108,13 +108,15 @@ int main(int argc, char** argv) {
     printf("regression guard (built-in COSMIC MUFFIN and BAPH0MAU5):\n");
     {
         static const uint32_t WANT[16] = {
-            // Re-pinned for the integrated PR #2: the Cosmic Muffin artwork was
-            // refreshed (ui/muffinseal.cpp, ui/motif.cpp), which moves the Cosmic scan
-            // and alert renders. The BAPH0MAU5 scan renders (2, 3) are unchanged.
-            0xE7D411EEu, 0xB2D1D6A8u, 0x3E46EFE6u, 0xCB8FC0BAu,
-            0xEDF81153u, 0x0331668Eu, 0x15A5D395u, 0xA7A853D7u,
-            0x3462C731u, 0x5ED8CDD4u, 0xFE4AF04Bu, 0xC65AC96Eu,
-            0x4CA45345u, 0x352D340Au, 0xD2A1D3C6u, 0xA7DD9A8Bu,
+            // Scan renders 0..3 re-pinned on integration for the field-fixes
+            // footer ("NO FIX" -> "NO GPS"): the only pixels that moved are
+            // the footer text (rows 108..114, cols 29..45). Re-pinned again
+            // for the footer's mesh node count (glyph + "0", DIM): the only
+            // pixels that moved are rows 108..114, cols 56..67.
+            0x9AEF124Eu, 0x4768E261u, 0x3E46EFE6u, 0xCB8FC0BAu,
+            0x98443D4Fu, 0x3B0FCDF5u, 0xB8989D41u, 0xA7A853D7u,
+            0x3462C731u, 0x5ED8CDD4u, 0x10423CCBu, 0xC65AC96Eu,
+            0x63009A05u, 0xD478848Eu, 0x5BA0A744u, 0x1FE8CF87u,
         };
         uint32_t g[16]; computeGuard(g);
         for (int i = 0; i < 16; i++) {

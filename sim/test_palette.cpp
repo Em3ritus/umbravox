@@ -38,7 +38,7 @@ static themepack::Pack mkPack(const char* name, themepack::Dial dial, uint16_t s
 }
 
 int main() {
-    check("fourteen bundled themes", pal::TH_COUNT == 14);
+    check("fifteen bundled themes", pal::TH_COUNT == 15);
     {   // every name a built-in displays must be refused to a pack
         bool all = true;
         for (int i = 0; i < pal::TH_SLICK; i++) {
@@ -54,6 +54,24 @@ int main() {
     check("cosmic name", !strcmp(pal::themeName(pal::TH_COSMICMUFFIN), "COSMIC MUFFIN"));
 
     pal::setTheme(pal::TH_COSMICMUFFIN);
+    // COSMIC MUFFIN keeps the original muffin; COSMIC MUFFIN 2 is the refreshed
+    // artwork in the same colours, as its own selectable theme.
+    {
+        const int two = pal::findPack("COSMIC MUFFIN 2");
+        check("COSMIC MUFFIN 2 exists", two >= 0);
+        if (two >= 0) {
+            pal::setTheme(pal::TH_COSMICMUFFIN); const uint16_t v1 = pal::VOID, m1 = pal::MAGENTA;
+            pal::setTheme((uint8_t)two);
+            check("COSMIC MUFFIN 2 name", !strcmp(pal::themeName((uint8_t)two), "COSMIC MUFFIN 2"));
+            check("COSMIC MUFFIN 2 uses the Cosmic colours", pal::VOID == v1 && pal::MAGENTA == m1);
+            const themepack::Emblem* a = pal::emblem(pal::TH_COSMICMUFFIN);
+            const themepack::Emblem* b = pal::emblem((uint8_t)two);
+            bool differs = !a || !b;
+            for (int i = 0; !differs && i < a->w * a->h; i++) differs = themepack::pixel(*a, i) != themepack::pixel(*b, i);
+            check("COSMIC MUFFIN 2 has different artwork", differs);
+            pal::setTheme(pal::TH_COSMICMUFFIN);
+        }
+    }
     check("neon void applied", pal::VOID == pal::rgb(0x09, 0x07, 0x1C));
     check("neon magenta applied", pal::MAGENTA == pal::rgb(0xFF, 0x1F, 0xCC));
     // Every sweep but the gaze (0x7FD): the muffin has no eyes. The mask must
