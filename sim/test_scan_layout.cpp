@@ -79,6 +79,13 @@ int main() {
                 for (int j = -6; j <= 5; j++) for (int i = -6; i <= 5; i++) n += fb.p[(cy + y + j) * 480 + cx + x + i] == col;
                 return n;
             };
+            if (ringKind(theme) != RING_RUNES) {                 // CVLT keeps the ring clear; the muffin has stars there instead
+                for (int k : {4, 6, 8}) {
+                    if (count(k, pal::EDGE_LIT) != 0) { fprintf(stderr, "theme %d: rune %d drawn on a rune-free theme\n", theme, k); assert(false); }
+                    if (ringKind(theme) == RING_STARS && count(k, pal::ICE) + count(k, pal::MAGENTA) + count(k, pal::AMBER) == 0) { fprintf(stderr, "theme %d: no star at %d\n", theme, k); assert(false); }
+                }
+                continue;
+            }
             for (int k : {4, 6, 8})                              // right / lower right / bottom: far from the sweep, unlit
                 if (count(k, pal::EDGE_LIT) < 15) { fprintf(stderr, "theme %d: rune %d not drawn (%d px)\n", theme, k, count(k, pal::EDGE_LIT)); assert(false); }
             for (int k : {14, 15})                               // just behind the head: lit, so no longer the dim colour

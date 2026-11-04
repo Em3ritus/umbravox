@@ -9,6 +9,7 @@
 #pragma once
 #include "storage_status.h"
 #include "runes.h"
+#include "sigil.h"
 #include "poi_state.h"
 #include "radar_geometry.h"
 #include "crew_art.h"
@@ -258,6 +259,12 @@ inline uieng::Rect sweepBounds(int cx, int cy, int r, uint16_t angle) {
 // Dim until the sweep has just passed them, then they light up with it.
 static constexpr int kRunes = 16;
 inline int runeRingRadius(int r) { return r * 5 / 6; }                       // 102 -> 85
+// What rides the ring between the middle and outer rings. CVLT keeps it clear for the goat-face seal, the cosmic
+// muffin gets stars to match its galaxy, every other theme keeps the runes.
+enum RingKind : uint8_t { RING_RUNES, RING_NONE, RING_STARS };
+inline RingKind ringKind(uint8_t theme) {
+    return theme == pal::TH_BAPH0MAU5 ? RING_NONE : theme == pal::TH_COSMICMUFFIN ? RING_STARS : RING_RUNES;
+}
 inline void runePos(int k, int R, int& x, int& y) {
     static const int16_t sn[16] = {0, 392, 724, 946, 1024, 946, 724, 392, 0, -392, -724, -946, -1024, -946, -724, -392};
     auto rnd = [](int v) { return (v >= 0 ? v + 512 : v - 512) / 1024; };
@@ -270,7 +277,8 @@ struct BlipLook { int size; int flare; };
 inline BlipLook blipLook(const Marker& m, const SweepDir& d, int W) {
     return { m.sizePx + (W >= 400 ? 2 : 1), trailLevel(d, m.dx, m.dy, kTailLevels) };
 }
-inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
+// blend=true tints whatever is already there (a picture dial) instead of painting the dark fade over it.
+inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle, bool blend=false) {
     if (r < 1 || cy + r < s.y0 || cy - r >= s.y0 + s.h) return;
     const SweepDir d = sweepDir(angle);
     uint16_t fade[kTailLevels + 1]; fade[0] = pal::VOID;
@@ -300,7 +308,9 @@ inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
         for (int dx = lo; dx <= hi; dx++) {
             if (dx * dx + dy * dy > r * r) continue;
             const int lv = trailLevel(d, dx, dy, kTailLevels);
-            if (lv) pt(s, cx + dx, y, fade[lv]);
+            if (!lv) continue;
+            if (!blend) pt(s, cx + dx, y, fade[lv]);
+            else { auto& dst = s.px[(y - s.y0) * s.stride + (cx + dx - s.lo)]; dst = ui::Canvas::mix(dst, pal::SWEEP, lv, kTailLevels + 8); }
         }
     }
 }
@@ -314,16 +324,26 @@ inline void radarNeedle(S& s, int cx, int cy, int r, uint16_t angle) {
     line(s, cx, cy + 1, ex, ey + 1, pal::SWEEP_HI);
 }
 
+// Integer square root (the C5 has no FPU).
+inline int isqrt(int v) { int r = 0; while ((r + 1) * (r + 1) <= v) r++; return r; }
 inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true, bool smooth=false) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px || !e.ncol || e.ncol>16) return;
     if (cx + r < s.lo || cx - r >= s.hi) return;      // outside the column window
     const int d=2*r;
     uint16_t colors[16];for(int i=0;i<e.ncol;i++)colors[i]=ui::Canvas::mix(pal::VOID,e.pal[i],opacity,100);
+    const bool area = smooth && d<e.w;                 // four-sample path, only the small badge
+    // Source column for every destination column: once per call instead of two divisions per pixel.
+    static constexpr int kMaxD = 256;
+    int16_t sxTab[kMaxD + 1];
+    const bool tab = !area && d <= kMaxD;
+    if (tab) for (int i=0;i<=d;i++){ int sx=i*e.w/d; sxTab[i]=(int16_t)(sx>=e.w?e.w-1:sx); }
     for (int y=std::max(cy-r,s.y0);y<=std::min(cy+r,s.y0+s.h-1);y++){ const int dy=y-cy;
-        for (int x=cx-r;x<=cx+r;x++){ const int dx=x-cx; if(circular && dx*dx+dy*dy>r*r) continue;
-            int sx=(x-(cx-r))*e.w/d, sy=(y-(cy-r))*e.h/d;
-            if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
-            if(smooth && d<e.w){
+        const int hw = circular ? isqrt(r*r-dy*dy) : r;                    // same pixels as dx*dx+dy*dy<=r*r
+        const int xa = std::max(cx-hw, s.lo), xb = std::min(cx+hw, s.hi-1);  // only the columns this strip holds
+        int sy=(y-(cy-r))*e.h/d; if(sy<0)sy=0; else if(sy>=e.h)sy=e.h-1;
+        uint16_t* row = s.px + (y-s.y0)*s.stride - s.lo;
+        for (int x=xa;x<=xb;x++){
+            if(area){
                 // Four area samples per destination pixel; only the small badge,
                 // never the radar/labels. Transparent samples use the background.
                 uint16_t samples[4];int n=0;bool visible=false;
@@ -338,8 +358,10 @@ inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, 
                     ui::Canvas::mix(samples[0],samples[1],1,2),
                     ui::Canvas::mix(samples[2],samples[3],1,2),1,2));
             }else{
+                int sx = tab ? sxTab[x-(cx-r)] : (x-(cx-r))*e.w/d;
+                if(sx<0)sx=0; else if(sx>=e.w)sx=e.w-1;
                 const int index=themepack::pixel(e,sy*e.w+sx);
-                if(!transparentBlack || e.pal[index])pt(s,x,y,colors[index]);
+                if(!transparentBlack || e.pal[index])row[x]=colors[index];
             } } }
 }
 // Precomputed artwork: clipped spans, no heap use and no trigonometry.
@@ -376,6 +398,40 @@ inline void crewArt(S& s,int cx,int cy,int radius,int style,int opacity=100){
       const int x=cx-radius+(a.x+base)*radius/base;
       const int end=cx-radius+(a.x+base+a.n())*radius/base;
       if(end>x)box(s,x,y,end-x,endY-y,opacity==100?colors[a.c()]:ui::Canvas::mix(pal::VOID,colors[a.c()],opacity,100));
+    }
+}
+// The CVLT goat face, the same 4-bit bitmap the CYD blits, read in chalk and scaled up with whole-pixel steps.
+// One box per run of equal levels; rows outside the strip are skipped; the disc edge uses an integer square root
+// (the C5 has no FPU).
+inline void faceInto(S& s, int cx, int cy, int clipR, const uint8_t* bm, int bw, int bh, int scale) {
+    uint16_t ink[16];
+    for (int lv = 1; lv < 16; lv++) {
+        auto ramp = [](int l) { const int p = l * 3, i = p / 15, f = p % 15;
+            return i >= 3 ? pal::RAMP[3] : ui::Canvas::mix(pal::RAMP[i], pal::RAMP[i + 1], f, 15); };
+        ink[lv] = ui::Canvas::mix(ramp(lv), ramp(lv < 13 ? lv + 2 : 15), 118, 255);       // the CYD's resting heartbeat lift
+    }
+    const int x0 = cx - bw * scale / 2, y0 = cy - bh * scale / 2;
+    for (int j = 0; j < bh; j++) {
+        const int ry = y0 + j * scale;
+        if (ry + scale <= s.y0 || ry >= s.y0 + s.h) continue;
+        for (int sub = 0; sub < scale; sub++) {
+            const int y = ry + sub;
+            if (y < s.y0 || y >= s.y0 + s.h) continue;
+            const int dy = y - cy; if (dy * dy >= clipR * clipR) continue;
+            const int hw = isqrt(clipR * clipR - dy * dy);
+            for (int i = 0; i < bw;) {
+                const int k = j * bw + i, lv = (bm[k >> 1] >> (4 - 4 * (k & 1))) & 15;
+                int n = 1;
+                while (i + n < bw) { const int k2 = j * bw + i + n; if (((bm[k2 >> 1] >> (4 - 4 * (k2 & 1))) & 15) != lv) break; n++; }
+                if (lv) {
+                    int xa = x0 + i * scale, xb = xa + n * scale;
+                    if (xa < cx - hw) xa = cx - hw;
+                    if (xb > cx + hw + 1) xb = cx + hw + 1;
+                    if (xb > xa) box(s, xa, y, xb - xa, 1, ink[lv]);
+                }
+                i += n;
+            }
+        }
     }
 }
 // Honor the theme's artwork, same policy as motif::drawMotif: a bitmap emblem
@@ -645,9 +701,12 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         const bool sigil=pal::centrepiece(sc.theme)==pal::CP_SIGIL;
         const bool logo=pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM;
         const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR || cvlt || mascot || orbit || sigil || logo;
-        if(clean||sc.animateSweep)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // every theme sweeps with a tail when animated
+        const themepack::Emblem* picture = (orbit && W>=400) ? pal::emblem(sc.theme) : nullptr;     // the muffin picture fills the dial, as on the CYD
+        if(picture)emblemInto(s,*picture,fcx,fcy,fr-1);
+        if(clean||sc.animateSweep)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384),picture!=nullptr);   // every theme sweeps with a tail when animated
         for (int k=1;k<=3;k++){
             if(cvlt && k==1)continue; // two range rings leave the quiet seal uncluttered
+            if(picture)continue;      // the picture is the dial; rings over it only add clutter
             const int rr=fr*(k*23)/69;
             int count=0;
             const auto* ring=radargeometry::ring(rr,count);
@@ -675,7 +734,10 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
         }
-        if(cvlt || mascot || orbit || sigil)crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0,100);
+        if(cvlt && W>=400){
+            const int scale = fr >= 90 ? 3 : 2;                              // 50 px face: 3x on the 102 px radar
+            faceInto(s,fcx,fcy,fr-1,ui::FACE,ui::FACE_W,ui::FACE_H,scale);
+        } else if(cvlt || mascot || sigil || (orbit && !picture))crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0,100);   // compact panels keep their pinned art
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
@@ -689,7 +751,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             }
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
         }
-        if (W>=400) {                                   // the runic ring: 2x glyphs, lit by the sweep
+        if (W>=400 && ringKind(sc.theme)==RING_RUNES) { // the runic ring: 2x glyphs, lit by the sweep
             const int R=runeRingRadius(fr);
             const SweepDir rd=sweepDir(sc.animateSweep?sweepAngle(sc.now):uint16_t(0));
             for (int k=0;k<kRunes;k++) {
@@ -709,6 +771,20 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                         i+=n;
                     }
                 }
+            }
+        }
+        if (W>=400 && ringKind(sc.theme)==RING_STARS) {  // the galaxy's stars: little sparkles on the ring, flaring as the sweep passes
+            const int R=runeRingRadius(fr);
+            const SweepDir rd=sweepDir(sc.animateSweep?sweepAngle(sc.now):uint16_t(0));
+            const uint16_t hue[3]={pal::ICE,pal::MAGENTA,pal::AMBER};
+            for (int k=0;k<kRunes;k++) {
+                int rx,ry; runePos(k,R,rx,ry);
+                const int gx=fcx+rx, gy=fcy+ry;
+                const int lv=sc.animateSweep?trailLevel(rd,rx,ry,kTailLevels):0;
+                const uint16_t ink=lv?ui::Canvas::mix(hue[k%3],pal::BRIGHT,lv,kTailLevels):hue[k%3];
+                const int arm=((k&1)?2:3)+(lv?1:0);                 // alternate big and small, swell when lit
+                box(s,gx-arm,gy,2*arm+1,1,ink); box(s,gx,gy-arm,1,2*arm+1,ink);
+                box(s,gx-1,gy-1,3,3,ink);
             }
         }
         if(!clean && !sc.animateSweep) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);   // static ray
