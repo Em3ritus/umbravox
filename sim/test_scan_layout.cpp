@@ -4,6 +4,9 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <vector>
+#include "scan_fixture.h"
+#include "../ui/palette.h"
 using namespace scanr;
 using uieng::Rect;
 
@@ -12,6 +15,14 @@ static bool inside(const Rect& r, const Rect& o) { return r.x >= o.x && r.y >= o
 static void eq(const Rect& r, int x, int y, int w, int h, const char* what) {
     if (r.x != x || r.y != y || r.w != w || r.h != h) { fprintf(stderr, "%s: {%d,%d,%d,%d} want {%d,%d,%d,%d}\n", what, r.x, r.y, r.w, r.h, x, y, w, h); assert(false); }
 }
+
+struct Fb : Sink {
+    int w, h; std::vector<uint16_t> p;
+    Fb(int W, int H) : w(W), h(H), p(W * H) {}
+    void strip(int x, int y, int W, int H, const uint16_t* b) override {
+        for (int j = 0; j < H; j++) for (int i = 0; i < W; i++) p[(y + j) * w + x + i] = b[j * W + i];
+    }
+};
 
 int main() {
     // Small panels are untouched.
@@ -42,6 +53,37 @@ int main() {
         char b[16]; fmtCount(v, b, sizeof b);
         const int sc = fitScale(b, L.tiles[0].w - 16, 3);
         assert(Font::width(b, sc) <= L.tiles[0].w - 16);
+    }
+
+    // Runic ring (wide panel): 16 glyphs between the middle and outer rings. Dim until the sweep has just
+    // passed them, then they light up with it.
+    {
+        const int R = runeRingRadius(102);
+        assert(R > 68 + 6 && R < 102 - 6);                      // clear of both rings (2 px thick, 5 px glyph radius)
+        int seen = 0;
+        for (int k = 0; k < kRunes; k++) {
+            int x, y; runePos(k, R, x, y);
+            assert(x * x + y * y >= (R - 1) * (R - 1) && x * x + y * y <= (R + 1) * (R + 1));   // on the circle
+            if (k == 0) assert(x == 0 && y == -R);              // starts straight up, clockwise
+            if (k == kRunes / 4) assert(x == R && y == 0);
+            seen++;
+        }
+        assert(seen == 16);
+        for (int theme = 0; theme < pal::TH_COUNT; theme++) {
+            pal::setTheme(theme);
+            auto sc = scanfix::demo(theme, 0); sc.animateSweep = true; sc.nBlips = 0;       // head straight up: the tail covers up-left
+            Fb fb(480, 320); Compositor comp; comp.renderFull(480, 320, sc, fb);
+            const auto rb = radarBounds(480, 320); const int fr = (rb.w - 5) / 2, cx = rb.x + fr + 2, cy = rb.y + fr + 2;
+            auto count = [&](int k, uint16_t col) {             // pixels of exactly `col` in the glyph's 12x12 box
+                int x, y; runePos(k, R, x, y); int n = 0;
+                for (int j = -6; j <= 5; j++) for (int i = -6; i <= 5; i++) n += fb.p[(cy + y + j) * 480 + cx + x + i] == col;
+                return n;
+            };
+            for (int k : {4, 6, 8})                              // right / lower right / bottom: far from the sweep, unlit
+                if (count(k, pal::EDGE_LIT) < 15) { fprintf(stderr, "theme %d: rune %d not drawn (%d px)\n", theme, k, count(k, pal::EDGE_LIT)); assert(false); }
+            for (int k : {14, 15})                               // just behind the head: lit, so no longer the dim colour
+                if (count(k, pal::EDGE_LIT) != 0) { fprintf(stderr, "theme %d: rune %d not lit by the sweep\n", theme, k); assert(false); }
+        }
     }
     puts("test_scan_layout: ok");
     return 0;

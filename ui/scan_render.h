@@ -8,6 +8,7 @@
 // animation. Host and device compilable (no Arduino deps).
 #pragma once
 #include "storage_status.h"
+#include "runes.h"
 #include "poi_state.h"
 #include "radar_geometry.h"
 #include "crew_art.h"
@@ -251,6 +252,17 @@ inline void wedgeBox(const SweepDir& d, int r, int& bx0, int& by0, int& bx1, int
 inline uieng::Rect sweepBounds(int cx, int cy, int r, uint16_t angle) {
     int bx0, by0, bx1, by1; wedgeBox(sweepDir(angle), r, bx0, by0, bx1, by1);
     return { cx + bx0 - 8, cy + by0 - 8, bx1 - bx0 + 17, by1 - by0 + 17 };   // 8 px margin: a flaring contact's halo
+}
+// --- runic ring (wide panel) ---------------------------------------------------
+// Sixteen glyphs on a ring between the middle and outer rings, starting straight up and going clockwise.
+// Dim until the sweep has just passed them, then they light up with it.
+static constexpr int kRunes = 16;
+inline int runeRingRadius(int r) { return r * 5 / 6; }                       // 102 -> 85
+inline void runePos(int k, int R, int& x, int& y) {
+    static const int16_t sn[16] = {0, 392, 724, 946, 1024, 946, 724, 392, 0, -392, -724, -946, -1024, -946, -724, -392};
+    auto rnd = [](int v) { return (v >= 0 ? v + 512 : v - 512) / 1024; };
+    x = rnd(R * sn[k & 15]);
+    y = -rnd(R * sn[(k + 4) & 15]);
 }
 // Live (animated) contact look: larger than the static marker, and lit by the sweep. `flare` is the tail
 // level over the contact (1..kTailLevels while the sweep has just passed it, 0 otherwise).
@@ -646,6 +658,20 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     vx[i]=fcx+(int)(h7*std::cos(t)); vy[i]=fcy+(int)(h7*std::sin(t)); }
             }
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
+        }
+        if (W>=400) {                                   // the runic ring: 2x glyphs, lit by the sweep
+            const int R=runeRingRadius(fr);
+            const SweepDir rd=sweepDir(sc.animateSweep?sweepAngle(sc.now):uint16_t(0));
+            for (int k=0;k<kRunes;k++) {
+                int rx,ry; runePos(k,R,rx,ry);
+                const int gx=fcx+rx, gy=fcy+ry;
+                if (gy+6<s.y0 || gy-6>=s.y0+s.h || gx+6<=s.lo || gx-6>=s.hi) continue;
+                const int lv=sc.animateSweep?trailLevel(rd,rx,ry,kTailLevels):0;
+                const uint16_t ink=lv?ui::Canvas::mix(pal::EDGE_LIT,pal::BRIGHT,lv,kTailLevels):pal::EDGE_LIT;
+                const uint8_t* g=ui::runeBits(k);
+                for (int j=0;j<ui::RUNE_S;j++) for (int i=0;i<ui::RUNE_S;i++)
+                    if ((g[j]>>(ui::RUNE_S-1-i))&1) box(s,gx-5+i*2,gy-5+j*2,2,2,ink);
+            }
         }
         if(!clean && !sc.animateSweep) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);   // static ray
         if(clean||sc.animateSweep)radarNeedle(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // over the artwork

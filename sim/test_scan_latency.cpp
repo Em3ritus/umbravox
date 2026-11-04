@@ -130,8 +130,8 @@ int main() {
     // Body goldens: accepted per-size radar positions; CVLT has two rings and a quiet seal.
     // Re-pinned on integration: the three built-in themes keep their original (violet) colours.
     // CVLT and the clean radars re-pinned again when the sweep got a continuous head, a 90-degree tail and a needle drawn over the artwork;
-    // the 480x320 hashes were re-pinned for layout A (slim count column, 102 px radar, right-hand spectrum); 320x240 is unchanged.
-    const uint64_t golden[2][3]={{7357806400859050449ull,17425671368714356803ull,11158850685573899316ull},{12428363427845690611ull,17369461422928189184ull,4114383012582005418ull}};
+    // the 480x320 hashes were re-pinned for layout A (slim count column, 102 px radar, runic ring, right-hand spectrum); 320x240 is unchanged.
+    const uint64_t golden[2][3]={{7005059053505719851ull,8989575299288610283ull,3984842236488731118ull},{12428363427845690611ull,17369461422928189184ull,4114383012582005418ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();
