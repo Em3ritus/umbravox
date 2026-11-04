@@ -102,6 +102,22 @@ int main() {
             if (lit.p[cy * 480 + halo] == bare.p[cy * 480 + halo]) { fprintf(stderr, "theme %d: no halo\n", theme); assert(false); }
         }
     }
+
+    // 6. The per-row span solver draws exactly the pixels a brute-force scan of the disc would, at every
+    //    head angle, for the radar sizes in use and for strips and windows that cut the wedge.
+    for (int r : {55, 85, 102}) for (int a = 0; a < 1024; a += 3) {
+        const int W = 2 * r + 20, cx = W / 2, cy = W / 2;
+        const SweepDir d = sweepDir((uint16_t)a);
+        std::vector<uint16_t> whole(W * W, 0xFFFF), strips(W * W, 0xFFFF);
+        { S s{whole.data(), W, 0, W}; radarTrail(s, cx, cy, r, (uint16_t)a); }
+        for (int y = 0; y < W; y += 16) { S s{strips.data() + y * W, W, y, std::min(16, W - y)}; radarTrail(s, cx, cy, r, (uint16_t)a); }
+        for (int y = 0; y < W; y++) for (int x = 0; x < W; x++) {
+            const int dx = x - cx, dy = y - cy;
+            const bool want = dx * dx + dy * dy <= r * r && trailLevel(d, dx, dy, kTailLevels) > 0;
+            if ((whole[y * W + x] != 0xFFFF) != want || whole[y * W + x] != strips[y * W + x]) {
+                fprintf(stderr, "r=%d angle=%d pixel (%d,%d): drawn=%d want=%d\n", r, a, dx, dy, whole[y * W + x] != 0xFFFF, want); assert(false); }
+        }
+    }
     puts("test_sweep_tail: ok");
     return 0;
 }

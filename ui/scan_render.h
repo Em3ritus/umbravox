@@ -277,13 +277,32 @@ inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle) {
     for (int k = 1; k <= kTailLevels; k++) fade[k] = ui::Canvas::mix(pal::VOID, pal::SWEEP, k, kTailLevels + 8);
     // The wedge covers about a quarter of the circle: scan only its bounding box, not the whole disc.
     int bx0, by0, bx1, by1; wedgeBox(d, r, bx0, by0, bx1, by1);
-    for (int y = std::max(cy + by0 - 2, s.y0); y <= std::min(cy + by1 + 2, std::min(cy + r, s.y0 + s.h - 1)); y++)
-        for (int x = std::max(s.lo, std::max(cx - r, cx + bx0 - 2)); x <= std::min(s.hi - 1, std::min(cx + r, cx + bx1 + 2)); x++) {
-            const int dx = x - cx, dy = y - cy;
+    // Per row, solve the two linear edge inequalities for the exact span of dx (instead of testing every pixel
+    // of the box). The span is widened by a pixel and every pixel is still checked with trailLevel, so the
+    // result is identical to scanning the whole box.
+    auto floorDiv = [](int n, int d) { int q = n / d; return (n % d != 0 && ((n < 0) != (d < 0))) ? q - 1 : q; };
+    auto ceilDiv  = [&](int n, int d) { return -floorDiv(-n, d); };
+    const int ya = std::max(cy + by0 - 2, s.y0), yb = std::min(cy + by1 + 2, std::min(cy + r, s.y0 + s.h - 1));
+    const int xa = std::max(s.lo, std::max(cx - r, cx + bx0 - 2)), xb = std::min(s.hi - 1, std::min(cx + r, cx + bx1 + 2));
+    for (int y = ya; y <= yb; y++) {
+        const int dy = y - cy;
+        int lo = xa - cx, hi = xb - cx;                       // dx range still to cover
+        const int a0 = -d.ty, b0 = d.tx * dy;                 // c0 = a0*dx + b0 >= 0
+        const int a1 = d.ly,  b1 = -d.lx * dy;                // c1 = a1*dx + b1 >= 0
+        bool empty = false;
+        for (int e = 0; e < 2; e++) {
+            const int a = e ? a1 : a0, b = e ? b1 : b0;
+            if (a == 0) { if (b < 0) empty = true; }
+            else if (a > 0) lo = std::max(lo, ceilDiv(-b, a) - 1);
+            else            hi = std::min(hi, floorDiv(-b, a) + 1);
+        }
+        if (empty) continue;
+        for (int dx = lo; dx <= hi; dx++) {
             if (dx * dx + dy * dy > r * r) continue;
             const int lv = trailLevel(d, dx, dy, kTailLevels);
-            if (lv) pt(s, x, y, fade[lv]);
+            if (lv) pt(s, cx + dx, y, fade[lv]);
         }
+    }
 }
 // The needle: a 3-line (2 px) head drawn AFTER the artwork, so it shows over any emblem, seal or star.
 inline void radarNeedle(S& s, int cx, int cy, int r, uint16_t angle) {
@@ -629,9 +648,10 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                     auto& dst=s.px[(y-s.y0)*s.stride+(x-s.lo)];
                     dst=ui::Canvas::mix(dst,pal::EDGE,cov,16);
                 };
-                for (int i=0;i<count;++i) {
+                int first=0;                     // tables are sorted by row: binary-search the first row this strip can touch
+                { int lo2=0,hi2=count; const int want=s.y0-1-fcy; while(lo2<hi2){const int mid=(lo2+hi2)/2; if(ring[mid].y<want)lo2=mid+1; else hi2=mid;} first=lo2; }
+                for (int i=first;i<count;++i) {
                     const int ry=ring[i].y, rx=ring[i].x;
-                    if (fcy+ry < s.y0-1) continue;
                     if (fcy+ry >= s.y0+s.h+1) break; // sorted rows (+1: the inward pixel sits one row closer)
                     plot(fcx+rx, fcy+ry, ring[i].coverage);
                     if (thick) {
@@ -669,8 +689,16 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
                 const int lv=sc.animateSweep?trailLevel(rd,rx,ry,kTailLevels):0;
                 const uint16_t ink=lv?ui::Canvas::mix(pal::EDGE_LIT,pal::BRIGHT,lv,kTailLevels):pal::EDGE_LIT;
                 const uint8_t* g=ui::runeBits(k);
-                for (int j=0;j<ui::RUNE_S;j++) for (int i=0;i<ui::RUNE_S;i++)
-                    if ((g[j]>>(ui::RUNE_S-1-i))&1) box(s,gx-5+i*2,gy-5+j*2,2,2,ink);
+                for (int j=0;j<ui::RUNE_S;j++) {
+                    const int ry0=gy-5+j*2;
+                    if (ry0+2<=s.y0 || ry0>=s.y0+s.h) continue;           // this glyph row is outside the strip
+                    for (int i=0;i<ui::RUNE_S;) {                          // one box per run of set pixels
+                        if (!((g[j]>>(ui::RUNE_S-1-i))&1)) { i++; continue; }
+                        int n=1; while (i+n<ui::RUNE_S && ((g[j]>>(ui::RUNE_S-1-(i+n)))&1)) n++;
+                        box(s,gx-5+i*2,ry0,n*2,2,ink);
+                        i+=n;
+                    }
+                }
             }
         }
         if(!clean && !sc.animateSweep) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);   // static ray
