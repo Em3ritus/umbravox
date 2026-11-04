@@ -16,6 +16,10 @@ advertisement scanner; BRIDGE separately controls the phone peripheral.
 - **WarDriveGo:** discovers `Umbravox-XXXX` via the GhostLink service UUID.
   TX subscription sends CAPS/MODE/BEGIN/PLAN and starts the observation stream.
   `wdstream start -wifi`, `wdstream start`, or `start` restarts the stream;
+  `wdstream start -wifi -ch 1,6,11,36` restarts with a channel filter for
+  exported observations. The list accepts decimal channels 1–196; malformed
+  lists are rejected. This does not retune the handheld or change node channel
+  assignments. A start without `-ch` clears the filter.
   `wdstream stop` or `stop` stops it.
 - **Biscuit:** advertises the compatibility name `Biscuit`. Its Device Information
   model is `Biscuit DIY`, manufacturer is `Umbravox`. The app uses

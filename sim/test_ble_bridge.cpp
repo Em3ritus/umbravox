@@ -90,6 +90,15 @@ int main(){
     const uint8_t bad[]={'s','t','o','p',0,'x'};assert(c.accept(bad,sizeof bad,0)==-1);
     assert(parse("stop\nwdstream start -wifi",WARDRIVEGO).action==INVALID);
     assert(parse("wdstream start -wifi EXTRA",WARDRIVEGO).action==UNSUPPORTED);
+    auto selected=parse("wdstream start -wifi -ch 1,6,11,36,161",WARDRIVEGO);
+    assert(selected.action==START && selected.channels.enabled);
+    assert(selected.channels.allows(1) && selected.channels.allows(161));
+    assert(!selected.channels.allows(2) && !selected.channels.allows(0));
+    assert(parse("wdstream start -wifi",WARDRIVEGO).channels.allows(2));
+    for(auto bad:{"", "0", "197", "256", "999999999", "1,", ",1", "1,,6", "-1", "1x", "1 EXTRA"}){
+        std::string cmd=std::string("wdstream start -wifi -ch ")+bad;
+        assert(parse(cmd.c_str(),WARDRIVEGO).action!=START);
+    }
     assert(parse("CMD:wardrive5g:",BISCUIT).band==2);
     assert(parse("CMD:wardrive:",BISCUIT).band==1);
     assert(parse("CMD:wardriveall:",BISCUIT).band==0);

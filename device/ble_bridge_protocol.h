@@ -86,7 +86,11 @@ struct Command {
     }
 };
 enum Action { INVALID, START, STOP, TIME_SYNC, UNSUPPORTED };
-struct Parsed { Action action=INVALID; uint8_t band=0; char name[32]{}; };
+struct ChannelFilter {
+    bool enabled=false; uint8_t bits[32]{};
+    bool allows(uint8_t ch) const {return ch && (!enabled || (bits[ch/8] & (1u<<(ch%8))));}
+};
+struct Parsed { Action action=INVALID; uint8_t band=0; char name[32]{}; ChannelFilter channels; };
 inline Parsed parse(const char* input,Mode mode) {
     Parsed r;char s[MAX_CMD+1];size_t n=strlen(input);if(n>MAX_CMD)return r;
     while(n && (input[n-1]=='\n'||input[n-1]=='\r'||input[n-1]==' '||input[n-1]=='\t'))--n;
@@ -96,6 +100,22 @@ inline Parsed parse(const char* input,Mode mode) {
     if(strchr(s,'\n')||strchr(s,'\r'))return r;
     if(mode==WARDRIVEGO){
         if(!strcmp(s,"wdstream start -wifi") || !strcmp(s,"wdstream start") || !strcmp(s,"start"))r.action=START;
+        else if(!strncmp(s,"wdstream start -wifi -ch ",sizeof("wdstream start -wifi -ch ")-1)){
+            const char* p=s+sizeof("wdstream start -wifi -ch ")-1;
+            if(!*p)return r;
+            while(*p){
+                unsigned ch=0,digits=0;
+                while(*p>='0' && *p<='9'){
+                    if(++digits>3)return r;
+                    ch=ch*10+unsigned(*p++-'0');
+                }
+                if(!digits || !ch || ch>196)return r;
+                r.channels.bits[ch/8]|=uint8_t(1u<<(ch%8));
+                if(!*p)break;
+                if(*p++!=',' || !*p)return r;
+            }
+            r.channels.enabled=true;r.action=START;
+        }
         else if(!strcmp(s,"stop")||!strcmp(s,"wdstream stop"))r.action=STOP;
         else r.action=UNSUPPORTED;
     }else if(mode==BISCUIT){

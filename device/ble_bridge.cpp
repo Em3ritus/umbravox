@@ -29,6 +29,7 @@ struct State {
     Outbox out; Command command; char scratch[MAX_LINE]{};
     Rx rx[4]{}; unsigned rxHead=0,rxCount=0; uint32_t rxDrops=0;
     unsigned seenEpoch=0;bool greeted=false,timeSynced=false;
+    ChannelFilter channels;
     uint8_t band=0;uint32_t reply=1,cursor=0,generation=0,sent=0;
     uint32_t connectedAt=0,lastTx=0,lastAp=0,roundAt=0,timeAt=0,diagAt=0,advAt=0,notifyFails=0;
     bool roundDone=false;
@@ -41,7 +42,7 @@ int identityMode=-1;
 char name[24]{};
 void clearSession(uint32_t now){
     st->out.clear();st->command.reset();st->greeted=false;st->timeSynced=false;
-    st->reply=1;st->cursor=0;st->sent=0;st->band=0;st->roundDone=false;st->connectedAt=now;
+    st->reply=1;st->cursor=0;st->sent=0;st->band=0;st->channels=ChannelFilter{};st->roundDone=false;st->connectedAt=now;
     streaming=false;
 }
 void resetRx(){if(st){portENTER_CRITICAL(&rxMux);st->rxHead=st->rxCount=0;portEXIT_CRITICAL(&rxMux);}}
@@ -150,7 +151,7 @@ void command(const Rx& rx,uint32_t now){
     if(selected==WARDRIVEGO && st->command.framed)st->out.put("",st->reply,2);
     char reply[128];
     if(parsed.action==START){
-        streaming=true;st->band=parsed.band;st->cursor=0;st->sent=0;st->roundDone=false;st->roundAt=now;
+        streaming=true;st->band=parsed.band;st->channels=parsed.channels;st->cursor=0;st->sent=0;st->roundDone=false;st->roundAt=now;
         if(selected==WARDRIVEGO)greet();
         else {snprintf(reply,sizeof reply,"RSP:%s:OK\nSTATUS:2:Scan started: %s\n",parsed.name,parsed.name);st->out.put(reply);}
     }else if(parsed.action==STOP){
@@ -231,7 +232,7 @@ void tick(uint32_t now){
             if(result<0)st->lastAp=now;
             if(result<0 && !st->roundDone){st->roundDone=true;
                 if(selected==WARDRIVEGO){char line[80];snprintf(line,sizeof line,"WD:STATUS aps=%lu scans=0\n",(unsigned long)st->sent);st->out.put(line,st->reply);}}
-            else if(result>0 && allows(st->band,ap.channel)){st->roundDone=false;if(apLine(st->scratch,sizeof st->scratch,ap,Mode(selected.load()))){st->out.put(st->scratch,st->reply);++st->sent;st->lastAp=now;}}
+            else if(result>0 && allows(st->band,ap.channel) && st->channels.allows(ap.channel)){st->roundDone=false;if(apLine(st->scratch,sizeof st->scratch,ap,Mode(selected.load()))){st->out.put(st->scratch,st->reply);++st->sent;st->lastAp=now;}}
         }
     }
     transmit(now);
