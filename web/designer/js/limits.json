@@ -10,7 +10,7 @@
   "MAX_EMBLEM_COLORS": 16,
   "MAX_FOLDERS_EXAMINED": 32,
   "MIN_EDGE_CONTRAST_X10": 30,
-  "reservedNames": ["UMBRAVOX", "BAPH0MAU5", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"],
+  "reservedNames": ["UMBRAVOX", "CVLT OF BAPH0MAU5", "COSMIC MUFFIN"],
   "folderName": {
     "pattern": "^[A-Za-z0-9_-]{1,31}$",
     "text": "A folder name is 1-31 letters, digits, - or _. Anything else is skipped."

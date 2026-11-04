@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build all three firmwares, merge each into one browser-flashable image, and
 # assemble the web flasher site (page + manifests + images) into web/dist/.
+# Install the standalone CLI with: python -m pip install -r tools/requirements-flash.txt
 # Used both locally and by the GitHub Pages workflow (.github/workflows/pages.yml).
 #
-#   PIO=~/.platformio/penv/bin/pio ESPTOOL=~/.platformio/penv/bin/esptool \
+#   PIO=~/.platformio/penv/bin/pio ESPTOOL=.venv-flash/bin/esptool \
 #       tools/make-web-flasher.sh
 #
 # C5 flash map: bootloader 0x2000, partitions 0x8000, boot_app0 0xe000,

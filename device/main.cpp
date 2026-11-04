@@ -1,3 +1,14 @@
+#include <new>
+#include "ble_bridge.h"
+#include "active_discovery.h"
+static int discoveryRequested=-1;
+static int dwellRequested=-1;
+static unsigned consoleDwell=220;
+#include "poi.h"
+#include "pcap.h"
+#include "gpx.h"
+#include "evidence_csv.h"
+#include "radio_policy.h"
 // NM-CYD-C5 bring-up: draw UMBRAVOX on the real panel.
 //
 // This is the whole device side. Everything visual lives in ui/, compiled
@@ -27,6 +38,10 @@
 #include "dedup.h"
 #include "meshlive.h"
 #include "perflog.h"
+#if defined(UMBRAVOX_SCAN_ENGINE)
+#include "../ui/project.h"
+#include "engine_adapter.h"   // Shared native UI engine, all screens
+#endif
 #include "alertlog.h"
 #include "meshcore.h"
 #include "mesh.h"
@@ -47,7 +62,7 @@
 #include "wigle.h"
 #include "board.h"
 #include <SPI.h>
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
 #include "ws_c5_expander.h"
 #include "ws_c5_pmu.h"
 #include "ws_c5_gps.h"
@@ -70,7 +85,7 @@ static constexpr int8_t PIN_RST  = board::PIN_RST;
 static constexpr int    PANEL_W  = board::PANEL_W;
 static constexpr int    PANEL_H  = board::PANEL_H;
 
-#if !defined(WS_C5_35)
+#if !(defined(WS_C5_35) || defined(WS_C5_28))
 static constexpr int8_t PIN_GPS_RX = board::PIN_GPS_RX;
 static constexpr int8_t PIN_GPS_TX = board::PIN_GPS_TX;
 static constexpr int    GPS_BAUD   = board::GPS_BAUD;
@@ -83,7 +98,7 @@ static constexpr int    GPS_BAUD   = board::GPS_BAUD;
 // faster -- only smaller, which is what the dirty rectangles are for.
 static constexpr int32_t SPI_HZ  = 40000000;
 
-#if defined(WS_C5_35)
+#if defined(WS_C5_35) || defined(WS_C5_28) || defined(UMBRAVOX_SCAN_ENGINE)
 // Through Arduino's SPI class rather than Arduino_GFX's register-level ESP32
 // bus, so the panel and the SD card share one owner of the bus (the global SPI
 // instance). A soft reset leaves the bus's SPI block holding the previous
@@ -98,19 +113,30 @@ static Arduino_DataBus* bus = new Arduino_ESP32SPI(PIN_DC, PIN_CS, PIN_SCK, PIN_
 // (Waveshare's own init sends 0x21).
 static Arduino_TFT* gfx = new Arduino_ST7796(bus, PIN_RST, board::ROTATION, true /*IPS*/,
                                              320, 480);
+#elif defined(WS_C5_28)
+#include "ws_c5_28_display.h"
+static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, board::ROTATION, true, 240, 320,
+    0,0,0,0,ws28Init,sizeof ws28Init);
 #else
 static Arduino_TFT* gfx = new Arduino_ST7789(bus, PIN_RST, board::ROTATION, false /*IPS*/,
                                              240, 320);
 #endif
 
-static ui::Canvas canvas;          // 38,400 bytes, internal SRAM by design
+#if defined(UMBRAVOX_SCAN_ENGINE)
+// Only idle animation/orientation still need the legacy canvas in this build.
+// Allocate after Arduino has initialized PSRAM; never fall back to scarce SRAM.
+static ui::Canvas* canvasStorage = nullptr;
+#define canvas (*canvasStorage)
+#else
+static ui::Canvas canvas;          // NM/default renderer keeps its hot SRAM canvas
+#endif
 // One doubled canvas row: 320 px landscape, 240 px portrait.
 static_assert(2 * ui::W <= PANEL_W && 2 * ui::H <= PANEL_W, "lineBuf holds a doubled row either way");
 static uint16_t   lineBuf[PANEL_W];
 // Where the 2x canvas lands on the panel in the rotation now on the glass
 // (board.h CANVAS_X/Y, or CANVAS_X/Y_TALL in portrait). applyOrientation().
 static int canvasX = board::CANVAS_X, canvasY = board::CANVAS_Y;
-#if !defined(WS_C5_35)
+#if !(defined(WS_C5_35) || defined(WS_C5_28))
 static HardwareSerial gpsPort(1);
 #else
 // The last time anything touched the panel. The GPS shares the touch bus and
@@ -179,14 +205,14 @@ static void applyOrientation(uint8_t orient) {
 }
 
 static void setBacklight(uint8_t pwm) {
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
     exio::backlight(pwm);
 #else
     ledcWrite(board::PIN_BL, pwm);
 #endif
 }
 
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
 // --- the Waveshare's status strip --------------------------------------------
 //
 // The 2x canvas leaves an 80px band across the top of this panel. The battery
@@ -200,6 +226,7 @@ static void stripText(const pmu::Batt& b, char* out, size_t n, uint16_t& fg) {
     fg = pal::TEXT;
     if (!b.ok)        { snprintf(out, n, "%s", ""); return; }
     if (!b.cell)      { snprintf(out, n, "%s", b.usb ? "USB  NO CELL" : ""); fg = pal::DIM; return; }
+    if (b.pct > 100) { snprintf(out, n, "BAT N/A"); fg = pal::DIM; return; }
     if (b.charging)   { snprintf(out, n, "CHG %u%%", (unsigned)b.pct); fg = pal::GREEN; return; }
     if (b.usb)        { snprintf(out, n, "USB %u%%", (unsigned)b.pct); fg = pal::GREEN; return; }
     snprintf(out, n, "BAT %u%% %u.%02uV", (unsigned)b.pct,
@@ -234,13 +261,19 @@ static void drawStrip(const char* text, uint16_t fg) {
     gfx->endWrite();
 }
 
+// Set when something else painted over the strip (the SCAN engine clears the
+// whole panel on exit), so the next tick redraws even if the text is unchanged.
+static bool stripForced = true;
+static void stripForce() { stripForced = true; }
+
 static void stripTick(uint32_t now) {
     static char     shown[24] = "\x01";   // never matches, so the first tick draws
     static uint16_t shownFg = 0;
     char txt[24];
     uint16_t fg;
     stripText(pmu::read(now), txt, sizeof txt, fg);
-    if (strcmp(txt, shown) == 0 && fg == shownFg) return;
+    if (!stripForced && strcmp(txt, shown) == 0 && fg == shownFg) return;
+    stripForced = false;
     drawStrip(txt, fg);
     snprintf(shown, sizeof shown, "%s", txt);
     shownFg = fg;
@@ -377,7 +410,10 @@ void reassignAll(int only = -1) {
         a.collectChan = COLLECT_CHAN;
         a.nChan = sl[i].nChan > mesh::MAX_SLICE ? mesh::MAX_SLICE : sl[i].nChan;
         for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[i].chans[k];
+#if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+        meshcore::sendTiming(coords_[i].mac);
+#endif
     }
 }
 
@@ -488,7 +524,9 @@ void handleHello(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[c].chans[k];
     a.camp = 0;
     a.phaseMs = (uint16_t)mesh_phase::offset(ord, total, mesh::REPORT_MS);
+#if !UMBRAVOX_PASSIVE_ONLY
     esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+#endif
 }
 
 } // namespace
@@ -638,6 +676,15 @@ void setup() {
     delay(200);
     Serial.println();
     Serial.println("UMBRAVOX bring-up");
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    void* legacyPixels = heap_caps_malloc(sizeof(ui::Canvas), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!legacyPixels) {
+        Serial.println("ui: FATAL -- no PSRAM for legacy animation canvas");
+        for (;;) delay(1000);
+    }
+    canvasStorage = new (legacyPixels) ui::Canvas{};
+    Serial.println("ui: legacy animation canvas in PSRAM");
+#endif
     Serial.printf("chip  : %s rev %d, %d core(s)\n",
                   ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores());
     Serial.printf("flash : %u bytes\n", (unsigned)ESP.getFlashChipSize());
@@ -646,7 +693,7 @@ void setup() {
     Serial.printf("psram : %u bytes (%u free)\n",
                   (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram());
 
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
     // Reset the SPI2 block (the panel's and SD card's bus) before anything
     // uses it. Arduino's spiStartBus() resets it on the ESP32/S2/S3/P4 but has
     // no C5 branch, and the old periph_module_reset() is non-functional on
@@ -667,16 +714,31 @@ void setup() {
     // before the panel can be initialised at all.
     exio::begin();
 #endif
+#if defined(WS_C5_28) || defined(NM_CYD_C5)
+    pinMode(board::PIN_SD_CS,OUTPUT);
+    digitalWrite(board::PIN_SD_CS,HIGH); // deselect SD before the first display transaction
+#endif
+#if defined(NM_CYD_C5)
+    pinMode(board::PIN_TOUCH_CS,OUTPUT);
+    digitalWrite(board::PIN_TOUCH_CS,HIGH);
+#endif
     if (!gfx->begin(SPI_HZ)) {
         Serial.println("gfx->begin() FAILED");
         for (;;) delay(1000);
     }
     gfx->fillScreen(RGB565_BLACK);
 
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // The native engine composes the whole board-sized panel in bounded
+    // strips for every screen. Targets without the engine flag keep the
+    // legacy canvas renderer.
+    engineadapter::begin(gfx, PANEL_W, PANEL_H);
+#endif
+
     // Arduino core 3.x LEDC. The old ledcSetup()/ledcAttachPin() pair is gone,
     // and ledcWrite() now takes the pin rather than a channel -- this is the
     // API break that makes porting core-2 firmware to the C5 expensive.
-#if !defined(WS_C5_35)
+#if !(defined(WS_C5_35) || defined(WS_C5_28))
     ledcAttach(board::PIN_BL, 5000, 8);
 #endif
     setBacklight(204);          // 80%, matching Settings' default
@@ -687,7 +749,7 @@ void setup() {
     // -1 for CS: each device on the bus drives its own.
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
 
-#if !defined(WS_C5_35)
+#if !(defined(WS_C5_35) || defined(WS_C5_28))
     // 2 KB of RX buffer (~2 s of NMEA at 9600 baud) instead of the default
     // 256 B (~0.25 s): a loop stall no longer loses sentences. arduino-esp32
     // 3.x only honours this before begin().
@@ -704,10 +766,14 @@ void setup() {
     // Before loop()'s first prefs::load(): a board without portrait clamps a
     // stored PORTRAIT to LANDSCAPE there.
     ui::setPortraitAllowed(board::HAS_PORTRAIT);
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
     pmu::begin();     // on the touch bus, which exio::begin() opened
     gpsi2c::begin();  // so is the LC76G
+#if !defined(UMBRAVOX_SCAN_ENGINE)
+    // Native UI owns the whole panel, including its battery badge. Do not
+    // paint the legacy USB/NO CELL strip before the first native frame.
     stripTick(millis());
+#endif
 #endif
     // Card first, then the session machine: it resumes into a fresh file when
     // the last run ended mid-session -- never the old one, which is left as
@@ -717,9 +783,12 @@ void setup() {
     elog::begin();     // boot banner + reset reason to /diag.log (after the card)
     // Theme packs: after the card and the log (skips are logged), and before
     // loop()'s first prefs::load(), so a saved pack name finds its pack.
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if (!touch::startSampling()) Serial.println("touch: sampler creation FAILED");
+#endif
     themeload::scan();
         logging::begin(prefs::loggingWas(), logwire::hooks(), millis(), ui::Gnss::utcEpoch(millis()));
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
     Serial.printf("panel up @ %d MHz SPI, GPS LC76G on I2C\n",
                   (int)(SPI_HZ / 1000000));
 #else
@@ -884,7 +953,9 @@ void tick(uint32_t nowMs) {
     const bool adopting = win.mode == enrollwin::ADOPT;
     e.h.netId = adopting ? mesh::netId : oldNet;
     e.reset   = adopting ? 0 : 1;
+#if !UMBRAVOX_PASSIVE_ONLY
     esp_now_send(bcast, (const uint8_t*)&e, sizeof e);
+#endif
 }
 } // namespace enroll
 
@@ -927,6 +998,11 @@ sdcmd::Console console(io);
 static void rebootNow(const ui::Settings& set) {
     const bool was = logging::wantsActive();
     logging::stop(millis());
+    gpx::tick("",ui::Gnss::fix(),millis(),0);
+
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    evidencecsv::stop();
+#endif
     prefs::setLogging(was);
     prefs::flush(set);
     elog::event(elog::INFO, "sys", "reboot requested on the console%s",
@@ -935,6 +1011,16 @@ static void rebootNow(const ui::Settings& set) {
     Serial.flush();
     delay(100);
     esp_restart();
+}
+
+// Snapshot every writer at the point of deletion, including delayed stop flushes.
+static capturepaths::ActiveFiles activeCaptureFiles(){
+ capturepaths::ActiveFiles a;a.set(0,logging::fileName());a.set(1,gpx::activeFile());
+#if defined(UMBRAVOX_SCAN_ENGINE)
+ a.set(2,evidencecsv::activeFile(0));a.set(3,evidencecsv::activeFile(1));
+ a.set(4,(pcap::active()||pcap::pending())?pcap::fileName():"");
+#endif
+ return a;
 }
 
 // Returns true when REBOOT was received (loop() restarts the board).
@@ -957,13 +1043,45 @@ bool pollConsole() {
         }
         const char* line = lb.buf;
         {
+            const auto protectedFiles=activeCaptureFiles();
             const sdcmd::Action a = sdio::console.line(line, millis(), logging::fileName(),
-                                                       reply, sizeof reply);
+                                                       reply, sizeof reply, &protectedFiles);
             if (a == sdcmd::REBOOT) return true;      // rebootNow prints the reply
             if (a == sdcmd::HANDLED) { Serial.println(reply); continue; }
         }
         {
-            if (!strncmp(line, "TEST", 4)) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+            if(!strcmp(line,"PCAP ON")){
+                if(pcap::start()){
+                    if(!cap::setRawCapture(true)){pcap::stop();Serial.println("ERR PCAP radio filter");}
+                }
+                Serial.printf("pcap: %s %s (uptime timestamps)\n",pcap::status(),pcap::fileName());
+            }else if(!strcmp(line,"PCAP OFF")) {pcap::stop();cap::setRawCapture(false);Serial.println("pcap: draining queued frames");}
+            else if(!strcmp(line,"PCAP")){Serial.printf("pcap: %s file=%s written=%lu dropped=%lu batches=%lu queue_peak=%lu\n",pcap::status(),pcap::fileName(),(unsigned long)pcap::written(),(unsigned long)pcap::dropped(),(unsigned long)pcap::batches(),(unsigned long)pcap::peakQueue());}
+            else if(!strcmp(line,"EVIDENCE CSV")){Serial.printf("evidence csv: %s committed rows=%lu\n",evidencecsv::status(),(unsigned long)evidencecsv::rows());}
+            else
+#endif
+            if (!strcmp(line,"GPX")) {
+                Serial.printf("gpx: %s file=%s points=%lu\n",gpx::status(),gpx::fileName(),(unsigned long)gpx::points());
+            } else if (!strcmp(line,"DWELL")) {
+                Serial.printf("dwell: %u ms\n",consoleDwell);
+            } else if (!strncmp(line,"DWELL ",6)) {
+                char* end=nullptr;
+                const long value=strtol(line+6,&end,10);
+                if(end!=line+6 && *end==0 && value>=100 && value<=600){
+                    dwellRequested=(int)value;
+                    Serial.printf("dwell: requested %ld ms\n",value);
+                }else Serial.println("ERR DWELL expects 100..600 milliseconds");
+            } else if (!strcmp(line,"DISCOVERY ACTIVE")) {
+                discoveryRequested=1;Serial.println("discovery: ACTIVE requested (Wi-Fi + BLE)");
+            } else if (!strcmp(line,"DISCOVERY PASSIVE")) {
+                discoveryRequested=0;Serial.println("discovery: PASSIVE requested");
+            } else if (!strcmp(line,"DISCOVERY")) {
+                const auto& m=discovery::metrics();
+                Serial.printf("discovery: busy=%u started=%lu completed=%lu failed=%lu omitted=%lu\n",(unsigned)discovery::busy(),(unsigned long)m.started,(unsigned long)m.completed,(unsigned long)m.failed,(unsigned long)m.omitted);
+            } else if (!strcmp(line,"BRIDGE")) {
+                Serial.printf("bridge: %s\n",blebridge::status());
+            } else if (!strncmp(line, "TEST", 4)) {
                 testStep = 0;
                 testAt   = millis();
                 Serial.printf("test alert: %d steps, %d ms each\n", TEST_N, (int)TEST_STEP_MS);
@@ -1008,16 +1126,20 @@ bool pollConsole() {
             } else if (!strcmp(line, "GPS")) {
                 // Receiver status on any board; the I2C link counters only
                 // where the GPS is on I2C.
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
                 const gpsi2c::Stats& g = gpsi2c::stats();
                 Serial.printf("gps: i2c cycles %lu bytes %lu empty %lu fails %lu recov %lu wakes %lu\n",
                               (unsigned long)g.cycles, (unsigned long)g.bytes, (unsigned long)g.empty,
                               (unsigned long)g.fails, (unsigned long)g.recov, (unsigned long)g.wakes);
+                Serial.printf("gps: transfer write-fails 50=%lu 54=%lu 58=%lu short-54=%lu budget-skips=%lu last-wire-status=%lu\n",
+                              (unsigned long)g.writeFailures[0], (unsigned long)g.writeFailures[1],
+                              (unsigned long)g.writeFailures[2], (unsigned long)g.shortReads,
+                              (unsigned long)g.budgetExhausted, (unsigned long)g.lastWriteError);
 #endif
                 // The bring-up facts in three lines: is anything arriving,
                 // does it parse, and what does the receiver say about the sky.
                 const ui::Gnss::Counts& k = ui::Gnss::counts();
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
                 Serial.printf("gps: LC76G on I2C, bytes %lu, ", (unsigned long)k.bytes);
 #else
                 Serial.printf("gps: uart rx GPIO %d @ %d (module TXD -> P5 RX; TX unused), bytes %lu, ",
@@ -1076,18 +1198,19 @@ bool pollConsole() {
 //
 // The list is rebuilt only when the screen opens, after a delete, and when
 // the logging session's file changes while it is up -- never per frame. One
-// walk of the root, on this (the loop) task, in one go: at most
+// walk of recognized recording folders, on the loop task: at most
 // filescan::MAX_ENTRIES (512) entries or filescan::BUDGET_MS (1 s) of wall
 // clock. No free-space figure: FatFs's free count (f_getfree, behind
 // SD.usedBytes/totalBytes) scanned the whole FAT for 8.4 s on the 28.9 GB
 // test card, blocking the loop and the SD volume, so nothing in the firmware
 // asks for it. FILES shows the card's capacity (its CSD, read at mount) and
-// the total of the logs the walk already saw. Worst case on opening: the 1 s
-// walk. Capture keeps running in the Wi-Fi/BLE callbacks; the GPS UART
+// the total of the logs the walk already saw. The 1 s budget is checked
+// between SD operations, not a hard I/O deadline. Capture keeps running
+// in the Wi-Fi/BLE callbacks; the GPS UART
 // buffers 2 s; logging's next flush is late. The walk is recorded by sdlog's
 // stall meter. Nothing transmits.
 namespace files {
-// The list (1.8 KB) lives in PSRAM, allocated on first use: internal RAM is
+// The list lives in PSRAM, allocated on first use: internal RAM is
 // what Wi-Fi and BLE run short of. If it cannot be had, FILES reads NO CARD.
 ui::FileList* L = nullptr;
 bool ensure() {
@@ -1100,12 +1223,13 @@ bool ensure() {
     L = new (p) ui::FileList();
     return true;
 }
-char activeSeen[40] = "";      // logging::fileName() at the last scan
-
-struct Ctx { filescan::Walk w; };
-bool onEntry(const char* name, bool isDir, uint32_t size, void* c) {
-    return filescan::visit(((Ctx*)c)->w, name, isDir, size, millis());
+capturepaths::ActiveFiles activeSeen;
+void refreshActive(ui::Nav& nav){
+ if(!L)return;filescan::markActive(*L,activeCaptureFiles());
+ const int sel=nav.fileSel;
+ ui::filesSetActive(nav,sel>=0&&sel<L->n&&L->rows[sel].active?sel:-1);
 }
+uint32_t clockMs(){return millis();}
 
 void scan(ui::Nav& nav) {
     if (!ensure()) {                         // nothing to list into: NO CARD
@@ -1117,17 +1241,14 @@ void scan(ui::Nav& nav) {
     char prev[ui::FILE_NAME_MAX] = "";
     if (nav.fileSel >= 0 && nav.fileSel < list.n) strcpy(prev, list.rows[nav.fileSel].name);
     const uint32_t t0 = millis();
-    static Ctx ctx;
-    filescan::begin(ctx.w, list, t0);
-    if (!sdlog::present() ||
-        !sdlog::listDirSized("/", onEntry, &ctx, filescan::MAX_ENTRIES + 1)) {
-        filescan::reset(list);               // card absent or pulled: NO CARD
-    } else {
-        list.cardMB = sdlog::cardMB();           // the CSD's figure, no FAT scan
+    if(!sdlog::present())filescan::reset(list);
+    else {
+        static filescan::Browser browser;
+        const filescan::BrowseIo io{sdlog::isDir,sdlog::listDirSized,clockMs};
+        browser.scan(list,io);list.cardMB=sdlog::cardMB();
     }
-    snprintf(activeSeen, sizeof activeSeen, "%s", logging::fileName());
-    ui::filesRescanned(nav, list, prev);
-    ui::filesSetActive(nav, filescan::activeIndex(list, logging::fileName()));
+    activeSeen=activeCaptureFiles();
+    ui::filesRescanned(nav,list,prev);refreshActive(nav);
     Serial.printf("files: %u logs listed (%u on card%s) in %lu ms\n", (unsigned)list.n,
                   (unsigned)list.found, list.partial ? ", walk bounded" : "",
                   (unsigned long)(millis() - t0));
@@ -1137,24 +1258,23 @@ bool cardExists(const char* p) { return sdlog::exists(p); }
 bool cardIsDir(const char* p)  { return sdlog::isDir(p); }
 bool cardRemove(const char* p) { return sdlog::removeFile(p); }
 
-// Delete list row `idx`. The index came from the UI, so the policy is
+// Delete the identity frozen from the selected row. The policy is
 // re-checked on the NAME against the live session, and the card goes through
 // SDDEL's sequence (exists, not a directory, remove): filescan::removeLog.
-bool remove(int idx) {
-    if (!L || idx < 0 || idx >= L->n) return false;
-    const ui::FileList& list = *L;
+bool remove(const char* name) {
+    if(!name||!*name)return false;
     char path[ui::FILE_NAME_MAX + 1];
-    if (!filescan::pathOf(list.rows[idx].name, path, sizeof path)) return false;
-    const uint32_t size = list.rows[idx].size;
+    if (!filescan::pathOf(name, path, sizeof path)) return false;
+    const uint32_t size = sdlog::sizeOf(path);
     const filescan::RemoveIo io{cardExists, cardIsDir, cardRemove};
-    switch (filescan::removeLog(path, logging::fileName(), io)) {
+    switch (filescan::removeLog(path, activeCaptureFiles(), io)) {
         case filescan::RM_OK:
             elog::event(elog::INFO, "files", "deleted %s (%lu bytes) from the screen", path,
                         (unsigned long)size);
             return true;
         case filescan::RM_REFUSED:
             elog::event(elog::WARN, "files", "refused to delete %s from the screen: %s", path,
-                        filescan::deleteCheck(path, logging::fileName()));
+                        filescan::deleteCheck(path, activeCaptureFiles()));
             return false;
         case filescan::RM_MISSING:
             elog::event(elog::WARN, "files", "delete %s from the screen: no such file", path);
@@ -1186,16 +1306,38 @@ bool testAlert(ui::State& s, uint32_t nowMs) {
 
 } // namespace
 
+// P3 boot-stall finder (diagnostic, remove once the culprit is deferred): the
+// ~2.5s one-time freeze at ~5s uptime is a single loop section doing blocking
+// SD / init work. We cannot profile from the build host, so the device names it
+// -- any wrapped section that blocks longer than the threshold logs once via
+// elog ("stall: <what> blocked N ms"). Two micros() reads per wrapped call.
+static inline void bootStall(const char* what, uint32_t startUs) {
+    const uint32_t ms = (micros() - startUs) / 1000;
+    if (ms > 250) elog::event(elog::WARN, "stall", "%s blocked %lu ms", what, (unsigned long)ms);
+}
+
 void loop() {
     static uint32_t frame = 0;
+    static bool storageWriteError=false; // remain visible until reboot
     static ui::Dirty dirty;
     const uint32_t t0 = millis();
     perflog::loopStart(t0);        // the gap between loops is the stall we want to see
     static uint32_t prevLoopMs = 0;
     const uint32_t loopGap = prevLoopMs ? t0 - prevLoopMs : 0;
     prevLoopMs = t0;
+    static uint32_t loopGapMax = 0;
+    if(loopGap>loopGapMax)loopGapMax=loopGap;
 
-#if !defined(WS_C5_35)
+    // Engine builds read the periodic sampler's cache; completed presses are
+    // retained separately. Other boards continue synchronous polling here.
+    const uint32_t touchStart=micros();
+    const touch::Point tp = touch::read();
+    bootStall("touch read",touchStart);
+#if (defined(WS_C5_35) || defined(WS_C5_28))
+    if (tp.any) lastContactMs = millis();
+#endif
+
+#if !(defined(WS_C5_35) || defined(WS_C5_28))
     // Drain the receiver every frame. At 9600 baud a frame's worth is well
     // under 100 bytes, so this never blocks long enough to matter.
     while (gpsPort.available()) ui::Gnss::feed((char)gpsPort.read(), millis());
@@ -1216,27 +1358,52 @@ void loop() {
         }
     }
 #else
-    // One short synchronous LC76G cycle, at most twice a second, and never
+    // One bounded synchronous LC76G cycle (engine: 128 B / 125 ms), never
     // while the panel is being touched. See ws_c5_gps.h.
-    if (millis() - lastContactMs >= GPS_TOUCH_QUIET_MS) gpsi2c::tick(gnssSink, millis());
+    if (millis() - lastContactMs >= GPS_TOUCH_QUIET_MS) { const uint32_t _s = micros(); gpsi2c::tick(gnssSink, millis()); bootStall("gps tick", _s); }
 #endif
 
-    cap::tick(millis());
+    { const uint32_t _s = micros(); cap::tick(millis()); bootStall("cap tick", _s); }
     // While a coordinator is live the CYD is a pure collector: its Core stops
     // handing out assignments so it never re-claims a node the collector has
     // placed on a coordinator (which would otherwise fight the redirect).
     meshcore::setAssigning(!collector::active());
-    meshcore::tick(millis());
-    collector::tick(millis());
-    enroll::tick(millis());
-    blescan::tick(millis());
-    logging::tick(millis(), ui::Gnss::utcEpoch(millis()));
+    { const uint32_t _s = micros(); meshcore::tick(millis()); bootStall("meshcore tick", _s); }
+    { const uint32_t _s = micros(); collector::tick(millis()); bootStall("collector tick", _s); }
+    { const uint32_t _s = micros(); enroll::tick(millis()); bootStall("enroll tick", _s); }
+    { const uint32_t _s = micros(); blescan::tick(millis()); bootStall("blescan tick", _s); }
+    { const uint32_t _s=micros(); blebridge::tick(millis()); bootStall("bridge tick",_s); }
+    { const uint32_t _s = micros(); logging::tick(millis(), ui::Gnss::utcEpoch(millis())); bootStall("logging tick", _s); }
+    {
+        const uint32_t start=micros(),now=millis();
+        const auto& fix=ui::Gnss::fix();
+        const uint32_t epoch=ui::Gnss::utcEpoch(now),ageSeconds=(now-fix.atMs)/1000;
+        // utcEpoch extrapolates forward: do not call it with a past fix.atMs.
+        gpx::tick(logging::state()==logging::ACTIVE && logging::wantsActive() ? logging::fileName() : "",
+                  fix,now,epoch>=ageSeconds ? epoch-ageSeconds : 0);
+        bootStall("gpx tick",start);
+        if(gpx::takeError()){storageWriteError=true;elog::event(elog::WARN,"gpx","track write failed: %s; stopped for this session",gpx::fileName());}
+    }
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    {const uint32_t start=micros();
+    evidencecsv::tick(logging::state()==logging::ACTIVE && logging::wantsActive()?logging::fileName():"",
+                      millis(),ui::Gnss::utcEpoch(millis()),cap::evidenceCsvRow);
+    bootStall("evidence csv",start); }
+    if(evidencecsv::takeError()){storageWriteError=true;elog::event(elog::WARN,"csv","client/probe export write failed; stopped for this session");}
+    poi::service(millis());
+    {const uint32_t start=micros();pcap::service(millis());bootStall("pcap service",start);}
+    cap::setRawCapture(pcap::active());
+    if(poi::status(millis())==ui::PoiStatus::WriteError ||
+       !strcmp(pcap::status(),"OPEN ERROR") || !strcmp(pcap::status(),"WRITE ERROR") || !strcmp(pcap::status(),"DAMAGED FILE"))storageWriteError=true;
+#endif
 
     // Diagnostics to /diag.log: an SD write failure, once per occurrence, and
     // low-heap warnings at 40, 24 and 16 KB (each re-armed 8 KB above it) so a
     // slow leak leaves a fingerprint instead of just a silent reboot.
-    if (logging::takeWriteError())
+    if (logging::takeWriteError()){
+        storageWriteError=true;
         elog::event(elog::ERR, "sd", "log write failed (card full or I/O error)");
+    }
     if (logging::takeFileRestart())
         elog::event(elog::WARN, "sd", "log file shorter than written, continuing in %s",
                     logging::fileName());
@@ -1360,7 +1527,15 @@ void loop() {
     // glass -- uptime, battery, and an SD status claiming a card was present
     // with a log file name to match. Anything not filled below now shows its
     // honest default instead.
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // Loop-owned snapshot: leave stack room for nested rendering and SDK calls.
+    // Reconstruct in place to preserve the old fresh-State semantics each pass,
+    // without a full-sized automatic temporary or per-frame allocation.
+    static ui::State s;
+    new (&s) ui::State{};
+#else
     ui::State s;
+#endif
     s.uptimeS = millis() / 1000;
 
     // The animation clock. Driven by time, not by the frame counter: the
@@ -1373,6 +1548,7 @@ void loop() {
     // demoState(), which had been setting it.
     s.frame = millis() / 16;
     s.sdOk    = sdlog::present();
+    s.sdWriteError=storageWriteError;
     s.packsSkipped = themeload::skipped();
     cap::fill(s, millis());
     blescan::fill(s, millis());
@@ -1398,7 +1574,7 @@ void loop() {
     static ui::Settings set;
     static bool loaded = false;
     if (!loaded) {
-        prefs::load(set);
+        { const uint32_t t=micros(); prefs::load(set); bootStall("prefs load",t); }
         loaded = true;
         // Touch hit-testing reads the theme's geometry (dial, spectrum), and
         // the first navTouch runs before the draw-time apply below. Same
@@ -1409,7 +1585,7 @@ void loop() {
                       mesh::netId == 0 ? " (open -- ENROLL to make a private net)" : "");
     }
 
-    const touch::Point tp = touch::read();
+    // tp was read at the TOP of the loop (before GPS/render); consumed here.
 
     // --- idle dimming ---------------------------------------------------
     //
@@ -1434,11 +1610,12 @@ void loop() {
         dimmed = false;
     }
 
+    const bool wasDimmed = dimmed;             // a contact now is a wake, not a tap
     bool tpDown = tp.down;
     if (tp.any) {
         if (dimmed) { tpDown = false; }        // this one only wakes
         lastTouchMs = millis();
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
         lastContactMs = lastTouchMs;
 #endif
         dimmed = false;
@@ -1449,7 +1626,7 @@ void loop() {
 
     // Dim to a fraction of the chosen brightness rather than a fixed level,
     // so someone running at 3% does not get *brighter* when it dims.
-    const uint8_t dimPct = set.bright > 16 ? set.bright / 8 : 2;
+    const uint8_t dimPct = idlemode::dimPercent(set.bright);
     const uint8_t brightPwm = (uint8_t)((uint32_t)set.bright * 255 / 100);
     const uint8_t dimPwm    = (uint8_t)((uint32_t)dimPct * 255 / 100);
     // The mode picks the dimmed level (OFF -> 0) and whether the dark panel
@@ -1481,19 +1658,52 @@ void loop() {
     // one UI frame so the panel is not left showing the animation.
     const bool screenOff = ipNow.suspend && !animStep.exit;
 
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // Wake detection for the engine, computed BEFORE the screenOff early-return
+    // below so an OFF/ANIM sleep (which returns early) is not missed. "Asleep"
+    // covers DIM and the suspended OFF/ANIM states; the wake forces a full
+    // native repaint in the draw block.
+    static bool engPrevAsleep = false;
+    const bool  engAsleepNow  = dimmed || screenOff;
+    const bool  engWoke       = engPrevAsleep && !engAsleepNow;
+    engPrevAsleep = engAsleepNow;
+#endif
+
     // Nav consumes the touch before the screen sees it, so a swipe that
     // changes screens does not also land as a tap on the one arriving.
     ui::filesTick(nav, millis());          // the FILES confirm's clock, before navTouch
     const uint16_t rows = nav.screen == ui::SCR_FILES ? nav.filesN
                         : nav.screen == ui::SCR_ECHOES ? cap::echoCount()
                         : nav.screen == ui::SCR_OMENS ? alertlog::count()
+                        : nav.filter == ui::F_LOCATED ? cap::locatedCount()
                         : nav.filter == ui::F_BLE ? blescan::sightCount()
                         : cap::sightCount(nav.filter == ui::F_5G);
-    const int visible = nav.screen == ui::SCR_FILES  ? ui::FILE_VIS
+    int visible = nav.screen == ui::SCR_FILES  ? ui::FILE_VIS
                       : nav.screen == ui::SCR_OMENS  ? ui::MAX_OMEN_ROWS
                       : nav.screen == ui::SCR_ECHOES ? ui::MAX_ECHO_ROWS : ui::ROWS;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(nav.screen==ui::SCR_OMENS)visible=uieng::omens(board::PANEL_W,board::PANEL_H).nRows;
+    if(nav.screen==ui::SCR_FILES)visible=uieng::files(board::PANEL_W,board::PANEL_H).nRows;
+    if(nav.screen==ui::SCR_ECHOES)visible=uieng::echoes(board::PANEL_W,board::PANEL_H).nRows;
+    if(nav.screen==ui::SCR_CODEX)visible=uieng::codex(board::PANEL_W,board::PANEL_H).nRows;
+#endif
     nav.maxScroll = (int16_t)(rows > visible ? rows - visible : 0);
-    const bool switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
+    bool switched;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    {
+        // The engine composes EVERY screen natively; its status strip and side
+        // controls lie OUTSIDE the 2x canvas, where touch::read leaves
+        // down=false -- so hit-test in PANEL coordinates on any in-bounds
+        // contact, not tp.down. The wake tap (wasDimmed) is suppressed, and the
+        // sampler owns edges and retains completed taps. Routing goes through
+        // uinav::Router inside the adapter and writes nav/set.
+        if (wasDimmed) engineadapter::cancelInput();
+        switched = engineadapter::dispatchTouch(nav, set, s);
+        engineadapter::serviceSettings();
+    }
+#else
+    switched = ui::navTouch(nav, set, tpDown, tp.x, tp.y);
+#endif
 
     // ORIENTATION: the panel turns the moment the setting does (the ORIENT
     // row's tap, or the stored value on the first pass -- the panel came up
@@ -1509,19 +1719,42 @@ void loop() {
     // Push settings to the hardware only when they actually move: changing
     // the BLE duty restarts the scanner, so doing it every frame would mean
     // never scanning at all.
+    if(discoveryRequested>=0){set.activeDiscovery=discoveryRequested;discoveryRequested=-1;}
+    if(dwellRequested>=0){set.dwellMs=dwellRequested;dwellRequested=-1;}
+    consoleDwell=set.dwellMs;
     static ui::Settings applied;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(set.pcapEnabled!=applied.pcapEnabled){
+        if(set.pcapEnabled){if(pcap::start() && !cap::setRawCapture(true))pcap::stop();}
+        else {pcap::stop();cap::setRawCapture(false);}
+    }
+    set.pcapEnabled=pcap::active()?1:0;
+#endif
+    if(set.activeDiscovery!=applied.activeDiscovery){cap::setActive(set.activeDiscovery);blescan::setActive(set.activeDiscovery);}
+    meshcore::setTiming(set.meshProfile,set.nodeDwellMs,set.activeDiscovery);
     if (set.dwellMs != applied.dwellMs) cap::setDwell(set.dwellMs);
     if (set.bands   != applied.bands)   cap::setBands(set.bands);
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
+    if (set.bleBridge != applied.bleBridge) {
+        blebridge::setMode(set.bleBridge);
+        set.bleBridge=blebridge::mode(); // failed startup must not leave a false ON label
+    }
     applied = set;
-    prefs::tick(set, millis());
+    { const uint32_t t=micros(); prefs::tick(set, millis()); bootStall("prefs tick",t); }
 
     // AUTO LOG's latch lives for this boot: a reboot is what clears a STOP.
     static autolog::Latch autoLatch;
 
     if (nav.logToggleRequested) {
         const bool wasWanted = logging::wantsActive();
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        if (!logging::saving()) {
+            if (logging::state() == logging::IDLE) logging::start(millis(), ui::Gnss::utcEpoch(millis()));
+            else logging::requestStop(millis());
+        }
+#else
         logging::toggle(millis(), ui::Gnss::utcEpoch(millis()));
+#endif
         prefs::setLogging(logging::wantsActive());
         // A tap that ended a session is the owner's STOP: AUTO LOG must not
         // start another this boot (until the setting is turned OFF and ON).
@@ -1532,19 +1765,23 @@ void loop() {
     // FILES: scan on opening; delete what YES asked for (re-checked by name);
     // rescan when the session's file changes under the screen.
     if (nav.screen == ui::SCR_FILES) {
+        // Freeze identity before a requested rescan can reorder the list.
+        char deleteName[ui::FILE_NAME_MAX]{};
+        if(nav.fileDeleteRequested && files::L && nav.fileDeleteIdx>=0 && nav.fileDeleteIdx<files::L->n)
+            snprintf(deleteName,sizeof deleteName,"%s",files::L->rows[nav.fileDeleteIdx].name);
         if (nav.filesScanRequested) {
             nav.filesScanRequested = false;
             files::scan(nav);
         }
         if (nav.fileDeleteRequested) {
             nav.fileDeleteRequested = false;
-            const bool ok = files::remove(nav.fileDeleteIdx);
+            const bool ok = files::remove(deleteName);
             nav.fileDeleteIdx = -1;
             files::scan(nav);
             ui::filesResult(nav, ok, millis());
         }
-        if (strcmp(files::activeSeen, logging::fileName()) != 0) files::scan(nav);
-        if (files::L) ui::filesSetActive(nav, filescan::activeIndex(*files::L, logging::fileName()));
+        if (!(files::activeSeen==activeCaptureFiles())) files::scan(nav);
+        files::refreshActive(nav);
     } else {
         nav.filesScanRequested = nav.fileDeleteRequested = false;
     }
@@ -1591,6 +1828,7 @@ void loop() {
     if (pollConsole()) rebootNow(set);
 
     constexpr uint32_t ALERT_MS = 6000;
+    ui::AlertRec historyAlert;bool haveHistoryAlert=false;
     s.alertActive = false;
     if (testAlert(s, millis())) {
         // a test alert is up; leave it alone
@@ -1603,6 +1841,7 @@ void loop() {
             (millis() - b.atMs) < ALERT_MS &&
             (!have || b.atMs > best.atMs))  { best = b; have = true; }
         if (have) {
+            historyAlert=best;haveHistoryAlert=true;
             s.alertActive = true;
             s.alertThreat = best.threat;
             s.alertConf   = best.conf;
@@ -1642,45 +1881,71 @@ void loop() {
         }
     }
 
-    if (s.alertActive && testStep < 0) {
-        ui::AlertRec rec;
-        rec.threat = s.alertThreat;
-        rec.conf   = s.alertConf;
-        for (int k = 0; k < ui::SSID_MAX; k++) rec.name[k] = s.alertName[k];
+    if (s.alertActive && testStep < 0 && haveHistoryAlert) {
         const ui::Gnss::Fix& fx = ui::Gnss::fix();
-        alertlog::push(rec, millis(), ui::Gnss::utcEpoch(millis()),
+        alertlog::push(historyAlert, millis(), ui::Gnss::utcEpoch(millis()),
                        ui::Gnss::fresh(millis()), fx.lat7, fx.lon7);
     }
 
     s.set    = set;
     s.screen = nav.screen;
     s.filter = nav.filter;
+    const auto& scans=discovery::metrics();const auto bridgeStats=blebridge::stats();
+    s.localDiag={};s.localDiag.valid=true;s.localDiag.active=set.activeDiscovery;s.localDiag.dwellMs=set.dwellMs;
+    s.localDiag.started=scans.started;s.localDiag.completed=scans.completed;s.localDiag.failed=scans.failed;s.localDiag.omitted=scans.omitted;
+    s.localDiag.bridgeMode=bridgeStats.mode;s.localDiag.connected=bridgeStats.connected;s.localDiag.streaming=bridgeStats.streaming;
+    s.localDiag.bridgeQueued=bridgeStats.queued;s.localDiag.rxDrops=bridgeStats.rxDrops;s.localDiag.txRetries=bridgeStats.txRetries;
+    s.meshPage=nav.meshPage;
+    s.detailPage=nav.detailPage;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    snprintf(s.pcapStatus,sizeof s.pcapStatus,"%s",pcap::status());s.pcapDrops=pcap::dropped();
+#endif
     s.scroll = nav.scroll;
     s.setPage = nav.setPage;
     if (nav.screen == ui::SCR_CODEX) {
-        if (nav.filter == ui::F_BLE) blescan::fillSights(s, nav.scroll);
-        else                         cap::fillSights(s, nav.scroll, nav.filter == ui::F_5G);
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        const int total=nav.filter==ui::F_LOCATED?cap::locatedCount():nav.filter==ui::F_BLE?blescan::sightCount():cap::sightCount(nav.filter==ui::F_5G);
+        nav.scroll=uiproj::pageOffset(total,nav.scroll,uieng::codex(board::PANEL_W,board::PANEL_H).nRows);
+        s.scroll=nav.scroll;
+#endif
+        if (nav.filter == ui::F_BLE) blescan::fillSights(s,nav.scroll);
+        else cap::fillSights(s,nav.scroll,nav.filter==ui::F_5G,nav.filter==ui::F_LOCATED);
     } else if (nav.screen == ui::SCR_ECHOES) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        nav.scroll=uiproj::pageOffset(cap::echoCount(),nav.scroll,uieng::echoes(board::PANEL_W,board::PANEL_H).nRows);s.scroll=nav.scroll;
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        cap::fillEchoes(s, nav.scroll, millis(),uieng::echoes(board::PANEL_W,board::PANEL_H).nRows);
+#else
         cap::fillEchoes(s, nav.scroll, millis());
+#endif
     } else if (nav.screen == ui::SCR_OMENS) {
         alertlog::fill(s, nav.scroll, millis());
         s.omenScroll = nav.scroll;
     } else if (nav.screen == ui::SCR_DOMAIN) {
         const ui::Gnss::Fix& fx = ui::Gnss::fix();
-        cap::fillPlots(s, ui::RANGES[nav.rangeIdx % ui::RANGE_N],
-                       fx.lat7, fx.lon7, ui::Gnss::fresh(millis()));
+        int mapRadius=ui::MAP_R;
+        int mapRange=ui::RANGES[nav.rangeIdx % ui::RANGE_N];
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        mapRadius=domr::radarGeom(uieng::domain(board::PANEL_W,board::PANEL_H).map).r;
+        mapRange=domr::rangeAt(nav.rangeIdx);
+        cap::fillSights(s,0,false,true); // same located Wi-Fi scope as DOMAIN's map
+#endif
+        s.nTrack=0;
+        cap::fillPlots(s, mapRange,
+                       fx.lat7, fx.lon7, ui::Gnss::fresh(millis()), mapRadius);
         if (ui::Gnss::fresh(millis())) {
             const float latDeg = (float)fx.lat7 / 1e7f;
             const float mLat = 111320.0f;
             const float mLon = 111320.0f * cosf(latDeg * 3.14159265f / 180.0f);
-            const float pxPerM = (float)ui::MAP_R / (float)s.rangeM;
+            const float pxPerM = (float)mapRadius / (float)s.rangeM;
             int n = 0;
             for (int i = 0; i < gpstrack::count() && n < ui::MAX_TRACK; i++) {
                 int32_t la, lo;
                 if (!gpstrack::sample(i, la, lo)) continue;
                 const int px = (int)lrintf(((float)(lo - fx.lon7) / 1e7f) * mLon * pxPerM);
                 const int py = (int)lrintf(-((float)(la - fx.lat7) / 1e7f) * mLat * pxPerM);
-                if (px * px + py * py > ui::MAP_R * ui::MAP_R) continue;
+                if (px * px + py * py > mapRadius * mapRadius) continue;
                 s.track[n].dx = (int16_t)px;
                 s.track[n].dy = (int16_t)py;
                 n++;
@@ -1688,10 +1953,28 @@ void loop() {
             s.nTrack = (uint8_t)n;
         }
     } else if (nav.screen == ui::SCR_FILES) {
-        if (files::L) ui::filesPublish(s, nav, *files::L);
+        if (files::L) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+            ui::filesPublish(s,nav,*files::L,uieng::files(board::PANEL_W,board::PANEL_H).nRows);
+#else
+            ui::filesPublish(s,nav,*files::L);
+#endif
+        }
     } else if (nav.screen == ui::SCR_DETAIL) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        bool ble=false;uint8_t mac[6];
+        s.detail=ui::Detail{};
+        if(uiproj::decodeContactKey(nav.detailKey,ble,mac)) {
+            if(ble)blescan::fillDetailByAddress(s,mac,millis());
+            else {
+                cap::fillDetailByAddress(s,mac,millis());
+                if(nav.detailPage==2){cap::fillClients(s,nav.clientOffset,uieng::detailClients(board::PANEL_W,board::PANEL_H).nRows,millis());nav.clientOffset=s.clients.offset;}
+            }
+        }
+#else
         if (nav.filter == ui::F_BLE) blescan::fillDetail(s, nav.selected, millis());
         else cap::fillDetail(s, nav.selected, nav.filter == ui::F_5G, millis());
+#endif
     }
 
     s.touchDown = tpDown;
@@ -1748,6 +2031,21 @@ void loop() {
         // polling -- far faster than a finger.
         delay(5);
 
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        // A SCAN restoration queued by an external paint (animStep.exit while
+        // the panel is still dark) is sliced, so the pass that queued it leaves
+        // most rows unpainted and this early-return would skip the rest. The
+        // scheduler's pending() is the latched obligation; drain it over these
+        // suspended passes in bounded slices -- no NEW snapshot started asleep,
+        // and never while the animation owns the panel -- until coverage
+        // completes, then quiet suspension resumes on its own.
+        if (scanpres::serviceWhileSuspended(engineadapter::pending(), animOn)) {
+            const uint32_t renderStart=micros();
+            engineadapter::service(/*budgetStrips*/4);
+            bootStall("engine suspend service",renderStart);
+        }
+#endif
+
         // ANIM: a dot breathing at <= 2 fps, one small blit per frame. On
         // entry the whole canvas is blanked and blitted once; after that
         // only the dot's own rectangle(s) are touched. (The enter/exit
@@ -1802,6 +2100,93 @@ void loop() {
         lastTheme = s.set.theme;
         themeChanged = true;
     }
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // Engine: compose the whole board-sized panel natively in bounded
+    // strips and skip the 2x canvas path entirely for this screen. The scene is
+    // snapshotted + committed once per frame (stable across the sliced redraw);
+    // the transfer is sliced so capture keeps the CPU between slices.
+    {
+        // The engine owns the whole panel for EVERY screen now: snapshot+commit
+        // a stable frame, service one bounded slice, and return before the
+        // legacy canvas path. (That path still compiles for NM / the default WS
+        // build; it is simply never reached here.)
+        static uint8_t engPrev = 0xFF;
+        // animStep.exit can set animDirtied while still dimmed (an ANIM->DIM/OFF
+        // mode change): engWoke is false then, but the animation overwrote the
+        // panel, so this external paint must force a full native repaint even
+        // for an unchanged scene -- and the flag is consumed here.
+        const bool extPaint = animDirtied;
+        if (extPaint) engineadapter::invalidatePanel();
+        if (switched || engPrev != nav.screen) engineadapter::enter(nav.screen);  // entry / screen change
+        else if (engWoke)                      engineadapter::wake();             // incl. OFF/ANIM wake
+        else if (extPaint)                     engineadapter::enter(nav.screen);  // external paint while dark
+        else if (themeChanged)                 engineadapter::themeChanged();
+        if (extPaint) animDirtied = false;     // consumed in the engine path
+        if (!engineadapter::pending()) {       // snapshot+commit a fresh, stable frame
+            scanr::GnssFix gf;
+            const ui::Gnss::Fix& fx = ui::Gnss::fix();
+            gf.valid = fx.valid; gf.mode = ui::Gnss::status().mode;
+            gf.sats  = fx.used;  gf.ageMs = millis() - fx.atMs;
+            const scanr::Rec rc = logging::saving() ? scanr::Rec::Saving
+                                : logging::state() == logging::ACTIVE  ? scanr::Rec::On
+                                : logging::state() == logging::NO_CARD ? scanr::Rec::NoCard
+                                : logging::lastStopLoss() ? scanr::Rec::Incomplete
+                                :                                        scanr::Rec::Off;
+#if defined(WS_C5_35) || defined(WS_C5_28)
+            const uint32_t pmuStart=micros();
+            const pmu::Batt b = pmu::read(millis());
+            bootStall("pmu read",pmuStart);
+#else
+            // NM has no battery sensing; never fabricate a charge level.
+            struct { bool ok=false,cell=false,charging=false; int pct=0; } b;
+#endif
+            { const uint32_t _s = micros(); engineadapter::snapshot(nav, s, gf, rc, b.ok && b.cell, (int)b.pct, millis(), b.ok, b.charging); bootStall("engine snapshot", _s); }
+        }
+        const uint32_t tD = millis();
+        const uint32_t renderStart=micros();
+        engineadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
+        bootStall("engine service",renderStart);
+        engineadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
+        perflog::frame(millis() - tD, 0);
+
+        static uint32_t engLogAt = 0;
+        if (millis() - engLogAt >= 10000) {
+            const uint32_t iv = millis() - engLogAt; engLogAt = millis();
+            const scanpres::PresentMetrics& m = engineadapter::metrics();
+            logf("[eng] fr %u sl %u compose %luus xfer %luus maxsl %luus rpm %lu diff %luus entry %lums gap %lums wifi %lu ble %lu\n",
+                 (unsigned)m.frames, (unsigned)m.slices,
+                 (unsigned long)m.composeUs, (unsigned long)m.transferUs,
+                 (unsigned long)m.maxSliceUs, (unsigned long)m.renderPerMille(iv),
+                 (unsigned long)m.diffUs,(unsigned long)m.entryMaxMs,(unsigned long)loopGapMax,
+                 (unsigned long)m.capFrames,(unsigned long)m.bleReports);
+            loopGapMax=0;
+            uint32_t gap, missed, dropped;
+            touch::samplingStats(gap, missed, dropped);
+            logf("[touch] maxgap %lums deadline-misses %lu dropped %lu\n",
+                 (unsigned long)gap, (unsigned long)missed, (unsigned long)dropped);
+            logf("[mem] internal %u min %u largest %u dma %u psram %u loop-stack %u bytes\n",
+                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+                 (unsigned)ESP.getFreePsram(),
+                 (unsigned)(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
+            engineadapter::clearMetrics();
+        }
+        engPrev = nav.screen;
+        // Drain observed press events after presentation too. A full tap during
+        // composition survives in the sampler queue even when the finger is up.
+        if (!wasDimmed) engineadapter::dispatchTouch(nav, set, s);
+        // If that post-render dispatch navigated, establish the new screen's
+        // entry THIS pass rather than next loop. Otherwise next loop's
+        // top-of-loop sample would dispatch against a screen whose entry has not
+        // run (the composed screen is still the old one) -- an ordering hazard.
+        // engPrev is this pass's rendered screen, so a post-render navigation
+        // shows as a difference here; the new screen's strips render next pass.
+        if (nav.screen != engPrev) { engineadapter::enter(nav.screen); engPrev = nav.screen; }
+        frame++;
+        return;
+    }
+#endif
     // One dispatcher for both orientations (ui/draw.h): the landscape screens
     // as they were, or their portrait layouts and placeholders.
     ui::drawScreen(canvas, s, &dirty);
@@ -1834,7 +2219,7 @@ void loop() {
         blitRect(canvas.px, dirty.r[i]);
         pushed += (uint32_t)dirty.r[i].w * dirty.r[i].h;
     }
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
     stripTick(millis());
 #endif
     const uint32_t tBlit = millis();

@@ -56,7 +56,7 @@ Turning it on paid twice over. Moving the tables out freed internal RAM
 from 12 ms to 7 ms** -- more internal DMA-capable memory left for
 Arduino_GFX's transfer buffer. That second one was not planned.
 
-![UMBRAVOX](docs/umbravox.png)
+![UMBRAVOX](umbravox.png)
 
 ## Why it is built this way
 
@@ -101,7 +101,7 @@ Swipe navigation was built first and replaced: it is invisible until you
 already know it is there, and on a 2.8" panel a diagonal swipe fights the
 scroll.
 
-![codex](docs/codex.png)
+![codex](codex.png)
 
 Codex rows: band stripe, SSID (`<HIDDEN>` is a finding, not a blank), a
 four-block signal meter, and channel -- or `BLE` for advertisers, which have
@@ -121,11 +121,11 @@ Two details that cost a round trip each:
 
 ### Alerts
 
-![alert](docs/alert.png)
+![alert](alert.png)
 
 The card **materialises** rather than appearing:
 
-![sequence](docs/alert-sequence.png)
+![sequence](alert-sequence.png)
 
 1. **The strike** -- the heptagram slams down oversized and contracts onto the
    card, through a wash of the confidence colour (~90 ms).
@@ -304,7 +304,7 @@ page and its tests are in `web/designer/`; Pages builds and publishes it.
 
 ### ATTUNE
 
-![attune](docs/attune.png)
+![attune](attune.png)
 
 | | range | effect |
 | --- | --- | --- |

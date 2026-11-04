@@ -3,14 +3,17 @@
 #pragma once
 #include <stdint.h>
 #include "model.h"
+#include "mesh_timing.h"
 
 namespace meshcore {
 
 constexpr int MAX_NODES = 16;
 
 struct NodeRec {
+    meshtiming::TelemetryState telemetry;
     uint8_t  mac[6];
     uint32_t lastMs;
+    uint32_t lastReportMs;
     uint32_t hellos, reports, recs;
     // Link quality, from the sequence numbers the node stamps on each
     // report. Counting what arrived says nothing about what did not.
@@ -27,6 +30,8 @@ struct NodeRec {
 
 void begin();
 void tick(uint32_t nowMs);
+void setTiming(uint8_t profile,uint16_t dwell,bool active);
+void sendTiming(const uint8_t* target);
 
 // The CYD clears this while any coordinator is live, so its Core stops handing
 // out assignments and leaves node placement entirely to the collector. Default

@@ -1,7 +1,8 @@
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
 #include "ws_c5_expander.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include "ws_c5_bus.h"
 #include "board.h"
 
 namespace exio {
@@ -63,6 +64,15 @@ bool begin() {
     // 100kHz: the bus runs over the panel flex and is shared by four chips.
     Wire.begin(board::PIN_SDA, board::PIN_SCL, 100000u);
 
+#if defined(WS_C5_28)
+    // 2.8 has no EXIO5 panel rail. Follow its reset timing; keep speaker disabled.
+    outLatch=(1u<<TP_RST)|(1u<<LCD_RST);
+    bool ok=write(MODE_REG,0xFF) && write(OUTPUT_REG,outLatch) && write(PWM_REG,0);
+    ok=ok && set(LCD_RST,false); delay(50);
+    ok=ok && set(LCD_RST,true); delay(120);
+    ok=ok && set(TP_RST,false); delay(100);
+    ok=ok && set(TP_RST,true); delay(500);
+#else
     // Outputs first, then the rail up TOGETHER with both resets released.
     // Resetting the touch chip while its rail is off leaves the FT6336 deaf.
     bool ok = write(MODE_REG, 0xFF) &&
@@ -83,6 +93,7 @@ bool begin() {
     ok = ok && set(TP_RST, false);  delay(20);
     ok = ok && set(TP_RST, true);   delay(300);   // FT6336 boot time
 
+#endif
     // Backlight stays dark until setup() has cleared the panel, so the first
     // thing on the glass is not a frame of uninitialised RAM.
     ready = ok;
@@ -91,6 +102,7 @@ bool begin() {
 }
 
 void backlight(uint8_t duty) {
+    wsbus::Guard guard;
     if (ready) write(PWM_REG, duty);
 }
 

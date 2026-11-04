@@ -48,12 +48,16 @@ struct Hit {
 
 // A recorded hit, as the radios hand it to the UI.
 constexpr int ALERT_NAME = 20;
+enum class AlertAddress : uint8_t {Missing, WifiBssid, WifiTarget, BlePublic, BleRandom};
+
 struct AlertRec {
     uint8_t     threat = TH_NONE;
     uint8_t     conf   = CONF_LOW;
     const char* why    = "";
     char        name[ALERT_NAME] = {0};
     uint32_t    atMs   = 0;
+    uint8_t mac[6]{};
+    AlertAddress address = AlertAddress::Missing;
 };
 
 const char* threatName(uint8_t t);

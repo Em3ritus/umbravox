@@ -10,7 +10,7 @@
 // directory listing; admit() still enforces the cap of MAX_PACKS.
 //
 // The folder rule applies to the LAST path component, so a pack can live
-// anywhere on disk ("/home/me/packs/ember") but its folder is "ember".
+// anywhere on disk ("/packs/ember") but its folder is "ember".
 // Header-only and static: include it from one translation unit per binary.
 #pragma once
 #include "../ui/palette.h"

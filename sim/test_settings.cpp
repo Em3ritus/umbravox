@@ -45,7 +45,7 @@ int main() {
     const int fullId = pal::addPack(mkPack("FULL", 0x07FF, SW_RADAR), nullptr);
     const int noRadarId = pal::addPack(
         mkPack("NORADAR", (uint16_t)((1u << SW_STAR) | (1u << SW_PULSE)), SW_STAR), nullptr);
-    check("packs loaded for the loops", fullId == 3 && noRadarId == 4 && pal::themeCount() == 5);
+    check("packs loaded for the loops", fullId == pal::TH_COUNT && noRadarId == pal::TH_COUNT+1 && pal::themeCount() == pal::TH_COUNT+2);
 
     // Adding a field to Settings must not quietly widen what this test treats
     // as padding. A byte the constructor never writes is indistinguishable
@@ -65,7 +65,8 @@ int main() {
     // Still 14 with orient (portrait mode): it took the reserved `spare`
     // byte, as model.h asked the next setting to. No padding was added and
     // none removed; the next setting after orient widens the struct.
-    static_assert(sizeof(Settings) == 14,
+    // Bridge state and remembered app keep the struct padding-free at 18 bytes.
+    static_assert(sizeof(Settings) == 26,
                   "Settings changed size -- see the padding note above, and "
                   "confirm every field has a default member initializer");
 
@@ -104,6 +105,9 @@ int main() {
         for (int th = 0; th < pal::themeCount(); th++) {
             Settings base;
             base.theme = (uint8_t)th;
+            base.bridgeApp = 2;
+            base.pcapEnabled=1;base.activeDiscovery=1; base.meshProfile=1; base.nodeDwellMs=150;
+            base.bleBridge = 1; // high-byte corruption clamps to OFF, a detectable change
             clampSettings(base);
             for (size_t off = 0; off < sizeof(Settings); off++) {
                 if (z[off] != f[off]) continue;     // padding, not a field

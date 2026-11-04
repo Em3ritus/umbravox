@@ -386,12 +386,40 @@ bool onTap(Nav& n, Settings& st, int x, int y) {
 
 } // namespace
 
+// Engine-adapter entry points. The WS engine path routes a settings step
+// through these so it mutates Settings EXACTLY as the legacy screens do (via
+// the same anon-namespace adjust/adjustAspect/flipOrient), keeping the engine
+// and NM in lock-step. Knob order matches uieng ATTUNE: 0 ALERT, 1 DWELL,
+// 2 BLE, 3 BANDS, 4 BRIGHT, 5 IDLE, 6 AUTOLOG, 7 ORIENT, 8 BRIDGE.
+void applyKnobStep(Settings& st, int knob, int dir) {
+    switch (knob) {
+        case 6: st.autoLog = st.autoLog ? 0 : 1; break;   // AUTOLOG: a toggle
+        case 8: st.bleBridge = st.bleBridge ? 0 : st.bridgeApp; break;
+        case 9: st.bridgeApp = st.bridgeApp==1 ? 2 : 1;
+                if(st.bleBridge)st.bleBridge=st.bridgeApp; break;
+        case 13: st.pcapEnabled=st.pcapEnabled?0:1;break;
+        case 12: st.activeDiscovery = st.activeDiscovery ? 0 : 1; break;
+        case 10: st.meshProfile = st.meshProfile ? 0 : 1; break;
+        case 11: st.nodeDwellMs = (uint16_t)(dir<0?(st.nodeDwellMs<=110?100:st.nodeDwellMs-10):(st.nodeDwellMs>=590?600:st.nodeDwellMs+10)); break;
+        case 7: flipOrient(st); break;                     // ORIENT
+        default: adjust(st, knob, dir); break;             // 0..5 map 1:1 to adjust()
+    }
+}
+// row 0 THEME, 1 SWEEP, 2 ALERT (matches uieng ASPECT / adjustAspect).
+void applyAspectStep(Settings& st, int row, int dir) { adjustAspect(st, row, dir); }
+
 void clampSettings(Settings& s) {
     if (s.alertMin > CONF_OFF) s.alertMin = CONF_MED;
     if (s.bright < 1)   s.bright = 1;
     if (s.bright > 100) s.bright = 100;
     if (s.dwellMs < 100) s.dwellMs = 100;
     if (s.dwellMs > 600) s.dwellMs = 600;
+    if(s.pcapEnabled>1)s.pcapEnabled=0;
+    if(s.activeDiscovery>1)s.activeDiscovery=0;
+    if(s.meshProfile>1)s.meshProfile=0;
+    if(s.nodeDwellMs<100 || s.nodeDwellMs>600)s.nodeDwellMs=220;
+    if (s.bridgeApp<1 || s.bridgeApp>2)s.bridgeApp=1;
+    if (s.bleBridge > 2) s.bleBridge = 0;
     if (s.bleDuty > 100) s.bleDuty = 100;
     if (s.bands > 2)     s.bands = 0;
     if (s.idleIdx >= IDLE_N) s.idleIdx = 2;
@@ -417,8 +445,8 @@ void setPortraitAllowed(bool ok) { g_portraitOk = ok; }
 bool portraitAllowed() { return g_portraitOk; }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
-    return a.alertMin == b.alertMin && a.bright  == b.bright  &&
-           a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
+    return a.pcapEnabled==b.pcapEnabled && a.activeDiscovery==b.activeDiscovery && a.nodeDwellMs==b.nodeDwellMs && a.meshProfile==b.meshProfile && a.alertMin == b.alertMin && a.bright  == b.bright  &&
+           a.bridgeApp == b.bridgeApp && a.bleBridge == b.bleBridge && a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&
            a.labels   == b.labels   && a.alertStyle == b.alertStyle &&

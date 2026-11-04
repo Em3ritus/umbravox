@@ -1,0 +1,38 @@
+{
+  "format": 1,
+  "name": "SLICK",
+  "author": "slickrick773",
+  "header": "SLICK",
+  "dial": "compact",
+  "centrepiece": "radar-emblem",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#0D090B",
+    "panel": "#1A1115",
+    "grid": "#28161D",
+    "edge": "#482730",
+    "edgeLit": "#71434D",
+    "dim": "#B8A6AE",
+    "text": "#E4DAD4",
+    "bright": "#FFF3E8",
+    "witch": "#BE5A60",
+    "witchHi": "#DF8A87",
+    "bone": "#C6AA88",
+    "sweep": "#8F3E48",
+    "sweepHi": "#D47B76",
+    "live": "#DAA052",
+    "liveHi": "#FFF3E8",
+    "magenta": "#BE5A60",
+    "ice": "#B39A72",
+    "green": "#A1CFAF",
+    "amber": "#FFC45D",
+    "red": "#FF6D79"
+  },
+  "badge": "diamond",
+  "artOpacity": 100,
+  "artScale": 64
+}

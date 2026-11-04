@@ -6,6 +6,7 @@
 
 #if defined(NM_CYD_C5)
 #include <SPI.h>
+#include <atomic>
 
 namespace touch {
 namespace {
@@ -38,7 +39,7 @@ constexpr uint16_t CAL_Y_RIGHT  = 240,  CAL_Y_LEFT = 3640;   // rawY -> screen X
 // The calibration above was measured with the display at this rotation; the
 // display's current one is `rot` (setRotation).
 constexpr int CAL_ROTATION = 3;
-uint8_t rot = board::ROTATION;
+std::atomic<uint8_t> rot{board::ROTATION};
 
 // Below this the panel is not being pressed, it is just noise.
 constexpr uint16_t Z_THRESHOLD = 400;
@@ -84,7 +85,7 @@ int16_t mapInv(uint16_t raw, uint16_t lo, uint16_t hi, int16_t out) {
 
 } // namespace
 
-void setRotation(uint8_t r) { rot = (uint8_t)(r & 3); }
+void setRotation(uint8_t r) { rot.store(uint8_t(r & 3)); }
 
 void begin() {
     pinMode(PIN_CS, OUTPUT);
@@ -95,7 +96,7 @@ void begin() {
     Serial.println("touch: XPT2046 on CS 1, polled (no IRQ line on this board)");
 }
 
-Point read() {
+Point readSensor() {
     Point p;
 
     SPI.beginTransaction(SPISettings(SPI_HZ, MSBFIRST, SPI_MODE0));
@@ -124,9 +125,11 @@ Point read() {
         const int lx = mapInv(ry, CAL_Y_RIGHT,  CAL_Y_LEFT, 2 * ui::W);
         const int ly = mapInv(rx, CAL_X_BOTTOM, CAL_X_TOP,  2 * ui::H);
         int cx, cy;
-        touchmap::toCanvas(CAL_ROTATION, rot, lx, ly, cx, cy);
-        p.x = (int16_t)cx;
-        p.y = (int16_t)cy;
+        touchmap::toPanel(CAL_ROTATION, rot.load(), lx, ly, cx, cy);
+        p.panelX = (int16_t)cx;
+        p.panelY = (int16_t)cy;
+        p.x = (int16_t)(cx / 2);
+        p.y = (int16_t)(cy / 2);
     }
     return p;
 }
@@ -134,13 +137,20 @@ Point read() {
 } // namespace touch
 #endif // NM_CYD_C5
 
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
 #include <Wire.h>
+#include "ws_c5_bus.h"
 #include "ws_c5_expander.h"
+#include <Preferences.h>
+#include "cst3530_sample.h"
 
 namespace touch {
 namespace {
 
+#if defined(WS_C5_28)
+constexpr uint8_t ADDR=0x58;
+constexpr int NATIVE_W=240,NATIVE_H=320;
+#else
 constexpr uint8_t ADDR      = 0x38;
 constexpr uint8_t TD_STATUS = 0x02;   // point count, then 6 bytes of point 1
 constexpr uint8_t ID_G_THGROUP = 0x80; // touch threshold; lower = more sensitive
@@ -151,12 +161,44 @@ constexpr uint8_t ID_G_CIPHER  = 0xA3; // chip id
 constexpr int NATIVE_W = 320;
 constexpr int NATIVE_H = 480;
 
-// A finger held still occasionally reads back as no points for one poll.
-// Bridge a gap this short so a press does not read as a lift and re-press.
+#endif
+// A read can FAIL (bus glitch / short read): bridge a gap this short so a
+// momentary read failure does not read as a lift and re-press. A *successful*
+// read that reports zero fingers is NOT bridged -- it is a real release (see
+// Sampled below), reported at once so the edge detector rearms for the next tap.
 constexpr uint32_t DROPOUT_MS = 90;
 
 bool present = false;
+int threshold = 12;
 
+// Outcome of one sensor read, kept distinct so release-smoothing covers ONLY a
+// read failure: Touch = valid coords; Lift = a valid read reporting no finger
+// (a genuine release); Fail = the read itself failed/garbage after retries.
+enum class Sampled : uint8_t { Touch, Lift, Fail };
+
+#if defined(WS_C5_28)
+bool address(uint32_t reg,bool stop){
+    Wire.beginTransmission(ADDR);
+    for(int shift=24;shift>=0;shift-=8)Wire.write(uint8_t(reg>>shift));
+    return Wire.endTransmission(stop)==0;
+}
+Sampled sample(uint16_t& nx,uint16_t& ny){
+    wsbus::Guard guard;
+    uint8_t data[9];
+    // CST3530 uses a four-byte register address and repeated START, unlike FT6336.
+    if(!address(0xD0070000,false))return Sampled::Fail;
+    const int got=Wire.requestFrom(int(ADDR),9);
+    if(got!=9){while(Wire.available())Wire.read();address(0xD00002AB,true);return Sampled::Fail;}
+    for(auto& value:data)value=uint8_t(Wire.read());
+    if(!address(0xD00002AB,true))return Sampled::Fail; // acknowledge every complete packet
+    switch(cst3530::decode(data,sizeof data,nx,ny)){
+      case cst3530::Result::Touch:return Sampled::Touch;
+      case cst3530::Result::Lift:return Sampled::Lift;
+      case cst3530::Result::Fail:return Sampled::Fail;
+    }
+    return Sampled::Fail;
+}
+#else
 // Register read with a STOP between the address write and the read, not a
 // repeated start. The bus is shared with the expander and the PMU, and on
 // this board a repeated-start read is what can leave it wedged.
@@ -173,27 +215,35 @@ bool readRegs(uint8_t reg, uint8_t* buf, uint8_t len) {
 // Wire.begin(), reads stop completing (writes ACK, reads come back 0) until
 // the controller is re-opened, so it is re-opened on every read. Verified on
 // this board; do not remove.
-bool sample(uint16_t& nx, uint16_t& ny) {
+Sampled sample(uint16_t& nx, uint16_t& ny) {
+    wsbus::Guard guard;
     for (int attempt = 0; attempt < 3; attempt++) {
         Wire.end();
         Wire.begin(board::PIN_SDA, board::PIN_SCL, 100000u);
         uint8_t d[5];
-        if (!readRegs(TD_STATUS, d, sizeof d)) continue;
+        if (!readRegs(TD_STATUS, d, sizeof d)) continue;   // the read FAILED -> retry
         const uint8_t n = d[0] & 0x0F;
-        if (n == 0) return false;               // a clean "nobody there"
-        if (n > 2) continue;                    // garbage; try again
+        if (n == 0) return Sampled::Lift;       // a valid read, zero fingers -> a real release
+        if (n > 2) continue;                    // garbage count; try again
         nx = (uint16_t)(((d[1] & 0x0F) << 8) | d[2]);
         ny = (uint16_t)(((d[3] & 0x0F) << 8) | d[4]);
-        if (nx < NATIVE_W && ny < NATIVE_H) return true;
+        if (nx < NATIVE_W && ny < NATIVE_H) return Sampled::Touch;
+        // coords out of range -> try again
     }
-    return false;
+    return Sampled::Fail;                       // reads failed/garbage every attempt
 }
+
+#endif
 
 // Native portrait -> the landscape frame the display is drawn in. The panel
 // runs at Arduino_GFX rotation board::ROTATION; this is the same turn.
 void rotate(uint16_t nx, uint16_t ny, int& sx, int& sy) {
+#if defined(WS_C5_28)
+    cst3530::landscape(nx,ny,sx,sy);
+#else
     if (board::ROTATION == 1) { sx = ny;                sy = NATIVE_W - 1 - nx; }
     else                      { sx = NATIVE_H - 1 - ny; sy = nx; }
+#endif
 }
 
 } // namespace
@@ -202,19 +252,31 @@ void setRotation(uint8_t) {}     // landscape only on this board (board.h)
 
 void begin() {
     exio::begin();   // touch reset is on the expander; a no-op if already up
+#if defined(WS_C5_28)
+    pinMode(board::PIN_TOUCH_IRQ,INPUT);
+    wsbus::Guard guard;
+    Wire.beginTransmission(ADDR);present=Wire.endTransmission()==0;
+    threshold=-1; // sensitivity register is not specified for CST3530
+    Serial.printf("touch: CST3530 on I2C 0x58 %s\n",present?"(ok)":"(not found)");
+#else
     uint8_t id = 0;
     present = readRegs(ID_G_CIPHER, &id, 1) && id == 0x64;   // FT6336U
     Serial.printf("touch: FT6336 on I2C 0x38, id 0x%02X %s\n", id,
                   present ? "(ok)" : "(not found -- no touch)");
     // 12 rather than the default 22: a bare panel misses light taps at 22.
     // Raise it toward 30-40 if a case or film brings phantom touches.
+    Preferences prefs;
+    if(prefs.begin("touch",false)){threshold=prefs.getUChar("threshold",12);prefs.end();}
+    if(threshold<8 || threshold>30)threshold=12;
     Wire.beginTransmission(ADDR);
     Wire.write(ID_G_THGROUP);
-    Wire.write(12);
-    Wire.endTransmission();
+    Wire.write(threshold);
+    const uint8_t err=Wire.endTransmission();
+    Serial.printf("touch: threshold %d (write %s)\n",threshold,err?"failed":"ok");
+#endif
 }
 
-Point read() {
+static Point readSensor() {
     static uint16_t lastX = 0, lastY = 0;
     static uint32_t lastOk = 0;
 
@@ -222,13 +284,20 @@ Point read() {
     if (!present) return p;
 
     uint16_t nx, ny;
+    const Sampled sm = sample(nx, ny);
+    // Timestamp AFTER the (possibly blocking) retries: a failed read's bridge age
+    // must be measured from when the failure RETURNED, not when the read began,
+    // or a slow-failing read can hand back a contact older than DROPOUT_MS.
     const uint32_t now = millis();
-    if (sample(nx, ny)) {
+    if (sm == Sampled::Touch) {
         lastX = nx; lastY = ny; lastOk = now;
+    } else if (sm == Sampled::Lift) {
+        lastOk = 0;                            // a real release: report it NOW so the edge rearms
+        return p;                              // (no bridge -- the finger is genuinely up)
     } else if (!(lastOk && now - lastOk < DROPOUT_MS)) {
-        lastOk = 0;
+        lastOk = 0;                            // a read FAILURE, and the bridge window has passed
         return p;
-    }
+    }                                          // else: read failure within the bridge -> hold last contact
 
     int sx, sy;
     rotate(lastX, lastY, sx, sy);
@@ -236,6 +305,10 @@ Point read() {
     p.rawY = lastY;
     p.z    = 0;            // capacitive: no pressure worth the name
     p.any  = true;
+    // Panel coordinates for the native-resolution engine, kept even when the
+    // contact is off the 2x canvas (the status strip / side margins).
+    p.panelX = (int16_t)sx;
+    p.panelY = (int16_t)sy;
 
     // Off the 2x canvas is the status strip or the side margins: a contact,
     // but not one that lands on anything.
@@ -250,4 +323,99 @@ Point read() {
 }
 
 } // namespace touch
-#endif // WS_C5_35
+#endif // Waveshare sensors
+
+namespace touch {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+namespace {
+portMUX_TYPE eventMux = portMUX_INITIALIZER_UNLOCKED;
+inputevents::PressQueue presses;
+Point latest;
+bool sampling = false;
+uint32_t sampleGapMax = 0, deadlineMisses = 0;
+void sampler(void*) {
+    inputevents::Deadline deadline;
+    uint32_t last = millis();
+    for (;;) {
+        portENTER_CRITICAL(&eventMux);
+        const uint32_t epoch = presses.epoch();
+        portEXIT_CRITICAL(&eventMux);
+        const Point p = readSensor();
+        const uint32_t now = millis();
+        portENTER_CRITICAL(&eventMux);
+        latest = p;
+        presses.sample(p.any, p.panelX, p.panelY, epoch);
+        if (now - last > sampleGapMax) sampleGapMax = now - last;
+        const uint32_t wait = deadline.complete(now);
+        deadlineMisses = deadline.missed();
+        portEXIT_CRITICAL(&eventMux);
+        last = now;
+        vTaskDelay(pdMS_TO_TICKS(wait) ? pdMS_TO_TICKS(wait) : 1);
+    }
+}
+}
+bool startSampling() {
+    if (sampling) return true;
+#if defined(WS_C5_35) || defined(WS_C5_28)
+    (void)wsbus::mutex();
+#endif
+    sampling = xTaskCreate(sampler, "touch", 4096, nullptr, 3, nullptr) == pdPASS;
+    return sampling;
+}
+Point read() {
+    if (!sampling) {
+        const Point p = readSensor();
+        portENTER_CRITICAL(&eventMux);
+        presses.sample(p.any, p.panelX, p.panelY, presses.epoch());
+        latest=p;
+        portEXIT_CRITICAL(&eventMux);
+        return p; // explicit degraded polling fallback if task allocation failed
+    }
+    portENTER_CRITICAL(&eventMux);
+    Point p = latest;
+    inputevents::Press queued;
+    // A completed tap still wakes a dimmed screen and holds off the next GPS
+    // cycle. Raw release/edge detection stays exclusively in the sampler.
+    if (!p.any && presses.peek(queued)) {
+        p.any = true; p.panelX = queued.x; p.panelY = queued.y;
+    }
+    portEXIT_CRITICAL(&eventMux);
+    return p;
+}
+Point observed() { portENTER_CRITICAL(&eventMux); Point p=latest; portEXIT_CRITICAL(&eventMux); return p; }
+int sensitivity(){
+#if defined(NM_CYD_C5)
+    return -1; // XPT2046 pressure threshold is calibrated, not an FT6336 register.
+#else
+    return threshold;
+#endif
+}
+bool setSensitivity(int value){
+#if defined(WS_C5_28) || defined(NM_CYD_C5)
+    (void)value;return false;
+#else
+    if(!present || value<8 || value>30)return false;
+    { wsbus::Guard guard;
+      Wire.beginTransmission(ADDR);Wire.write(ID_G_THGROUP);Wire.write(uint8_t(value));
+      if(Wire.endTransmission()!=0)return false;
+    }
+    threshold=value;
+    Preferences prefs;if(!prefs.begin("touch",false))return false;
+    const bool saved=prefs.putUChar("threshold",uint8_t(value))==1;prefs.end();return saved;
+#endif
+}
+bool takePress(inputevents::Press& p) {
+    portENTER_CRITICAL(&eventMux); const bool ok = presses.pop(p); portEXIT_CRITICAL(&eventMux); return ok;
+}
+void newScreen() { portENTER_CRITICAL(&eventMux); presses.navigate(); portEXIT_CRITICAL(&eventMux); }
+void cancelPresses() { portENTER_CRITICAL(&eventMux); presses.cancel(); portEXIT_CRITICAL(&eventMux); }
+void samplingStats(uint32_t& gap, uint32_t& missed, uint32_t& dropped) {
+    portENTER_CRITICAL(&eventMux);
+    gap = sampleGapMax; missed = deadlineMisses; dropped = presses.dropped();
+    portEXIT_CRITICAL(&eventMux);
+}
+#else
+Point read() { return readSensor(); }
+#endif
+
+} // namespace touch

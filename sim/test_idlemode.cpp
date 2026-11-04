@@ -19,6 +19,7 @@ static void check(const char* what, bool ok) {
 using namespace idlemode;
 
 int main() {
+    for(int b=1;b<=100;b++)check("idle dim never exceeds selected brightness",dimPercent(b)<=b);
     const uint8_t BR = 204, DIMP = 25;   // 80% bright; dim = bright/8
 
     printf("mode values and clamping:\n");

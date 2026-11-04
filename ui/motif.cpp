@@ -42,7 +42,7 @@ void drawEmblem(Canvas& c, const themepack::Emblem& e, int cx, int cy, int r,
             int sy = (y - (cy - r)) * eh / d;
             if (sx < 0) sx = 0; else if (sx >= ew) sx = ew - 1;
             if (sy < 0) sy = 0; else if (sy >= eh) sy = eh - 1;
-            const uint16_t col = e.pal[e.px[sy * ew + sx]];
+            const uint16_t col = e.pal[themepack::pixel(e,sy * ew + sx)];
             c.pixel(x, y, applyLift(col, liftOverride));
         }
     }
@@ -60,6 +60,7 @@ void heptagram(Canvas& c, int cx, int cy, int r, uint16_t col) {
 
 void drawMotif(Canvas& c, uint8_t theme, int cx, int cy, int r, uint32_t frame,
                int lift, uint16_t col) {
+    if(pal::centrepiece(theme)==pal::CP_RADAR)return;
     const themepack::Emblem* e = pal::emblem(theme);
     if (e) drawEmblem(c, *e, cx, cy, r, frame, lift);
     else   heptagram(c, cx, cy, r, col);

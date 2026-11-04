@@ -16,10 +16,14 @@ namespace ui {
 
 enum Screen : uint8_t { SCR_SCAN = 0, SCR_CODEX, SCR_DETAIL, SCR_DOMAIN, SCR_MESH, SCR_OMENS, SCR_ECHOES, SCR_GRIMOIRE, SCR_ATTUNE, SCR_ASPECT, SCR_FILES, SCR_COUNT };
 enum Filter : uint8_t { F_WIFI = 0, F_5G, F_BLE, F_COUNT };
+constexpr uint8_t F_LOCATED = 3; // native engine: located Wi-Fi observations
 
 struct Nav {
     uint8_t screen = SCR_SCAN;
     uint8_t filter = F_WIFI;
+    uint8_t meshPage = 0;
+    uint8_t detailPage = 0;
+    int16_t clientOffset = 0;
     int16_t scroll = 0;
     int16_t maxScroll = 0;      // set by the caller from the row count
 
@@ -28,6 +32,7 @@ struct Nav {
     int16_t startX = 0, startY = 0;
     int16_t lastX = 0, lastY = 0;
     int16_t dragAccum = 0;      // leftover finger pixels, below one row
+    char detailKey[20] = {};  // native detail selection survives new arrivals
     uint16_t selected = 0;      // which codex row the detail screen is showing
     uint8_t  rangeIdx = 1;      // territory map scale
     uint8_t  setPage = 0;       // settings page (0-based, < SET_PAGES); back to 0 on leaving
@@ -78,6 +83,12 @@ bool navTouch(Nav& n, Settings& set, bool down, int16_t x, int16_t y);
 // Force a Settings into range. Shared so that loading a stored blob and
 // stepping a knob cannot disagree about what is valid.
 void clampSettings(Settings& s);
+
+// Engine-adapter settings stepping: apply an ATTUNE knob step (knob 0..8) or an
+// ASPECT step (row 0 THEME, 1 SWEEP, 2 ALERT) the same way the legacy screens
+// do, so the WS engine path and the NM/legacy path stay in lock-step.
+void applyKnobStep(Settings& st, int knob, int dir);
+void applyAspectStep(Settings& st, int row, int dir);
 
 // Whether this board can show ORIENT_PORTRAIT. True unless the device says
 // otherwise at boot (the Waveshare 3.5" is LANDSCAPE ONLY); clampSettings

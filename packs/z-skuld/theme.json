@@ -1,0 +1,37 @@
+{
+  "format": 1,
+  "name": "SKULD",
+  "author": "slickrick773",
+  "header": "SKULD",
+  "dial": "compact",
+  "centrepiece": "radar-emblem",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#080D12",
+    "panel": "#101922",
+    "grid": "#172B38",
+    "edge": "#294452",
+    "edgeLit": "#9457D8",
+    "dim": "#A6B7C9",
+    "text": "#D6E0EA",
+    "bright": "#F2F6FA",
+    "witch": "#28CFF0",
+    "witchHi": "#86EEFF",
+    "bone": "#BBC8D6",
+    "sweep": "#28CFF0",
+    "sweepHi": "#AD6CFF",
+    "live": "#9457D8",
+    "liveHi": "#F2F6FA",
+    "magenta": "#28CFF0",
+    "ice": "#AD6CFF",
+    "green": "#68D9B2",
+    "amber": "#FFC45D",
+    "red": "#FF6D79"
+  },
+  "artOpacity": 100,
+  "artScale": 64
+}

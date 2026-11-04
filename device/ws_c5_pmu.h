@@ -18,7 +18,7 @@ struct Batt {
     bool     usb      = false;   // VBUS present
     bool     cell     = false;   // a cell is connected
     bool     charging = false;   // only meaningful with `cell`
-    uint8_t  pct      = 0;       // only meaningful with `cell`
+    uint8_t  pct      = 0;       // 0..100; 255 means unavailable; only meaningful with `cell`
     uint16_t mv       = 0;       // only meaningful with `cell`
 };
 

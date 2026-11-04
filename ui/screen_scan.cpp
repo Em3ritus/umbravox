@@ -102,8 +102,8 @@ const char* screenName(uint8_t screen, bool plain) {
         case SCR_CODEX:    return plain ? "FOUND"    : "CODEX";
         case SCR_DETAIL:   return plain ? "DETAIL"   : "SIGHTING";
         case SCR_DOMAIN:   return plain ? "MAP"      : "DOMAIN";
-        case SCR_MESH:     return "MESH";
-        case SCR_OMENS:    return plain ? "ALERTS"   : "OMENS";
+        case SCR_MESH:     return "NODES";
+        case SCR_OMENS:    return plain ? "ALERTS"   : "ALERTS";
         case SCR_ECHOES:   return plain ? "PROBES"   : "ECHOES";
         case SCR_GRIMOIRE: return plain ? "MENU"     : "GRIMOIRE";
         case SCR_ATTUNE:   return plain ? "SETTINGS" : "ATTUNE";
@@ -645,7 +645,7 @@ void drawAlertIn(Canvas& c, const State& s, int X, int Y, int Wd, int Hd) {
                 case AL_LOCKON: rite = AL_LOCKON; break;
                 default:        rite = AL_SUPERNOVA; break;
             }
-        } else if (s.set.theme >= pal::TH_COUNT) {
+        } else if (s.set.theme >= pal::TH_SLICK) {
             switch (pal::packRite(s.set.theme)) {
                 case themepack::RITE_SUPERNOVA: rite = AL_SUPERNOVA; break;
                 case themepack::RITE_VORTEX:     rite = AL_VORTEX;    break;
@@ -807,7 +807,9 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
 
     const pal::Centrepiece cp = pal::centrepiece(s.set.theme);
     const themepack::Emblem* emb = cp == pal::CP_EMBLEM ? pal::emblem(s.set.theme) : nullptr;
-    if (cp == pal::CP_SEAL) {
+    if(cp==pal::CP_RADAR){
+        for(int k=1;k<=3;k++)c.dottedCircle(cx,cy,rField*k/3,pal::EDGE,1);
+    } else if (cp == pal::CP_SEAL) {
         // heat is alertConf * 85, and alertConf is one of CONF_LOW..CONF_OFF
         // (0..3), so heat only ever takes the values 0, 85, 170 or 255.
         // seal.cpp's blink gate depends on that discreteness: a continuous
@@ -903,7 +905,7 @@ void drawScan(Canvas& c, const State& s, Dirty* d) {
         // Parked on the collection channel for the mesh: say so, or a channel
         // that never moves reads as a stuck radio. Coverage comes from the
         // nodes then, shown mesh-wide on the spectrum and the dial.
-        if (s.nNodes) c.text(COL_R_X + 3, DIAL_Y + 3, "MESH", pal::GREEN);
+        if (s.nNodes) c.text(COL_R_X + 3, DIAL_Y + 3, "NODES", pal::GREEN);
         c.text(COL_R_X + 3, DIAL_Y + DIAL_H - 9, "-90", pal::DIM);
     }
     drawDialAt(c, s, DIAL_CX, DIAL_CY, R_FIELD, R_RUNES, R_STAR, R_BOUND);

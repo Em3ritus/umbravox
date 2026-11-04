@@ -143,7 +143,7 @@ void filesRows(Canvas& c, const State& s) {
     for (int i = 0; i < s.nFileRows; i++) {
         const int idx = s.fileScroll + i;
         const int y = pl::FILE_ROW_Y + i * pl::FILE_ROW_H;
-        const bool sel = idx == s.fileSel, act = idx == s.fileActive;
+        const bool sel = idx == s.fileSel, act = s.fileRows[i].active || idx == s.fileActive;
         if (sel) {
             c.fill(pl::FILE_ROW_X, y, pl::FILE_ROW_W, pl::FILE_ROW_H - 1, Canvas::mix(pal::PANEL, pal::WITCH, 1, 3));
             c.fill(pl::FILE_ROW_X, y, 2, pl::FILE_ROW_H - 1, pal::WITCH_HI);

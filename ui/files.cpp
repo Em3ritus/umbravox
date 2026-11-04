@@ -1,6 +1,7 @@
 // FILES -- the interaction state machine (see files.h). Pure: no clock of its
 // own (filesTick hands it the caller's), no card (nav raises requests).
 #include "files.h"
+#include "capture_paths.h"
 #include "layout.h"
 #include "portrait_layout.h"
 #include <string.h>
@@ -175,6 +176,12 @@ void filesResult(Nav& n, bool ok, uint32_t nowMs) {
 void fileLabel(const char* name, char* out, int cap) {
     if (cap <= 0) return;
     char tmp[FILE_NAME_MAX + 8];
+    char path[FILE_NAME_MAX+1];snprintf(path,sizeof path,"%s%s",name[0]=='/'?"":"/",name);
+    const auto kind=capturepaths::classify(path);
+    if(kind!=capturepaths::None && (strchr(name+(name[0]=='/'),'/') || kind!=capturepaths::Wifi)){
+        char id[40];capturepaths::identity(path,id,sizeof id);
+        snprintf(out,cap,"%s %s",capturepaths::label(kind),id);return;
+    }
     if (name[0] == '/') name++;
     const size_t len = strlen(name);
     bool dated = len == 22 && lc(name[0]) == 'w' && lc(name[1]) == 'd' && name[2] == '-' &&
@@ -243,7 +250,7 @@ void filesCountText(const State& s, char* out) {
     }
     putU(out, i, s.fileTotal);
     if (s.fileFound > s.fileTotal) { out[i++] = '/'; putU(out, i, s.fileFound); }
-    const char* w = (s.fileTotal == 1 && s.fileFound <= 1) ? " LOG" : " LOGS";
+    const char* w = (s.fileTotal == 1 && s.fileFound <= 1) ? " FILE" : " FILES";
     while (*w) out[i++] = *w++;
     out[i] = 0;
 }
@@ -261,7 +268,8 @@ int fileIndexOf(const FileList& L, const char* name) {
     return -1;
 }
 
-void filesPublish(State& s, const Nav& n, const FileList& L) {
+void filesPublish(State& s, const Nav& n, const FileList& L, int visible) {
+    if(visible<1)visible=1;if(visible>FILE_VIS)visible=FILE_VIS;
     s.fileTotal   = L.n;
     s.fileFound   = L.found;
     s.fileCard    = L.card;
@@ -269,12 +277,12 @@ void filesPublish(State& s, const Nav& n, const FileList& L) {
     s.cardMB      = L.cardMB;
     s.fileLogKB   = L.logKB;
     int sc = n.scroll;
-    const int m = L.n > FILE_VIS ? L.n - FILE_VIS : 0;
+    const int m = L.n > visible ? L.n - visible : 0;
     if (sc > m) sc = m;
     if (sc < 0) sc = 0;
     s.fileScroll = (int16_t)sc;
     s.nFileRows = 0;
-    for (int i = 0; i < FILE_VIS && sc + i < L.n; i++) {
+    for (int i = 0; i < visible && sc + i < L.n; i++) {
         s.fileRows[i] = L.rows[sc + i];
         s.nFileRows++;
     }
@@ -286,7 +294,8 @@ void filesPublish(State& s, const Nav& n, const FileList& L) {
         memcpy(s.fileSelName, L.rows[s.fileSel].name, sizeof s.fileSelName - 1);
         s.fileSelSize = L.rows[s.fileSel].size;
     }
-    s.fileConfirm = n.fileConfirm && s.fileSel >= 0;
+    if(s.fileSel>=0 && L.rows[s.fileSel].active)s.fileActive=s.fileSel;
+    s.fileConfirm = n.fileConfirm && s.fileSel >= 0 && s.fileSel!=s.fileActive;
     s.fileResult  = n.fileResult;
 }
 

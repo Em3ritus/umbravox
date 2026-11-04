@@ -35,7 +35,7 @@ void drawRows(Canvas& c, const State& s) {
     for (int i = 0; i < s.nFileRows; i++) {
         const int idx = s.fileScroll + i;
         const int y = FILE_ROW_Y + i * FILE_ROW_H;
-        const bool sel = idx == s.fileSel, act = idx == s.fileActive;
+        const bool sel = idx == s.fileSel, act = s.fileRows[i].active || idx == s.fileActive;
         if (sel) {
             c.fill(FILE_ROW_X, y, FILE_ROW_W, FILE_ROW_H - 1, Canvas::mix(pal::PANEL, pal::WITCH, 1, 3));
             c.rect(FILE_ROW_X, y, FILE_ROW_W, FILE_ROW_H - 1, pal::WITCH_HI);
@@ -151,7 +151,7 @@ void drawFiles(Canvas& c, const State& s, Dirty* d) {
                         s.fileLogKB != prev.fileLogKB || s.fileSelSize != prev.fileSelSize ||
                         memcmp(s.fileSelName, prev.fileSelName, sizeof s.fileSelName) != 0;
             for (int i = 0; !body && i < s.nFileRows; i++)
-                body = s.fileRows[i].size != prev.fileRows[i].size ||
+                body = s.fileRows[i].active != prev.fileRows[i].active || s.fileRows[i].size != prev.fileRows[i].size ||
                        memcmp(s.fileRows[i].name, prev.fileRows[i].name, FILE_NAME_MAX) != 0;
             if (body) d->add(0, BODY_Y, W, BODY_H);
             if (s.cardMB != prev.cardMB || s.fileCard != prev.fileCard)

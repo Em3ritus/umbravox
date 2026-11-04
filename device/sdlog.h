@@ -30,7 +30,8 @@ void list(Print& out);
 void list(Print& out, const char* dir);
 bool dump(Print& out, const char* name);
 
-// Highest N among root files named "<prefix>NNNN<suffix>", or 0 if none.
+// Highest N among entries named "<prefix>NNNN<suffix>", or 0 if none.
+// A directory in prefix selects that parent; the walk is bounded.
 // `logging` uses it to advance the dateless session counter past files
 // already on the card, so a reboot before a GPS fix can't overwrite one.
 uint32_t maxIndex(const char* prefix, const char* suffix);

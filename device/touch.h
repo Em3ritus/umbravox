@@ -28,6 +28,10 @@ struct Point {
     // board whose canvas fills the panel.
     bool     any  = false;
     int16_t  x = 0, y = 0;        // canvas coordinates (0..159, 0..119; portrait 0..119, 0..159)
+    // Panel coordinates after rotation (0..PANEL_W-1, 0..PANEL_H-1), including
+    // the status strip and side margins the 2x canvas does not cover. -1 when
+    // no contact. The native-resolution SCAN engine hit-tests in these.
+    int16_t  panelX = -1, panelY = -1;
     uint16_t rawX = 0, rawY = 0;  // straight off the controller, for calibration
     uint16_t z = 0;               // pressure estimate
 };
@@ -46,3 +50,17 @@ Point read();
 void setRotation(uint8_t r);
 
 } // namespace touch
+
+#if defined(UMBRAVOX_SCAN_ENGINE)
+#include "../ui/input_events.h"
+namespace touch {
+Point observed(); // latest physical sample, without retained-tap wake synthesis
+int sensitivity(); // FT6336 threshold currently applied
+bool setSensitivity(int threshold); // bounded 8..30, locked write, saved only after ACK
+bool startSampling(); // after all setup-time Wire initialization
+bool takePress(inputevents::Press& p);
+void newScreen();
+void cancelPresses();
+void samplingStats(uint32_t& maxGapMs, uint32_t& missed, uint32_t& dropped);
+}
+#endif

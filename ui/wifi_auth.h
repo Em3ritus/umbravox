@@ -37,6 +37,11 @@ uint16_t parseAuth(const uint8_t* body, int len);
 // Writes at most n-1 characters plus a terminator.
 size_t authString(uint16_t bits, char* out, size_t n);
 
+// Native detail summaries: observed capability sets, not a negotiated link.
+// Unknown cipher bits stay unknown; the export formatter is unchanged.
+void authSummary(uint16_t bits, char* out, size_t n);
+const char* cipherSummary(uint16_t bits);
+
 // Short form for a 160px screen: "WPA2", "WPA3", "WEP", "OPEN".
 const char* authShort(uint16_t bits);
 

@@ -1,3 +1,4 @@
+#include "sight_order.h"
 #include "blescan.h"
 #include <Arduino.h>
 #include <BLEDevice.h>
@@ -22,6 +23,7 @@ namespace blescan {
 namespace {
 
 constexpr uint16_t BLE_INTERVAL_MS = 100;
+bool activeMode = false;
 uint8_t duty = 30;                                // % of the radio BLE takes
 
 // Also PSRAM-backed. BLE sees far more distinct addresses than WiFi does,
@@ -49,6 +51,7 @@ struct Extra {
     int8_t   bestRssi;
     uint8_t  threat, conf;
     bool     located, hasFirst, following;
+    bool publicAddress=false;
 };
 
 // --- following -----------------------------------------------------------
@@ -157,6 +160,7 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
             alert_.threat = sig.threat;
             alert_.conf   = sig.conf;
             alert_.why    = sig.why;
+            memcpy(alert_.mac,a,6);alert_.address=dev.getAddressType()==0?ui::AlertAddress::BlePublic:ui::AlertAddress::BleRandom;
             // Named by the tail of the address, as the codex rows are.
             static const char* HD = "0123456789ABCDEF";
             int k = 0;
@@ -204,6 +208,7 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
         // Name and position, recorded at the strongest sighting.
         if (slot >= 0) {
             extra[slot].lastMs = millis();
+            extra[slot].publicAddress=dev.getAddressType()==0;
             if (sig.threat != ui::TH_NONE && sig.conf >= extra[slot].conf) {
                 extra[slot].threat = sig.threat;
                 extra[slot].conf   = sig.conf;
@@ -276,6 +281,11 @@ void begin() {
 
     BLEDevice::init("");
     scan = BLEDevice::getScan();
+#if defined(CONFIG_NIMBLE_ENABLED)
+    // The library releases its temporary advertiser AFTER onResult returns.
+    // Our PSRAM table already owns every retained observation.
+    scan->setMaxResults(0);
+#endif
     // shouldParse stays false: the raw payload is all the signature matcher
     // needs, and parsing leaks.
     scan->setAdvertisedDeviceCallbacks(&cb, /*wantDuplicates=*/true, /*shouldParse=*/false);
@@ -322,11 +332,8 @@ namespace {
 const char* HEXDIG = "0123456789ABCDEF";
 }
 
-void fillDetail(ui::State& s, int index, uint32_t nowMs) {
-    s.detail = ui::Detail{};
-    if (index < 0 || (uint32_t)index >= nOrder) return;
-    const uint16_t slot = order_[nOrder - 1 - index];
-
+static void fillDetailSlot(ui::State& s, int slot, uint32_t nowMs) {
+    s.detail=ui::Detail{};
     ui::Detail& d = s.detail;
     d.valid = true;
     for (int k = 0; k < 6; k++) d.mac[k] = addrs[slot][k];
@@ -340,15 +347,56 @@ void fillDetail(ui::State& s, int index, uint32_t nowMs) {
     d.firstAgoS = d.lastAgoS = 0;
     (void)nowMs;
 }
+void fillDetail(ui::State& s, int index, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    if(index<0 || (uint32_t)index>=nOrder)return;
+    fillDetailSlot(s,order_[nOrder-1-index],nowMs);
+}
+
+void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    const auto hit=dedup::find(hashAddr(mac),TABLE,nUsed,INSERT_LIMIT,maxProbe_,
+        [](uint32_t i){return used_[i];},[mac](uint32_t i){return memcmp(addrs[i],mac,6)==0;});
+    if(hit.kind==dedup::FOUND)fillDetailSlot(s,hit.slot,nowMs);
+}
 
 uint16_t sightCount() { return (uint16_t)(nOrder > 65535 ? 65535 : nOrder); }
 
 void fillSights(ui::State& s, int offset) {
     s.totalSights = sightCount();
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    static sightorder::Cache ranking;
+    if (!ranking.rows) {
+        ranking.rows = static_cast<sightorder::Entry*>(heap_caps_malloc(
+            TABLE * sizeof(sightorder::Entry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!ranking.rows) { s.nSights = 0; s.totalSights = 0; return; }
+    }
+    const uint32_t now = millis();
+    const int filter = 0;
+    if (ranking.due(now, filter)) {
+        ranking.count = 0;
+        const uint32_t count = nOrder;
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint16_t slot = order_[i];
+
+            ranking.rows[ranking.count++] = {slot, rssis[slot]};
+        }
+        sightorder::sort(ranking.rows, ranking.count);
+        ranking.at = now; ranking.filter = filter;
+    }
+    s.totalSights = ranking.count;
+#endif
+
     int n = 0, skipped = 0;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    (void)skipped;
+    for (uint32_t i = offset < 0 ? 0u : (uint32_t)offset; i < ranking.count && n < ui::MAX_SIGHTS; ++i) {
+        const uint16_t slot = ranking.rows[i].slot;
+#else
     for (int i = (int)nOrder - 1; i >= 0 && n < ui::MAX_SIGHTS; i--) {
         if (skipped < offset) { skipped++; continue; }
         const uint16_t slot = order_[i];
+#endif
         ui::Sighting& g = s.sights[n++];
 
         // BLE addresses are frequently randomised, so the OUI is often
@@ -370,7 +418,11 @@ void fillSights(ui::State& s, int offset) {
             g.ssid[k] = 0;
         }
         for (int m = 0; m < 6; m++) g.mac[m] = a[m];
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        g.rssi = ranking.rows[i].rssi;
+#else
         g.rssi = rssis[slot];
+#endif
         g.band = ui::BAND_BLE;
         g.chan = 0;
     }
@@ -382,7 +434,8 @@ uint32_t lastCycleMs = 0;     // last stop/start, by the recycle or setDuty
 uint32_t nRestarts = 0;       // scans found stopped and started again
 elog::Gate restartGate;
 
-// Bound the library's result map and keep the scan alive (blerecycle.h).
+// Keep the scan alive. Routine cache recycling is only for retained-result
+// backends; NimBLE uses callback-only storage (blerecycle.h).
 // stop() then start(0, nullptr, false) is the sequence setDuty() has always
 // used; is_continue = false is what clears the map. start() runs only after a
 // successful stop(), so the map is never cleared while discovery can still
@@ -390,9 +443,20 @@ elog::Gate restartGate;
 // so it is never part-way through the scan callback when this runs.
 void recycle(uint32_t nowMs) {
     if (!scan) return;
+#if defined(CONFIG_NIMBLE_ENABLED)
+    const uint32_t count = 0; // no need to inspect the host task's temporary map
+#else
     const uint32_t count = (uint32_t)scan->getResults()->getCount();
+#endif
     const blerecycle::Action a =
-        blerecycle::shouldRecycle(count, nowMs, lastCycleMs, scan->isScanning(), duty);
+        (activeMode && duty && scan->isScanning() && nowMs-lastCycleMs>=2000) ? blerecycle::RECYCLE :
+        blerecycle::shouldRecycle(count, nowMs, lastCycleMs, scan->isScanning(), duty,
+#if defined(CONFIG_NIMBLE_ENABLED)
+                                 false // callback-only: no retained library result cache
+#else
+                                 true
+#endif
+        );
     if (a == blerecycle::NONE) return;
     lastCycleMs = nowMs;
     if (!scan->stop()) return;               // try again next time round
@@ -438,6 +502,7 @@ void tick(uint32_t nowMs) {
         alert_.threat = ui::TH_FOLLOW;
         alert_.conf   = ui::CONF_HIGH;
         alert_.why    = "TRAVELLED WITH YOU";
+        memcpy(alert_.mac,addrs[slot],6);alert_.address=e.publicAddress?ui::AlertAddress::BlePublic:ui::AlertAddress::BleRandom;
         if (e.name[0]) {
             int k = 0;
             for (; k < ui::ALERT_NAME - 1 && e.name[k]; k++) alert_.name[k] = e.name[k];
@@ -469,6 +534,14 @@ void tick(uint32_t nowMs) {
 }
 
 uint16_t followCount() { return nFollowing; }
+
+void setActive(bool enabled) {
+    if(activeMode==enabled || !scan)return;
+    scan->stop();
+    scan->setActiveScan(enabled);
+    activeMode=enabled; lastCycleMs=millis();
+    if(duty)scan->start(0,nullptr,false);
+}
 
 void setDuty(uint8_t pct) {
     if (pct > 100) pct = 100;

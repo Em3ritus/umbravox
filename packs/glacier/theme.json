@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "name": "GLACIER",
+  "author": "slickrick773",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "radar",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#080F18",
+    "panel": "#111F2C",
+    "grid": "#1C3040",
+    "edge": "#365165",
+    "edgeLit": "#5985A3",
+    "dim": "#A3B6C8",
+    "text": "#D7E4F0",
+    "bright": "#F1F8FF",
+    "witch": "#72C9EE",
+    "witchHi": "#B2E8FF",
+    "bone": "#C4D2DC",
+    "sweep": "#529DC5",
+    "sweepHi": "#B2E8FF",
+    "live": "#72C9EE",
+    "liveHi": "#D5F3FF",
+    "magenta": "#70C9EE",
+    "ice": "#B7A1EB",
+    "green": "#85D8B4",
+    "amber": "#F0BE62",
+    "red": "#FF7479"
+  }
+}

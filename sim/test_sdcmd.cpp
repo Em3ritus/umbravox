@@ -692,6 +692,21 @@ static void testFixRound1() {
 static void testDelete() {
     printf("delete / rmdir:\n");
     Rig r;
+    {
+        Rig guarded;capturepaths::ActiveFiles active;
+        const char* names[]={"/umbravox/sessions/WD-1/wifi.csv","/umbravox/sessions/WD-1/track.gpx","/umbravox/sessions/WD-1/clients.csv","/umbravox/sessions/WD-1/probes.csv","/umbravox/captures/capture0001.pcap"};
+        for(int i=0;i<5;i++){guarded.sd.put(names[i],bytes(5,1));active.set(i,names[i]);}
+        for(const char* name:names){const std::string cmd=std::string("SDDEL ")+name;
+            guarded.con.line(cmd.c_str(),0,"",guarded.reply,sizeof guarded.reply,&active);
+            check("serial refuses active/draining writer",strstr(guarded.reply,"ERR")&&guarded.sd.has(name));
+        }
+        capturepaths::ActiveFiles empty;
+        guarded.sd.put("/WD-0001.csv",bytes(5,1));
+        guarded.con.line("SDDEL /WD-0001.csv",0,"/WD-0001.csv",guarded.reply,sizeof guarded.reply,&empty);
+        check("extra ownership snapshot never overrides legacy active path",strstr(guarded.reply,"ERR")&&guarded.sd.has("/WD-0001.csv"));
+        active.set(2,"");guarded.con.line("SDDEL /umbravox/sessions/WD-1/clients.csv",0,"",guarded.reply,sizeof guarded.reply,&active);
+        check("serial allows file only after writer releases it",!strcmp(guarded.reply,"OK")&&!guarded.sd.has(names[2])&&guarded.sd.has(names[3]));
+    }
     r.active = "/WD-20260119-120000.csv";
     r.sd.mkdir("/themes"); r.sd.mkdir("/themes/x");
     r.sd.put("/themes/x/theme.json", bytes(5, 1));

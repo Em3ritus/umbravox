@@ -8,7 +8,7 @@
 // never disagree about a file. delPolicy also allows theme files; this screen
 // lists logs only, so every verdict here is sessionFile first.
 //
-// The walk: main.cpp feeds visit() one root directory entry at a time from
+// The walk: Browser feeds visit() one recognized directory entry at a time from
 // sdlog::listDirSized(). It stops at MAX_ENTRIES entries or BUDGET_MS of wall
 // clock, whichever comes first, and marks the list partial. Logs are kept
 // newest first; past MAX_FILE_ROWS the oldest drop off.
@@ -21,16 +21,16 @@
 
 namespace filescan {
 
-constexpr uint32_t MAX_ENTRIES = 512;   // root entries looked at, logs or not
+constexpr uint32_t MAX_ENTRIES = 512;   // total directory entries examined
 constexpr uint32_t BUDGET_MS   = 1000;  // under the 2 s NMEA buffer and stall warning
 
 // "/" + name into out. False if it does not fit or name is empty.
 inline bool pathOf(const char* name, char* out, size_t cap) {
     if (!name || !name[0] || cap < 2) return false;
     const size_t n = strlen(name);
-    if (n + 2 > cap) return false;
-    out[0] = '/';
-    memcpy(out + 1, name, n + 1);
+    if (n + (name[0] == '/' ? 1 : 2) > cap) return false;
+    if(name[0]=='/'){if(n+1>cap)return false;memcpy(out,name,n+1);}
+    else {out[0]='/';memcpy(out+1,name,n+1);}
     return true;
 }
 
@@ -58,6 +58,10 @@ inline bool deletable(const char* path, const char* active) {
     return deleteCheck(path, active) == nullptr;
 }
 
+inline bool isActive(const char* path,const capturepaths::ActiveFiles& a){return a.contains(path);}
+inline const char* deleteCheck(const char* path,const capturepaths::ActiveFiles& a){
+ if(!isLog(path))return sdcmd::NOT_ALLOWED;sdcmd::Path p;return sdcmd::delPolicy(path,a,p);
+}
 // WD-YYYYMMDD-HHMMSS.csv (a session started with the clock known).
 inline bool dated(const char* name) {
     if (name[0] == '/') name++;
@@ -83,16 +87,18 @@ inline int icmp(const char* a, const char* b) {
 // (logging numbers them upward). Anything else policy allows (other runs of
 // digits and '-') comes by name, descending.
 inline bool newer(const char* a, const char* b) {
-    const bool da = dated(a), db = dated(b);
+    char ia[40],ib[40];capturepaths::identity(a,ia,sizeof ia);capturepaths::identity(b,ib,sizeof ib);
+    char aa[48],bb[48];snprintf(aa,sizeof aa,"%s.csv",ia);snprintf(bb,sizeof bb,"%s.csv",ib);
+    const bool da = dated(aa), db = dated(bb);
     if (da != db) return da;
     if (!da) {
         uint32_t va = 0, vb = 0;
-        const bool na = sdlog::matchIndex(a, "WD-", ".csv", va);
-        const bool nb = sdlog::matchIndex(b, "WD-", ".csv", vb);
+        const bool na = sdlog::matchIndex(aa, "WD-", ".csv", va);
+        const bool nb = sdlog::matchIndex(bb, "WD-", ".csv", vb);
         if (na != nb) return na;
         if (na && va != vb) return va > vb;
     }
-    return icmp(a, b) > 0;
+    const int id=icmp(ia,ib);return id?id>0:icmp(a,b)>0;
 }
 
 // Insert one log, keeping the list newest first and at most MAX_FILE_ROWS.
@@ -104,11 +110,11 @@ inline void insert(ui::FileList& L, const char* name, uint32_t size) {
     for (int k = last; k > i; k--) L.rows[k] = L.rows[k - 1];
     memset(L.rows[i].name, 0, sizeof L.rows[i].name);
     strncpy(L.rows[i].name, name, sizeof L.rows[i].name - 1);
-    L.rows[i].size = size;
+    L.rows[i].size = size;L.rows[i].active=false;
     if (L.n < ui::MAX_FILE_ROWS) L.n++;
 }
 
-// Empty the list in place (no FileList temporary: it is 1.8 KB and the loop
+// Empty the list in place (no multi-kilobyte FileList temporary on the loop
 // task's stack is 8 KB). All-zero is exactly the default-constructed list.
 static_assert(__is_trivially_copyable(ui::FileList), "reset() zeroes FileList bytewise");
 inline void reset(ui::FileList& L) { memset(static_cast<void*>(&L), 0, sizeof L); }
@@ -145,9 +151,42 @@ inline bool visit(Walk& w, const char* name, bool isDir, uint32_t size, uint32_t
     if (w.L->found < 0xFFFF) w.L->found++;
     const uint32_t kb = size / 1024 + (size % 1024 ? 1 : 0);
     w.L->logKB = w.L->logKB > 0xFFFFFFFFu - kb ? 0xFFFFFFFFu : w.L->logKB + kb;
-    insert(*w.L, name, size);
+    insert(*w.L, name[0]=='/'?name+1:name, size);
     return true;
 }
+
+// One shared visit/time budget across legacy root and organized folders.
+struct BrowseIo {
+ bool (*isDir)(const char*);
+ bool (*list)(const char*,bool (*)(const char*,bool,uint32_t,void*),void*,uint32_t);
+ uint32_t (*now)();
+};
+class Browser {
+ Walk w; const BrowseIo* io=nullptr; char directory[64]{};bool sessionDirs=false;
+ bool bounded(){if(w.seen>=MAX_ENTRIES||io->now()-w.t0>=BUDGET_MS){w.L->partial=true;return true;}return false;}
+ static bool entry(const char* name,bool dir,uint32_t size,void* ctx){return static_cast<Browser*>(ctx)->visitEntry(name,dir,size);}
+ bool visitEntry(const char* name,bool dir,uint32_t size){
+  if(bounded())return false;
+  char path[64];int n=snprintf(path,sizeof path,"%s%s%s",directory,strcmp(directory,"/")?"/":"",name?name:"");
+  if(!name||n<0||size_t(n)>=sizeof path){++w.seen;return true;}
+  if(!visit(w,path,dir,size,io->now()))return false;
+  if(dir&&sessionDirs&&capturepaths::stem(name,strlen(name))){
+   char parent[64];strcpy(parent,directory);const bool old=sessionDirs;
+   walk(path,false);strcpy(directory,parent);sessionDirs=old;
+  }
+  return !bounded();
+ }
+ void walk(const char* path,bool children){
+  if(bounded()||!io->isDir(path))return;
+  snprintf(directory,sizeof directory,"%s",path);sessionDirs=children;
+  if(!io->list(path,entry,this,MAX_ENTRIES-w.seen+1))w.L->partial=true;
+ }
+public:
+ void scan(ui::FileList& list,const BrowseIo& ops){
+  io=&ops;begin(w,list,io->now());
+  walk("/umbravox/sessions",true);walk("/umbravox/captures",false);walk("/",false);
+ }
+};
 
 // Deleting: SDDEL's sequence (sdcmd Console::del) on the card's primitives.
 struct RemoveIo {
@@ -156,13 +195,16 @@ struct RemoveIo {
     bool (*remove)(const char* path);
 };
 enum RemoveResult : uint8_t { RM_OK, RM_REFUSED, RM_MISSING, RM_DIR, RM_FAILED };
-inline RemoveResult removeLog(const char* path, const char* active, const RemoveIo& io) {
+template<class Active> inline RemoveResult removeLog(const char* path, const Active& active, const RemoveIo& io) {
     if (deleteCheck(path, active)) return RM_REFUSED;
     if (!io.exists(path)) return RM_MISSING;
     if (io.isDir(path)) return RM_DIR;          // never remove a directory
     return io.remove(path) ? RM_OK : RM_FAILED;
 }
 
+inline void markActive(ui::FileList& l,const capturepaths::ActiveFiles& a){
+ char p[ui::FILE_NAME_MAX+1];for(int i=0;i<l.n;i++)l.rows[i].active=pathOf(l.rows[i].name,p,sizeof p)&&a.contains(p);
+}
 // The list index of the logging session's file, -1 if it is not listed.
 inline int activeIndex(const ui::FileList& L, const char* active) {
     if (!active || !active[0]) return -1;

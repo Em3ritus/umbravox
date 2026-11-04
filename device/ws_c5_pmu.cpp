@@ -2,6 +2,7 @@
 #include "ws_c5_pmu.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include "ws_c5_bus.h"
 #define XPOWERS_CHIP_AXP2101
 #include <XPowersLib.h>
 #include "board.h"
@@ -18,19 +19,24 @@ constexpr uint32_t PERIOD_MS = 2000;
 
 void sample() {
     Batt b;
+    {
+    wsbus::Guard guard;
     b.ok   = true;
     b.usb  = axp.isVbusIn();
     b.cell = axp.isBatteryConnect();
     if (b.cell) {
         b.charging = axp.isCharging();
         const int p = axp.getBatteryPercent();
-        b.pct = (uint8_t)(p < 0 ? 0 : (p > 100 ? 100 : p));
+        b.pct = (uint8_t)(p < 0 || p > 100 ? 255 : p);
         b.mv  = axp.getBattVoltage();
     }
+    } // release the shared bus before any possibly blocking console output
     // Log transitions, not samples: plugging a cable in or out is the event
     // worth seeing on the console.
     if (!primed || b.usb != cur.usb || b.cell != cur.cell || b.charging != cur.charging) {
-        if (b.cell)
+        if (b.cell && b.pct > 100)
+            Serial.printf("pmu: cell present, percentage unavailable\n");
+        else if (b.cell)
             Serial.printf("pmu: %s, cell %u%% %u mV%s\n", b.usb ? "USB" : "battery",
                           (unsigned)b.pct, (unsigned)b.mv, b.charging ? ", charging" : "");
         else
@@ -68,3 +74,13 @@ const Batt& read(uint32_t nowMs) {
 
 } // namespace pmu
 #endif // WS_C5_35
+
+#if defined(WS_C5_28)
+#include "ws_c5_pmu.h"
+// ETA6098 charger; battery voltage reaches the expander ADC, not an AXP2101.
+// No validated cell-presence/percentage contract yet: report unavailable.
+namespace pmu {
+bool begin(){return false;}
+const Batt& read(uint32_t){static const Batt unavailable{};return unavailable;}
+}
+#endif

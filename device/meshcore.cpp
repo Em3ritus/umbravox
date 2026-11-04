@@ -1,4 +1,9 @@
+#include "radio_policy.h"
 #include "meshcore.h"
+#include "node_diagnostics.h"
+#include "mesh_timing.h"
+#include "active_discovery.h"
+#include <atomic>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -20,6 +25,7 @@ namespace {
 using meshlive::NODE_TIMEOUT_MS;
 
 NodeRec nodes_[MAX_NODES];
+std::atomic<uint32_t> timing_{220u<<8};
 // Expiries, for diag.log (main.cpp logs them; meshcore has no SD).
 uint32_t nExpired = 0;
 uint8_t  lastGone[3];
@@ -96,6 +102,16 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
         return;
     }
 
+    if(h->kind==meshtiming::TELEMETRY){
+        meshtiming::Telemetry t;
+        if(!meshtiming::telemetry(data,len,info?info->src_addr:nullptr,t)){rxLen++;return;}
+        portENTER_CRITICAL(&mux);
+        const int i=findOrAdd(t.h.mac);
+        if(i>=0 && nodes_[i].telemetry.accept(t,millis()))nodes_[i].lastMs=millis();
+        else if(i<0)rxNoSlot++;
+        portEXIT_CRITICAL(&mux);return;
+    }
+
     // Right protocol, wrong size: the structs drifted without the version
     // moving. Worth shouting about, because it is a bug rather than a
     // deployment mistake.
@@ -123,6 +139,7 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
         if (h->kind == mesh::MSG_REPORT && len >= (int)sizeof(mesh::Report)) {
             const mesh::Report* r = (const mesh::Report*)data;
             nodes_[i].reports++;
+            nodes_[i].lastReportMs=millis();
             nodes_[i].recs += r->count;
             nReport++;
 
@@ -176,6 +193,9 @@ void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
 } // namespace
 
 void begin() {
+#if UMBRAVOX_PASSIVE_ONLY
+    return; // no ESP-NOW initialization, peers, assignments, or radio ACK service
+#endif
     for (int i = 0; i < MAX_NODES; i++) nodes_[i] = NodeRec{};
     esp_read_mac(selfMac, ESP_MAC_WIFI_STA);
 
@@ -208,6 +228,16 @@ void setSink(Sink sink) { sink_ = sink; }
 
 void setCollector(FrameHook hook) { collector_ = hook; }
 
+void setTiming(uint8_t profile,uint16_t dwell,bool active){timing_.store((profile?1u:0u)|(uint32_t(meshtiming::dwell(dwell))<<8)|(active?1u<<24:0));}
+void sendTiming(const uint8_t* target){
+#if !UMBRAVOX_PASSIVE_ONLY
+    const uint32_t t=timing_.load();
+    meshtiming::Config c{};c.h.magic=mesh::MAGIC;c.h.ver=mesh::VERSION;c.h.netId=mesh::netId;c.h.kind=meshtiming::CONFIG;
+    memcpy(c.h.mac,target,6);c.profile=t&1;c.dwellMs=(t>>8)&0xffff;c.active=(t>>24)&1;
+    esp_now_send(bcast,(const uint8_t*)&c,sizeof c); // addressed payload, legacy peers ignore kind
+#endif
+}
+
 void assignAll(uint32_t nowMs) {
     int live = 0;
     for (int i = 0; i < MAX_NODES; i++) if (nodes_[i].live) live++;
@@ -217,11 +247,11 @@ void assignAll(uint32_t nowMs) {
     uint8_t reportChan;
     if (sliceN_ > 0) {
         // A coordinator: plan over its slice and report on its own channel.
-        chanplan::planCluster(sliceChans_, sliceN_, live, plans);
+        chanplan::planCluster(sliceChans_, sliceN_, live, plans,(timing_.load()&1)!=0);
         reportChan = sliceReportChan_;
     } else {
         // The CYD-as-Core: the whole band on the fixed report channel.
-        chanplan::planChannels(live, plans);
+        chanplan::planChannels(live, plans,(timing_.load()&1)!=0);
         reportChan = mesh::REPORT_CHAN;
     }
 
@@ -252,7 +282,10 @@ void assignAll(uint32_t nowMs) {
         a.camp = p.n > 0 && p.camp;
         a.phaseMs = (uint16_t)mesh_phase::offset(slot - 1, live, mesh::REPORT_MS);
 
+#if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
+        sendTiming(nodes_[i].mac);
+#endif
         nodes_[i].nChan = p.n;
         nodes_[i].camp  = a.camp;
         for (int k = 0; k < p.n && k < 10; k++) nodes_[i].chans[k] = p.ch[k];
@@ -270,6 +303,7 @@ void assignAll(uint32_t nowMs) {
 }
 
 void tick(uint32_t nowMs) {
+    if(discovery::busy())return;
     portENTER_CRITICAL(&mux);
     for (int i = 0; i < MAX_NODES; i++)
         if (nodes_[i].live && meshlive::expired(nowMs, nodes_[i].lastMs, NODE_TIMEOUT_MS)) {
@@ -325,18 +359,20 @@ const NodeRec* node(int i) {
 void fill(ui::State& s, uint32_t nowMs) {
     int n = 0;
     for (int i = 0; i < MAX_NODES && n < ui::MAX_NODE_ROWS; i++) {
-        if (!nodes_[i].live) continue;
+        NodeRec node;
+        portENTER_CRITICAL(&mux);node=nodes_[i];portEXIT_CRITICAL(&mux);
+        if (!node.live) continue;
         ui::NodeRow& r = s.nodes[n++];
-        r.live  = true;
-        for (int k = 0; k < 3; k++) r.id[k] = nodes_[i].mac[3 + k];
-        r.nChan = nodes_[i].nChan;
-        r.chan0 = nodes_[i].chans[0];
-        r.camp  = nodes_[i].camp;
-        r.recs  = nodes_[i].recs;
+        r.live=true;r.diag=nodeDiagnostics(node,nowMs);
+        for (int k = 0; k < 3; k++) r.id[k] = node.mac[3 + k];
+        r.nChan = node.nChan;
+        r.chan0 = node.chans[0];
+        r.camp  = node.camp;
+        r.recs  = node.recs;
         r.found = cap::foundBy((uint8_t)(i + 1));
-        const uint32_t tot = nodes_[i].reports + nodes_[i].lost;
-        r.lossPct = (uint8_t)(tot ? (nodes_[i].lost * 100 + tot / 2) / tot : 0);
-        r.ageS  = meshlive::ageMs(nowMs, nodes_[i].lastMs) / 1000;   // signed, >= 0
+        const uint32_t tot = node.reports + node.lost;
+        r.lossPct = (uint8_t)(tot ? (node.lost * 100 + tot / 2) / tot : 0);
+        r.ageS  = meshlive::ageMs(nowMs, node.lastMs) / 1000;   // signed, >= 0
     }
     s.nNodes = (uint8_t)n;
 }

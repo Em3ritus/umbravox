@@ -6,6 +6,8 @@
 // reason the UI can be developed on a PC: the seam is a plain struct.
 #pragma once
 #include <stdint.h>
+#include "ap_info.h"
+#include "signatures.h"
 
 namespace ui {
 
@@ -30,13 +32,14 @@ constexpr int MAX_CONTACTS = 48;
 inline constexpr uint8_t CHAN24[CH24] = {1,2,3,4,5,6,7,8,9,10,11,12,13};
 inline constexpr uint8_t CHAN5 [CH5]  = {36,40,44,48,149,153,157,161};
 
-// One row of the codex. SSIDs are truncated here rather than at draw time so
-// the struct is a fixed size and State stays copyable.
+// Fixed-size sight rows preserve the full printable Wi-Fi SSID. Legacy
+// auxiliary labels retain their smaller storage; native lists wrap at draw time.
 constexpr int SSID_MAX   = 20;
+constexpr int AP_SSID_MAX = 33; // full 32-byte Wi-Fi SSID plus terminator
 constexpr int MAX_SIGHTS = 8;     // rows the codex can show at once
 
 struct Sighting {
-    char    ssid[SSID_MAX];       // "" for a hidden network
+    char    ssid[AP_SSID_MAX];    // "" for a hidden network
     uint8_t mac[6];
     int8_t  rssi;
     uint8_t band;
@@ -102,11 +105,17 @@ struct Settings {
     // Which way up the panel is driven: ORIENT_LANDSCAPE (the default, and
     // what every older store reads as) or ORIENT_PORTRAIT, the tall 120x160
     // canvas (ui/portrait_layout.h). ATTUNE page 2. This took the reserved
-    // byte autoLog left (it used to be `spare`), so Settings is still 14 bytes
-    // with no padding; the NEXT setting widens the struct and updates the
-    // static_assert in sim/test_settings.cpp. clampSettings pulls unknown
+    // byte autoLog left (it used to be `spare`). The BLE bridge setting later
+    // widened Settings to 18 bytes including the remembered app; NVS stores named fields, not this layout.
+    // clampSettings pulls unknown
     // values -- and PORTRAIT on a board that cannot show it -- to LANDSCAPE.
     uint8_t  orient = 0;      // Orientation
+    uint16_t pcapEnabled = 0; // session-only, never restored at boot
+    uint16_t activeDiscovery = 0; // opt-in Wi-Fi probe / BLE scan requests
+    uint16_t nodeDwellMs = 220; // separate from the handheld dwell
+    uint16_t meshProfile = 0;   // 0 Tracking (existing policy), 1 Discovery
+    uint16_t bridgeApp = 1;   // remembered app: 1 WarDriveGo, 2 Biscuit
+    uint16_t bleBridge = 0;   // 0 OFF, 1 WarDriveGo, 2 Biscuit; fills aligned extension
 };
 
 // Settings.orient. Unknown values clamp to LANDSCAPE.
@@ -170,8 +179,14 @@ constexpr int HIST_N = 28;
 
 // Everything known about one device, for the detail screen.
 struct Detail {
+    ApInfo info;
+    uint32_t observations=0;
+    uint8_t nameEvidence=0; // 1 AP-origin name, 2 accepted association exchange (formerly hidden)
     bool     valid = false;
-    char     ssid[SSID_MAX] = {0};
+    bool     located = false;
+    int32_t  lat7 = 0, lon7 = 0;
+    int8_t   bestRssi = 0;
+    char     ssid[AP_SSID_MAX] = {0};
     uint8_t  mac[6] = {0};
     int8_t   rssi = 0;
     uint8_t  band = 0, chan = 0;
@@ -186,7 +201,44 @@ struct Detail {
 // One row of the mesh screen. The UI never sees a meshcore::NodeRec --
 // device types stop at the State boundary, same as everywhere else.
 constexpr int MAX_NODE_ROWS = 16;
+struct LocalDiagnostics {
+    bool valid=false,active=false,connected=false,streaming=false;
+    uint16_t dwellMs=0,bridgeQueued=0;
+    uint8_t bridgeMode=0;
+    uint32_t started=0,completed=0,failed=0,omitted=0,rxDrops=0,txRetries=0;
+    bool operator==(const LocalDiagnostics& b) const {
+        return valid==b.valid && active==b.active && connected==b.connected && streaming==b.streaming && dwellMs==b.dwellMs
+            && bridgeQueued==b.bridgeQueued && bridgeMode==b.bridgeMode && started==b.started && completed==b.completed
+            && failed==b.failed && omitted==b.omitted && rxDrops==b.rxDrops && txRetries==b.txRetries;
+    }
+};
+struct NodeDiagnostics {
+    bool known=false,active=false,camp=false;
+    bool hasReport=false; uint32_t reportAgeS=0;
+    uint8_t assignedCount=0, assignedChannels[10]{};
+    uint8_t profile=0;
+    uint16_t dwellMs=0,depth=0,capacity=0,peak=0;
+    uint32_t ageS=0,drops=0,sendFailed=0,reportRejected=0,scanFailed=0;
+    bool operator==(const NodeDiagnostics& b) const {
+        for(int i=0;i<10;i++)if(assignedChannels[i]!=b.assignedChannels[i])return false;
+        return hasReport==b.hasReport && reportAgeS==b.reportAgeS && assignedCount==b.assignedCount
+            && known==b.known && active==b.active && camp==b.camp && profile==b.profile && dwellMs==b.dwellMs
+            && depth==b.depth && capacity==b.capacity && peak==b.peak && ageS==b.ageS && drops==b.drops
+            && sendFailed==b.sendFailed && reportRejected==b.reportRejected && scanFailed==b.scanFailed;
+    }
+};
+// Local observed Wi-Fi station relationships; not an AP's live association table.
+constexpr int CLIENT_ROWS=2;
+struct ClientRow {
+    uint8_t mac[6]{}; int8_t rssi=0; bool hasRssi=false;
+    uint8_t evidence=0,channel=0; uint32_t ageS=0,frames=0;
+};
+struct ClientList {
+    bool available=false; uint16_t total=0,offset=0; uint8_t count=0;
+    uint32_t drops=0,evictions=0; ClientRow rows[CLIENT_ROWS]{};
+};
 struct NodeRow {
+    NodeDiagnostics diag;
     bool     live = false;
     uint8_t  id[3] = {0};     // last three octets, which is how nodes are named
     uint8_t  nChan = 0;
@@ -217,6 +269,11 @@ struct Omen {
     uint32_t epoch = 0;        // UTC, 0 if there was no fix
     uint32_t agoS = 0;
     bool     located = false;
+    bool test = false;
+    uint32_t id=0;
+    uint8_t mac[6]{};
+    AlertAddress address=AlertAddress::Missing;
+    char why[32]{};
 };
 
 // A probe request: a client asking after a network by name. Directed probes
@@ -224,12 +281,14 @@ struct Omen {
 // different kind of finding from "an access point is here".
 constexpr int MAX_ECHO_ROWS = 6;
 struct Echo {
-    char    ssid[SSID_MAX] = {0};
+    char    ssid[AP_SSID_MAX] = {0};
     uint8_t mac[6] = {0};
     int8_t  rssi = 0;
     uint8_t chan = 0;
     uint32_t agoS = 0;
-    bool    randomised = false;   // locally-administered address
+    bool    randomised = false;   // locally-administered, not proof of randomization
+    uint32_t observations=0;
+    bool wildcard=false,linked=false;uint8_t ap[6]{};
 };
 
 // FILES: the owner's session logs on the SD card (/WD-*.csv, the serial
@@ -238,12 +297,13 @@ struct Echo {
 // first) and publishes only the FILE_VIS rows on screen into State, the way
 // the codex publishes its window of sightings: State is copied by every
 // screen's dirty tracking, so a whole list in it would cost RAM ten times.
-constexpr int FILE_NAME_MAX = 24;   // basename + NUL; "WD-20260127-153012.csv" is 22
+constexpr int FILE_NAME_MAX = 64;   // relative capture path + NUL
 constexpr int MAX_FILE_ROWS = 64;
 constexpr int FILE_VIS      = 5;    // rows on screen at once
 struct FileRow {
-    char     name[FILE_NAME_MAX] = {0};   // bare basename, as on the card
+    char     name[FILE_NAME_MAX] = {0};   // relative capture path, as on the card
     uint32_t size = 0;                    // bytes
+    bool active = false;
 };
 struct FileList {
     FileRow  rows[MAX_FILE_ROWS];
@@ -275,7 +335,8 @@ struct State {
 
     // storage
     bool     sdOk = false;
-    char     logName[12] = {0};   // 8.3-ish, as it lands on the card
+    bool     sdWriteError = false; // latched capture/export failure until reboot
+    char     logName[64] = {0};   // absolute recording path
     uint8_t  logState = 0;        // 0 idle, 1 active, 2 no-card
 
     // chrome
@@ -285,15 +346,22 @@ struct State {
     uint8_t  nContacts = 0;
 
     // codex
+    uint16_t plotRadius = 42; // coordinate radius used for plots and track
     Sighting sights[MAX_SIGHTS];
     uint8_t  nSights = 0;
     uint16_t totalSights = 0;     // everything known, for the scrollbar
+    char pcapStatus[24] = "OFF";
+    uint32_t pcapDrops=0;
+    LocalDiagnostics localDiag;
+    uint8_t meshPage = 0;
+    uint8_t detailPage = 0;
     int16_t  scroll = 0;          // first row shown
     uint8_t  screen = 0;          // which screen is up; see nav.h
     uint8_t  filter = 0;          // which band the codex is showing
     uint8_t  setPage = 0;         // settings screen page, 0-based (SET_PAGES)
     Settings set;
     Detail   detail;
+    ClientList clients;
 
     // omens: the alert record
     Omen     omens[MAX_OMEN_ROWS];
@@ -304,6 +372,7 @@ struct State {
     // echoes: probe requests
     Echo     echoes[MAX_ECHO_ROWS];
     uint8_t  nEchoes = 0;
+    uint32_t echoDrops=0,echoEvicted=0;bool echoAvailable=true;
     uint16_t echoTotal = 0;
     uint16_t echoClients = 0;
 

@@ -128,6 +128,38 @@ size_t authString(uint16_t bits, char* out, size_t n) {
     return o;
 }
 
+void authSummary(uint16_t bits, char* out, size_t n) {
+    if (!out || !n) return;
+    size_t o=0; out[0]=0;
+    auto token=[&](const char* value) { if(o) add(out,n,o,"/"); add(out,n,o,value); };
+    if(bits & AUTH_WPA) token("WPA");
+    const bool sae=(bits & AUTH_SAE)!=0;
+    if((bits & AUTH_WPA2) && (!sae || (bits & (AUTH_PSK|AUTH_EAP))) && (!(bits & AUTH_OWE) || (bits & (AUTH_PSK|AUTH_EAP)))) token("WPA2");
+    if(bits & AUTH_WPA3) token("WPA3");
+    if(bits & AUTH_OWE) token("OWE");
+    if(bits & AUTH_WEP) token("WEP");
+    if(!o) {
+        add(out,n,o,(bits & AUTH_PRIVACY)?"ENCRYPTED":(bits & (AUTH_ESS|AUTH_IBSS))?"OPEN":"NOT REPORTED");
+        return;
+    }
+    if(bits & (AUTH_PSK|AUTH_EAP|AUTH_SAE)) {
+        add(out,n,o," "); bool first=true;
+        auto method=[&](const char* value){if(!first)add(out,n,o,"/");add(out,n,o,value);first=false;};
+        if(bits & AUTH_PSK) method("PSK");
+        if(bits & AUTH_EAP) method("ENT");
+        if(bits & AUTH_SAE) method("SAE");
+    }
+}
+
+const char* cipherSummary(uint16_t bits) {
+    if((bits & (AUTH_TKIP|AUTH_CCMP))==(AUTH_TKIP|AUTH_CCMP)) return "TKIP/CCMP";
+    if(bits & AUTH_CCMP) return "CCMP";
+    if(bits & AUTH_TKIP) return "TKIP";
+    if(bits & AUTH_WEP) return "WEP";
+    if(!(bits & (AUTH_PRIVACY|AUTH_WPA|AUTH_WPA2|AUTH_WPA3|AUTH_OWE)) && (bits & (AUTH_ESS|AUTH_IBSS))) return "NONE";
+    return "NOT REPORTED";
+}
+
 const char* authShort(uint16_t bits) {
     if (bits & AUTH_WPA3) return "WPA3";
     if (bits & AUTH_WPA2) return "WPA2";
