@@ -32,6 +32,9 @@ void begin();
 void tick(uint32_t nowMs);
 void setTiming(uint8_t profile,uint16_t dwell,bool active);
 void sendTiming(const uint8_t* target);
+// Queue a timing Config for a paced send from tick(): one per GAP_MS, never right
+// behind the Assign, so the small ESP-NOW transmit queue is not filled in a burst.
+void queueTiming(const uint8_t* target);
 
 // The CYD clears this while any coordinator is live, so its Core stops handing
 // out assignments and leaves node placement entirely to the collector. Default

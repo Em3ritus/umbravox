@@ -13,6 +13,12 @@ struct FakeScanner {
     bool start(int,decltype(nullptr),bool){++starts;active=startOk;return startOk;}
 };
 int main(){
+    // Freshness is a signed difference: the Wi-Fi task stamps lastMs after the loop
+    // sampled `now`, so a slightly-future stamp must read as fresh, and a counter
+    // wrap must not turn a recent AP stale.
+    assert(!stale(1000,1000) && !stale(1000,1003));
+    assert(!stale(60000,0) && stale(60001,0));
+    assert(!stale(5,0xFFFFFFF0u) && stale(60100u,0xFFFFFFF0u));
 #if defined(NM_CYD_C5)
     const char* expectedModel="Umbravox NM CYD C5";
     assert(strstr(WD_CAPS,"board_name=Umbravox_NM_CYD_C5"));

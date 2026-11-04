@@ -2,6 +2,7 @@
 #include "meshcore.h"
 #include "node_diagnostics.h"
 #include "mesh_timing.h"
+#include "mesh_timing_queue.h"
 #include "active_discovery.h"
 #include <atomic>
 #include <Arduino.h>
@@ -229,6 +230,8 @@ void setSink(Sink sink) { sink_ = sink; }
 void setCollector(FrameHook hook) { collector_ = hook; }
 
 void setTiming(uint8_t profile,uint16_t dwell,bool active){timing_.store((profile?1u:0u)|(uint32_t(meshtiming::dwell(dwell))<<8)|(active?1u<<24:0));}
+static meshtimingq::Queue timingQ_;
+void queueTiming(const uint8_t* target){timingQ_.push(target);}
 void sendTiming(const uint8_t* target){
 #if !UMBRAVOX_PASSIVE_ONLY
     const uint32_t t=timing_.load();
@@ -284,7 +287,7 @@ void assignAll(uint32_t nowMs) {
 
 #if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
-        sendTiming(nodes_[i].mac);
+        queueTiming(nodes_[i].mac);
 #endif
         nodes_[i].nChan = p.n;
         nodes_[i].camp  = a.camp;
@@ -304,6 +307,7 @@ void assignAll(uint32_t nowMs) {
 
 void tick(uint32_t nowMs) {
     if(discovery::busy())return;
+    {uint8_t m[6];if(timingQ_.due(nowMs,m))sendTiming(m);}   // one paced Config per GAP_MS
     portENTER_CRITICAL(&mux);
     for (int i = 0; i < MAX_NODES; i++)
         if (nodes_[i].live && meshlive::expired(nowMs, nodes_[i].lastMs, NODE_TIMEOUT_MS)) {

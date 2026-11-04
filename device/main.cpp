@@ -412,7 +412,7 @@ void reassignAll(int only = -1) {
         for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[i].chans[k];
 #if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
-        meshcore::sendTiming(coords_[i].mac);
+        meshcore::queueTiming(coords_[i].mac);
 #endif
     }
 }

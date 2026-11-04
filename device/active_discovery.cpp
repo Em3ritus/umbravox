@@ -7,7 +7,7 @@ namespace discovery {
 namespace {
 std::atomic<int> completion{0}; // 0 pending, 1 complete, 2 failed; dedicated mailbox
 Metrics counters;
-bool initialized=false, owned=false, warned=false;
+bool initialized=false, owned=false;
 uint32_t started=0;
 esp_event_handler_instance_t handler;
 wifi_ap_record_t records[32];
@@ -29,7 +29,7 @@ bool start(uint8_t channel,uint16_t dwell,uint32_t now){
     c.channel=channel;c.show_hidden=true;c.scan_type=WIFI_SCAN_TYPE_ACTIVE;
     c.scan_time.active.max=dwell? (dwell>1500?1500:dwell):120;
     completion.store(0,std::memory_order_release);
-    owned=true;started=now;warned=false;
+    owned=true;started=now;
     const esp_err_t err=esp_wifi_scan_start(&c,false);
     if(err!=ESP_OK){owned=false;Serial.printf("discovery: start rejected %d\n",(int)err);return false;}
     ++counters.started;
@@ -39,9 +39,16 @@ bool service(uint32_t now,Sink sink){
     if(!owned)return false;
     const int result=completion.exchange(0,std::memory_order_acq_rel);
     if(!result){
-        if(!warned && now-started>=5000){
-            warned=true;
-            Serial.println("discovery: completion missing; radio held, restart required if it does not recover");
+        // A scan whose completion event never arrives must not hold the radio
+        // forever: capture hopping, mesh and node loops all wait on busy(). After
+        // 5 s stop the scan, count it failed and hand the radio back.
+        if((int32_t)(now-started)>=5000){
+            Serial.println("discovery: completion missing after 5 s; stopping the scan and releasing the radio");
+            esp_wifi_scan_stop();
+            esp_wifi_clear_ap_list();
+            ++counters.completed;++counters.failed;
+            owned=false;
+            return false;
         }
         return true;
     }

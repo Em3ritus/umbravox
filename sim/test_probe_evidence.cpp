@@ -14,6 +14,13 @@ std::vector<uint8_t> frame(int sub,const std::vector<uint8_t>& name={}){
 }
 Event event(int sub,const std::vector<uint8_t>& name,uint32_t at){auto f=frame(sub,name);Event e;assert(parse(f.data(),f.size(),-51,48,at,e));return e;}
 int main(){
+ {evidence::Event w;
+  w.kind=evidence::Advertisement;w.sub=8;w.len=5;assert(!evidence::wanted(w));   // named visible-AP beacon: flood, never used
+  w.len=0;assert(evidence::wanted(w));                                           // hidden-AP beacon: marks it hidden
+  w.sub=5;w.len=5;assert(evidence::wanted(w));                                   // named probe response: can resolve a hidden AP
+  w.kind=evidence::Probe;w.sub=4;assert(evidence::wanted(w));
+  w.kind=evidence::Request;w.sub=0;assert(evidence::wanted(w));
+  w.kind=evidence::Response;w.sub=1;assert(evidence::wanted(w));}
  Event e;std::vector<uint8_t> full(32,'X');auto p=frame(4,full);assert(parse(p.data(),p.size(),-51,48,123,e)&&e.len==32&&e.channel==48);char displayName[33];display(displayName,e.name,e.len);assert(strlen(displayName)==32);
  for(size_t n=0;n<p.size();n++)assert(!parse(p.data(),n,-51,6,0,e));
  p.push_back(0);p.push_back(0);assert(!parse(p.data(),p.size(),0,0,0,e));
