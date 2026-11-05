@@ -190,7 +190,9 @@ and the designer previews that with the board's own drawing code:
   all three alert levels).
 - **Radar video.** On the Waveshare, **Radar video** takes a video file and plays it in the radar as the board
   would draw it: cropped to a square (the Crop slider picks which part of a tall video), 102x102, 12 frames a
-  second, 16 grey levels, looping, at most 12 seconds, audio dropped. The clip is part of the theme: it is
+  second, 16 grey levels, looping, at most 12 seconds, audio dropped. A GIF works too (uneven frame delays are
+  resampled to 12 fps); it needs a browser with `ImageDecoder` (Chrome, Edge, Safari), and `tools/video2radar.py`
+  reads a GIF through ffmpeg the same way. The clip is part of the theme: it is
   saved as `radar.vid` beside `theme.json`, checked, downloaded in the zip and installed with the pack, and
   an opened pack brings its `radar.vid` back. Remove the video and the next install has none. Over USB a clip takes
   minutes to send (about 650 KB; the page allows the time); a card reader is instant. The USB route cannot delete,

@@ -17,7 +17,7 @@ import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
 import { installOverSerial, wrapWebSerial, usbSupported, BAUD } from './usbinstall.js';
 import { loadWasm, W, H, BOARDS } from './preview.js';
-import { grabFrames, buildClip } from './radarvideo.js';
+import { grabFrames, grabGifFrames, isGifFile, buildClip } from './radarvideo.js';
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
 const $ = (id) => document.getElementById(id);
@@ -341,16 +341,22 @@ async function loadVideo() {
   if (!vidFile || vidBusy || !preview) return;
   vidBusy = true;
   const msg = $('vid-msg'), url = URL.createObjectURL(vidFile);
-  const v = document.createElement('video');
-  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  const onProgress = (d, n) => { msg.textContent = `Converting ${d} / ${n} frames...`; };
+  const vpos = Number($('vid-pos').value) / 100;
   try {
-    msg.className = 'msg'; msg.textContent = 'Reading the video...';
-    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('the browser cannot read this video')); });
-    const frames = await grabFrames(v, { vpos: Number($('vid-pos').value) / 100, onProgress: (d, n) => { msg.textContent = `Converting ${d} / ${n} frames...`; } });
+    msg.className = 'msg'; msg.textContent = 'Reading the file...';
+    let frames;
+    if (isGifFile(vidFile)) frames = await grabGifFrames(vidFile, { vpos, onProgress });
+    else {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+      await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('the browser cannot read this video')); });
+      frames = await grabFrames(v, { vpos, onProgress });
+    }
     state.clip = buildClip(frames);
     t0 = performance.now();
     changed();
-  } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this video: ' + ((e && e.message) || e); }
+  } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this file: ' + ((e && e.message) || e); }
   finally { URL.revokeObjectURL(url); vidBusy = false; paintVideoBar(); }
 }
 $('vid-file').addEventListener('change', (e) => { vidFile = e.target.files[0] || null; loadVideo(); });

@@ -82,3 +82,25 @@ test('radar.vid round-trips, and a damaged file is refused with a reason', () =>
   assert.throws(() => readClipFile(f.slice(0, f.length - 1)), /length/);
   assert.throws(() => readClipFile(f.slice(0, 5)), /short/);
 });
+
+import { gifPlan, isGifFile } from '../js/radarvideo.js';
+
+test('gifPlan: which GIF frame is showing at each 12 fps tick (frame delays are uneven)', () => {
+  // 10 frames of 100 ms = 1 s -> 12 ticks at 83.3 ms
+  assert.deepEqual(gifPlan(Array(10).fill(100)), [0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 8, 9]);
+  // one long frame then short ones
+  assert.deepEqual(gifPlan([500, 100, 100]), [0, 0, 0, 0, 0, 0, 1, 1, 2]);
+  // a single still frame is a one-tick clip
+  assert.deepEqual(gifPlan([1000]), Array(12).fill(0));
+  // longer than 12 s is cut at 12 s (144 ticks)
+  assert.equal(gifPlan(Array(200).fill(100)).length, 144);
+  // zero or missing delays count as 100 ms (what browsers do)
+  assert.deepEqual(gifPlan([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), gifPlan(Array(10).fill(100)));
+  assert.throws(() => gifPlan([]), /no frames/);
+});
+
+test('isGifFile goes by type or by name', () => {
+  assert.equal(isGifFile({ type: 'image/gif', name: 'x' }), true);
+  assert.equal(isGifFile({ type: '', name: 'LOOP.GIF' }), true);
+  assert.equal(isGifFile({ type: 'video/mp4', name: 'a.mp4' }), false);
+});

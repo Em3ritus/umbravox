@@ -107,3 +107,57 @@ export async function grabFrames(video, { vpos = 0.5, black = 24, white = 235, m
   }
   return frames;
 }
+
+// ---- GIF ---------------------------------------------------------------------------------------------------------
+// A <video> element cannot play a GIF, so the browser's ImageDecoder (WebCodecs) reads it frame by frame. `delaysMs` is each
+// GIF frame's display time; the result is the GIF frame index showing at each 12 fps tick, cut at 12 s. A zero or missing
+// delay counts as 100 ms, as browsers treat it.
+export function gifPlan(delaysMs, maxSeconds = 12) {
+  if (!delaysMs.length) throw new Error('no frames');
+  const d = delaysMs.map((x) => (x > 0 ? x : 100));
+  const total = d.reduce((a, b) => a + b, 0);
+  const ticks = Math.max(1, Math.min(Math.floor(maxSeconds * CLIP_FPS), 150, Math.ceil(total * CLIP_FPS / 1000 - 1e-9)));
+  const out = [];
+  let idx = 0, end = d[0];
+  for (let k = 0; k < ticks; k++) {
+    const t = k * 1000 / CLIP_FPS;
+    while (idx < d.length - 1 && t >= end - 1e-9) { idx++; end += d[idx]; }
+    out.push(idx);
+  }
+  return out;
+}
+
+export function isGifFile(f) { return !!f && (f.type === 'image/gif' || /\.gif$/i.test(f.name || '')); }
+
+export const gifSupported = () => typeof ImageDecoder !== 'undefined';
+
+// Same square centre crop and levels as grabFrames, from a GIF File.
+export async function grabGifFrames(file, { vpos = 0.5, black = 24, white = 235, onProgress } = {}) {
+  if (!gifSupported()) throw new Error('this browser cannot read GIFs (use Chrome, Edge or Safari, or convert it to a video)');
+  const dec = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
+  try {
+    await dec.tracks.ready;
+    const n = dec.tracks.selectedTrack.frameCount;
+    const imgs = [], delays = [];
+    for (let i = 0; i < n; i++) {                                   // decode each frame once; the decoder composites it
+      const { image } = await dec.decode({ frameIndex: i });
+      delays.push(image.duration ? image.duration / 1000 : 0);
+      imgs.push(image);
+    }
+    const plan = gifPlan(delays);
+    const cv = document.createElement('canvas'); cv.width = cv.height = CLIP_SIZE;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    const w = imgs[0].displayWidth, h = imgs[0].displayHeight, side = Math.min(w, h);
+    const sx = (w - side) / 2, sy = (h - side) * vpos;
+    const frames = [];
+    for (let k = 0; k < plan.length; k++) {
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CLIP_SIZE, CLIP_SIZE);   // transparent pixels read as black
+      ctx.drawImage(imgs[plan[k]], sx, sy, side, side, 0, 0, CLIP_SIZE, CLIP_SIZE);
+      frames.push(levelsFromGray(lumaFromRgba(ctx.getImageData(0, 0, CLIP_SIZE, CLIP_SIZE).data), black, white));
+      if (onProgress) onProgress(k + 1, plan.length);
+    }
+    imgs.forEach((i) => i.close());
+    return frames;
+  } finally { dec.close(); }
+}
