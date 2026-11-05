@@ -2,7 +2,7 @@
 // so Node can test them. The drawing itself is held to the device by wasm-parity.test.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLIP_SIZE, CLIP_FPS, MAX_FRAMES, MAX_BYTES, lumaFromRgba, levelsFromGray, packLevels, buildClip, validateClip, clipFile, readClipFile, MAX_CLIP_FILE } from '../js/radarvideo.js';
+import { quantizeColour, greyFrames, PAL_BYTES, MAX_COLOUR_FRAMES, CLIP_SIZE, CLIP_FPS, MAX_FRAMES, MAX_BYTES, lumaFromRgba, levelsFromGray, packLevels, buildClip, validateClip, clipFile, readClipFile, MAX_CLIP_FILE } from '../js/radarvideo.js';
 
 test('the clip is 102 px at 12 fps, and the frame cap fits the wasm buffer', () => {
   assert.equal(CLIP_SIZE, 102);
@@ -74,7 +74,7 @@ test('radar.vid round-trips, and a damaged file is refused with a reason', () =>
   const f = clipFile(c);
   const bad = (mut) => { const x = Uint8Array.from(f); mut(x); return x; };
   assert.throws(() => readClipFile(bad(x => { x[0] = 0; })), /UVRV/);
-  assert.throws(() => readClipFile(bad(x => { x[4] = 2; })), /version/);
+  assert.throws(() => readClipFile(bad(x => { x[4] = 3; })), /version/);
   assert.throws(() => readClipFile(bad(x => { x[5] = 64; })), /102/);
   assert.throws(() => readClipFile(bad(x => { x[7] = 31; })), /fps/);
   assert.throws(() => readClipFile(bad(x => { x[8] = 0; x[9] = 0; })), /frames/);
@@ -103,4 +103,90 @@ test('isGifFile goes by type or by name', () => {
   assert.equal(isGifFile({ type: 'image/gif', name: 'x' }), true);
   assert.equal(isGifFile({ type: '', name: 'LOOP.GIF' }), true);
   assert.equal(isGifFile({ type: 'video/mp4', name: 'a.mp4' }), false);
+});
+
+// ---- colour clips: radar.vid version 2 (a 16-colour palette travels with the clip) -------------------------------
+const PX = CLIP_SIZE * CLIP_SIZE;
+const rgba = (fn) => { const a = new Uint8ClampedArray(PX * 4); for (let i = 0; i < PX; i++) { const [r, g, b] = fn(i % CLIP_SIZE, Math.floor(i / CLIP_SIZE)); a.set([r, g, b, 255], 4 * i); } return a; };
+const pal565 = (pal, k) => { const v = pal[2 * k] | (pal[2 * k + 1] << 8); return [((v >> 11) & 31) * 255 / 31, ((v >> 5) & 63) * 255 / 63, (v & 31) * 255 / 31]; };
+
+test('quantizeColour: two colours come back as two palette entries, every pixel on the right one', () => {
+  const f = rgba((x) => (x < 51 ? [250, 20, 20] : [20, 20, 250]));
+  const q = quantizeColour([f], { dither: false });
+  assert.equal(q.palette.length, PAL_BYTES);
+  assert.equal(q.frames.length, 1); assert.equal(q.frames[0].length, PX);
+  assert.ok(q.frames[0].every((v) => v < 16));
+  const left = pal565(q.palette, q.frames[0][0]), right = pal565(q.palette, q.frames[0][50 + 102 * 3 + 1]);
+  assert.ok(left[0] > 230 && left[1] < 40 && left[2] < 40, 'red side is red (' + left + ')');
+  assert.ok(right[2] > 230 && right[0] < 40, 'blue side is blue (' + right + ')');
+  assert.equal(q.frames[0][0], q.frames[0][51 * 0 + 10]); assert.notEqual(q.frames[0][0], q.frames[0][60]);
+});
+
+test('quantizeColour: sixteen or fewer colours are kept almost exactly; more are approximated, never worse than the range', () => {
+  const cols = Array.from({ length: 12 }, (_, i) => [(i * 67) % 256, (i * 131 + 40) % 256, (i * 29 + 100) % 256]);
+  const f = rgba((x, y) => cols[(Math.floor(x / 9) + Math.floor(y / 9) * 3) % 12]);
+  const q = quantizeColour([f], { dither: false });
+  let worst = 0;
+  for (let i = 0; i < PX; i++) { const c = pal565(q.palette, q.frames[0][i]); for (let k = 0; k < 3; k++) worst = Math.max(worst, Math.abs(c[k] - f[4 * i + k])); }
+  assert.ok(worst < 9, 'RGB565 rounding is the only error (worst ' + worst + ')');
+  const grad = rgba((x, y) => [x * 2.5, y * 2.5, 128]);                              // thousands of colours
+  const g = quantizeColour([grad], { dither: false });
+  let mean = 0; for (let i = 0; i < PX; i++) { const c = pal565(g.palette, g.frames[0][i]); mean += (Math.abs(c[0] - grad[4 * i]) + Math.abs(c[1] - grad[4 * i + 1]) + Math.abs(c[2] - grad[4 * i + 2])) / 3; }
+  assert.ok(mean / PX < 14, 'a gradient is within a few percent on average (' + (mean / PX).toFixed(1) + ')');
+});
+
+test('quantizeColour: one palette for the whole clip, deterministic, any frame count', () => {
+  const a = rgba((x) => [x * 2, 30, 200 - x]), b = rgba((x, y) => [200, y * 2, x]);
+  const q1 = quantizeColour([a, b, a]), q2 = quantizeColour([a, b, a]);
+  assert.deepEqual(Array.from(q1.palette), Array.from(q2.palette));
+  assert.deepEqual(q1.frames.map((x) => Array.from(x)), q2.frames.map((x) => Array.from(x)));
+  assert.equal(q1.frames.length, 3);
+  assert.deepEqual(Array.from(q1.frames[0]), Array.from(q1.frames[2]), 'the same picture quantizes the same way in every frame (no shimmer)');
+  const flat = quantizeColour([rgba(() => [10, 200, 90])]);
+  assert.ok(flat.frames[0].every((v) => v === flat.frames[0][0]), 'a flat picture is one index');
+});
+
+test('quantizeColour: dithering stays on the palette and is steady from frame to frame', () => {
+  const grad = rgba((x, y) => [x * 2.5, 100, y * 2.5]);
+  const q = quantizeColour([grad, grad]);
+  assert.ok(q.frames[0].every((v) => v < 16));
+  assert.deepEqual(Array.from(q.frames[0]), Array.from(q.frames[1]));
+  const plain = quantizeColour([grad], { dither: false });
+  assert.notDeepEqual(Array.from(q.frames[0]), Array.from(plain.frames[0]), 'dither changes some pixels');
+});
+
+test('greyFrames is the old grey conversion', () => {
+  const f = rgba((x, y) => [x * 2, y * 2, 77]);
+  const g = greyFrames([f], 24, 235);
+  assert.deepEqual(Array.from(g[0]), Array.from(levelsFromGray(lumaFromRgba(f), 24, 235)));
+});
+
+test('a colour clip is radar.vid version 2: palette after the header, at most 149 frames', () => {
+  const pal = Uint8Array.from({ length: 32 }, (_, i) => (i * 9) & 255);
+  const frames = Array.from({ length: 3 }, (_, f) => Uint8Array.from({ length: PX }, (_, i) => (i + f) % 16));
+  const c = buildClip(frames, pal);
+  assert.deepEqual(Array.from(c.palette), Array.from(pal));
+  assert.equal(validateClip(c), null);
+  const file = clipFile(c);
+  assert.equal(file[4], 2);
+  assert.equal(file.length, 12 + 32 + 3 * 5202);
+  assert.deepEqual(Array.from(file.slice(12, 44)), Array.from(pal));
+  const back = readClipFile(file);
+  assert.deepEqual(Array.from(back.palette), Array.from(pal));
+  assert.deepEqual(Array.from(back.data), Array.from(c.data));
+  assert.equal(back.frames, 3);
+  assert.equal(clipFile(buildClip(frames)).length, 12 + 3 * 5202, 'without a palette it is version 1, as before');
+  assert.equal(clipFile(buildClip(frames))[4], 1);
+  assert.equal(readClipFile(clipFile(buildClip(frames))).palette, undefined);
+  assert.equal(MAX_COLOUR_FRAMES, 149);
+  const many = Array.from({ length: 150 }, () => frames[0]);
+  assert.throws(() => clipFile(buildClip(many, pal)), /149/);
+  assert.equal(clipFile(buildClip(many.slice(0, 149), pal)).length, 12 + 32 + 149 * 5202);
+  assert.ok(clipFile(buildClip(many.slice(0, 149), pal)).length <= MAX_CLIP_FILE);
+  assert.throws(() => clipFile({ ...c, palette: new Uint8Array(31) }), /palette/);
+  const bad = (f) => { const x = Uint8Array.from(file); f(x); return x; };
+  assert.throws(() => readClipFile(bad((x) => { x[4] = 3; })), /version/);
+  assert.throws(() => readClipFile(file.slice(0, 30)), /short/);
+  assert.throws(() => readClipFile(file.slice(0, file.length - 1)), /length/);
+  assert.throws(() => readClipFile(bad((x) => { x[8] = 150; x[9] = 0; })), /149|length/);
 });

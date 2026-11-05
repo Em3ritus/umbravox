@@ -415,3 +415,23 @@ test('pack clip: the CYD preview never shows it, and a bad clip is refused with 
   wsSame('a refused clip leaves the last good draft on screen', wsWasm(id, 'scan', 5, -1, -1, 2), shown);
   M._uv_clear_packs();
 });
+
+// ---- a colour clip (radar.vid version 2) ------------------------------------------------------------------------
+test('colour clip: wasm equals the host engine, shows its own colours, and differs from the grey version', () => {
+  M._uv_clear_packs();
+  const frames = [];
+  for (let f = 0; f < 5; f++) frames.push(Uint8Array.from({ length: 102 * 102 }, (_, i) => ((i % 102) + (Math.floor(i / 102) >> 3) + f) % 16));
+  const pal = Uint8Array.from({ length: 32 }, (_, i) => (i % 2 ? 0xF8 - i * 3 : (i * 37 + 5) & 255));          // 16 very different colours
+  const colour = clipFile(buildClip(frames, pal)), grey = clipFile(buildClip(frames));
+  const dir = packWithClip(colour);
+  const id = loadWithClip(dir, colour);
+  assert.ok(id >= BUILTIN_COUNT, `uv_load_pack: ${id < 0 ? err() : ''}`);
+  for (const frame of [0, 4, 9, 50])
+    wsSame(`WS colour clip frame ${frame}`, wsWasm(id, 'scan', frame, -1, -1, 2), wsSimDir(dir, { screen: 'scan', frame }));
+  const a = wsWasm(id, 'scan', 3, -1, -1, 2);
+  M._uv_clear_packs();
+  const id2 = loadWithClip(packWithClip(grey), grey);
+  const b = wsWasm(id2, 'scan', 3, -1, -1, 2);
+  assert.notEqual(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0, 'the palette changes the picture');
+  M._uv_clear_packs();
+});

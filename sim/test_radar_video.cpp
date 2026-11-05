@@ -91,6 +91,24 @@ int main() {
         expect(diffAll(full(W, H, a.scene()), full(W, H, b.scene())) > 20, "contacts are visible over the video");
     }
 
+    puts("== a clip with its own palette keeps its own colours");
+    {
+        uint8_t palb[32]; uint16_t want[16];
+        for (int i = 0; i < 16; i++) { want[i] = (uint16_t)(0x0841 * (i + 1) ^ 0x1234); palb[2 * i] = (uint8_t)(want[i] & 255); palb[2 * i + 1] = (uint8_t)(want[i] >> 8); }
+        RadarVideo cv = v; cv.pal = palb;
+        scanpres::SceneStore plain, col; fill(plain, 5000, &v, false); fill(col, 5000, &cv, false);
+        const auto pp = full(W, H, plain.scene()), pc = full(W, H, col.scene());
+        const int f = videoFrame(cv, 5000), lvl = (3 * f + 1) % 16;
+        const int px = cx - 50, py = cy - 40;
+        expect(pp[py * W + px] == grey(lvl), "without a palette the grey level is painted in the theme's colours");
+        expect(pc[py * W + px] == want[lvl], "with one, the pixel is the palette's colour for that index");
+        const int mx = cx - VW + 2 * (10 * f + 20);
+        expect(pc[cy * W + mx] == want[15], "and an index 15 pixel is palette entry 15");
+        int outside = 0;
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) { const int dx = x - cx, dy = y - cy; if (dx * dx + dy * dy > fr * fr && pp[y * W + x] != pc[y * W + x]) outside++; }
+        expect(outside == 0, "nothing outside the radar disc changes");
+    }
+
     puts("== engine: a new frame repaints the whole radar, and the panel mirror stays exact");
     {
         std::vector<uint16_t> front(W * H), back(W * H), panel(W * H, 0);

@@ -19,7 +19,7 @@ inline const Video* videoFor(uint8_t theme) {
     if (theme >= kSlots) return nullptr;
     const themepack::Clip* c = pal::clip(theme);
     if (!c || !c->px) return nullptr;
-    cache[theme] = Video{ c->w, c->h, c->frames, c->fps, c->px };
+    cache[theme] = Video{ c->w, c->h, c->frames, c->fps, c->px, c->pal };
     return &cache[theme];
 }
 

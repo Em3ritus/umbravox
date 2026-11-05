@@ -146,15 +146,18 @@ ignores it. It is a little-endian binary like `emblem.bin`:
 | bytes | content |
 |---|---|
 | 4 | `U` `V` `R` `V` |
-| 1 each | the number 1 (version), width 102, height 102, fps (1 to 30) |
+| 1 each | the number 1 or 2 (version), width 102, height 102, fps (1 to 30) |
 | 2 | frame count, little-endian (1 to 150) |
 | 2 | reserved, both 0 |
-| frames x 5,202 | 4-bit grey, two pixels per byte (high nibble first), row by row; 0 is black, 15 white |
+| version 2 only: 32 | a palette: 16 colours as RGB565, little-endian |
+| frames x 5,202 | 4-bit pixels, two per byte (high nibble first), row by row. Version 1: grey levels, 0 black to 15 white, painted in the theme's colours. Version 2: an index into the palette, so the clip keeps its own colours |
 
-The file must be exactly the length its header declares (at most 780,312 bytes). The board draws each frame 2x
+The file must be exactly the length its header declares (at most 780,312 bytes, so a version 2 clip holds at most 149 frames). The board draws each frame 2x
 inside the radar disc, so 102 pixels fill it. The designer makes this file from any video the browser can play
 (`tools/video2radar.py` does the same on a command line): it crops a square, shrinks it, keeps 12 frames a second
-and 16 greys, and drops the audio.
+and drops the audio. With **Keep colours** on (the default) it picks the best 16 colours for the whole video (median cut,
+with light ordered dithering that does not shimmer between frames) and writes version 2; off, it writes 16 greys as
+version 1. `tools/video2radar.py` writes version 1 only.
 
 A `radar.vid` that fails any check skips the **whole pack**, never half of it (the reason is in `/diag.log`, like a
 bad emblem). The board keeps at most **2** clips in memory (each is up to 780 KB of PSRAM); a third pack with a clip

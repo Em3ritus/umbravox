@@ -34,6 +34,17 @@ test('a clip works with a pack that has no emblem, and a bad clip is refused', (
   assert.throws(() => buildPack(t.theme, null, { ...clip(2), w: 64 }), /102/);
 });
 
+test('checks say whether the clip keeps its own colours', () => {
+  const t = makeTemplate('umbravox');
+  const text = (r) => r.map(c => c.text).join('\n');
+  const frames = [Uint8Array.from({ length: CLIP_SIZE * CLIP_SIZE }, (_, i) => i % 16)];
+  assert.match(text(runChecks(t.theme, null, buildClip(frames, new Uint8Array(32)))), /own colours/);
+  assert.match(text(runChecks(t.theme, null, buildClip(frames))), /theme's colours/);
+  assert.ok(runChecks(t.theme, null, buildClip(frames, new Uint8Array(32))).every(c => c.level !== 'error'));
+  const p = buildPack(t.theme, null, buildClip(frames, new Uint8Array(32)));
+  assert.equal(p.files.find(f => f.path.endsWith('radar.vid')).data[4], 2);
+});
+
 test('checks: the clip is reported, and its size is held to the limit', () => {
   const t = makeTemplate('umbravox');
   const none = runChecks(t.theme, null);

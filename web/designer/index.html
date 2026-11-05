@@ -132,10 +132,11 @@
             <input type="file" id="vid-file" accept="video/*,image/gif,.gif">
             <label class="small" for="vid-pos">Crop</label>
             <input type="range" id="vid-pos" min="0" max="100" value="50" aria-label="Which part of a tall video fills the radar: top to bottom">
+            <label class="small" for="vid-colour"><input type="checkbox" id="vid-colour" checked> Keep colours</label>
             <button type="button" id="vid-clear" class="btn" hidden>Remove</button>
           </div>
           <div id="vid-msg" class="msg" role="status"></div>
-          <p class="tiny muted">The clip is part of the theme: it is saved as radar.vid beside theme.json, played in the Waveshare radar at 102x102 and 12 frames a second in 16 greys, and ignored by the CYD. The preview shows it exactly as the board draws it.</p>
+          <p class="tiny muted">The clip is part of the theme: it is saved as radar.vid beside theme.json, played in the Waveshare radar at 102x102 and 12 frames a second, and ignored by the CYD. With Keep colours on, it uses the best 16 colours for the whole video; off, it is 16 greys painted in the theme's colours. The preview shows it exactly as the board draws it.</p>
         </div>
         <div class="vidbar" id="soundbar" hidden>
           <div class="small">Alert sounds <span class="muted">(Waveshare speaker)</span></div>

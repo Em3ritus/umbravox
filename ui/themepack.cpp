@@ -417,21 +417,26 @@ bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t w
 static const char* clipCheck(const uint8_t* d, size_t n, Clip& out) {
     if (!d || n < (size_t)CLIP_HDR) return "radar.vid is too short";
     if (d[0] != 'U' || d[1] != 'V' || d[2] != 'R' || d[3] != 'V') return "radar.vid is not a UVRV file";
-    if (d[4] != 1) return "radar.vid version is not 1";
+    if (d[4] != 1 && d[4] != 2) return "radar.vid version is not 1 or 2";
+    const bool colour = d[4] == 2;
     if (d[5] != CLIP_W || d[6] != CLIP_H) return "radar.vid must be 102x102";
     if (d[7] < 1 || d[7] > 30) return "radar.vid fps must be 1 to 30";
+    const size_t head = (size_t)CLIP_HDR + (colour ? (size_t)CLIP_PAL_BYTES : 0);
+    if (n < head) return "radar.vid is too short";
     const unsigned frames = (unsigned)d[8] | ((unsigned)d[9] << 8);
-    if (frames < 1 || frames > (unsigned)MAX_CLIP_FRAMES) return "radar.vid frames must be 1 to 150";
+    const unsigned most = colour ? (unsigned)((MAX_CLIP - head) / CLIP_FRAME_BYTES) : (unsigned)MAX_CLIP_FRAMES;   // 149 with a palette
+    if (frames < 1 || frames > most) return colour ? "radar.vid frames must be 1 to 149" : "radar.vid frames must be 1 to 150";
     if (d[10] || d[11]) return "radar.vid reserved bytes are not zero";
-    if (n != (size_t)CLIP_HDR + (size_t)frames * CLIP_FRAME_BYTES) return "radar.vid length does not match its frames";
-    out.w = d[5]; out.h = d[6]; out.fps = d[7]; out.frames = (uint16_t)frames; out.px = d + CLIP_HDR;
+    if (n != head + (size_t)frames * CLIP_FRAME_BYTES) return "radar.vid length does not match its frames";
+    out.w = d[5]; out.h = d[6]; out.fps = d[7]; out.frames = (uint16_t)frames; out.px = d + head;
+    out.pal = colour ? d + CLIP_HDR : nullptr;
     return nullptr;
 }
 
 bool parseClip(const uint8_t* data, size_t n, Clip& out, char* why, size_t whyCap) {
-    out.px = nullptr;
+    out.px = nullptr; out.pal = nullptr;
     const char* err = clipCheck(data, n, out);
-    if (err) out.px = nullptr;
+    if (err) { out.px = nullptr; out.pal = nullptr; }
     if (why && whyCap) {
         if (!err) why[0] = 0;
         else { strncpy(why, err, whyCap - 1); why[whyCap - 1] = 0; }

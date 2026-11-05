@@ -115,7 +115,7 @@ export function runChecks(theme, emblem, clip = null, sounds = null) {
     const bad = validateClip(clip);
     if (bad) out.push(error('Radar video: ' + bad + '.'));
     else {
-      out.push(ok('Radar video: ' + clip.frames + ' frames, ' + (clip.frames / clip.fps).toFixed(1) + ' s, ' + Math.round((12 + clip.data.length) / 1024) + ' KB. Only the Waveshare plays it; the CYD ignores it.'));
+      out.push(ok('Radar video: ' + clip.frames + ' frames, ' + (clip.frames / clip.fps).toFixed(1) + ' s, ' + Math.round((12 + (clip.palette ? 32 : 0) + clip.data.length) / 1024) + ' KB, ' + (clip.palette ? 'in its own colours' : "in the theme's colours") + '. Only the Waveshare plays it; the CYD ignores it.'));
       out.push(warn('Over USB a radar video takes minutes to send (a card reader is instant); the board keeps at most ' + limits.MAX_CLIPS + ' clips in memory, the first ones by folder name.'));
     }
   }

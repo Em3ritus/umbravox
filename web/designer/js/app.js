@@ -17,7 +17,7 @@ import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
 import { installOverSerial, wrapWebSerial, usbSupported, BAUD } from './usbinstall.js';
 import { loadWasm, W, H, BOARDS } from './preview.js';
-import { grabFrames, grabGifFrames, isGifFile, buildClip } from './radarvideo.js';
+import { grabFrames, grabGifFrames, isGifFile, buildClip, quantizeColour, greyFrames, MAX_COLOUR_FRAMES } from './radarvideo.js';
 import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSeconds, LEVELS } from './alertsound.js';
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
@@ -103,6 +103,7 @@ function begin(theme, emblem, clip = null, sounds = null) {
   state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
   $('open-msg').textContent = '';
   for (const k of LEVELS) sndSrc[k] = null;
+  vidSrc = null; vidFile = null;
   paintVideoBar(); paintSoundBar();
   syncForm(); changed(); show('design');
 }
@@ -392,11 +393,21 @@ async function loadSound(k, file) {
 // A video in the Waveshare radar. The browser decodes it; js/radarvideo.js turns it into the board's format, and it
 // becomes part of the theme (radar.vid): previewed, checked, downloaded and installed with it.
 let vidFile = null, vidBusy = false;
+let vidSrc = null;                                   // the RGBA frames captured from the last file, so Keep colours can flip without decoding it again
 function paintVideoBar() {
   const msg = $('vid-msg');
   $('vid-clear').hidden = !state.clip;
-  if (state.clip) { msg.className = 'msg'; msg.textContent = `${state.clip.frames} frames, ${(state.clip.frames / state.clip.fps).toFixed(1)} s, looping.`; }
+  const box = $('vid-colour');
+  box.disabled = !vidSrc && !state.clip;                                                  // an opened pack has no source to convert again
+  if (!vidSrc && state.clip) box.checked = !!state.clip.palette;
+  if (state.clip) { msg.className = 'msg'; msg.textContent = `${state.clip.frames} frames, ${(state.clip.frames / state.clip.fps).toFixed(1)} s, looping, ${state.clip.palette ? 'in its own colours' : "in the theme's colours"}.`; }
   else if (!vidBusy) { msg.className = 'msg'; msg.textContent = ''; }
+}
+// RGBA frames -> the clip, in colour (one 16-colour palette for the whole video) or as greys.
+function convertVideo() {
+  if (!vidSrc) return;
+  if ($('vid-colour').checked) { const q = quantizeColour(vidSrc.slice(0, MAX_COLOUR_FRAMES)); state.clip = buildClip(q.frames, q.palette); }
+  else state.clip = buildClip(greyFrames(vidSrc));
 }
 async function loadVideo() {
   if (!vidFile || vidBusy || !preview) return;
@@ -406,15 +417,15 @@ async function loadVideo() {
   const vpos = Number($('vid-pos').value) / 100;
   try {
     msg.className = 'msg'; msg.textContent = 'Reading the file...';
-    let frames;
-    if (isGifFile(vidFile)) frames = await grabGifFrames(vidFile, { vpos, onProgress });
+    if (isGifFile(vidFile)) vidSrc = await grabGifFrames(vidFile, { vpos, onProgress });
     else {
       const v = document.createElement('video');
       v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
       await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('the browser cannot read this video')); });
-      frames = await grabFrames(v, { vpos, onProgress });
+      vidSrc = await grabFrames(v, { vpos, onProgress });
     }
-    state.clip = buildClip(frames);
+    msg.textContent = 'Choosing colours...'; await new Promise((r) => setTimeout(r, 20));
+    convertVideo();
     t0 = performance.now();
     changed();
   } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this file: ' + ((e && e.message) || e); }
@@ -422,8 +433,15 @@ async function loadVideo() {
 }
 $('vid-file').addEventListener('change', (e) => { vidFile = e.target.files[0] || null; loadVideo(); });
 $('vid-pos').addEventListener('change', () => { if (vidFile && state.clip) loadVideo(); });
+$('vid-colour').addEventListener('change', async () => {
+  if (!vidSrc || vidBusy) return;
+  vidBusy = true; const msg = $('vid-msg'); msg.className = 'msg'; msg.textContent = 'Choosing colours...';
+  await new Promise((r) => setTimeout(r, 20));
+  try { convertVideo(); t0 = performance.now(); changed(); } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not convert: ' + e.message; }
+  finally { vidBusy = false; paintVideoBar(); }
+});
 $('vid-clear').addEventListener('click', () => {
-  state.clip = null; vidFile = null; $('vid-file').value = '';
+  state.clip = null; vidFile = null; vidSrc = null; $('vid-file').value = '';
   paintVideoBar(); changed();
 });
 

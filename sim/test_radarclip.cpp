@@ -55,7 +55,8 @@ int main() {
         };
         auto v = makeClip(2);
         { auto x = v; x[0] = 'X'; bad("wrong magic", x, "UVRV"); }
-        { auto x = v; x[4] = 2; bad("a newer version", x, "version"); }
+        { auto x = v; x[4] = 3; bad("a newer version", x, "version"); }
+        { auto x = v; x[4] = 0; bad("version 0", x, "version"); }
         { auto x = v; x[5] = 64; bad("width 64", x, "102"); }
         { auto x = v; x[6] = 101; bad("height 101", x, "102"); }
         { auto x = v; x[7] = 0; bad("fps 0", x, "fps"); }
@@ -70,7 +71,34 @@ int main() {
         check("a null why buffer is fine", !parseClip(v.data(), 3, c, nullptr, 0));
     }
 
-    puts("== palette: a pack's clip is kept by pointer, cleared with the pack");
+    puts("== parseClip: version 2, a clip with its own 16-colour palette");
+    {
+        auto c2 = [](int frames) { auto v = makeClip(frames); v[4] = 2; v.insert(v.begin() + CLIP_HDR, CLIP_PAL_BYTES, 0); for (int i = 0; i < 16; i++) { v[CLIP_HDR + 2 * i] = (uint8_t)(i * 16 + 1); v[CLIP_HDR + 2 * i + 1] = (uint8_t)(0xF0 - i); } return v; };
+        check("the palette is 32 bytes", CLIP_PAL_BYTES == 32);
+        Clip c; char why[56] = "x";
+        auto v = c2(3);
+        check("a colour clip is accepted", parse_(v, c, why, sizeof why) && !why[0]);
+        check("shape and frames are as in version 1", c.w == 102 && c.h == 102 && c.fps == 12 && c.frames == 3);
+        check("pal points at the 32 palette bytes, px just past them", c.pal == v.data() + CLIP_HDR && c.px == v.data() + CLIP_HDR + CLIP_PAL_BYTES);
+        auto g = makeClip(3); Clip cg; parse_(g, cg);
+        check("a version 1 clip has no palette", cg.pal == nullptr && cg.px == g.data() + CLIP_HDR);
+        auto top = c2(MAX_CLIP_FRAMES - 1);
+        check("149 frames (the most that fits the size limit) is fine", parse_(top, c) && c.frames == 149 && top.size() <= MAX_CLIP);
+        auto bad2 = [&](const char* label, std::vector<uint8_t> x, const char* word) {
+            c.px = (const uint8_t*)1; c.pal = (const uint8_t*)1; why[0] = 0;
+            const bool ok = parse_(x, c, why, sizeof why);
+            char m[120]; snprintf(m, sizeof m, "%s -> refused, pointers cleared, reason mentions \"%s\" (%s)", label, word, why);
+            check(m, !ok && c.px == nullptr && c.pal == nullptr && strstr(why, word));
+        };
+        { auto x = c2(MAX_CLIP_FRAMES); bad2("150 colour frames do not fit the size limit", x, "149"); }
+        { auto x = c2(2); x.pop_back(); bad2("one byte short", x, "length"); }
+        { auto x = c2(2); x.push_back(0); bad2("one byte long", x, "length"); }
+        { auto x = c2(2); x.resize(CLIP_HDR + 10); bad2("cut inside the palette", x, "short"); }
+        { auto x = c2(2); x[10] = 1; bad2("reserved byte set", x, "reserved"); }
+        { auto x = c2(2); x[8] = 0; x[9] = 0; bad2("zero frames", x, "frames"); }
+    }
+
+    puts("== palette: a pack\'s clip is kept by pointer, cleared with the pack");
     {
         pal::clearPacks();
         auto v = makeClip(2); Clip c; parse_(v, c);
@@ -85,7 +113,7 @@ int main() {
         check("videoFor mirrors it for the renderer", rv && rv->w == 102 && rv->h == 102 && rv->frames == 2 && rv->fps == 12 && rv->px == c.px);
         check("videoFor is null for a theme without a clip", radarclip::videoFor(pal::TH_UMBRAVOX) == nullptr);
         check("the table is small (internal RAM is scarce): one entry per possible theme, not per byte value",
-              radarclip::kSlots == pal::TH_COUNT + themepack::MAX_PACKS && sizeof(radarclip::Video) * radarclip::kSlots < 700);
+              radarclip::kSlots == pal::TH_COUNT + themepack::MAX_PACKS && sizeof(radarclip::Video) * radarclip::kSlots < 800);   // 32 bytes each now it carries the palette pointer: 736 in all
         check("an id past the table has no clip, and does not read outside it", radarclip::videoFor((uint8_t)radarclip::kSlots) == nullptr && radarclip::videoFor(255) == nullptr);
         pal::addPack(p, nullptr);                                         // the same name again, no clip: it replaces the slot
         check("re-adding the pack without a clip drops it", pal::clip((uint8_t)id) == nullptr && radarclip::videoFor((uint8_t)id) == nullptr);

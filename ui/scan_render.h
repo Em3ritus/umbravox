@@ -87,7 +87,7 @@ struct Fx {
 
 // A looping clip drawn 2x inside the radar disc of a wide panel (replaces the picture there). 4-bit grey, two pixels
 // per byte (high nibble first), row-major, `frames` frames back to back. The data is owned by the caller (flash).
-struct RadarVideo { int w, h, frames, fps; const uint8_t* px; };
+struct RadarVideo { int w, h, frames, fps; const uint8_t* px; const uint8_t* pal = nullptr; };   // pal: 16 RGB565 LE, or null = grey levels in the theme's colours
 inline int videoFrame(const RadarVideo& v, uint32_t now) { return int((uint64_t(now) * uint64_t(v.fps) / 1000u) % uint64_t(v.frames)); }
 
 struct ScanScene {
@@ -1010,7 +1010,8 @@ inline void fxBaseline(S& s, int sx0, int w, int barBase, uint32_t now) {       
 // an integer square root, and each pixel is one nibble lookup and one store.
 inline void videoInto(S& s, const RadarVideo& v, uint32_t now, int cx, int cy, int r) {
     uint16_t lut[16];
-    for (int g = 0; g < 16; g++) lut[g] = ui::Canvas::mix(pal::VOID, pal::BRIGHT, g, 15);
+    for (int g = 0; g < 16; g++)
+        lut[g] = v.pal ? (uint16_t)(v.pal[2 * g] | (v.pal[2 * g + 1] << 8)) : ui::Canvas::mix(pal::VOID, pal::BRIGHT, g, 15);
     const uint8_t* fr = v.px + (size_t)videoFrame(v, now) * size_t((v.w * v.h + 1) / 2);
     const int ox = cx - v.w, oy = cy - v.h;                              // top-left of the 2x picture
     for (int y = s.y0; y < s.y0 + s.h; y++) {
