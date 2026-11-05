@@ -1028,7 +1028,11 @@ bool pollConsole() {
     static sdcmd::LineBuf lb;
     char reply[sdcmd::REPLY_CAP];
     if (sdio::console.tick(millis(), reply, sizeof reply)) Serial.println(reply);
+    const uint32_t sliceStart = millis();
+    uint32_t lastByte = sliceStart;
+    for (;;) {                                    // one pass; during an upload it repeats while chunks keep coming (sdcmd::pollAgain)
     while (Serial.available()) {
+        lastByte = millis();
         const sdcmd::LineBuf::Kind k = lb.feed((char)Serial.read());
         if (k == sdcmd::LineBuf::NONE) continue;
         if (k == sdcmd::LineBuf::OVERLONG) {
@@ -1187,6 +1191,9 @@ bool pollConsole() {
                               "SDPUT, SDDEL <path>, SDRMDIR <folder>, REBOOT)\n", line);
             }
         }
+    }
+    if (!sdcmd::pollAgain(sdio::console.uploading(), sliceStart, lastByte, millis())) break;
+    delay(1);                                     // let the other tasks run; the host's next chunk is on its way
     }
     return false;
 }

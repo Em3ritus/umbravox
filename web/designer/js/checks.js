@@ -3,6 +3,7 @@
 import limits from './limits.json' with { type: 'json' };
 import { ROLES, isHex, describe, toRgb565, contrastX10, contrastRatio, fmtRatio } from './palette.js';
 import { themeJson } from './pack.js';
+import { validateClip } from './radarvideo.js';
 
 const ok = (text) => ({ level: 'ok', text });
 const warn = (text) => ({ level: 'warn', text });
@@ -14,7 +15,7 @@ function checkString(label, s, max, minLen, out) {
   else if (s.length < minLen) out.push(error(label + ' must be at least ' + minLen + ' character' + (minLen > 1 ? 's' : '') + '.'));
 }
 
-export function runChecks(theme, emblem) {
+export function runChecks(theme, emblem, clip = null) {
   const out = [];
   const t = theme || {};
   const c = t.colors || {};
@@ -108,6 +109,15 @@ export function runChecks(theme, emblem) {
     else out.push(ok('Pack size ' + total + ' bytes of ' + limits.MAX_PACK + ' (64 KB).'));
   }
   if (emb > limits.MAX_EMBLEM) out.push(error('emblem.bin is ' + emb + ' bytes; the limit is ' + limits.MAX_EMBLEM + '.'));
+
+  if (clip) {
+    const bad = validateClip(clip);
+    if (bad) out.push(error('Radar video: ' + bad + '.'));
+    else {
+      out.push(ok('Radar video: ' + clip.frames + ' frames, ' + (clip.frames / clip.fps).toFixed(1) + ' s, ' + Math.round((12 + clip.data.length) / 1024) + ' KB. Only the Waveshare plays it; the CYD ignores it.'));
+      out.push(warn('Over USB a radar video takes minutes to send (a card reader is instant); the board keeps at most ' + limits.MAX_CLIPS + ' clips in memory, the first ones by folder name.'));
+    }
+  }
 
   out.push(ok('The device loads at most ' + limits.MAX_PACKS + ' packs (the first ' + limits.MAX_PACKS + ' by folder name).'));
   return out;

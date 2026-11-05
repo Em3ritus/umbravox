@@ -315,7 +315,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
     switch (cur_) {
         case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c, alertShown(s)); eScan_.back().animate(true); eScan_.back().fx(true);
 #ifdef UV_HAVE_RADAR_VIDEO
-            if (s.set.theme == pal::TH_BAPH0MAU5) eScan_.back().video(&kRadarVideo);       // the seal theme plays the clip
+            if (s.set.theme == pal::TH_BAPH0MAU5 && !pal::clip(s.set.theme)) eScan_.back().video(&kRadarVideo);   // the built-in seal plays the compiled-in clip; a pack plays its own radar.vid
 #endif
             eScan_.back().sweep(s.set.sweep); eScan_.commit();
             break;

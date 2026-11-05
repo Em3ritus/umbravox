@@ -2,7 +2,7 @@
 """Install theme packs and delete files on the UMBRAVOX SD card over the wired
 USB console, without pulling the card.
 
-    sdput.py PORT put   <folder>    upload <folder>/emblem.bin (if present), then theme.json
+    sdput.py PORT put   <folder>    upload <folder>/radar.vid and emblem.bin (if present), then theme.json
     sdput.py PORT del   <path>      delete one file (theme files and old WD-*.csv logs only)
     sdput.py PORT rmdir <folder>    remove an EMPTY /themes/<folder>
     sdput.py PORT ls    [dir]       list the card's root (or a directory)
@@ -34,6 +34,7 @@ CHUNK = 96               # raw bytes per D line (device: sdcmd::CHUNK_MAX)
 LINE_CAP = 200           # device: sdcmd::LINE_CAP
 MAX_JSON = 4096          # ui/themepack.h
 MAX_EMBLEM = 9728
+MAX_CLIP = 780312        # radar.vid: 12 + 150 frames of 5202 bytes
 RETRIES = 3              # a failed chunk is resent up to this many times
 DOS_NAMES = {"con", "prn", "aux", "nul"} | {p + str(d) for p in ("com", "lpt") for d in range(10)}
 
@@ -57,8 +58,14 @@ def folder_ok(f):
     return bool(re.fullmatch(r"[A-Za-z0-9_-]{1,31}", f)) and f.lower() not in DOS_NAMES
 
 
+def chunk_len(offset):
+    """Raw bytes to send at `offset`: 96, or 95 once the offset has six digits, so the line stays within the device's
+    200-character cap ('D 780288 ' + 192 hex would be 201). Only a radar.vid goes that far."""
+    return min(CHUNK, (LINE_CAP - 3 - len(str(offset))) // 2)
+
+
 def chunk_line(offset, data):
-    assert 0 < len(data) <= CHUNK
+    assert 0 < len(data) <= chunk_len(offset)
     return "D %d %s" % (offset, data.hex())
 
 
@@ -120,11 +127,14 @@ def pack_files(folder):
     real = os.path.realpath(folder)
     if not os.path.isdir(real):
         raise ValueError("%s is not a folder" % folder)
+    clip = read_pack_file(real, "radar.vid", MAX_CLIP)
     emblem = read_pack_file(real, "emblem.bin", MAX_EMBLEM)
     theme = read_pack_file(real, "theme.json", MAX_JSON)
     if theme is None:
         raise ValueError("%s has no theme.json" % folder)
     files = []
+    if clip is not None:
+        files.append(("/themes/%s/radar.vid" % name, clip))
     if emblem is not None:
         files.append(("/themes/%s/emblem.bin" % name, emblem))
     files.append(("/themes/%s/theme.json" % name, theme))
@@ -135,8 +145,11 @@ def put_steps(path, data):
     """(line to send, the reply that confirms it) for one file."""
     crc = crc32(data)
     steps = [("SDPUT %s %d %08x" % (path, len(data), crc), "OK put %s %d" % (path, len(data)))]
-    for off in range(0, len(data), CHUNK):
-        steps.append((chunk_line(off, data[off:off + CHUNK]), "OK %d" % off))
+    off = 0
+    while off < len(data):
+        n = chunk_len(off)
+        steps.append((chunk_line(off, data[off:off + n]), "OK %d" % off))
+        off += n
     steps.append(("END", "DONE %d %08x" % (len(data), crc)))
     for line, _ in steps:
         assert len(line) <= LINE_CAP
@@ -179,7 +192,16 @@ def selftest():
     steps = put_steps("/themes/x/theme.json", bytes(range(200)))
     check("200 bytes: SDPUT, 3 chunks, END", len(steps) == 5 and steps[-1][0] == "END")
     check("chunk offsets 0/96/192", [s[1] for s in steps[1:4]] == ["OK 0", "OK 96", "OK 192"])
+    big = bytes((i * 7) & 255 for i in range(MAX_CLIP))
+    bsteps = put_steps("/themes/x/radar.vid", big)
+    offs = [int(s[1].split()[1]) for s in bsteps[1:-1]]
+    sizes = [len(s[0].split()[2]) // 2 for s in bsteps[1:-1]]
+    check("a 780312-byte clip: every line within the 200-character cap", all(len(s[0]) <= LINE_CAP for s in bsteps))
+    check("...chunks tile the file exactly, in order", offs[0] == 0 and all(offs[i + 1] == offs[i] + sizes[i] for i in range(len(offs) - 1)) and offs[-1] + sizes[-1] == MAX_CLIP)
+    check("...96 bytes below offset 100000, 95 above", sizes[0] == 96 and chunk_len(99999) == 96 and chunk_len(100000) == 95 and sizes[-1] <= 95)
+    check("...and the file reassembles byte for byte", b"".join(bytes.fromhex(s[0].split()[2]) for s in bsteps[1:-1]) == big)
     selftest_files(check)
+    selftest_link(check)
     for a, ok in (("/WD-0001.csv", True), ("/themes/x/theme.json", True), ("/thèmes/x", False),
                   ("caf\u00e9", False), ("a b", False), ("a\tb", False), ("", False), ("x" * 121, False)):
         check("arg_ok(%r) is %s" % (a, ok), arg_ok(a) == ok)
@@ -204,6 +226,56 @@ def selftest():
     check("Ctrl-C mid-put: returns failure and sends ABORT", r is False and fl.sent[-1] == "ABORT")      # counts through check(); not `fails += ...`, which reads fails first
     print("\n%d FAILED" % fails if fails else "\nsdput.py selftest: all passed")
     return 1 if fails else 0
+
+
+def selftest_link(check):
+    """The serial link on a pseudo-terminal with a fake device that answers each D line at once: a chunk must cost
+    about a round trip, not a read timeout (read(256) waited its full 50 ms for every short reply, so a 650 KB clip
+    ran at 1 KB/s). Needs pyserial (run with ~/.platformio/penv/bin/python); says so if it is missing."""
+    try:
+        import serial  # noqa: F401
+    except ImportError:
+        print("  skip link latency (pyserial missing: run with ~/.platformio/penv/bin/python)")
+        return
+    import pty
+    import threading
+    master, slave = pty.openpty()
+    stop = threading.Event()
+
+    def device():
+        buf = b""
+        while not stop.is_set():
+            try:
+                import select
+                if not select.select([master], [], [], 0.05)[0]:
+                    continue
+                buf += os.read(master, 4096)
+            except OSError:
+                return
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                parts = line.decode("ascii", "replace").split()
+                if len(parts) == 3 and parts[0] == "D":
+                    os.write(master, ("OK %s\n" % parts[1]).encode())
+
+    t = threading.Thread(target=device, daemon=True)
+    t.start()
+    try:
+        link = Link(os.ttyname(slave))
+        n, t0 = 100, time.monotonic()
+        ok = True
+        for i in range(n):
+            link.send("D %d 00" % (i * 96))
+            ok = ok and link.expect("OK %d" % (i * 96), 2.0) == "OK %d" % (i * 96)
+        per = (time.monotonic() - t0) / n * 1000
+        link.close()
+        check("link: 100 chunks answered (%.1f ms each)" % per, ok)
+        check("link: a chunk costs a round trip, not a read timeout (under 15 ms)", per < 15)
+    finally:
+        stop.set()
+        t.join(1)
+        os.close(master)
+        os.close(slave)
 
 
 def selftest_files(check):
@@ -267,6 +339,19 @@ def selftest_files(check):
         check("theme.json over 4096 bytes refused before sending", refused(d, "over 4096"))
         d = pack("big-emblem", emblem=b"\0" * (MAX_EMBLEM + 1))
         check("emblem.bin over 9728 bytes refused before sending", refused(d, "over 9728"))
+        d = pack("big-clip")
+        with open(os.path.join(d, "radar.vid"), "wb") as fh:
+            fh.write(b"\0" * (MAX_CLIP + 1))
+        check("radar.vid over 780312 bytes refused before sending", refused(d, "over 780312"))
+        d = pack("clip-pack", emblem=b"UVE\x01")
+        with open(os.path.join(d, "radar.vid"), "wb") as fh:
+            fh.write(b"UVRV")
+        name, files = pack_files(d)
+        check("radar.vid goes first, theme.json last", [f[0] for f in files] ==
+              ["/themes/clip-pack/radar.vid", "/themes/clip-pack/emblem.bin", "/themes/clip-pack/theme.json"])
+        d = pack("sym-clip")
+        os.symlink(secret, os.path.join(d, "radar.vid"))
+        check("symlinked radar.vid refused", refused(d, "not a regular file"))
         d = pack("empty-theme", theme=b"")
         check("empty theme.json refused", refused(d, "empty"))
 
@@ -341,7 +426,9 @@ class Link:
                 yield line
             if time.monotonic() >= end:
                 return
-            self.buf += self.s.read(256)
+            # Whatever has arrived (at least one byte, waiting up to the timeout for it): read(256) would wait for 256
+            # bytes, i.e. the whole timeout for every short reply.
+            self.buf += self.s.read(max(1, self.s.in_waiting))
 
     def expect(self, want, timeout):
         """The confirming reply `want`, an 'ERR ...' line, or None on timeout.

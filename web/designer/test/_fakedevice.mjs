@@ -99,13 +99,13 @@ export class FakeDevice {
   put(t) {
     if (this.up) this.drop();
     if (t.length !== 4) return this.reply('ERR usage: SDPUT <path> <size> <crc32hex>');
-    const m = /^\/themes\/([A-Za-z0-9_-]{1,31})\/(theme\.json|emblem\.bin)$/i.exec(t[1]);
+    const m = /^\/themes\/([A-Za-z0-9_-]{1,31})\/(theme\.json|emblem\.bin|radar\.vid)$/i.exec(t[1]);
     if (!m || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i.test(m[1])) return this.reply('ERR path not allowed');
     if (!/^(0|[1-9][0-9]{0,9})$/.test(t[2])) return this.reply('ERR bad size');
     if (!/^[0-9a-fA-F]{8}$/.test(t[3])) return this.reply('ERR bad crc32 (8 hex digits)');
     const size = Number(t[2]), file = m[2].toLowerCase();
     if (size === 0) return this.reply('ERR empty file');
-    if (size > (file === 'theme.json' ? 4096 : 9728)) return this.reply('ERR too large');
+    if (size > (file === 'theme.json' ? 4096 : file === 'radar.vid' ? 780312 : 9728)) return this.reply('ERR too large');
     const dir = '/themes/' + m[1];
     const hadDir = this.dirs.has(dir.toLowerCase());
     this.mkdir(dir);

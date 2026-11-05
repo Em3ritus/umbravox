@@ -4,7 +4,8 @@
 // lists, measures and reads files, backs the boot-loop guard's GuardKv with
 // Preferences, and hands parsed packs to pal::addPack. Every buffer is fixed:
 // the folder list, the theme.json buffer, and at most MAX_PACKS emblem buffers
-// of MAX_EMBLEM bytes each in PSRAM. Nothing is sized from a file.
+// of MAX_EMBLEM bytes each in PSRAM, and at most MAX_CLIPS radar clips, each allocated at its measured size (already
+// checked against MAX_CLIP) in PSRAM. Nothing else is sized from a file.
 //
 // Buffer capacities are never passed by hand: every helper that fills a
 // buffer takes it as an array reference (char (&)[N]) and derives N itself,
@@ -51,7 +52,7 @@ uint16_t nSeen = 0;                          // valid-named folders listed
 // what Wi-Fi and BLE run out of.
 struct Scratch {
     char     names[MAX_FOLDERS][32];
-    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS];
+    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS];
     union {
         uint8_t      json[MAX_JSON];
         GuardScratch guard;
@@ -67,6 +68,11 @@ Scratch* S = nullptr;
 // it, so at most MAX_PACKS buffers are ever allocated.
 Emblem      emblems[MAX_PACKS];
 uint8_t*    spare = nullptr;
+
+// Radar clips (radar.vid). pal::addPack keeps the Clip POINTER and Clip::px points into the PSRAM buffer, so both live
+// for the whole program. At most MAX_CLIPS: 2 x 780 KB is what PSRAM can spare.
+Clip        clips[MAX_CLIPS];
+int         nClips = 0;
 
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
@@ -135,11 +141,12 @@ void measure() {
     for (int i = 0; i < nNames; i++) {
         S->jsonSz[i] = pathOf(path, S->names[i], "theme.json") ? sdlog::sizeOf(path) : 0;
         S->embSz[i]  = pathOf(path, S->names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
+        S->clipSz[i] = pathOf(path, S->names[i], "radar.vid")  ? sdlog::sizeOf(path) : 0;
     }
 }
 
 uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot wrap it
-    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i];
+    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i];   // an edited clip gives the pack another try
     return t > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)t;
 }
 
@@ -185,7 +192,29 @@ const Emblem* loadEmblem(const char* folder, uint32_t size, char (&why)[WHY_CAP]
     return &e;
 }
 
-bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]) {
+// radar.vid: read whole into its own PSRAM buffer, then validated by themepack::parseClip. Null with `why` set on any
+// failure (the buffer is freed); on success the buffer and its slot belong to the pack, to be released by
+// releaseClip() if the pack is then refused.
+const Clip* loadClip(const char* folder, uint32_t size, char (&why)[WHY_CAP], uint8_t*& buf) {
+    buf = nullptr;
+    if (nClips >= MAX_CLIPS) { setWhy(why, "no room for another clip (%d at most)", MAX_CLIPS); return nullptr; }
+    if (size > MAX_CLIP) { setWhy(why, "radar.vid over %u bytes", (unsigned)MAX_CLIP); return nullptr; }
+    buf = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+    if (!buf) { setWhy(why, "no PSRAM for radar.vid"); return nullptr; }
+    char path[PATH_CAP];
+    const uint32_t n = pathOf(path, folder, "radar.vid") ? sdlog::readFile(path, buf, size) : 0;
+    if (n != size) { setWhy(why, "radar.vid could not be read"); heap_caps_free(buf); buf = nullptr; return nullptr; }
+    Clip& c = clips[nClips];                 // the slot the next admitted clip takes
+    char cwhy[48];
+    if (!parseClip(buf, n, c, cwhy, capOf(cwhy))) {
+        setWhy(why, "%s", cwhy);             // already names radar.vid
+        heap_caps_free(buf); buf = nullptr;
+        return nullptr;
+    }
+    return &c;
+}
+
+bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, char (&why)[WHY_CAP]) {
     static_assert(std::extent<std::remove_reference_t<decltype(std::declval<Scratch&>().buf.json)>>::value
                   == MAX_JSON, "theme.json buffer");
     char path[PATH_CAP];
@@ -202,17 +231,22 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]
     const Emblem* em = nullptr;
     if ((p.centre == CENTRE_EMBLEM || p.centre == CENTRE_RADAR_EMBLEM) && !(em = loadEmblem(folder, es, why))) return false;
 
+    uint8_t* clipBuf = nullptr;
+    const Clip* clip = nullptr;
+    if (cs > 0 && !(clip = loadClip(folder, cs, why, clipBuf))) return false;
+
     const Admit a = admit(folder, p, taken, nTaken);
-    if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); return false; }
+    if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); if (clipBuf) heap_caps_free(clipBuf); return false; }
 
     Pack probe = p;                          // addPack sanitises its own copy
     if (sanitizeStatus(probe))
         elog::event(elog::WARN, "theme", "%s: status colours too faint, replaced", folder);
-    const int id = pal::addPack(p, em);
-    if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); return false; }
+    const int id = pal::addPack(p, em, clip);
+    if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); if (clipBuf) heap_caps_free(clipBuf); return false; }
+    if (clip) nClips++;                      // that buffer and slot now belong to the pack
     taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
-    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d", folder, p.name, id);
+    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s", folder, p.name, id, clip ? " with a radar clip" : "");
     return true;
 }
 
@@ -226,12 +260,13 @@ void visit(int i) {
     if (nTaken >= MAX_PACKS) { skip(folder, admitWhy(ADMIT_FULL)); return; }
     if (S->jsonSz[i] == 0) { skip(folder, "no theme.json"); return; }
     if (S->jsonSz[i] > MAX_JSON) { skip(folder, "theme.json over 4096 bytes"); return; }
+    if (S->clipSz[i] > MAX_CLIP) { skip(folder, "radar.vid over 780312 bytes"); return; }
 
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), folder, total);
     if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
     char why[WHY_CAP] = "unknown";
-    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], why);
+    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], why);
     guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }

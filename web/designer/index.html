@@ -128,14 +128,14 @@
         <div id="preview-msg" class="msg" role="status"></div>
         <div class="vidbar" id="vidbar" hidden>
           <div class="vidrow">
-            <label class="small" for="vid-file">Radar video <span class="muted">(preview only)</span></label>
+            <label class="small" for="vid-file">Radar video <span class="muted">(Waveshare)</span></label>
             <input type="file" id="vid-file" accept="video/*">
             <label class="small" for="vid-pos">Crop</label>
             <input type="range" id="vid-pos" min="0" max="100" value="50" aria-label="Which part of a tall video fills the radar: top to bottom">
             <button type="button" id="vid-clear" class="btn" hidden>Remove</button>
           </div>
           <div id="vid-msg" class="msg" role="status"></div>
-          <p class="tiny muted">Plays in the Waveshare radar here, at 102x102 and 12 frames a second in 16 greys, as the board would draw it. A theme pack cannot carry a clip yet: to put one on the board, convert it with tools/video2radar.py and build it into the firmware.</p>
+          <p class="tiny muted">The clip is part of the theme: it is saved as radar.vid beside theme.json, played in the Waveshare radar at 102x102 and 12 frames a second in 16 greys, and ignored by the CYD. The preview shows it exactly as the board draws it.</p>
         </div>
         <p class="tiny muted">Runs the real device drawing code, so it is exactly what the panel will show.</p>
       </div>
@@ -199,6 +199,7 @@
     <div id="usb-unsupported" class="msg warn" hidden></div>
     <div id="usb-body">
       <h3 class="num">1&nbsp; Connect</h3>
+      <p class="tiny muted" id="usb-clip-note" hidden></p>
       <p class="small"><b>Connecting may reset the board.</b> If it restarts, it is back in a few seconds; the page waits for it to finish booting before it sends anything.</p>
       <p class="small">Close any serial monitor (Arduino IDE, PlatformIO, screen) first: only one program can use the port at a time.</p>
       <div class="row">

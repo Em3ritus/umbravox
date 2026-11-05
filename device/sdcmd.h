@@ -42,6 +42,19 @@ constexpr uint32_t IDLE_MS   = 10000;
 // ...and any upload is abandoned this long after its SDPUT, however busy the
 // host keeps it: an upload locks out every other console command.
 constexpr uint32_t TOTAL_MS  = 120000;
+// A radar clip (up to 780312 bytes) cannot cross a 115200-baud console in 120 s. theme.json and emblem.bin (9728 bytes
+// at most) keep exactly 120 s; a bigger file, which can only be radar.vid, earns 300 ms per KiB on top. The 10 s idle cap
+// still guards a stalled host.
+// While an upload runs, the device's loop would take one console round trip per pass (~70 ms with the animated scan
+// screen: 1.3 KB/s, so a 650 KB clip could not finish). Instead the console is polled for up to POLL_SLICE_MS per pass,
+// as long as bytes keep arriving: it stops after POLL_QUIET_MS without one (longer than a 200-character line takes at
+// 115200 baud, 17.4 ms, plus the host's turnaround) so the screen, touch and radios still get their turn.
+constexpr uint32_t POLL_SLICE_MS = 80;
+constexpr uint32_t POLL_QUIET_MS = 30;
+inline bool pollAgain(bool uploading, uint32_t sliceStartMs, uint32_t lastByteMs, uint32_t nowMs) {
+    return uploading && (int32_t)(nowMs - sliceStartMs) < (int32_t)POLL_SLICE_MS && (int32_t)(nowMs - lastByteMs) < (int32_t)POLL_QUIET_MS;
+}
+inline uint32_t totalMsFor(uint32_t size) { return size <= 9728 ? TOTAL_MS : TOTAL_MS + (size >> 10) * 300u; }
 // "/themes/" + 31 + "/" + "theme.json" + ".tmp" + NUL = 55.
 constexpr size_t   PATH_CAP  = 64;
 constexpr size_t   REPLY_CAP = 112;
@@ -163,6 +176,7 @@ struct LineBuf {
 // The only files these commands may touch:
 //   SDPUT  /themes/<folder>/theme.json   (<= themepack::MAX_JSON bytes)
 //          /themes/<folder>/emblem.bin   (<= themepack::MAX_EMBLEM bytes)
+//          /themes/<folder>/radar.vid    (<= themepack::MAX_CLIP bytes)
 //   SDDEL  the two above, and their .tmp/.old leftovers (an interrupted
 //          upload's), and recognized legacy/organized capture files.
 //          Every active or draining writer is protected.
@@ -174,7 +188,7 @@ struct LineBuf {
 // path uses lower case for both; the folder keeps the case it was given (FAT
 // finds an existing folder in any case). Nothing else: no diag.log, perf.csv,
 // prefs, or any file in the root but a session log.
-enum Kind : uint8_t { K_NONE, K_THEME_JSON, K_EMBLEM, K_SESSION };
+enum Kind : uint8_t { K_NONE, K_THEME_JSON, K_EMBLEM, K_CLIP, K_SESSION };
 struct Path {
     Kind kind = K_NONE;
     bool temp = false;                 // a .tmp / .old leftover (delete only)
@@ -203,7 +217,8 @@ constexpr size_t PATH_IN_MAX = 120;
 
 inline uint32_t capOf(Kind k) {
     return k == K_THEME_JSON ? (uint32_t)themepack::MAX_JSON
-         : k == K_EMBLEM     ? (uint32_t)themepack::MAX_EMBLEM : 0;
+         : k == K_EMBLEM     ? (uint32_t)themepack::MAX_EMBLEM
+         : k == K_CLIP       ? (uint32_t)themepack::MAX_CLIP : 0;
 }
 
 // "/themes/<folder>/<file>" where <file> is theme.json or emblem.bin, plus
@@ -234,9 +249,10 @@ inline bool themeFile(const char* path, Path& out, bool allowTemp) {
     }
     if (ieq(file, base, "theme.json"))      out.kind = K_THEME_JSON;
     else if (ieq(file, base, "emblem.bin")) out.kind = K_EMBLEM;
+    else if (ieq(file, base, "radar.vid"))  out.kind = K_CLIP;
     else { out = Path(); return false; }
     snprintf(out.canon, sizeof out.canon, "/themes/%s/%s%s", out.folder,
-             out.kind == K_THEME_JSON ? "theme.json" : "emblem.bin", suffix);
+             out.kind == K_THEME_JSON ? "theme.json" : out.kind == K_EMBLEM ? "emblem.bin" : "radar.vid", suffix);
     return true;
 }
 
@@ -254,7 +270,8 @@ inline const char* putPolicy(const char* path, uint32_t size, Path& out) {
     if (size == 0) return "empty file";
     if (size > capOf(out.kind))
         return out.kind == K_THEME_JSON ? "too large (theme.json max 4096 bytes)"
-                                        : "too large (emblem.bin max 9728 bytes)";
+             : out.kind == K_EMBLEM     ? "too large (emblem.bin max 9728 bytes)"
+                                        : "too large (radar.vid max 780312 bytes)";
     return nullptr;
 }
 
@@ -358,7 +375,7 @@ public:
     // Every loop. True (and a reply line to print) when an upload timed out.
     bool tick(uint32_t nowMs, char* reply, size_t cap) {
         if (!up_) return false;
-        if (nowMs - startMs_ >= TOTAL_MS) abort("took over 120 s");
+        if (nowMs - startMs_ >= totalMsFor(size_)) abort("took too long");
         else if (nowMs - lastMs_ >= IDLE_MS) abort("timed out, no accepted chunk for 10 s");
         else return false;
         out(reply, cap, "ERR upload timed out");

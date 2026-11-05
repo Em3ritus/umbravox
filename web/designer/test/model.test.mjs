@@ -188,3 +188,37 @@ test('a theme.json with no sweeps key warns that the device requires it; the exp
   const r2 = parseThemeJson('{"format":1,"name":"X","sweeps":["radar"],"colors":{}}');
   assert.ok(!r2.warnings.some((w) => /no sweeps listed/.test(w)));
 });
+
+// ---- radar.vid in an opened pack
+import { clipFile as _clipFile, buildClip as _buildClip, CLIP_SIZE as _SZ } from '../js/radarvideo.js';
+{
+  const mk = (n) => _clipFile(_buildClip(Array.from({ length: n }, (_, f) => Uint8Array.from({ length: _SZ * _SZ }, (_, i) => (i + f) % 16))));
+  const tjson = () => new TextEncoder().encode(themeJson(makeTemplate('umbravox').theme));
+
+  test('opening a pack folder keeps its radar.vid as the clip', () => {
+    const r = openPackFiles([{ name: 'p/theme.json', data: tjson() }, { name: 'p/radar.vid', data: mk(3) }]);
+    assert.equal(r.ok, true, r.error);
+    assert.equal(r.clip.frames, 3);
+    assert.deepEqual(r.warnings.filter((w) => /radar/i.test(w)), []);
+  });
+
+  test('a pack without radar.vid opens with clip null', () => {
+    const r = openPackFiles([{ name: 'p/theme.json', data: tjson() }]);
+    assert.equal(r.ok, true); assert.equal(r.clip, null);
+  });
+
+  test('a damaged radar.vid is dropped with a warning that says why, the theme still opens', () => {
+    const bad = mk(2); bad[5] = 64;
+    const r = openPackFiles([{ name: 'p/theme.json', data: tjson() }, { name: 'p/radar.vid', data: bad }]);
+    assert.equal(r.ok, true); assert.equal(r.clip, null);
+    assert.ok(r.warnings.some((w) => /radar\.vid/.test(w) && /102/.test(w)), r.warnings.join('|'));
+  });
+
+  test('selectPackFiles reads radar.vid only from the theme.json folder, and not when it is over the limit', () => {
+    const f = (name, size) => ({ name, size });
+    assert.equal(selectPackFiles([f('a/theme.json', 100), f('a/radar.vid', 5214)]).picked.length, 2);
+    assert.equal(selectPackFiles([f('a/theme.json', 100), f('b/radar.vid', 5214)]).ok, false);
+    const big = selectPackFiles([f('a/theme.json', 100), f('a/radar.vid', 780313)]);
+    assert.equal(big.ok, false); assert.match(big.error, /780312/);
+  });
+}

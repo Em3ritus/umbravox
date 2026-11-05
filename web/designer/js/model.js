@@ -2,6 +2,7 @@
 // opening an existing pack. Imports nothing from the DOM.
 import limits from './limits.json' with { type: 'json' };
 import { ROLES, isHex } from './palette.js';
+import { readClipFile } from './radarvideo.js';
 
 // ---- sweeps: pack names -> the device's ui::Sweep ids (gaze = 1 is not offered) ----
 const SWEEP_IDS = { radar: 0, pulse: 2, star: 3, candle: 4, galaxy: 5, orbit: 6, starfall: 7, pulsar: 8, comet: 9, aurora: 10 };
@@ -180,6 +181,7 @@ export function selectPackFiles(list) {
   const size = (f) => (typeof f.size === 'number' ? f.size : f.data ? f.data.length : 0);
   const themes = list.filter((f) => base(f) === 'theme.json');
   const emblems = list.filter((f) => base(f) === 'emblem.bin');
+  const clips = list.filter((f) => base(f) === 'radar.vid');
   if (!themes.length) return { ok: false, error: 'No theme.json found. Choose a theme.json, or the theme folder that holds one.' };
   if (themes.length > 1) return { ok: false, error: 'Found more than one theme.json (' + themes.length + '). Choose one theme folder, not a folder of themes.' };
   const t = themes[0];
@@ -189,6 +191,11 @@ export function selectPackFiles(list) {
     if (dir(e) !== dir(t)) return { ok: false, error: 'emblem.bin is not in the same folder as theme.json. Choose one theme folder.' };
     if (size(e) > limits.MAX_EMBLEM) return { ok: false, error: 'emblem.bin is ' + size(e) + ' bytes; over the ' + limits.MAX_EMBLEM + ' byte limit, so it was not read.' };
     picked.push(e);
+  }
+  for (const c of clips) {
+    if (dir(c) !== dir(t)) return { ok: false, error: 'radar.vid is not in the same folder as theme.json. Choose one theme folder.' };
+    if (size(c) > limits.MAX_CLIP) return { ok: false, error: 'radar.vid is ' + size(c) + ' bytes; over the ' + limits.MAX_CLIP + ' byte limit, so it was not read.' };
+    picked.push(c);
   }
   return { ok: true, picked };
 }
@@ -208,5 +215,11 @@ export function openPackFiles(files) {
     emblem = emblemFromBin(eb.data);
     if (!emblem) return { ok: false, error: 'emblem.bin is not a valid emblem (wrong header, size or palette).' };
   }
-  return { ok: true, theme: r.theme, emblem, warnings: r.warnings };
+  let clip = null;
+  const warnings = [...r.warnings];
+  const cb = sel.picked.find((f) => base(f) === 'radar.vid');
+  if (cb) {
+    try { clip = readClipFile(cb.data); } catch (e) { warnings.push(e.message + ', so the video was left out.'); }
+  }
+  return { ok: true, theme: r.theme, emblem, clip, warnings };
 }

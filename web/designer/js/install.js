@@ -16,8 +16,8 @@ async function exists(dir, name) {
 // files: [{path: '<folder>/<file>', data: Uint8Array}] as buildPack returns.
 // Never throws for card problems: the result says what happened.
 //
-// Order: (1) remove an emblem.bin the new pack does not have, (2) write
-// emblem.bin, (3) write theme.json LAST. The device only trusts a folder
+// Order: (1) remove an emblem.bin or radar.vid the new pack does not have (the board plays a radar.vid it finds, so a
+// pack saved without its video must lose the old one), (2) write radar.vid and emblem.bin, (3) write theme.json LAST. The device only trusts a folder
 // through its theme.json, so a failure part-way never leaves a NEW theme.json
 // beside an OLD emblem; at worst the old theme.json meets the new emblem
 // or nothing changed. Each write is aborted (no .crswap left) if it fails.
@@ -33,10 +33,12 @@ export async function installToCard(root, files) {
     const dirs = new Map();
     for (const folder of folders) dirs.set(folder, await themes.getDirectoryHandle(folder, { create: true }));
     for (const [folder, d] of dirs) {
-      if (!files.some((f) => f.path === folder + '/emblem.bin') && await exists(d, 'emblem.bin')) {
-        res.state = 'unknown';
-        await d.removeEntry('emblem.bin');
-        res.removed.push('themes/' + folder + '/emblem.bin');
+      for (const stale of ['emblem.bin', 'radar.vid']) {
+        if (!files.some((f) => f.path === folder + '/' + stale) && await exists(d, stale)) {
+          res.state = 'unknown';
+          await d.removeEntry(stale);
+          res.removed.push('themes/' + folder + '/' + stale);
+        }
       }
     }
     for (const f of ordered) {

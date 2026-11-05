@@ -414,6 +414,31 @@ bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t w
     return err == nullptr;
 }
 
+static const char* clipCheck(const uint8_t* d, size_t n, Clip& out) {
+    if (!d || n < (size_t)CLIP_HDR) return "radar.vid is too short";
+    if (d[0] != 'U' || d[1] != 'V' || d[2] != 'R' || d[3] != 'V') return "radar.vid is not a UVRV file";
+    if (d[4] != 1) return "radar.vid version is not 1";
+    if (d[5] != CLIP_W || d[6] != CLIP_H) return "radar.vid must be 102x102";
+    if (d[7] < 1 || d[7] > 30) return "radar.vid fps must be 1 to 30";
+    const unsigned frames = (unsigned)d[8] | ((unsigned)d[9] << 8);
+    if (frames < 1 || frames > (unsigned)MAX_CLIP_FRAMES) return "radar.vid frames must be 1 to 150";
+    if (d[10] || d[11]) return "radar.vid reserved bytes are not zero";
+    if (n != (size_t)CLIP_HDR + (size_t)frames * CLIP_FRAME_BYTES) return "radar.vid length does not match its frames";
+    out.w = d[5]; out.h = d[6]; out.fps = d[7]; out.frames = (uint16_t)frames; out.px = d + CLIP_HDR;
+    return nullptr;
+}
+
+bool parseClip(const uint8_t* data, size_t n, Clip& out, char* why, size_t whyCap) {
+    out.px = nullptr;
+    const char* err = clipCheck(data, n, out);
+    if (err) out.px = nullptr;
+    if (why && whyCap) {
+        if (!err) why[0] = 0;
+        else { strncpy(why, err, whyCap - 1); why[whyCap - 1] = 0; }
+    }
+    return err == nullptr;
+}
+
 bool sanitizeStatus(Pack& p) {
     bool changed = false;
     const uint16_t bg1 = p.color[R_VOID], bg2 = p.color[R_PANEL];

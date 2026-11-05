@@ -12,6 +12,7 @@
 #include "oui.h"
 #include "model.h"
 #include "scan_present.h"
+#include "radar_clip.h"
 #include "domain_present.h"
 #include "codex_present.h"
 #include "menu_present.h"
@@ -58,6 +59,7 @@ inline void contactKey(char* o, int n, uint8_t band, const uint8_t* m) {
 // showAlert=false hides a dismissed alert (ui/alert_gate.h): the device still counts it as active.
 inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c, bool showAlert = true) {
     st.begin(s.set.theme, c.now);
+    st.video(radarclip::videoFor(s.set.theme));        // the theme pack's radar.vid, if it has one (wide panels draw it)
     st.gps(c.gps);
     st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     st.bridge(s.set.bleBridge!=0);

@@ -54,10 +54,17 @@ export const crc32hex = (bytes) => crc32(bytes).toString(16).padStart(8, '0');
 const FOLDER_RE = new RegExp(limits.folderName.pattern);
 const DOS_RE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
 export const folderOk = (f) => typeof f === 'string' && FOLDER_RE.test(f) && !DOS_RE.test(f);
-const CAPS = { 'theme.json': limits.MAX_JSON, 'emblem.bin': limits.MAX_EMBLEM };
+const CAPS = { 'theme.json': limits.MAX_JSON, 'emblem.bin': limits.MAX_EMBLEM, 'radar.vid': limits.MAX_CLIP };
+
+// How long the page lets a whole upload run. The device allows each file 120 s, plus 300 ms per KiB for a file over
+// 9728 bytes (device/sdcmd.h totalMsFor); the page stays 10 s under that for the first file and adds the same extra for
+// every big one, so a plain pack keeps the old 110 s.
+export function uploadBudgetMs(files, base = 110000) {
+  return files.reduce((t, f) => t + (f.data.length > 9728 ? (f.data.length >> 10) * 300 : 0), base);
+}
 
 const DEC = '(?:0|[1-9][0-9]{0,9})';
-const PATH = '/themes/[A-Za-z0-9_-]{1,31}/(?:theme\\.json|emblem\\.bin)';
+const PATH = '/themes/[A-Za-z0-9_-]{1,31}/(?:theme\\.json|emblem\\.bin|radar\\.vid)';
 const ALLOWED = [
   /^$/,                                                     // a lone newline: ends any partial line
   /^SDLS \/themes$/,
@@ -75,12 +82,17 @@ export function isAllowedCommand(line) {
   return true;
 }
 
+// Raw bytes to send at `offset`: CHUNK, or one fewer once the offset has six digits, so the line stays within the
+// device's 200-character cap ('D 780288 ' + 192 hex is 201). Only a radar.vid goes that far. As sdput.py chunk_len().
+export const chunkLen = (offset) => Math.min(CHUNK, Math.floor((DEVICE_LINE_CAP - 3 - String(offset).length) / 2));
+
 // (line to send, the reply that confirms it) for one file, as sdput.py put_steps().
 export function putSteps(path, bytes) {
   const crc = crc32hex(bytes);
   const steps = [{ line: 'SDPUT ' + path + ' ' + bytes.length + ' ' + crc, want: 'OK put ' + path + ' ' + bytes.length }];
-  for (let off = 0; off < bytes.length; off += CHUNK) {
-    steps.push({ line: 'D ' + off + ' ' + hex(bytes.subarray(off, off + CHUNK)), want: 'OK ' + off, offset: off, n: Math.min(CHUNK, bytes.length - off) });
+  for (let off = 0, n; off < bytes.length; off += n) {
+    n = Math.min(chunkLen(off), bytes.length - off);
+    steps.push({ line: 'D ' + off + ' ' + hex(bytes.subarray(off, off + n)), want: 'OK ' + off, offset: off, n });
   }
   steps.push({ line: 'END', want: 'DONE ' + bytes.length + ' ' + crc });
   return steps;
@@ -135,9 +147,9 @@ export function parseLs(lines) {
 }
 
 // files: [{path: '<folder>/<file>', data: Uint8Array}] as buildPack returns.
-// -> {ok, folder, ordered: [{path, devicePath, name, data}] emblem first} | {ok:false, error}
+// -> {ok, folder, ordered: [{path, devicePath, name, data}] radar.vid, emblem.bin, theme.json} | {ok:false, error}
 export function checkFiles(files) {
-  const SHAPE = 'Over USB a pack is exactly theme.json, plus emblem.bin if it has a picture';
+  const SHAPE = 'Over USB a pack is theme.json, plus emblem.bin if it has a picture and radar.vid if it has a video';
   if (!Array.isArray(files) || !files.length) return { ok: false, error: SHAPE + '; there is no theme.json here.' };
   const folders = new Set(files.map((f) => String(f && f.path).split('/')[0]));
   if (folders.size !== 1) return { ok: false, error: 'A pack is one folder; these files are in ' + folders.size + '.' };
@@ -155,7 +167,7 @@ export function checkFiles(files) {
     seen.set(name, f);
   }
   if (!seen.has('theme.json')) return { ok: false, error: SHAPE + '; there is no theme.json here.' };
-  const ordered = ['emblem.bin', 'theme.json'].filter((n) => seen.has(n)).map((n) => ({
+  const ordered = ['radar.vid', 'emblem.bin', 'theme.json'].filter((n) => seen.has(n)).map((n) => ({
     path: seen.get(n).path, devicePath: '/themes/' + folder + '/' + n, name: n, data: seen.get(n).data,
   }));
   return { ok: true, folder, ordered };
@@ -327,8 +339,8 @@ function stateMessage(state, folder, failed, reason) {
   const dir = '/themes/' + folder;
   if (state === 'untouched') return MSG_UNTOUCHED;
   if (state === 'mixed') {
-    return dir + '/emblem.bin now holds the new picture, but theme.json was not replaced: the card has the new emblem.bin beside the old theme.json ' +
-      '(or, in a new folder, an emblem.bin on its own, which the device skips). Run the install again.';
+    return dir + ' now holds new files (radar.vid and/or emblem.bin) but theme.json was not replaced: the card has them beside the old theme.json ' +
+      '(or, in a new folder, without a theme.json, which the device skips). Run the install again.';
   }
   if (state === 'unknown') {
     if (reason && /old file left as/.test(reason)) {
@@ -383,7 +395,7 @@ export async function installOverSerial(port, files, opts = {}) {
         ordered = re.ordered; res.folder = re.folder;
       } else if (choice !== 'overwrite') throw new Cancelled();
     }
-    s.totalEnd = s.now() + s.t.total;
+    s.totalEnd = s.now() + uploadBudgetMs(ordered, s.t.total);
     for (const f of ordered) {
       failed = f.devicePath; failedState = 'untouched'; failedReason = null;
       progress('upload', f.devicePath);

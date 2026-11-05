@@ -11,7 +11,7 @@
 #pragma once
 #include <stdint.h>
 
-namespace themepack { struct Pack; struct Emblem; }
+namespace themepack { struct Pack; struct Emblem; struct Clip; }
 
 namespace pal {
 
@@ -84,7 +84,7 @@ int themeCount();
 // go away) and its status colours sanitised on the copy. The emblem is stored
 // by POINTER, not copied: the caller keeps its buffer alive (null = none).
 // Not thread-safe: call before anything draws (boot, or the sim's setup).
-int addPack(const themepack::Pack& p, const themepack::Emblem* e);
+int addPack(const themepack::Pack& p, const themepack::Emblem* e, const themepack::Clip* c = nullptr);
 
 // Forget every loaded pack: the count goes back to TH_COUNT, the storage is
 // zeroed, old pack ids fall back to UMBRAVOX and the next addPack is slot 0.
@@ -112,6 +112,9 @@ uint8_t artScale(uint8_t id);
 // The emblem art for this theme: the baked muffin for COSMIC MUFFIN, the
 // pack's for a pack (may be null), null for the heptagram / seal built-ins.
 const themepack::Emblem* emblem(uint8_t id);
+
+// The radar clip a pack carries (radar.vid), or null: built-ins never have one. Stored by pointer like the emblem.
+const themepack::Clip* clip(uint8_t id);
 
 // The masthead text on the scan screen.
 const char* header(uint8_t id);

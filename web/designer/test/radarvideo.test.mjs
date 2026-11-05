@@ -2,12 +2,13 @@
 // so Node can test them. The drawing itself is held to the device by wasm-parity.test.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLIP_SIZE, CLIP_FPS, MAX_FRAMES, MAX_BYTES, lumaFromRgba, levelsFromGray, packLevels, buildClip, validateClip } from '../js/radarvideo.js';
+import { CLIP_SIZE, CLIP_FPS, MAX_FRAMES, MAX_BYTES, lumaFromRgba, levelsFromGray, packLevels, buildClip, validateClip, clipFile, readClipFile, MAX_CLIP_FILE } from '../js/radarvideo.js';
 
 test('the clip is 102 px at 12 fps, and the frame cap fits the wasm buffer', () => {
   assert.equal(CLIP_SIZE, 102);
   assert.equal(CLIP_FPS, 12);
   assert.ok(MAX_FRAMES * Math.ceil(CLIP_SIZE * CLIP_SIZE / 2) <= MAX_BYTES);
+  assert.ok(MAX_CLIP_FILE <= MAX_BYTES + 12, 'the clip file fits the device limit');
   assert.ok(MAX_FRAMES >= 12 * 12, 'at least twelve seconds');
 });
 
@@ -54,4 +55,30 @@ test('validateClip names what is wrong', () => {
   assert.match(validateClip({ ...ok, data: new Uint8Array(5) }), /bytes/);
   assert.match(validateClip({ ...ok, fps: 0 }), /fps/);
   assert.match(validateClip({ ...ok, frames: 0, data: new Uint8Array(0) }), /frames/);
+});
+
+test('radar.vid: 12-byte header then the frames, the layout ui/themepack.h parseClip reads', () => {
+  const c = buildClip([0, 1].map(k => new Uint8Array(CLIP_SIZE * CLIP_SIZE).fill(k)));
+  const f = clipFile(c);
+  assert.equal(f.length, 12 + 2 * 5202);
+  assert.deepEqual(Array.from(f.slice(0, 12)), [0x55, 0x56, 0x52, 0x56, 1, 102, 102, 12, 2, 0, 0, 0]);
+  assert.equal(f[12 + 5202], 0x11);
+  assert.equal(MAX_CLIP_FILE, 12 + 150 * 5202);
+});
+
+test('radar.vid round-trips, and a damaged file is refused with a reason', () => {
+  const c = buildClip([3, 9, 12].map(k => new Uint8Array(CLIP_SIZE * CLIP_SIZE).fill(k)));
+  const back = readClipFile(clipFile(c));
+  assert.deepEqual([back.w, back.h, back.frames, back.fps], [102, 102, 3, 12]);
+  assert.deepEqual(Array.from(back.data), Array.from(c.data));
+  const f = clipFile(c);
+  const bad = (mut) => { const x = Uint8Array.from(f); mut(x); return x; };
+  assert.throws(() => readClipFile(bad(x => { x[0] = 0; })), /UVRV/);
+  assert.throws(() => readClipFile(bad(x => { x[4] = 2; })), /version/);
+  assert.throws(() => readClipFile(bad(x => { x[5] = 64; })), /102/);
+  assert.throws(() => readClipFile(bad(x => { x[7] = 31; })), /fps/);
+  assert.throws(() => readClipFile(bad(x => { x[8] = 0; x[9] = 0; })), /frames/);
+  assert.throws(() => readClipFile(bad(x => { x[10] = 1; })), /reserved/);
+  assert.throws(() => readClipFile(f.slice(0, f.length - 1)), /length/);
+  assert.throws(() => readClipFile(f.slice(0, 5)), /short/);
 });

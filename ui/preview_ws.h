@@ -51,9 +51,6 @@ inline void fxHistory(const ui::State& s, uint32_t now, scanr::Fx& out) {
     }
 }
 
-// The clip the designer loaded (nullptr: none). Not owned; the wasm bridge keeps it alive.
-inline const scanr::RadarVideo* g_video = nullptr;
-
 inline void render(int theme, int screen, int frame, int sweep, int alertStyle, int alertConf, uint16_t* out) {
     const uint8_t themeId = (uint8_t)theme;
     pal::setTheme(themeId);
@@ -99,7 +96,7 @@ inline void render(int theme, int screen, int frame, int sweep, int alertStyle, 
     case ASPECT: { static asppres::AspectStore st; uiproj::aspect(st, s, c); strips([&](scanr::S& b) { aspr::composeStrip(b, W, H, st.scene()); }); break; }
     default: {
         static scanpres::SceneStore st; uiproj::scan(st, s, c, true); st.animate(true); st.sweep(s.set.sweep);
-        st.fx(true); fxHistory(s, c.now, st.fxState()); st.video(g_video);
+        st.fx(true); fxHistory(s, c.now, st.fxState());
         strips([&](scanr::S& b) { scanr::composeStrip(b, W, H, st.scene()); }); break;
     }
     }

@@ -25,6 +25,14 @@ constexpr int MAX_EMBLEM_DIM = 96;
 constexpr int MAX_EMBLEM_COLORS = 16;
 constexpr int N_COLORS = 20;
 
+// radar.vid, the optional third file: a looping clip for the wide radar. 'U','V','R','V', version 1, w, h, fps,
+// frames (u16 LE), two reserved zero bytes, then `frames` frames of 4-bit grey (two pixels per byte, high nibble
+// first). Exactly 102x102, 1..30 fps, 1..150 frames, and the file length must match.
+constexpr int    CLIP_W = 102, CLIP_H = 102, CLIP_HDR = 12, MAX_CLIP_FRAMES = 150;
+constexpr size_t CLIP_FRAME_BYTES = (CLIP_W * CLIP_H + 1) / 2;                       // 5202
+constexpr size_t MAX_CLIP = CLIP_HDR + (size_t)MAX_CLIP_FRAMES * CLIP_FRAME_BYTES;   // 780312
+constexpr int    MAX_CLIPS = 2;     // clips held at once (PSRAM budget: each is up to MAX_CLIP bytes)
+
 enum Dial { DIAL_COMPACT, DIAL_LARGE };
 enum Centre { CENTRE_HEPTAGRAM, CENTRE_EMBLEM, CENTRE_RADAR, CENTRE_MASCOT, CENTRE_SIGIL, CENTRE_RADAR_EMBLEM };
 enum Rite { RITE_WARD, RITE_SUPERNOVA, RITE_VORTEX, RITE_COMET, RITE_LOCKON };
@@ -73,6 +81,14 @@ inline uint8_t pixel(const Emblem& e, int index) {
 // length, every index) before `out.px` is set; on failure returns false with a
 // short reason in why (if whyCap > 0) and `out.px` is null.
 bool parseEmblem(const uint8_t* data, size_t n, Emblem& out, char* why, size_t whyCap);
+
+// A parsed radar.vid. `px` points INTO the buffer given to parseClip (frames x CLIP_FRAME_BYTES), so that buffer must
+// outlive the Clip. Only meaningful after parseClip returns true.
+struct Clip { uint8_t w, h, fps; uint16_t frames; const uint8_t* px; };
+
+// Parse n bytes of radar.vid. Everything is validated (header, limits, exact length) before `out.px` is set; on
+// failure returns false with a short reason in why (if whyCap > 0) and `out.px` is null.
+bool parseClip(const uint8_t* data, size_t n, Clip& out, char* why, size_t whyCap);
 
 // Status roles (amber, red) are replaced outright with #F59E0B / #EF4444 when
 // their contrast against void or panel is under ui::MIN_EDGE_CONTRAST_X10.

@@ -67,31 +67,31 @@ test('the Dial preset changes the CYD picture but not the Waveshare one (so the 
   assert.equal(draw('compact', 'waveshare').compare(draw('large', 'waveshare')), 0, 'the Waveshare engine lays the dial out itself');
 });
 
-// ---- the radar clip -----------------------------------------------------------
-import { buildClip, CLIP_SIZE } from '../js/radarvideo.js';
+// ---- the radar clip (part of the pack) -----------------------------------------
+import { buildClip, CLIP_SIZE, clipFile } from '../js/radarvideo.js';
 const clip = n => buildClip(Array.from({ length: n }, (_, f) => Uint8Array.from({ length: CLIP_SIZE * CLIP_SIZE }, (_, i) => (i + f * 7) % 16)));
 
-test('the preview takes a radar clip, shows it on the Waveshare only, and lets it go', () => {
-  assert.equal(preview.hasRadarVideo(), false);
-  const before = preview.renderBuiltin(1, 'scan', 7, { board: 'waveshare' });
-  const cydBefore = preview.renderBuiltin(1, 'scan', 7);
-  assert.deepEqual(preview.setRadarVideo(clip(4)), { ok: true });
-  assert.equal(preview.hasRadarVideo(), true);
-  assert.notDeepEqual(preview.renderBuiltin(1, 'scan', 7, { board: 'waveshare' }), before);
-  assert.deepEqual(preview.renderBuiltin(1, 'scan', 7), cydBefore, 'the CYD preview is untouched');
-  preview.clearRadarVideo();
-  assert.equal(preview.hasRadarVideo(), false);
-  assert.deepEqual(preview.renderBuiltin(1, 'scan', 7, { board: 'waveshare' }), before);
+test('a draft carrying a radar clip shows it on the Waveshare, never on the CYD, and loses it when edited out', () => {
+  const t = makeTemplate('cosmic');
+  assert.equal(preview.loadDraft(t.theme, t.emblem).ok, true);
+  const plainWs = preview.renderDraft('scan', 7, { board: 'waveshare' });
+  const plainCyd = preview.renderDraft('scan', 7);
+  assert.equal(preview.loadDraft(t.theme, t.emblem, clip(4)).ok, true);
+  assert.notDeepEqual(preview.renderDraft('scan', 7, { board: 'waveshare' }), plainWs, 'the clip shows');
+  assert.deepEqual(preview.renderDraft('scan', 7), plainCyd, 'the CYD preview is untouched');
+  assert.equal(preview.loadDraft(t.theme, t.emblem).ok, true);
+  assert.deepEqual(preview.renderDraft('scan', 7, { board: 'waveshare' }), plainWs, 'a draft without the clip has none');
 });
 
-test('a refused clip says why and leaves the previous one playing', () => {
-  assert.deepEqual(preview.setRadarVideo(clip(3)), { ok: true });
-  const shown = preview.renderBuiltin(1, 'scan', 5, { board: 'waveshare' });
-  const r = preview.setRadarVideo({ ...clip(2), w: 64 });
+test('a refused clip says why and leaves the previous draft on screen', () => {
+  const t = makeTemplate('cosmic');
+  assert.equal(preview.loadDraft(t.theme, t.emblem, clip(3)).ok, true);
+  const shown = preview.renderDraft('scan', 5, { board: 'waveshare' });
+  const r = preview.loadDraft(t.theme, t.emblem, { ...clip(2), w: 64 });
   assert.equal(r.ok, false); assert.match(r.error, /102/);
-  assert.equal(preview.hasRadarVideo(), true);
-  assert.deepEqual(preview.renderBuiltin(1, 'scan', 5, { board: 'waveshare' }), shown);
-  preview.clearRadarVideo();
+  assert.deepEqual(preview.renderDraft('scan', 5, { board: 'waveshare' }), shown);
+  preview.loadDraft(t.theme, t.emblem);
+  assert.ok(clipFile(clip(1)).length > 12);
 });
 
 test('the Waveshare Scan tab never flips to a demo alert: that belongs to the Alert tab', () => {

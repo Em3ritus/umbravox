@@ -3,7 +3,6 @@
 // it does not touch the DOM, so Node can test it against the simulator.
 import { buildPack } from './pack.js';
 import { sweepId, startSweep } from './model.js';
-import { validateClip } from './radarvideo.js';
 
 // The boards the preview can draw. cyd: the 320x240 screen at half scale (the legacy canvas path). waveshare: the 3.5"
 // 480x320 engine UI at full size (ui/preview_ws.h through uv_render_ws).
@@ -27,7 +26,6 @@ export function createPreview(M) {
   };
 
   const hasWs = typeof M._uv_render_ws === 'function';
-  let hasClip = false;
 
   // opts: {board: 'cyd' (default) | 'waveshare', alertConf: 'low' | 'med' | 'high' (Waveshare only; default high)}.
   function paint(theme, screen, frame, sweep, opts = {}) {
@@ -50,12 +48,15 @@ export function createPreview(M) {
   return {
     // Try a draft. {ok:true, id} on success; {ok:false, error} otherwise, and the
     // previous good draft stays on screen.
-    loadDraft(theme, emblem) {
+    // clip: an optional radar clip (js/radarvideo.js buildClip), loaded with the pack exactly as the board reads radar.vid.
+    loadDraft(theme, emblem, clip = null) {
       let pack;
-      try { pack = buildPack(theme, emblem); } catch (e) { return { ok: false, error: e.message }; }
-      const json = pack.files[0].data;
-      const emb = pack.files.length > 1 ? pack.files[1].data : null;
-      const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => M._uv_load_pack(jp, jl, ep, el)));
+      try { pack = buildPack(theme, emblem, clip); } catch (e) { return { ok: false, error: e.message }; }
+      const named = (n) => pack.files.find((f) => f.path.endsWith('/' + n));
+      const json = named('theme.json').data;
+      const emb = named('emblem.bin') ? named('emblem.bin').data : null;
+      const vid = named('radar.vid') ? named('radar.vid').data : null;
+      const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => withBytes(vid, (cp, cl) => M._uv_load_pack(jp, jl, ep, el, cp, cl))));
       if (id < 0) return { ok: false, error: M.UTF8ToString(M._uv_error()) };
       // Only ever a sweep the pack offers.
       const name = startSweep(theme);
@@ -63,19 +64,6 @@ export function createPreview(M) {
       return { ok: true, id };
     },
     hasDraft: () => draft !== null,
-    // A radar clip (js/radarvideo.js buildClip) drawn in the Waveshare radar, preview only: the CYD never shows it.
-    // {ok:true}, or {ok:false, error} with the previous clip still playing.
-    setRadarVideo(clip) {
-      const why = validateClip(clip);
-      if (why) return { ok: false, error: why };
-      if (typeof M._uv_set_video !== 'function') return { ok: false, error: 'this build of the preview has no video support' };
-      const rc = withBytes(clip.data, (p) => M._uv_set_video(p, clip.frames, clip.w, clip.h, clip.fps));
-      if (rc !== 0) return { ok: false, error: 'the preview refused the clip (' + rc + ')' };
-      hasClip = true;
-      return { ok: true };
-    },
-    clearRadarVideo() { if (typeof M._uv_clear_video === 'function') M._uv_clear_video(); hasClip = false; },
-    hasRadarVideo: () => hasClip,
     // The boards this build of the wasm can draw ('waveshare' needs uv_render_ws).
     boards: () => (hasWs ? ['cyd', 'waveshare'] : ['cyd']),
     // One frame of the current draft as RGBA: 160x120 for the CYD, 480x320 for the Waveshare.

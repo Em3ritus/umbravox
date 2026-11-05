@@ -102,6 +102,7 @@ struct BundledMeta {uint8_t sweep, rite, opacity, scale; bool diamond; const the
 themepack::Pack           PACKS[themepack::MAX_PACKS];
 Row                       PACK_ROWS[themepack::MAX_PACKS];
 const themepack::Emblem*  PACK_EMBLEM[themepack::MAX_PACKS];
+const themepack::Clip*    PACK_CLIP[themepack::MAX_PACKS];
 int                       nPacks = 0, nCustom = 0;
 uint8_t PACK_IDS[themepack::MAX_PACKS]{};
 
@@ -162,7 +163,7 @@ uint16_t    sweepMask(uint8_t id) { return row(id).sweeps; }
 
 int themeCount() { return TH_COUNT + nCustom; }
 
-int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
+int addPack(const themepack::Pack& in, const themepack::Emblem* e, const themepack::Clip* clipIn) {
     int slot=nPacks;
     for(int i=0;i<nPacks;i++)if(!strncmp(PACKS[i].name,in.name,themepack::MAX_NAME+1)){slot=i;break;}
     const bool append=slot==nPacks;
@@ -212,6 +213,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     r.amber = c[R_AMBER];  r.red = c[R_RED];
     PACK_ROWS[slot] = r;
     PACK_EMBLEM[slot] = e;
+    PACK_CLIP[slot] = clipIn;
     int id=append?-1:PACK_IDS[slot];
     for(int i=TH_SLICK;i<TH_COUNT;i++)if(!strcmp(p.name,THEMES[i].name)){id=i;break;}
     if(id<0)id=TH_COUNT+nCustom++;
@@ -224,7 +226,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
 void clearPacks() {
     memset(PACKS, 0, sizeof PACKS);
     memset(PACK_ROWS, 0, sizeof PACK_ROWS);
-    for (int s = 0; s < themepack::MAX_PACKS; s++) PACK_EMBLEM[s] = nullptr;
+    for (int s = 0; s < themepack::MAX_PACKS; s++) { PACK_EMBLEM[s] = nullptr; PACK_CLIP[s] = nullptr; }
     nPacks = nCustom = 0;
 }
 
@@ -255,6 +257,11 @@ const char* header(uint8_t id) {
     // General palettes retain the product identity, including older SD overrides.
     if(id==TH_EMBER || (id>=TH_PHOSPHOR && id<TH_COSMIC2))return "UMBRAVOX";
     return row(id).header;
+}
+
+const themepack::Clip* clip(uint8_t id) {
+    const int s = slotOf(id);
+    return s >= 0 ? PACK_CLIP[s] : nullptr;
 }
 
 const themepack::Emblem* emblem(uint8_t id) {

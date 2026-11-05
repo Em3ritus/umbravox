@@ -21,7 +21,7 @@ import { grabFrames, buildClip } from './radarvideo.js';
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { theme: null, emblem: null, tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
+const state = { theme: null, emblem: null, clip: null, tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
@@ -39,7 +39,7 @@ const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
 // ---------------------------------------------------------------- views
 function installBlock() {
   if (!state.theme) return 'Choose a template first.';
-  const g = installGate(currentTheme(), state.emblem);
+  const g = installGate(currentTheme(), state.emblem, state.clip);
   return g.ok ? null : g.reason;
 }
 function show(view) {
@@ -98,9 +98,10 @@ function buildStart() {
 }
 $('btn-blank').addEventListener('click', () => begin(blankTheme(), null));
 
-function begin(theme, emblem) {
-  state.theme = theme; state.emblem = emblem; state.card = null;
+function begin(theme, emblem, clip = null) {
+  state.theme = theme; state.emblem = emblem; state.clip = clip; state.card = null;
   $('open-msg').textContent = '';
+  paintVideoBar();
   syncForm(); changed(); show('design');
 }
 
@@ -132,7 +133,7 @@ async function openThese(descs) {
     for (const d of sel.picked) read.push({ name: d.name, data: new Uint8Array(await d.file.arrayBuffer()) });
     const r = openPackFiles(read);
     if (!r.ok) { msg.className = 'msg err'; msg.textContent = r.error; return; }
-    begin(r.theme, r.emblem);
+    begin(r.theme, r.emblem, r.clip);
     if (r.warnings.length) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'Opened with changes: ' + r.warnings.join(' '); }
   } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not read those files: ' + e.message; }
 }
@@ -286,7 +287,7 @@ function changed() {
 function currentTheme() { return themeFromState(state); }
 function refreshChecks() {
   const t = currentTheme();
-  checksNow = runChecks(t, state.emblem);
+  checksNow = runChecks(t, state.emblem, state.clip);
   const ul = $('checks'); clear(ul);
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
@@ -298,7 +299,7 @@ function refreshChecks() {
 }
 function refresh() {
   if (!preview || !state.theme) return;
-  const r = preview.loadDraft(currentTheme(), state.emblem);
+  const r = preview.loadDraft(currentTheme(), state.emblem, state.clip);
   const m = $('preview-msg');
   if (r.ok) { m.className = 'msg'; m.textContent = ''; }
   else { m.className = 'msg warn'; m.textContent = 'The preview shows the last version the device would accept. This one is rejected: ' + r.error; }
@@ -324,11 +325,18 @@ function syncTabs() {
   for (const n of document.querySelectorAll('[data-bt]')) n.textContent = words[n.dataset.bt];
   $('boardbar').hidden = !preview || preview.boards().length < 2;
   $('confs').hidden = !(state.board === 'waveshare' && state.tab === 'alert');   // only the engine UI has LOW/MED/HIGH takeovers
-  $('vidbar').hidden = !(preview && previewBoard() === 'waveshare' && state.tab === 'scan');   // the clip plays in the Waveshare's scan radar
+  $('vidbar').hidden = !(preview && previewBoard() === 'waveshare');   // the clip plays in the Waveshare's scan radar
 }
 
-// A video in the Waveshare radar (preview only). The browser decodes it; js/radarvideo.js turns it into the board's format.
+// A video in the Waveshare radar. The browser decodes it; js/radarvideo.js turns it into the board's format, and it
+// becomes part of the theme (radar.vid): previewed, checked, downloaded and installed with it.
 let vidFile = null, vidBusy = false;
+function paintVideoBar() {
+  const msg = $('vid-msg');
+  $('vid-clear').hidden = !state.clip;
+  if (state.clip) { msg.className = 'msg'; msg.textContent = `${state.clip.frames} frames, ${(state.clip.frames / state.clip.fps).toFixed(1)} s, looping.`; }
+  else if (!vidBusy) { msg.className = 'msg'; msg.textContent = ''; }
+}
 async function loadVideo() {
   if (!vidFile || vidBusy || !preview) return;
   vidBusy = true;
@@ -339,18 +347,17 @@ async function loadVideo() {
     msg.className = 'msg'; msg.textContent = 'Reading the video...';
     await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('the browser cannot read this video')); });
     const frames = await grabFrames(v, { vpos: Number($('vid-pos').value) / 100, onProgress: (d, n) => { msg.textContent = `Converting ${d} / ${n} frames...`; } });
-    const r = preview.setRadarVideo(buildClip(frames));
-    if (!r.ok) throw new Error(r.error);
-    msg.textContent = `${frames.length} frames, ${(frames.length / 12).toFixed(1)} s, looping.`;
-    $('vid-clear').hidden = false; t0 = performance.now();
+    state.clip = buildClip(frames);
+    t0 = performance.now();
+    changed();
   } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this video: ' + ((e && e.message) || e); }
-  finally { URL.revokeObjectURL(url); vidBusy = false; }
+  finally { URL.revokeObjectURL(url); vidBusy = false; paintVideoBar(); }
 }
 $('vid-file').addEventListener('change', (e) => { vidFile = e.target.files[0] || null; loadVideo(); });
-$('vid-pos').addEventListener('change', () => { if (preview && preview.hasRadarVideo()) loadVideo(); });
+$('vid-pos').addEventListener('change', () => { if (vidFile && state.clip) loadVideo(); });
 $('vid-clear').addEventListener('click', () => {
-  preview.clearRadarVideo(); vidFile = null; $('vid-file').value = ''; $('vid-clear').hidden = true;
-  $('vid-msg').className = 'msg'; $('vid-msg').textContent = '';
+  state.clip = null; vidFile = null; $('vid-file').value = '';
+  paintVideoBar(); changed();
 });
 
 let t0 = performance.now(), lastDraw = 0;
@@ -364,7 +371,7 @@ function tick(now) {
 }
 
 // ---------------------------------------------------------------- build + download
-function currentPack() { return buildPack(currentTheme(), state.emblem); }
+function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip); }
 function download() {
   try {
     const pack = currentPack();
@@ -411,6 +418,11 @@ function enterInstall() {
   }
   if (state.card) logLine('card chosen: ' + state.card.name);
   fillLimits('install', USB_PLACES);
+  const un2 = $('usb-clip-note');
+  un2.hidden = false;
+  un2.textContent = state.clip
+    ? 'This theme carries a video (about ' + Math.round((state.clip.data.length + 12) / 1024) + ' KB). Over USB that takes a few minutes; a card reader is instant.'
+    : 'If you took a video OUT of a theme you installed before, the USB route cannot delete the old radar.vid from the card (it only ever writes): the board would keep playing it. Delete it with tools/sdput.py, or use the card-reader route, which removes it.';
   enterUsb();
 }
 $('btn-pick').addEventListener('click', async () => {

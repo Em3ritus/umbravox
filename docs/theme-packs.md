@@ -3,7 +3,7 @@
 A **theme pack** is a small folder on the SD card that changes how UMBRAVOX looks:
 its colours, the centrepiece picture on the scan screen, which sweeps it offers and
 which alert rite it uses. The device reads packs at boot. A pack is **data only**:
-two files, no code. Nothing in a pack can touch the radios, the SD card or any
+two files (a third, optional radar video on the Waveshare), no code. Nothing in a pack can touch the radios, the SD card or any
 network, so UMBRAVOX stays passive however a pack is written.
 
 You do not need a toolchain. The [theme designer](https://em3ritus.github.io/umbravox/designer/)
@@ -40,9 +40,10 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
   midnight-ember/         one folder per pack
     theme.json            required
     emblem.bin            required only when "centrepiece" is "emblem"
+    radar.vid             optional: a looping video for the Waveshare's radar
 ```
 
-The designer writes exactly these two files. Any other file in a pack folder
+The designer writes only these. Any other file in a pack folder
 (a `preview.png`, a readme) is ignored by the device.
 
 ## theme.json
@@ -110,6 +111,30 @@ Width and height are at most 96, `ncol` is 2 to 16, and the file is at most 9.5 
 rejected), and every pixel index must be lower than `ncol`. The designer makes this file from any PNG: it crops, shrinks and
 reduces the picture to 16 colours.
 
+## radar.vid
+
+An optional looping clip that the Waveshare 3.5" plays inside its radar, under the contacts and the sweep. The CYD
+ignores it. It is a little-endian binary like `emblem.bin`:
+
+| bytes | content |
+|---|---|
+| 4 | `U` `V` `R` `V` |
+| 1 each | the number 1 (version), width 102, height 102, fps (1 to 30) |
+| 2 | frame count, little-endian (1 to 150) |
+| 2 | reserved, both 0 |
+| frames x 5,202 | 4-bit grey, two pixels per byte (high nibble first), row by row; 0 is black, 15 white |
+
+The file must be exactly the length its header declares (at most 780,312 bytes). The board draws each frame 2x
+inside the radar disc, so 102 pixels fill it. The designer makes this file from any video the browser can play
+(`tools/video2radar.py` does the same on a command line): it crops a square, shrinks it, keeps 12 frames a second
+and 16 greys, and drops the audio.
+
+A `radar.vid` that fails any check skips the **whole pack**, never half of it (the reason is in `/diag.log`, like a
+bad emblem). The board keeps at most **2** clips in memory (each is up to 780 KB of PSRAM); a third pack with a clip
+is skipped with "no room for another clip". The clip counts in the pack's size for the boot-loop guard, so editing
+it gives a pack that crashed another try. While a clip plays the radar repaints in full 12 times a second: measured
+on a Waveshare the scan screen ran at about 14 frames a second instead of about 25.
+
 ## Limits
 
 These numbers are the same ones the device and the designer use
@@ -125,6 +150,7 @@ These numbers are the same ones the device and the designer use
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
+| `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; 2 clips held at once |
 | whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
 
@@ -162,12 +188,14 @@ and the designer previews that with the board's own drawing code:
   projection and compositor the firmware runs. `web/designer/test/wasm-parity.test.mjs` holds it to
   the host render byte for byte (built-ins, both sample packs, every sweep, every alert style and
   all three alert levels).
-- **Radar video (preview only).** On the Waveshare Scan tab, **Radar video** takes a video file and plays it in the
-  radar as the board would draw it: cropped to a square (the Crop slider picks which part of a tall video), 102x102,
-  12 frames a second, 16 grey levels, looping, at most 12 seconds, audio dropped. The browser does the conversion; it
-  is not saved with the pack, and a pack cannot carry a clip yet. To put a clip on the board, run
-  `tools/video2radar.py` and build the header it writes (`device/radarvid_data.h`, gitignored) into the firmware;
-  the seal theme then plays it. On a Waveshare the clip costs about 40% of the frame rate while it plays.
+- **Radar video.** On the Waveshare, **Radar video** takes a video file and plays it in the radar as the board
+  would draw it: cropped to a square (the Crop slider picks which part of a tall video), 102x102, 12 frames a
+  second, 16 grey levels, looping, at most 12 seconds, audio dropped. The clip is part of the theme: it is
+  saved as `radar.vid` beside `theme.json`, checked, downloaded in the zip and installed with the pack, and
+  an opened pack brings its `radar.vid` back. Remove the video and the next install has none. Over USB a clip takes
+  minutes to send (about 650 KB; the page allows the time); a card reader is instant. The USB route cannot delete,
+  so a video taken out of a pack you installed before stays on the card until you delete it with
+  `tools/sdput.py PORT del /themes/<folder>/radar.vid` or use the card route, which removes it.
   The Scan tab never shows the demo alert (that is the Alert tab's job).
 - **Dial size does nothing there.** *Compact* and *Large* are CYD layout presets; the Waveshare
   lays its radar out itself. The page says so when the Waveshare is selected.
@@ -210,7 +238,7 @@ Safari do not have it; the page says so and points to the card route or the zip.
    route: overwrite, install under another folder name (`<name>-2`...), or cancel.
    Over USB only folder names are read, so the page cannot tell which theme an
    existing folder holds; it never overwrites without asking.
-4. It sends `emblem.bin` (if any) and then `theme.json`, each chunk acknowledged, with
+4. It sends `radar.vid` (if any), `emblem.bin` (if any) and then `theme.json`, each chunk acknowledged, with
    a progress bar. Success is claimed only when the device has answered `DONE` with
    the size and CRC-32 the page computed, for every file. The failure table under
    *Installing over USB without removing the card* says what the card holds if it
@@ -257,10 +285,10 @@ tested on a real unit.
 ~/.platformio/penv/bin/python tools/sdput.py /dev/ttyUSB0 rmdir midnight-ember   # only when empty
 ```
 
-`put` uploads `emblem.bin` (if the folder has one) and then `theme.json` into
+`put` uploads `radar.vid` and `emblem.bin` (if the folder has them) and then `theme.json` into
 `/themes/<name>/`, where `<name>` is the folder's name made safe the way the
 designer makes it (lower case, runs of other characters become `-`). The tool reads
-only regular files that really sit in that folder: a `theme.json` or `emblem.bin`
+only regular files that really sit in that folder: a `theme.json`, `emblem.bin` or `radar.vid`
 that is a symlink (even to another file in the pack), a hard link (a file with
 more than one link, which could be a second name for a file elsewhere), a FIFO, a
 device or a directory is refused, so a booby-trapped pack zip cannot make it upload some other
@@ -277,7 +305,7 @@ What is left on the card when something goes wrong:
 
 - **The host stops, sends bad data, or Ctrl-C is pressed** (the tool sends `ABORT`),
   or no accepted chunk arrives for **10 s**, or the upload is still running **120 s**
-  after it began: the temp is removed and the old file is untouched. If the upload
+  after it began (a `radar.vid` over 9.5 KB gets 300 ms more per KiB, about 350 s for the biggest): the temp is removed and the old file is untouched. If the upload
   had created the pack folder and it is still empty, the folder is removed too.
 - **The power is cut during the upload**: the old file is untouched, and a
   `<file>.tmp` is left behind. The loader ignores it; the next upload of that file
@@ -287,16 +315,16 @@ What is left on the card when something goes wrong:
   `<file>`, so that pack is skipped at boot (or shown without its emblem). The next
   `put` of that pack renames `.old` back before it starts, so the old file returns
   even if that upload fails too; you can also `del` the leftover.
-- **Replacing a pack** sends `emblem.bin` before `theme.json`. If the second file
-  fails, the card has the new emblem with the old `theme.json`. That is cosmetic
+- **Replacing a pack** sends `radar.vid` and `emblem.bin` before `theme.json`. If the last file
+  fails, the card has the new files with the old `theme.json`. That is cosmetic
   (the old theme with the new picture); run `put` again.
 
 What the serial commands may touch, and nothing else:
 
 - write: `/themes/<folder>/theme.json` (at most 4,096 bytes) and
-  `/themes/<folder>/emblem.bin` (at most 9,728 bytes); `<folder>` follows the
+  `/themes/<folder>/emblem.bin` (at most 9,728 bytes) and `/themes/<folder>/radar.vid` (at most 780,312 bytes); `<folder>` follows the
   folder-name rule above and cannot be a DOS device name (`CON`, `NUL`, `COM1`...).
-- delete: those two files (and a `.tmp` or `.old` an interrupted upload left), an
+- delete: those three files (and a `.tmp` or `.old` an interrupted upload left), an
   empty pack folder, and old session logs `/WD-*.csv`, **never the one being
   logged now**. Never `diag.log`, `perf.csv` or anything else.
 
@@ -425,6 +453,7 @@ rule is applied to the last path component and `.` is not a valid folder name.
 | Skipped: duplicate or reserved name | The `name` is already used by an earlier pack or is one of the four reserved names. |
 | Skipped: name, header or author | A double quote, a backslash, or a character outside the allowed set. |
 | Skipped: emblem | `centrepiece` is `emblem` but `emblem.bin` is missing, too big, over 96x96 or over 16 colours. |
+| Skipped: radar.vid | `radar.vid` is not a valid clip (wrong header, not 102x102, length not matching its frames), over 780,312 bytes, or two other packs already hold the two clips the board has room for. |
 | Skipped: missing sweeps or colors | `sweeps` or one of the 20 colours is missing or malformed. |
 | Colours look different from the design | RGB565 rounding, or a status or alert-edge colour was replaced for contrast. |
 | The device went back to UMBRAVOX | The saved pack was renamed, removed or skipped. Select it again. |

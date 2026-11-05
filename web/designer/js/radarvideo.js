@@ -45,6 +45,34 @@ export function buildClip(frames) {
   return { w: CLIP_SIZE, h: CLIP_SIZE, frames: frames.length, fps: CLIP_FPS, data };
 }
 
+// radar.vid: the file a pack carries (ui/themepack.h parseClip): 'U','V','R','V', version 1, w, h, fps, frames (u16 LE),
+// two reserved zero bytes, then the frames.
+export const CLIP_HEADER = 12;
+export const MAX_CLIP_FILE = CLIP_HEADER + 150 * FRAME_BYTES;      // 780312, limits.json MAX_CLIP
+
+export function clipFile(c) {
+  const why = validateClip(c);
+  if (why) throw new Error(why);
+  const out = new Uint8Array(CLIP_HEADER + c.data.length);
+  out.set([0x55, 0x56, 0x52, 0x56, 1, c.w, c.h, c.fps, c.frames & 255, c.frames >> 8, 0, 0]);
+  out.set(c.data, CLIP_HEADER);
+  return out;
+}
+
+// A radar.vid back into a clip, with the same refusals as the device's parser. Throws Error(reason).
+export function readClipFile(b) {
+  if (!b || b.length < CLIP_HEADER) throw new Error('radar.vid is too short');
+  if (b[0] !== 0x55 || b[1] !== 0x56 || b[2] !== 0x52 || b[3] !== 0x56) throw new Error('radar.vid is not a UVRV file');
+  if (b[4] !== 1) throw new Error('radar.vid version is not 1');
+  if (b[5] !== CLIP_SIZE || b[6] !== CLIP_SIZE) throw new Error(`radar.vid must be ${CLIP_SIZE}x${CLIP_SIZE}`);
+  if (b[7] < 1 || b[7] > 30) throw new Error('radar.vid fps must be 1 to 30');
+  const frames = b[8] | (b[9] << 8);
+  if (frames < 1 || frames > 150) throw new Error('radar.vid frames must be 1 to 150');
+  if (b[10] || b[11]) throw new Error('radar.vid reserved bytes are not zero');
+  if (b.length !== CLIP_HEADER + frames * FRAME_BYTES) throw new Error('radar.vid length does not match its frames');
+  return { w: b[5], h: b[6], frames, fps: b[7], data: Uint8Array.from(b.subarray(CLIP_HEADER)) };
+}
+
 // null when the clip is playable, else why not.
 export function validateClip(c) {
   if (!c || c.w !== CLIP_SIZE || c.h !== CLIP_SIZE) return `the clip must be ${CLIP_SIZE}x${CLIP_SIZE}`;

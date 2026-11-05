@@ -32,6 +32,7 @@ enum {
     UV_ERR_EMBLEM = -3,   // emblem missing, over-size, or refused by parseEmblem
     UV_ERR_ADMIT  = -4,   // themepack::admit refused (reserved name, ...)
     UV_ERR_FULL   = -5,   // pal::addPack refused (cannot happen with one draft)
+    UV_ERR_CLIP   = -6,   // radar.vid over-size or refused by parseClip
 };
 
 char g_err[128] = "";
@@ -50,6 +51,9 @@ int fail(int code, const char* fmt, ...) {
 uint8_t g_scratch[themepack::MAX_EMBLEM];
 uint8_t g_emblemBuf[themepack::MAX_EMBLEM];
 themepack::Emblem g_emblem;
+// The live draft's radar.vid, kept for as long as it is loaded (the registry holds a pointer into it).
+uint8_t g_clipBuf[themepack::MAX_CLIP];
+themepack::Clip g_clip;
 
 // The admission folder name. The browser has no folder; the designer's
 // exported zip names it separately and checks it with its own rules.
@@ -84,10 +88,11 @@ EMSCRIPTEN_KEEPALIVE void uv_clear_packs() {
 // sizes -> parse -> emblem (only when the centrepiece is emblem) -> admit ->
 // register. Returns the theme id (>= 0) or a negative UV_ERR_*.
 EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
-                                      const unsigned char* emblem, int emblem_len) {
+                                      const unsigned char* emblem, int emblem_len,
+                                      const unsigned char* clip, int clip_len) {
     using namespace themepack;
     g_err[0] = 0;
-    if (json_len < 0 || emblem_len < 0) return fail(UV_ERR_INPUT, "negative length");
+    if (json_len < 0 || emblem_len < 0 || clip_len < 0) return fail(UV_ERR_INPUT, "negative length");
     if (!json || json_len == 0) return fail(UV_ERR_INPUT, "theme.json is empty");
     if ((size_t)json_len > MAX_JSON) return fail(UV_ERR_INPUT, "theme.json over 4096 bytes");
 
@@ -108,6 +113,14 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
             return fail(UV_ERR_EMBLEM, "emblem.bin: %s", ewhy);
     }
 
+    // radar.vid is optional. Validated in place first (the bytes are the caller's), copied only once the draft is accepted.
+    if (clip && clip_len > 0) {
+        if ((size_t)clip_len > MAX_CLIP) return fail(UV_ERR_CLIP, "radar.vid over %u bytes", (unsigned)MAX_CLIP);
+        Clip probe;
+        char cwhy[48];
+        if (!parseClip(clip, (size_t)clip_len, probe, cwhy, sizeof cwhy)) return fail(UV_ERR_CLIP, "%s", cwhy);
+    }
+
     // The draft replaces whatever was loaded, so no other pack name is taken.
     const Admit a = admit(DRAFT_FOLDER, p, nullptr, 0);
     if (a != ADMIT_OK) return fail(UV_ERR_ADMIT, "%s", admitWhy(a));
@@ -123,7 +136,14 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
             return fail(UV_ERR_EMBLEM, "emblem.bin: %s", ewhy);   // unreachable: same bytes
         em = &g_emblem;
     }
-    const int id = pal::addPack(p, em);
+    const Clip* cl = nullptr;
+    if (clip && clip_len > 0) {
+        memcpy(g_clipBuf, clip, (size_t)clip_len);
+        char cwhy[48];
+        if (!parseClip(g_clipBuf, (size_t)clip_len, g_clip, cwhy, sizeof cwhy)) return fail(UV_ERR_CLIP, "%s", cwhy);   // unreachable: same bytes
+        cl = &g_clip;
+    }
+    const int id = pal::addPack(p, em, cl);
     if (id < 0) return fail(UV_ERR_FULL, "%s", admitWhy(ADMIT_FULL));
     return id;
 }
@@ -186,22 +206,5 @@ EMSCRIPTEN_KEEPALIVE void uv_render_ws(int theme, int screen, int frame, int swe
     prevws::render(theme, screen, frame, sweep, alert_style, alert_conf, px);
     for (int i = 0; i < prevws::W * prevws::H; i++) rgb565ToRgba(px[i], out + 4 * i);
 }
-
-// The radar clip for the Waveshare preview: 4-bit grey frames, two pixels per byte (the format tools/video2radar.py
-// writes and the board plays). One clip at a time, copied in; 102x102 only, to match what the converter makes.
-// Returns 0, or a negative number when refused (the previous clip, if any, stays).
-EMSCRIPTEN_KEEPALIVE int uv_set_video(const unsigned char* data, int frames, int w, int h, int fps) {
-    static uint8_t buf[786432];
-    static scanr::RadarVideo rv;
-    if (!data || w != 102 || h != 102) return -1;
-    if (frames < 1 || fps < 1 || fps > 30) return -2;
-    const long bytes = (long)frames * ((w * h + 1) / 2);
-    if (bytes > (long)sizeof buf) return -3;
-    memcpy(buf, data, (size_t)bytes);
-    rv = scanr::RadarVideo{ w, h, frames, fps, buf };
-    prevws::g_video = &rv;
-    return 0;
-}
-EMSCRIPTEN_KEEPALIVE void uv_clear_video() { prevws::g_video = nullptr; }
 
 } // extern "C"
