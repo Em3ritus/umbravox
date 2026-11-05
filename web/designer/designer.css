@@ -87,6 +87,9 @@ input[type=text]:focus,select:focus,.btn:focus-visible,.step:focus-visible{outli
 .vidrow{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px}
 .vidrow input[type=file]{max-width:100%; font-size:12px}
 .vidrow input[type=range]{width:110px}
+.vidrow .btn{padding:3px 12px; min-height:0; font-size:12px; flex:0 0 auto}
+.vidrow>label{flex:0 0 78px}
+.vidrow>.small.muted{flex:1 1 auto; min-width:70px}
 .checks{list-style:none; padding:0; margin:0 0 14px}
 .checks li{display:grid; grid-template-columns:20px 1fr; gap:6px; margin:4px 0}
 .checks .ok .g{color:var(--green)} .checks .warn{color:var(--amber)} .checks .error{color:var(--red)}
