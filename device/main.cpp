@@ -43,6 +43,7 @@ static unsigned consoleDwell=220;
 #include "engine_adapter.h"   // Shared native UI engine, all screens
 #endif
 #include "alertlog.h"
+#include "sound.h"
 #include "meshcore.h"
 #include "mesh.h"
 #include "chanplan.h"
@@ -1880,6 +1881,7 @@ void loop() {
                 // every few seconds would otherwise hold the screen on for
                 // as long as you were parked beside it.
                 wakeScreen = true;
+                sound::alert(s.alertConf);              // one beep pattern per level; a no-op off the Waveshare
             }
             const uint32_t a = millis() - startedAt;
             s.alertAge = (uint16_t)(a > 60000 ? 60000 : a);
