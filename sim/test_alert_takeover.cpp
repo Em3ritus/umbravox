@@ -149,6 +149,17 @@ int main() {
         char m[120]; snprintf(m, sizeof m, "%s HIGH: text clear of the rite square (%d of %d text px inside)", r.name, over, textPx);
         expect(textPx > 500 && over == 0, m);
     }
+    // 4c. The ward's heptagram must read as a figure on the board, not a ghost: its brightest pixel is at least half the edge colour.
+    {
+        pal::setTheme(pal::TH_UMBRAVOX);
+        ScanScene a = scanfix::demo(pal::TH_UMBRAVOX); a.animateSweep = true, a.now = 2000; a.alert = mk(ui::CONF_HIGH, 3000, 0);
+        const std::vector<uint16_t> ia = full(W, H, a);
+        uieng::Rect rg[8]; alertRegions(uieng::Rect{0, 0, W, H}, a.alert, pal::TH_UMBRAVOX, rg, 8); const uieng::Rect sq = rg[0];
+        int best = 0; for (int y = sq.y; y < sq.y + sq.h; y++) for (int x = sq.x; x < sq.x + sq.w; x++) best = std::max(best, int(ia[y * W + x] >> 11));
+        const int edgeR = int(ui::safeEdge(pal::RED, ui::SAFE_HIGH, pal::VOID, pal::PANEL) >> 11);
+        char m[100]; snprintf(m, sizeof m, "ward figure brightness: red %d of edge %d", best, edgeR);
+        expect(best * 2 >= edgeR, m);
+    }
     // 5. The engine repaints exactly what changed.
     for (const RiteCase& r : kRites) { char m[96]; snprintf(m, sizeof m, "%s: dirty regions cover every change across on/off/level/age", r.name); expect(pipeline(r, W, H), m); }
     printf(fails ? "FAILED\n" : "PASSED\n"); return fails ? 1 : 0;

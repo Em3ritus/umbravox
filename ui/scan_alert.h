@@ -151,7 +151,7 @@ inline void riteWard(Rc& r, const ScanScene& sc, uint16_t edge, int age, const B
         heptaInto(r.s, mx, my, R * 55 / 100 + R * k / (b.flare * 2), c, c);
         return;
     }
-    { const uint16_t c = ui::Canvas::mix(pal::VOID, edge, 1, 5); heptaInto(r.s, mx, my, R * 55 / 100, c, c); }
+    { const uint16_t c = ui::Canvas::mix(pal::VOID, edge, 3, 5); heptaInto(r.s, mx, my, R * 55 / 100, c, c); }   // the standing figure: 60% edge (was 20%, a ghost on the board)
     const int plen = perimLen(r.W, r.H), drawn = age >= b.trace ? plen : plen * age / b.trace;
     if (age >= b.trace) aframe(r, th, edge);                 // the ward has closed: the whole border is one frame (no per-pixel walk per strip)
     else for (int d = 0; d <= drawn / 2; d++) { int px, py; perimPt(r.X, r.Y, r.W, r.H, d, px, py); adot(r, px, py, th, edge); perimPt(r.X, r.Y, r.W, r.H, -d, px, py); adot(r, px, py, th, edge); }
