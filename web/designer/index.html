@@ -109,6 +109,18 @@
             <button type="button" data-v="mesh" role="tab">Mesh</button>
             <button type="button" data-v="alert" role="tab">Alert</button>
             <button type="button" data-v="menu" role="tab">Menu</button>
+            <button type="button" data-v="aspect" role="tab" data-board="waveshare" hidden>Aspect</button>
+          </div>
+        </div>
+        <div class="cardhead boardbar" id="boardbar" hidden>
+          <div class="tabs" id="boards" role="tablist" aria-label="Which board to preview">
+            <button type="button" data-b="cyd" role="tab">CYD 2.8"</button>
+            <button type="button" data-b="waveshare" role="tab">Waveshare 3.5"</button>
+          </div>
+          <div class="tabs" id="confs" role="tablist" aria-label="Alert level to preview" hidden>
+            <button type="button" data-c="low" role="tab">Low</button>
+            <button type="button" data-c="med" role="tab">Medium</button>
+            <button type="button" data-c="high" role="tab">High</button>
           </div>
         </div>
         <div class="screen"><canvas id="preview" width="160" height="120" aria-label="Preview of the device screen"></canvas></div>

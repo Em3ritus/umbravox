@@ -16,10 +16,10 @@ import { installGate } from './gate.js';
 import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
 import { installOverSerial, wrapWebSerial, usbSupported, CH340, BAUD } from './usbinstall.js';
-import { loadWasm, W, H } from './preview.js';
+import { loadWasm, W, H, BOARDS } from './preview.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { theme: null, emblem: null, tab: 'scan', view: 'start', card: null, lastPack: null };
+const state = { theme: null, emblem: null, tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
 let preview = null;       // null until the wasm loads (or if it cannot)
 
 function el(tag, props = {}, ...kids) {
@@ -59,8 +59,10 @@ function show(view) {
 for (const b of document.querySelectorAll('.step')) b.addEventListener('click', () => show(b.dataset.view));
 
 // ---------------------------------------------------------------- canvas painting
-function paint(canvas, rgba) {
-  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), W, H), 0, 0);
+function paint(canvas, rgba, board = 'cyd') {
+  const { w, h } = BOARDS[board];
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), w, h), 0, 0);
 }
 function paintEmblem(canvas, e) {
   const ctx = canvas.getContext('2d');
@@ -298,7 +300,24 @@ function refresh() {
   else { m.className = 'msg warn'; m.textContent = 'The preview shows the last version the device would accept. This one is rejected: ' + r.error; }
 }
 for (const b of $('tabs').children) b.addEventListener('click', () => { state.tab = b.dataset.v; syncTabs(); t0 = performance.now(); });
-function syncTabs() { for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.v === state.tab)); }
+// The board being previewed (remembered per browser; the CYD until the person picks another).
+const BOARD_KEY = 'uvx.designer.board';
+function rememberBoard() { try { localStorage.setItem(BOARD_KEY, state.board); } catch (e) { /* private window: not remembered */ } }
+function recallBoard() { try { const b = localStorage.getItem(BOARD_KEY); if (b && preview && preview.boards().includes(b)) state.board = b; } catch (e) { /* not remembered */ } }
+for (const b of $('boards').children) b.addEventListener('click', () => { state.board = b.dataset.b; rememberBoard(); syncTabs(); t0 = performance.now(); if (state.view === 'install') paintInstall(); });
+for (const b of $('confs').children) b.addEventListener('click', () => { state.conf = b.dataset.c; syncTabs(); t0 = performance.now(); });
+function syncTabs() {
+  const screens = BOARDS[state.board].screens;
+  if (!screens.includes(state.tab)) state.tab = 'scan';
+  for (const b of $('tabs').children) {
+    b.hidden = !screens.includes(b.dataset.v);
+    b.setAttribute('aria-selected', String(b.dataset.v === state.tab));
+  }
+  for (const b of $('boards').children) b.setAttribute('aria-selected', String(b.dataset.b === state.board));
+  for (const b of $('confs').children) b.setAttribute('aria-selected', String(b.dataset.c === state.conf));
+  $('boardbar').hidden = !preview || preview.boards().length < 2;
+  $('confs').hidden = !(state.board === 'waveshare' && state.tab === 'alert');   // only the engine UI has LOW/MED/HIGH takeovers
+}
 
 let t0 = performance.now(), lastDraw = 0;
 function tick(now) {
@@ -307,7 +326,7 @@ function tick(now) {
   lastDraw = now;
   const ms = now - t0;
   const frame = state.tab === 'alert' ? Math.floor((ms % 2500) / 20) : Math.floor(ms / 20);
-  paint($('preview'), preview.renderDraft(state.tab, frame));
+  paint($('preview'), preview.renderDraft(state.tab, frame, { board: state.board, alertConf: state.conf }), state.board);
 }
 
 // ---------------------------------------------------------------- build + download
@@ -333,6 +352,9 @@ $('btn-install').addEventListener('click', () => show('install'));
 
 // ---------------------------------------------------------------- install
 function logLine(text, cls = '') { $('log').append(el('li', { class: cls, text })); }
+function paintInstall() {
+  if (preview && preview.hasDraft()) paint($('install-preview'), preview.renderDraft('scan', 24, { board: state.board }), state.board);
+}
 function enterInstall() {
   let pack;
   try { pack = currentPack(); } catch (e) {
@@ -340,7 +362,7 @@ function enterInstall() {
     state.view = 'design'; show('design'); return;
   }
   state.lastPack = pack;
-  if (preview && preview.hasDraft()) paint($('install-preview'), preview.renderDraft('scan', 24));
+  paintInstall();
   const folder = pack.files[0].path.split('/')[0];
   $('install-info').textContent = '/themes/' + folder + '/   ' + pack.files.length + ' file' + (pack.files.length > 1 ? 's' : '') + '   ' + (pack.bytes / 1024).toFixed(1) + ' KB';
   clear($('log')); $('collide').hidden = true; $('btn-write').disabled = !state.card;
@@ -544,6 +566,7 @@ async function boot() {
   fillLimits('design', DESIGN_PLACES);
   try { preview = await loadWasm(new URL('../wasm/uv_preview.js', import.meta.url).href); }
   catch (e) { preview = null; $('open-msg').textContent = ''; console.warn('preview unavailable', e); }
+  recallBoard(); syncTabs();
   buildStart();
   if (preview && state.theme) refresh();
   if (!preview) {

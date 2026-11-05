@@ -81,7 +81,8 @@ input[type=text]:focus,select:focus,.btn:focus-visible,.step:focus-visible{outli
 .tabs button{font:inherit; font-size:12px; color:var(--muted); background:var(--field); border:1px solid var(--edge); border-radius:999px; padding:4px 14px; cursor:pointer}
 .tabs button[aria-selected=true]{color:#fff; background:#2a1650; border-color:var(--violet)}
 .screen{background:#000; border:1px solid var(--violet); border-radius:6px; padding:3px; line-height:0}
-.screen canvas{width:100%; aspect-ratio:4/3; image-rendering:pixelated}
+.screen canvas{width:100%; height:auto; image-rendering:pixelated}
+.boardbar{margin:8px 0}
 .checks{list-style:none; padding:0; margin:0 0 14px}
 .checks li{display:grid; grid-template-columns:20px 1fr; gap:6px; margin:4px 0}
 .checks .ok .g{color:var(--green)} .checks .warn{color:var(--amber)} .checks .error{color:var(--red)}
