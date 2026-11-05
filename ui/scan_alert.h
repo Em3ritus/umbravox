@@ -117,9 +117,9 @@ inline Beat beatFor(bool hi) { return hi ? Beat{true, 200, 700, 80} : Beat{false
 // Threat name resolving out of runes, then the supporting detail, shared by every rite.
 inline void alertText(Rc& r, const AlertScene& a, uint16_t edge, int age, const Beat& b) {
     const int cx = r.X + r.W / 2;
-    const int ns = fitScale(a.label, r.W - (b.hi ? 40 : 24), b.hi ? 7 : 3);
-    const int ny = r.Y + (b.hi ? r.H * 24 / 100 : r.H * 17 / 100);
-    arune(r, 0, cx, ny - (b.hi ? 20 : 12), b.hi ? 4 : 2, edge);                      // the eye
+    const int ns = fitScale(a.label, r.W - (b.hi ? 40 : 24), b.hi ? 6 : 3);
+    const int ny = r.Y + (b.hi ? r.H * 13 / 100 : r.H * 17 / 100);     // HIGH: the name rides the top, the details ride the bottom, the rite owns the middle
+    arune(r, 0, cx, ny - (b.hi ? 18 : 12), b.hi ? 4 : 2, edge);                      // the eye
     int n = 0; while (a.label[n]) n++;
     const int startX = cx - Font::width(a.label, ns) / 2, settle = b.trace;
     for (int i = 0; i < n; i++) {
@@ -127,7 +127,8 @@ inline void alertText(Rc& r, const AlertScene& a, uint16_t edge, int age, const 
         if (age >= lockAt) { const char ch[2] = { a.label[i], 0 }; if (ny + Font::H * ns > r.s.y0 && ny < r.s.y0 + r.s.h) txt(r.s, gx, ny, ch, ns, pal::BRIGHT); }
         else arune(r, int(anoise(uint32_t(age / 70), uint32_t(i)) % 16), gx + Font::W * ns / 2, ny + Font::H * ns / 2, std::max(1, ns / 2), edge);
     }
-    const int ds = b.hi ? 3 : 2, tail = settle + n * b.charMs, y1 = ny + Font::H * ns + (b.hi ? 14 : 8), step = Font::H * ds + (b.hi ? 8 : 5);
+    const int ds = 2, tail = settle + n * b.charMs, step = Font::H * ds + 5;
+    const int y1 = b.hi ? r.Y + r.H - 14 - Font::H * ds - 2 * step : ny + Font::H * ns + 8;
     if (age > tail)       centered(r.s, cx, y1, a.why, ds, pal::DIM);
     if (age > tail + 80 && a.name[0]) centered(r.s, cx, y1 + step, a.name, fitScale(a.name, r.W - 16, ds), pal::TEXT);
     if (age > tail + 160) centered(r.s, cx, y1 + 2 * step, a.conf == ui::CONF_HIGH ? "HIGH" : a.conf == ui::CONF_MED ? "MED" : "LOW", ds, edge);
@@ -264,7 +265,7 @@ inline int alertLevel(const AlertScene& a) { return !a.active ? 0 : a.conf == ui
 // Where the rite lives inside the takeover rectangle (the same numbers drive drawing and the dirty regions).
 struct AlertGeom { int mx, my, R; };
 inline AlertGeom alertGeom(const uieng::Rect& area, bool hi) {
-    return { area.x + area.w / 2, area.y + area.h / 2, hi ? std::min(area.w, area.h) * 36 / 100 : std::min(area.w, area.h) / 2 - 2 };
+    return { area.x + area.w / 2, hi ? area.y + area.h * 53 / 100 : area.y + area.h / 2, hi ? std::min(area.w, area.h) * 24 / 100 : std::min(area.w, area.h) / 2 - 2 };
 }
 // After this age everything outside the rite square, the border band and (done resolving) the text is static: the
 // opening flash/strobe/trace and the name resolving have finished.

@@ -137,6 +137,18 @@ int main() {
         ScanScene a = scanfix::demo(pal::TH_UMBRAVOX); a.animateSweep = true, a.now = 2000; ScanScene b = a; b.alert = mk(ui::CONF_HIGH, 3000);
         expect(full(320, 240, a) == full(320, 240, b), "320x240 panels ignore alerts");
     }
+    // 4b. HIGH layout: the threat text sits above and below the rite, never over it (the rite square stays unobstructed).
+    for (const RiteCase& r : kRites) {
+        pal::setTheme(r.theme);
+        ScanScene a = scanfix::demo(r.theme); a.animateSweep = true, a.now = 2000; a.alert = mk(ui::CONF_HIGH, 3000, r.style);
+        ScanScene b = a; b.alert.label[0] = 0; b.alert.name[0] = 0; b.alert.why[0] = 0;
+        const std::vector<uint16_t> ia = full(W, H, a), ib = full(W, H, b);
+        uieng::Rect rg[8]; const int nr = alertRegions(uieng::Rect{0, 0, W, H}, a.alert, r.theme, rg, 8);
+        const uieng::Rect sq = rg[0]; int over = 0, textPx = 0;
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) if (ia[y * W + x] != ib[y * W + x]) { textPx++; if (x >= sq.x && x < sq.x + sq.w && y >= sq.y && y < sq.y + sq.h) over++; }
+        char m[120]; snprintf(m, sizeof m, "%s HIGH: text clear of the rite square (%d of %d text px inside)", r.name, over, textPx);
+        expect(textPx > 500 && over == 0, m);
+    }
     // 5. The engine repaints exactly what changed.
     for (const RiteCase& r : kRites) { char m[96]; snprintf(m, sizeof m, "%s: dirty regions cover every change across on/off/level/age", r.name); expect(pipeline(r, W, H), m); }
     printf(fails ? "FAILED\n" : "PASSED\n"); return fails ? 1 : 0;

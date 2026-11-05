@@ -198,7 +198,7 @@ sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp 
 # in each test's header; wiring them here puts the engine lane under `make test`.
 # The oracle test is header-only; the render/present/engine tests need the theme
 # model + font (PAL_DEPS), same as the other draw tests.
-ENGINE_HDR = ../ui/crew_art.h ../ui/domain_range.h ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
+ENGINE_HDR = ../ui/crew_art.h ../ui/domain_range.h ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_alert.h ../ui/scan_present.h \
              ../ui/domain_render.h ../ui/domain_present.h \
              ../ui/codex_render.h ../ui/codex_present.h \
              ../ui/menu_render.h ../ui/menu_present.h \
