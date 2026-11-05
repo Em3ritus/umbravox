@@ -59,7 +59,7 @@ static bool pipeline(int theme, uint8_t style, int w, int h, int& maxRegArea) {
                     if (rg[i].y >= sy + sh || rg[i].y + rg[i].h <= sy) continue;
                     S s{buf.data(), w, sy, sh, rg[i].x, rg[i].x + rg[i].w};
                     composeStrip(s, w, h, e.scene());
-                    f.stageRegion(sy, buf.data(), sh, rg[i].x, rg[i].w); area += rg[i].w * sh;
+                    f.stageRegion(sy, buf.data(), sh, rg[i].x, rg[i].w, i); area += rg[i].w * sh;
                 } else { S s{buf.data(), w, sy, sh}; composeStrip(s, w, h, e.scene()); f.stage(sy, buf.data(), sh); }
             }
             if (sl.done) f.present(false, [&](uieng::Rect r, const uint16_t* px, int stride) {

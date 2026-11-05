@@ -11,6 +11,7 @@
 #include "ble_bridge.h"
 #include "logging.h"
 #include "alertlog.h"
+#include "alert_gate.h"
 #include <esp_heap_caps.h>
 #include "touch.h"
 #include "../ui/pending_hit.h"
@@ -69,6 +70,8 @@ menpres::MenuEngine   eMenu_;
 mshpres::MeshEngine   eMesh_;
 omnpres::OmenEngine   eOmens_;
 ui::Omen alertDetail_;
+alertgate::Gate alertGate_;       // a tap dismisses the alert takeover; it stays hidden while the same alert is re-detected
+bool alertShown(const ui::State& s) { return alertGate_.shows(s.alertActive && s.alertThreat != ui::TH_NONE, s.alertThreat, s.alertName); }
 bool alertDetailOpen_=false;
 int alertDetailPage_=0;
 echpres::EchoEngine   eEchoes_;
@@ -171,7 +174,7 @@ void renderScanRegions(const scanr::ScanScene& sc, int y0, int y1, const uieng::
             scanr::composeStrip(s, W_, H_, sc);
             if (buffered_) {
                 const uint32_t t=micros();
-                frame_.stageRegion(sy, buf_, sh, lo, hi-lo);
+                frame_.stageRegion(sy, buf_, sh, lo, hi-lo, i);
                 sliceCompareUs_ += micros()-t;
             } else sink_.strip(lo, sy, hi-lo, sh, buf_);
         }
@@ -304,7 +307,8 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
     sceneRec_ = rec;
     uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now; c.pmuOk = pmuOk; c.charging = charging; c.poi = poi::status(now);
     switch (cur_) {
-        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c); eScan_.back().animate(true); eScan_.back().sweep(s.set.sweep); eScan_.commit();   break;
+        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c, alertShown(s)); eScan_.back().animate(true); eScan_.back().sweep(s.set.sweep); eScan_.commit();
+            break;
         case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c, W_, H_); eDomain_.commit(); break;
         case uinav::Screen::Codex:  uiproj::codex(eCodex_.back(), s, c, W_, H_);   eCodex_.commit();  break;
         case uinav::Screen::Menu:   uiproj::menu(eMenu_.back(), s, c);     eMenu_.commit();   break;
@@ -414,6 +418,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     switch (cur_) {
         case uinav::Screen::Scan:
             if (s.alertActive) ctx.matchKey = kAlert;
+            ctx.alertTakeover = (W_ >= 400 && alertShown(s)) ? (s.alertConf == ui::CONF_HIGH ? 2 : 1) : 0;   // an alert on screen: a tap clears it
             h = uieng::scanHits(W_, H_, ctx);
             break;
         case uinav::Screen::Domain:
@@ -536,6 +541,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 alertDetailOpen_=alertlog::find(id,millis(),alertDetail_);alertDetailPage_=0;cancelInput();break;
             }
             case uieng::Action::AlertClose:alertDetailOpen_=false;cancelInput();break;
+            case uieng::Action::AlertDismiss:alertGate_.dismiss(s.alertThreat,s.alertName);cancelInput();break;
             case uieng::Action::AlertPage: {if(alertDetailOpen_){
                 int pages=omnr::detailPageCount(W_,H_,eOmens_.scene().detail);
                 alertDetailPage_+=hit.payload<0?-1:1;if(alertDetailPage_<0)alertDetailPage_=0;if(alertDetailPage_>=pages)alertDetailPage_=pages>0?pages-1:0;

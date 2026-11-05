@@ -63,6 +63,7 @@ public:
     void bridge(bool on) { sc_.bridgeOn=on; }
     void animate(bool enabled) { sc_.animateSweep = enabled; }
     void sweep(uint8_t style) { sc_.sweep = style; }
+    void alert(const scanr::AlertScene& a) { sc_.alert = a; }
     void gps(const GnssFix& f)                    { sc_.gps = f; }
     void storage(ui::StorageState sd){sc_.sd=sd;}
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
@@ -115,7 +116,7 @@ inline int fieldRadius(int W, int H) {
 // tick that changes nothing visible does not. Pure.
 // Which parts of the scene changed (what the panel would SHOW): the header chrome, each count tile, the
 // channel readout, the spectrum, the contacts, and the sweep. Pure.
-struct ScanParts { bool status = false, count[3] = {false, false, false}, ch = false, chan = false, marks = false, sweep = false; };
+struct ScanParts { bool status = false, count[3] = {false, false, false}, ch = false, chan = false, marks = false, sweep = false, alert = false; };
 inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b) {
     ScanParts p;
     char la[16], lb[16];
@@ -143,19 +144,27 @@ inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b
                                      && ma.sizePx == mb.sizePx && ma.band == mb.band));
     }
     p.marks = !markSame;
+    p.alert = W >= 400 && (a.alert.active != b.alert.active
+              || (b.alert.active && (a.alert.age != b.alert.age || a.alert.conf != b.alert.conf || a.alert.threat != b.alert.threat || a.alert.style != b.alert.style
+                                     || __builtin_strcmp(a.alert.label, b.alert.label) || __builtin_strcmp(a.alert.name, b.alert.name) || __builtin_strcmp(a.alert.why, b.alert.why))));
     const uint8_t sa = a.animateSweep ? scanr::liveStyle(a.sweep, W) : uint8_t(ui::SW_RADAR), sb = b.animateSweep ? scanr::liveStyle(b.sweep, W) : uint8_t(ui::SW_RADAR);
     p.sweep = !(a.animateSweep == b.animateSweep && sa == sb &&
         (!b.animateSweep || (sb == ui::SW_RADAR ? scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now) : a.now == b.now)));
     return p;
+}
+// The same alert (same threat, level, rite and text), only its age differs.
+inline bool sameAlert(const scanr::AlertScene& a, const scanr::AlertScene& b) {
+    return a.active && b.active && a.threat == b.threat && a.conf == b.conf && a.style == b.style
+        && !__builtin_strcmp(a.label, b.label) && !__builtin_strcmp(a.name, b.name) && !__builtin_strcmp(a.why, b.why);
 }
 inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
                        bool& status, bool& body, bool* fieldOnly = nullptr, bool* sweepOnly = nullptr) {
     const ScanParts p = sceneParts(W, H, a, b);
     status = p.status;
     const bool counts = p.count[0] || p.count[1] || p.count[2];
-    body = counts || p.ch || p.chan || p.marks || p.sweep;
-    if (fieldOnly) *fieldOnly = body && !counts && !p.ch && !p.chan;
-    if (sweepOnly) *sweepOnly = body && !counts && !p.ch && !p.chan && !p.marks;   // nothing but the sweep moved
+    body = counts || p.ch || p.chan || p.marks || p.sweep || p.alert;
+    if (fieldOnly) *fieldOnly = body && !counts && !p.ch && !p.chan && !p.alert;      // an alert covers the hero, not just the radar columns
+    if (sweepOnly) *sweepOnly = body && !counts && !p.ch && !p.chan && !p.marks && !p.alert;   // nothing but the sweep moved
 }
 
 // --- resumable, bounded strip scheduler --------------------------------------
@@ -361,8 +370,15 @@ public:
         const ScanScene& nw = store_[cur_ ^ 1].scene();
         const bool wasPending = sched_.pending(), wasWin = win_;
         win_ = false; nreg_ = 0;
+        const int lvOld = W_ >= 400 ? scanr::alertLevel(store_[cur_].scene().alert) : 0, lvNew = W_ >= 400 ? scanr::alertLevel(nw.alert) : 0;
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
+        } else if (lvOld == 2 || lvNew == 2) {
+            const ScanScene& pa = store_[cur_].scene();
+            if (lvOld == 2 && lvNew == 2 && !wasPending && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
+                uieng::Rect rg[8]; const int n = scanr::alertRegions({0, 0, W_, H_}, nw.alert, nw.theme, rg, 8);      // settled: only the rite square and border move
+                for (int i = 0; i < n; i++) { reg_[nreg_++] = rg[i]; sched_.invalidate(rg[i].y, rg[i].y + rg[i].h); }
+            } else sched_.invalidateAll();             // a HIGH alert owns the whole screen, header and nav included: repaint it all
         } else if (W_ >= 400 && !wasPending) {
             // Wide panel: dirty REGIONS. Each changed part of the scene repaints only its own rectangle.
             const ScanScene& pv = store_[cur_].scene();
@@ -379,11 +395,18 @@ public:
                 }
                 sched_.invalidate(r.y, r.y + r.h);
             };
+            if (p.alert) {                             // a LOW/MED alert on, off or animating: the hero area, or once settled only what still moves
+                if (lvOld == 1 && lvNew == 1 && sameAlert(pv.alert, nw.alert) && scanr::alertSettled(pv.alert) && scanr::alertSettled(nw.alert)) {
+                    uieng::Rect rg[8]; const int n = scanr::alertRegions(L.hero, nw.alert, nw.theme, rg, 8);
+                    for (int i = 0; i < n; i++) add(rg[i]);
+                } else add(L.hero);
+            }
             if (p.status) add({0, 0, W_, statusBottom});
             for (int i = 0; i < 3; i++) if (p.count[i]) add(L.tiles[i]);
-            if (p.ch)   add(scanr::chRect(W_, H_));
-            if (p.chan) add(scanr::specRect(W_, H_));
-            if (p.marks || p.sweep) {
+            const bool covered = lvOld == 1 && lvNew == 1;           // a LOW/MED alert hides the hero, so its radar, channel readout and spectrum need no repaint
+            if (p.ch && !covered)   add(scanr::chRect(W_, H_));
+            if (p.chan && !covered) add(scanr::specRect(W_, H_));
+            if ((p.marks || p.sweep) && !covered) {
                 const auto radar = scanr::radarBounds(W_, H_);
                 uieng::Rect boxes[6]; int nb = 0;
                 if (!p.marks && pv.animateSweep && nw.animateSweep) {      // sweep only: just what moved (old and new wedge, arc, ring band...)

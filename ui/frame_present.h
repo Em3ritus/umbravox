@@ -58,10 +58,12 @@ public:
     // stageWindow, each region keeps its own changed bounding box, so a frame that touches a count tile, the
     // radar and the spectrum sends three small rectangles instead of one that spans them. Valid only after
     // a presented frame. The rest of the back frame keeps what it had.
-    void stageRegion(int y0, const uint16_t* pixels, int count, int x0, int bw) {
+    // `id` names the region (its index in the engine's list). Without it, regions sharing a left edge and width are
+    // merged, so two bands at the top and bottom of the screen would grow into one full-height rectangle.
+    void stageRegion(int y0, const uint16_t* pixels, int count, int x0, int bw, int id = -1) {
         Reg* r = nullptr;
-        for (auto& q : regs_) if (q.used && q.x0 == x0 && q.bw == bw) { r = &q; break; }
-        if (!r) for (auto& q : regs_) if (!q.used) { q = Reg{}; q.used = true; q.x0 = x0; q.bw = bw; q.lo = x0 + bw; q.hi = x0; q.top = h_; q.bottom = 0; r = &q; break; }
+        for (auto& q : regs_) if (q.used && q.x0 == x0 && q.bw == bw && q.id == id) { r = &q; break; }
+        if (!r) for (auto& q : regs_) if (!q.used) { q = Reg{}; q.used = true; q.id = id; q.x0 = x0; q.bw = bw; q.lo = x0 + bw; q.hi = x0; q.top = h_; q.bottom = 0; r = &q; break; }
         if (!r) r = &regs_[MaxReg - 1];                       // more regions than slots cannot happen (the engine caps at 8)
         for (int y = y0; y < y0 + count; ++y) {
             const uint16_t* src = pixels + (y - y0) * bw;
@@ -145,7 +147,7 @@ private:
     static constexpr int MaxRows=320;
     uint16_t left_[MaxRows]{},right_[MaxRows]{};
     bool staged_=false;
-    struct Reg { int x0=0, bw=0, lo=0, hi=0, top=0, bottom=0; bool used=false; };
+    struct Reg { int x0=0, bw=0, lo=0, hi=0, top=0, bottom=0, id=-1; bool used=false; };
     static constexpr int MaxReg = 12;
     Reg regs_[MaxReg];
     void clearStaged() {

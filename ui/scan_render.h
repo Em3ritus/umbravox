@@ -62,6 +62,16 @@ struct FieldBlip {
     uint32_t lastSeen;           // ms; age = now - lastSeen
 };
 
+// The alert as the engine draws it. Copied by value into the scene (a few dozen bytes), filled by ui/project.h.
+struct AlertScene {
+    bool active = false;
+    uint8_t threat = 0, conf = 0, style = 0;   // conf = ui::CONF_*, style = ui::AlertStyle (the muffin's chosen rite)
+    uint16_t age = 0;                          // ms since this alert first appeared
+    char label[20] = {0};                      // threat name ("DRONE")
+    char name[24] = {0};                       // matched device
+    char why[20] = {0};                        // supporting detail
+};
+
 struct ScanScene {
     bool bridgeOn = false;
     // status
@@ -83,6 +93,7 @@ struct ScanScene {
     uint8_t  theme = 0;          // pal::ThemeId; drives artwork selection
     bool animateSweep = false; // caller opt-in; static fixtures retain their exact pixels
     uint8_t sweep = 0;         // ui::Sweep id; only read when animateSweep (wide panels)
+    AlertScene alert;          // takeover (wide panels only); a device with no alert leaves it inactive
 };
 
 // --- projections (pure, host-testable): scene data -> draw-ready values --------
@@ -348,7 +359,13 @@ inline void radarNeedle(S& s, int cx, int cy, int r, uint16_t angle) {
 }
 
 // Integer square root (the C5 has no FPU).
-inline int isqrt(int v) { int r = 0; while ((r + 1) * (r + 1) <= v) r++; return r; }
+inline int isqrt(int v) {                        // floor(sqrt(v)), bitwise: at most 15 steps, no division
+    if (v <= 0) return 0;
+    unsigned x = unsigned(v), r = 0, bit = 1u << 30;
+    while (bit > x) bit >>= 2;
+    while (bit) { if (x >= r + bit) { x -= r + bit; r = (r >> 1) + bit; } else r >>= 1; bit >>= 2; }
+    return int(r);
+}
 inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true, bool smooth=false) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px || !e.ncol || e.ncol>16) return;
     if (cx + r < s.lo || cx - r >= s.hi) return;      // outside the column window
@@ -924,7 +941,10 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
 }
 
 // --- compose one strip completely from the scene ------------------------------
-inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
+}  // namespace scanr
+#include "scan_alert.h"
+namespace scanr {
+inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     const uieng::ScanLayout L = uieng::scan(W, H);
     const uint16_t band[3] = { pal::MAGENTA, pal::ICE, pal::GREEN };
     box(s, 0, 0, W, H, pal::VOID);                                   // body
@@ -1110,6 +1130,20 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     txt(s, sx0,        labY, shortLab ? "2.4G" : "2.4 GHZ", 1, pal::DIM);   // under the 2.4 GHz (pink) group
     txt(s, boundX + 2, labY, shortLab ? "5G" : "5 GHZ", 1, pal::DIM);   // under the 5 GHz (cyan) group
     // nav bar + STOP/REC drawn by drawChrome above (shared design-1 chrome).
+}
+
+// The scene, then the alert takeover over it: LOW/MED over the hero, HIGH over everything. Wide panels only.
+inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
+    const int lvl = W >= 400 ? alertLevel(sc.alert) : 0;
+    if (lvl == 2) { drawAlertTakeover(s, sc, uieng::Rect{0, 0, W, H}); return; }   // nothing underneath is visible: skip it
+    if (lvl == 1) {
+        const uieng::Rect hero = uieng::scan(W, H).hero;
+        const bool inside = s.lo >= hero.x && s.hi <= hero.x + hero.w && s.y0 >= hero.y && s.y0 + s.h <= hero.y + hero.h;
+        if (!inside) composeStripScene(s, W, H, sc);                 // a window wholly inside the takeover never shows the scene
+        drawAlertTakeover(s, sc, hero);
+        return;
+    }
+    composeStripScene(s, W, H, sc);
 }
 
 // --- strip compositor: small buffer, compose-then-emit ------------------------

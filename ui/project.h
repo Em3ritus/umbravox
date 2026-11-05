@@ -55,7 +55,8 @@ inline void contactKey(char* o, int n, uint8_t band, const uint8_t* m) {
 }
 
 // --- SCAN --------------------------------------------------------------------
-inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) {
+// showAlert=false hides a dismissed alert (ui/alert_gate.h): the device still counts it as active.
+inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c, bool showAlert = true) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
     st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
@@ -68,6 +69,12 @@ inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) 
     for (int i = 0; i < s.nContacts; i++) {
         const ui::Contact& k = s.contacts[i];
         st.addBlip(k.angle, k.dist, k.band, c.now - (uint32_t)k.age * 240u);
+    }
+    if (showAlert && s.alertActive && s.alertThreat != ui::TH_NONE) {
+        scanr::AlertScene a; a.active = true; a.threat = s.alertThreat; a.conf = s.alertConf; a.style = s.set.alertStyle; a.age = s.alertAge;
+        snprintf(a.label, sizeof a.label, "%s", ui::threatName(s.alertThreat));
+        snprintf(a.name, sizeof a.name, "%s", s.alertName); snprintf(a.why, sizeof a.why, "%s", s.alertWhy);
+        st.alert(a);
     }
 }
 
