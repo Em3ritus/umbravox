@@ -62,6 +62,7 @@ public:
     }
     void bridge(bool on) { sc_.bridgeOn=on; }
     void animate(bool enabled) { sc_.animateSweep = enabled; }
+    void sweep(uint8_t style) { sc_.sweep = style; }
     void gps(const GnssFix& f)                    { sc_.gps = f; }
     void storage(ui::StorageState sd){sc_.sd=sd;}
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
@@ -142,8 +143,9 @@ inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b
                                      && ma.sizePx == mb.sizePx && ma.band == mb.band));
     }
     p.marks = !markSame;
-    p.sweep = !(a.animateSweep == b.animateSweep &&
-        (!b.animateSweep || scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now)));
+    const uint8_t sa = a.animateSweep ? scanr::liveStyle(a.sweep, W) : uint8_t(ui::SW_RADAR), sb = b.animateSweep ? scanr::liveStyle(b.sweep, W) : uint8_t(ui::SW_RADAR);
+    p.sweep = !(a.animateSweep == b.animateSweep && sa == sb &&
+        (!b.animateSweep || (sb == ui::SW_RADAR ? scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now) : a.now == b.now)));
     return p;
 }
 inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
@@ -367,23 +369,29 @@ public:
             const ScanParts p = sceneParts(W_, H_, pv, nw);
             const uieng::ScanLayout L = uieng::scan(W_, H_);
             const int statusBottom = L.statusCells[0].y + L.statusCells[0].h, navTop = L.navCells[0].y;
-            auto add = [&](const uieng::Rect& r) { if (nreg_ < kMaxRegions && r.w > 0 && r.h > 0) { reg_[nreg_++] = r; sched_.invalidate(r.y, r.y + r.h); } };
+            auto add = [&](const uieng::Rect& r) {
+                if (r.w <= 0 || r.h <= 0) return;
+                if (nreg_ < kMaxRegions) reg_[nreg_++] = r;
+                else {                                                       // out of slots: grow the last region over it (never drop a repaint)
+                    uieng::Rect& l = reg_[nreg_ - 1];
+                    const int x0 = std::min(l.x, r.x), y0 = std::min(l.y, r.y), x1 = std::max(l.x + l.w, r.x + r.w), y1 = std::max(l.y + l.h, r.y + r.h);
+                    l = { x0, y0, x1 - x0, y1 - y0 }; sched_.invalidate(y0, y1);
+                }
+                sched_.invalidate(r.y, r.y + r.h);
+            };
             if (p.status) add({0, 0, W_, statusBottom});
             for (int i = 0; i < 3; i++) if (p.count[i]) add(L.tiles[i]);
             if (p.ch)   add(scanr::chRect(W_, H_));
             if (p.chan) add(scanr::specRect(W_, H_));
             if (p.marks || p.sweep) {
                 const auto radar = scanr::radarBounds(W_, H_);
-                uieng::Rect box = radar;
-                if (!p.marks && pv.animateSweep && nw.animateSweep) {      // sweep only: just the old and new wedge
-                    const int fr = (radar.w - 5) / 2, fcx = radar.x + fr + 2, fcy = radar.y + fr + 2;
-                    const auto a = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(pv.now));
-                    const auto b = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(nw.now));
-                    int x0 = std::max(radar.x, std::min(a.x, b.x)), y0 = std::max(radar.y, std::min(a.y, b.y));
-                    int x1 = std::min(radar.x + radar.w, std::max(a.x + a.w, b.x + b.w)), y1 = std::min(radar.y + radar.h, std::max(a.y + a.h, b.y + b.h));
-                    if (x1 > x0 && y1 > y0) box = { x0, y0, x1 - x0, y1 - y0 };
+                uieng::Rect boxes[6]; int nb = 0;
+                if (!p.marks && pv.animateSweep && nw.animateSweep) {      // sweep only: just what moved (old and new wedge, arc, ring band...)
+                    const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
+                    if (sv == sn) nb = scanr::sweepRects(sn, radar, pv.now, nw.now, boxes, 6);
                 }
-                add(box);
+                if (!nb) { boxes[0] = radar; nb = 1; }
+                for (int i = 0; i < nb; i++) add(boxes[i]);
             }
             char ra[16], rb[16];
             scanr::recLabel(pv, ra, 16); scanr::recLabel(nw, rb, 16);
@@ -396,12 +404,8 @@ public:
             uieng::Rect box = radar;
             const ScanScene& pv = store_[cur_].scene();
             if (sweepOnly && !wasPending && pv.animateSweep && nw.animateSweep) {
-                const int fr = (radar.w - 5) / 2, fcx = radar.x + fr + 2, fcy = radar.y + fr + 2;
-                const auto a = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(pv.now));
-                const auto b = scanr::sweepBounds(fcx, fcy, fr, scanr::sweepAngle(nw.now));
-                int x0 = std::max(radar.x, std::min(a.x, b.x)), y0 = std::max(radar.y, std::min(a.y, b.y));
-                int x1 = std::min(radar.x + radar.w, std::max(a.x + a.w, b.x + b.w)), y1 = std::min(radar.y + radar.h, std::max(a.y + a.h, b.y + b.h));
-                if (x1 > x0 && y1 > y0) box = { x0, y0, x1 - x0, y1 - y0 };
+                const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
+                box = sv == sn ? scanr::sweepBox(sn, radar, pv.now, nw.now) : radar;
             }
             const uieng::ScanLayout L = uieng::scan(W_, H_);
             const int statusBottom = L.statusCells[0].y + L.statusCells[0].h;

@@ -10,6 +10,7 @@
 #include "storage_status.h"
 #include "runes.h"
 #include "sigil.h"
+#include "model.h"
 #include "poi_state.h"
 #include "radar_geometry.h"
 #include "crew_art.h"
@@ -81,6 +82,7 @@ struct ScanScene {
     // theme
     uint8_t  theme = 0;          // pal::ThemeId; drives artwork selection
     bool animateSweep = false; // caller opt-in; static fixtures retain their exact pixels
+    uint8_t sweep = 0;         // ui::Sweep id; only read when animateSweep (wide panels)
 };
 
 // --- projections (pure, host-testable): scene data -> draw-ready values --------
@@ -219,6 +221,25 @@ inline void diamondInto(S& s,int cx,int cy,int r,uint16_t color){
     line(s,cx,cy-r,cx+r,cy,color);line(s,cx+r,cy,cx,cy+r,color);
     line(s,cx,cy+r,cx-r,cy,color);line(s,cx-r,cy,cx,cy-r,color);
 }
+// --- integer trigonometry (the C5 has no FPU) ---------------------------------
+// Angles are 1/1024 turn; results are x1024. Built at compile time, 2 KB of flash, no runtime cost.
+struct SinTab {
+    int16_t v[1024];
+    constexpr SinTab() : v() {
+        for (int i = 0; i < 1024; i++) {
+            double x = i * 6.283185307179586 / 1024;
+            if (x > 3.141592653589793) x -= 6.283185307179586;
+            if (x > 1.5707963267948966) x = 3.141592653589793 - x; else if (x < -1.5707963267948966) x = -3.141592653589793 - x;
+            const double x2 = x * x; double term = x, sum = x;
+            for (int n = 1; n <= 7; n++) { term *= -x2 / ((2 * n) * (2 * n + 1)); sum += term; }
+            const double r = sum * 1024; v[i] = (int16_t)(r >= 0 ? r + 0.5 : r - 0.5);
+        }
+    }
+};
+inline constexpr SinTab kSinTab{};
+inline int isin(int a) { return kSinTab.v[a & 1023]; }
+inline int icos(int a) { return kSinTab.v[(a + 256) & 1023]; }
+
 // --- sweep geometry -----------------------------------------------------------
 // The head angle is continuous (1/1024 turn, 0 = up, clockwise) and driven by the
 // millisecond clock, so the sweep moves as smoothly as frames arrive. The tail is
@@ -278,9 +299,8 @@ inline BlipLook blipLook(const Marker& m, const SweepDir& d, int W) {
     return { m.sizePx + (W >= 400 ? 2 : 1), trailLevel(d, m.dx, m.dy, kTailLevels) };
 }
 // blend=true tints whatever is already there (a picture dial) instead of painting the dark fade over it.
-inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle, bool blend=false) {
+inline void radarTrailDir(S& s, int cx, int cy, int r, const SweepDir& d, bool blend) {
     if (r < 1 || cy + r < s.y0 || cy - r >= s.y0 + s.h) return;
-    const SweepDir d = sweepDir(angle);
     uint16_t fade[kTailLevels + 1]; fade[0] = pal::VOID;
     for (int k = 1; k <= kTailLevels; k++) fade[k] = ui::Canvas::mix(pal::VOID, pal::SWEEP, k, kTailLevels + 8);
     // The wedge covers about a quarter of the circle: scan only its bounding box, not the whole disc.
@@ -314,6 +334,9 @@ inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle, bool blend=f
         }
     }
 }
+// Wedge from integer trig: head at `head` (1/1024 turn, 0 = up, clockwise), tail `span` units behind it.
+inline SweepDir sweepDirInt(int head, int span) { return { isin(head), -icos(head), isin(head - span), -icos(head - span) }; }
+inline void radarTrail(S& s, int cx, int cy, int r, uint16_t angle, bool blend=false) { radarTrailDir(s, cx, cy, r, sweepDir(angle), blend); }
 // The needle: a 3-line (2 px) head drawn AFTER the artwork, so it shows over any emblem, seal or star.
 inline void radarNeedle(S& s, int cx, int cy, int r, uint16_t angle) {
     if (r < 1 || cy + r < s.y0 || cy - r >= s.y0 + s.h) return;
@@ -429,6 +452,261 @@ inline void bitmapInto(S& s, int cx, int cy, int clipR, const uint8_t* bm, int b
         }
     }
 }
+// --- live sweep styles (wide panel) --------------------------------------------
+// The CYD's search styles, redrawn for the engine: integer trig only, every pixel kept inside the radar disc
+// and blended over whatever is already there (the artwork shows through), clocked in milliseconds. GAZE needs the
+// seal's eyes and falls back to the radar sweep.
+inline uint8_t liveStyle(uint8_t sweep, int W) {
+    return (W >= 400 && sweep >= ui::SW_PULSE && sweep != ui::SW_GAZE && sweep < ui::SW_COUNT) ? sweep : uint8_t(ui::SW_RADAR);
+}
+inline int phase(uint32_t now, uint32_t period) { return int((now % period) * 1024u / period); }   // 0..1023 turn
+static constexpr uint32_t kPulseMs = 2900, kStarMs = 5000, kOrbitMs = 1905, kCometMs = 1750, kGalaxyMs = 3490,
+                          kAuroraMs = 2094, kStarfallMs = 1333, kTwinkleMs = 698;
+inline int pulseHead(uint32_t now, int fr) { const int span = fr - 3; return 2 + int((now % kPulseMs) * uint32_t(span) / kPulseMs); }
+
+struct Pen { S& s; int cx, cy, R; };
+inline void penPx(Pen& p, int x, int y, uint16_t col, int lum) {
+    if (x < p.s.lo || x >= p.s.hi || y < p.s.y0 || y >= p.s.y0 + p.s.h) return;
+    const int dx = x - p.cx, dy = y - p.cy; if (dx * dx + dy * dy > p.R * p.R) return;
+    uint16_t& d = p.s.px[(y - p.s.y0) * p.s.stride + (x - p.s.lo)];
+    d = ui::Canvas::mix(d, col, lum, 255);
+}
+inline void penLine(Pen& p, int x0, int y0, int x1, int y1, uint16_t col, int lum, bool thick) {
+    if ((y0 < p.s.y0 && y1 < p.s.y0) || (y0 >= p.s.y0 + p.s.h && y1 >= p.s.y0 + p.s.h)) return;
+    const int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0;
+    const int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; const bool flat = dx >= -dy;
+    int err = dx + dy;
+    for (;;) {
+        penPx(p, x0, y0, col, lum);
+        if (thick) { if (flat) penPx(p, x0, y0 + 1, col, lum); else penPx(p, x0 + 1, y0, col, lum); }
+        if (x0 == x1 && y0 == y1) break;
+        const int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+// Midpoint circle; dot > 0 draws only the first `dot` of every 4 steps (a dotted ring).
+inline void penRing(Pen& p, int cx, int cy, int r, uint16_t col, int lum, int dot = 0) {
+    if (r < 1 || cy + r < p.s.y0 || cy - r >= p.s.y0 + p.s.h) return;
+    int x = r, y = 0, e = 1 - r, k = 0;
+    while (x >= y) {
+        if (!dot || (k & 3) < dot) {
+            penPx(p, cx + x, cy + y, col, lum); penPx(p, cx - x, cy + y, col, lum); penPx(p, cx + x, cy - y, col, lum); penPx(p, cx - x, cy - y, col, lum);
+            penPx(p, cx + y, cy + x, col, lum); penPx(p, cx - y, cy + x, col, lum); penPx(p, cx + y, cy - x, col, lum); penPx(p, cx - y, cy - x, col, lum);
+        }
+        y++; if (e < 0) e += 2 * y + 1; else { x--; e += 2 * (y - x) + 1; } k++;
+    }
+}
+inline void penDisc(Pen& p, int cx, int cy, int r, uint16_t col, int lum) {
+    for (int y = cy - r; y <= cy + r; y++) { const int hw = isqrt(r * r - (y - cy) * (y - cy)); for (int x = cx - hw; x <= cx + hw; x++) penPx(p, x, y, col, lum); }
+}
+inline void polarPt(int cx, int cy, int r, int turn, int& x, int& y) { x = cx + r * isin(turn) / 1024; y = cy - r * icos(turn) / 1024; }   // compass: 0 = up, clockwise
+
+inline void drawSweepStyle(S& s, uint8_t st, int cx, int cy, int fr, uint32_t now) {
+    if (fr < 8 || cy + fr < s.y0 || cy - fr >= s.y0 + s.h) return;
+    const int R = fr - 1; Pen p{s, cx, cy, R};
+    switch (st) {
+    case ui::SW_PULSE: {                                   // a ring leaves the middle and dies at the bound
+        const int span = fr - 3, r0 = pulseHead(now, fr);
+        for (int t = 0; t < 6; t++) {
+            const int r = r0 - t * 4; if (r < 2 || r > R) continue;
+            const int out = 255 - r * 150 / span, lum = (t ? 165 - t * 26 : 255) * (160 + out * 95 / 255) / 255;
+            if (lum < 10) continue;
+            if (!t) { penRing(p, cx, cy, r, pal::SWEEP_HI, lum); penRing(p, cx, cy, r - 1, pal::SWEEP_HI, lum); penRing(p, cx, cy, r - 2, pal::SWEEP_HI, lum / 2); }
+            else penRing(p, cx, cy, r, pal::SWEEP, lum, 2);
+        }
+        break; }
+    case ui::SW_PULSAR: {                                  // three rings on the pulse clock
+        const int span = fr - 3, h0 = pulseHead(now, fr);
+        for (int k = 0; k < 3; k++) {
+            const int r = (h0 - 2 + k * span / 3) % span + 2; if (r < 2 || r > R) continue;
+            const int lum = 255 - r * 120 / span; const uint16_t col = (k & 1) ? pal::SWEEP : pal::SWEEP_HI;
+            penRing(p, cx, cy, r, col, lum); penRing(p, cx, cy, r - 1, col, lum);
+        }
+        penDisc(p, cx, cy, 2, pal::BONE, 255);
+        break; }
+    case ui::SW_STAR: {                                    // five limbs, five refreshes a turn
+        const int base = phase(now, kStarMs);
+        for (int k = 0; k < 5; k++) {
+            const int head = base + k * 205;
+            radarTrailDir(s, cx, cy, R, sweepDirInt(head, 40), true);
+            int ex, ey; polarPt(cx, cy, R, head, ex, ey);
+            penLine(p, cx, cy, ex, ey, pal::SWEEP_HI, 170, true);
+        }
+        break; }
+    case ui::SW_CANDLE: {                                  // no beam: the circle is lit from the middle by something guttering
+        const int g = isin(int(now * 2)) + isin(int(now * 21 / 4)) * 3 / 5 + isin(int(now * 11)) * 3 / 10;   // ~ -1.9..1.9 x1024
+        const int jx = isin(int(now * 9 / 8)) * 3 / 1024, jy = isin(int(now * 3 / 2)) * 2 / 1024;
+        for (int t = 0; t < 4; t++) {
+            const int r = R - 3 - t * 9; if (r < 3) break;
+            const int lum = (84 - t * 14) * (1024 + g * 4 / 10) / 1024; if (lum < 6) continue;
+            penRing(p, cx + jx, cy + jy, r, pal::SWEEP, lum, 2); penRing(p, cx + jx, cy + jy, r - 1, pal::SWEEP, lum, 2);
+        }
+        break; }
+    case ui::SW_GALAXY: {                                  // two spiral arms turning about the core
+        const int rot = phase(now, kGalaxyMs);
+        for (int arm = 0; arm < 2; arm++) {
+            int px = 0, py = 0;
+            for (int i = 0; i < 24; i++) {
+                const int f1000 = (20 + 12 * i) * 1000 / 300;                       // t / 3, x1000
+                const int r = (400 + 600 * f1000 / 1000) * R / 1000;
+                const int a = (20 + 12 * i) * 342 / 100 + arm * 512 + rot;
+                const int x = cx + icos(a) * r / 1024, y = cy + isin(a) * r / 1024;
+                if (i) penLine(p, px, py, x, y, arm ? pal::SWEEP : pal::SWEEP_HI, 255 - f1000 * 70 / 1000, true);
+                px = x; py = y;
+            }
+        }
+        break; }
+    case ui::SW_ORBIT: {                                   // a planet on the rim, a comet tail behind it, a moon inside
+        const int rr = R * 9 / 10, head = 256 + phase(now, kOrbitMs);
+        int px = 0, py = 0;
+        for (int k = 14; k >= 0; k--) {
+            int x, y; polarPt(cx, cy, rr, head - k * 20, x, y);
+            if (k < 14) penLine(p, px, py, x, y, k < 7 ? pal::SWEEP : pal::WITCH, 255 - k * 13, true);
+            px = x; py = y;
+        }
+        penDisc(p, px, py, 3, pal::BONE, 255);
+        const int m = -phase(now, 3170), mr = R * 6 / 10;
+        penDisc(p, cx + icos(m) * mr / 1024, cy + isin(m) * mr / 1024, 2, pal::SWEEP_HI, 255);
+        break; }
+    case ui::SW_STARFALL: {                                // a field that twinkles in place and a shooting star
+        const int bound = R - 2 > 1 ? R - 2 : 1, tw0 = phase(now, kTwinkleMs);
+        for (int i = 0; i < 18; i++) {
+            const uint32_t h = uint32_t(i) * 2654435761u;
+            int x, y; polarPt(cx, cy, int((h >> 9) % uint32_t(bound)), int(h % 360u) * 1024 / 360, x, y);
+            int tw = 150 + 105 * isin(tw0 + i * 163) / 1024; tw = tw < 40 ? 40 : tw > 255 ? 255 : tw;
+            const uint16_t col = (i & 1) ? pal::SWEEP : pal::BONE;
+            penPx(p, x, y, col, tw); penPx(p, x + 1, y, col, tw); penPx(p, x, y + 1, col, tw); penPx(p, x + 1, y + 1, col, tw);
+            if (tw > 200) for (int a = 2; a <= 3; a++) { penPx(p, x - a, y, col, tw); penPx(p, x + 1 + a, y, col, tw); penPx(p, x, y - a, col, tw); penPx(p, x, y + 1 + a, col, tw); }
+        }
+        const int pr = int((now % kStarfallMs) * 1000u / kStarfallMs);               // 0..999
+        const int hx = cx - R + pr * 2 * R / 1000, hy = cy - R / 2 + pr * R / 1000;
+        for (int k = 9; k >= 0; k--) {
+            penPx(p, hx - k * 4, hy - k * 2, k ? pal::SWEEP : pal::BONE, 255 - k * 22); penPx(p, hx - k * 4, hy - k * 2 + 1, k ? pal::SWEEP : pal::BONE, 255 - k * 22);
+            if (!k) penDisc(p, hx, hy, 2, pal::BONE, 255);
+        }
+        break; }
+    case ui::SW_COMET: {                                   // one comet whipping round the rim, a long tail behind it
+        const int rr = R * 9 / 10, head = 256 + phase(now, kCometMs);
+        int px = 0, py = 0;
+        for (int k = 30; k >= 0; k--) {
+            int x, y; polarPt(cx, cy, rr, head - k * 16, x, y);
+            if (k < 30) penLine(p, px, py, x, y, k < 12 ? pal::SWEEP_HI : pal::SWEEP, 255 - k * 7, true);
+            px = x; py = y;
+        }
+        penDisc(p, px, py, 3, pal::BONE, 255);
+        break; }
+    case ui::SW_AURORA: {                                  // three bands undulating round the dial
+        const int w0 = phase(now, kAuroraMs);
+        for (int band = 0; band < 3; band++) {
+            const int baseR = (550 + 140 * band) * R / 1000; const uint16_t col = band == 0 ? pal::SWEEP : band == 1 ? pal::SWEEP_HI : pal::WITCH;
+            int px = 0, py = 0;
+            for (int i = 0; i <= 48; i++) {
+                const int a = (i % 48) * 1024 / 48;
+                int r = baseR + isin(a * 3 + w0 + band * 212) * R / 20 / 1024; if (r > R) r = R;
+                const int x = cx + icos(a) * r / 1024, y = cy + isin(a) * r / 1024;
+                if (i) penLine(p, px, py, x, y, col, 230, true);
+                px = x; py = y;
+            }
+        }
+        break; }
+    default: break;
+    }
+}
+
+// What the style is touching right now, as the radar's 1..kTailLevels flare (0 = nothing): contacts and ring
+// marks light the way they do under the sweep. Wash styles (STARFALL, AURORA, GALAXY, CANDLE) find nothing.
+struct Touch { uint8_t style; int head; int fr; SweepDir d[5]; };
+inline Touch touchFor(uint8_t style, uint32_t now, int fr) {
+    Touch t{style, 0, fr, {}};
+    switch (style) {
+    case ui::SW_RADAR: t.d[0] = sweepDir(sweepAngle(now)); break;
+    case ui::SW_STAR: { const int b = phase(now, kStarMs); for (int k = 0; k < 5; k++) t.d[k] = sweepDirInt(b + k * 205, 40); break; }
+    case ui::SW_ORBIT: t.d[0] = sweepDirInt(256 + phase(now, kOrbitMs), 300); break;
+    case ui::SW_COMET: t.d[0] = sweepDirInt(256 + phase(now, kCometMs), 480); break;
+    case ui::SW_PULSE: case ui::SW_PULSAR: t.head = pulseHead(now, fr); break;
+    default: break;
+    }
+    return t;
+}
+inline int touchLevel(const Touch& t, int dx, int dy) {
+    auto ring = [&](int head) { const int dd = isqrt(dx * dx + dy * dy) - head; return (dd <= 0 && dd > -6) ? 1 + (kTailLevels - 1) * (6 + dd) / 6 : 0; };
+    switch (t.style) {
+    case ui::SW_RADAR: case ui::SW_ORBIT: case ui::SW_COMET: return trailLevel(t.d[0], dx, dy, kTailLevels);
+    case ui::SW_STAR: { int best = 0; for (int k = 0; k < 5; k++) { const int l = trailLevel(t.d[k], dx, dy, kTailLevels); if (l > best) best = l; } return best; }
+    case ui::SW_PULSE: return ring(t.head);
+    case ui::SW_PULSAR: { const int span = t.fr - 3; int best = 0; for (int k = 0; k < 3; k++) { const int r = (t.head - 2 + k * span / 3) % span + 2; const int l = ring(r); if (l > best) best = l; } return best; }
+    default: return 0;
+    }
+}
+// The rectangle a sweep-only frame must repaint: old and new wedge for the radar sweep, the whole radar for the rest.
+inline uieng::Rect sweepBox(uint8_t style, const uieng::Rect& radar, uint32_t t0, uint32_t t1) {
+    if (style != ui::SW_RADAR) return radar;
+    const int fr = (radar.w - 5) / 2, fcx = radar.x + fr + 2, fcy = radar.y + fr + 2;
+    const auto a = sweepBounds(fcx, fcy, fr, sweepAngle(t0)), b = sweepBounds(fcx, fcy, fr, sweepAngle(t1));
+    const int x0 = std::max(radar.x, std::min(a.x, b.x)), y0 = std::max(radar.y, std::min(a.y, b.y));
+    const int x1 = std::min(radar.x + radar.w, std::max(a.x + a.w, b.x + b.w)), y1 = std::min(radar.y + radar.h, std::max(a.y + a.h, b.y + b.h));
+    return (x1 > x0 && y1 > y0) ? uieng::Rect{ x0, y0, x1 - x0, y1 - y0 } : radar;
+}
+
+// Up to `cap` rectangles covering everything that moves between two clocks: the radar's wedge, the rim arcs of ORBIT
+// and COMET (and the moon), PULSE's ring band, STAR's five wedges. The wash styles repaint the whole radar.
+inline int sweepRects(uint8_t style, const uieng::Rect& radar, uint32_t t0, uint32_t t1, uieng::Rect* out, int cap) {
+    const int fr = (radar.w - 5) / 2, cx = radar.x + fr + 2, cy = radar.y + fr + 2, R = fr - 1;
+    auto clampTo = [&](int x0, int y0, int x1, int y1) -> uieng::Rect {
+        x0 = std::max(x0, radar.x); y0 = std::max(y0, radar.y); x1 = std::min(x1, radar.x + radar.w); y1 = std::min(y1, radar.y + radar.h);
+        return (x1 > x0 && y1 > y0) ? uieng::Rect{ x0, y0, x1 - x0, y1 - y0 } : uieng::Rect{ 0, 0, 0, 0 };
+    };
+    auto whole = [&]() { out[0] = radar; return 1; };
+    if (cap < 5) return whole();
+    switch (style) {
+    case ui::SW_RADAR: out[0] = sweepBox(style, radar, t0, t1); return 1;
+    case ui::SW_ORBIT: case ui::SW_COMET: {
+        // Contacts and ring marks answer by BEARING, so the touched area is the pie slice behind the head (the visible arc
+        // is only its rim); old and new slice, plus a margin for contact halos. The moon gets its own small rectangle.
+        const bool orbit = style == ui::SW_ORBIT;
+        const int span = orbit ? 300 : 480; int x0 = 1 << 30, y0 = 1 << 30, x1 = -(1 << 30), y1 = -(1 << 30);
+        for (uint32_t t : { t0, t1 }) {
+            int bx0, by0, bx1, by1; wedgeBox(sweepDirInt(256 + phase(t, orbit ? kOrbitMs : kCometMs), span), R, bx0, by0, bx1, by1);
+            x0 = std::min(x0, bx0); y0 = std::min(y0, by0); x1 = std::max(x1, bx1); y1 = std::max(y1, by1);
+        }
+        out[0] = clampTo(cx + x0 - 9, cy + y0 - 9, cx + x1 + 10, cy + y1 + 10);
+        int n = out[0].w ? 1 : 0;
+        if (orbit) {
+            const int mr = R * 6 / 10; int mx0 = 1 << 30, my0 = 1 << 30, mx1 = -(1 << 30), my1 = -(1 << 30);
+            for (uint32_t t : { t0, t1 }) { const int m = -phase(t, 3170); const int x = cx + icos(m) * mr / 1024, y = cy + isin(m) * mr / 1024; mx0 = std::min(mx0, x); my0 = std::min(my0, y); mx1 = std::max(mx1, x); my1 = std::max(my1, y); }
+            out[n] = clampTo(mx0 - 4, my0 - 4, mx1 + 5, my1 + 5); if (out[n].w) n++;
+        }
+        return n ? n : whole();
+    }
+    case ui::SW_PULSE: {
+        const int fr2 = (radar.w - 5) / 2; const int h0 = pulseHead(t0, fr2), h1 = pulseHead(t1, fr2);
+        if (h1 < h0) return whole();                                     // the ring restarted: repaint everything
+        const int rmax = h1 + 10, rmin = h0 - 24;          // +10: contact halos and ring marks the ring lights reach past it
+        const int rh = rmin * 7 / 10;                      // a ring pixel on the diagonal is only rmin/sqrt(2) from the centre along each axis
+        if (rmin <= 4) { out[0] = clampTo(cx - rmax, cy - rmax, cx + rmax + 1, cy + rmax + 1); return out[0].w ? 1 : whole(); }
+        int n = 0; uieng::Rect r;
+        r = clampTo(cx - rmax, cy - rmax, cx + rmax + 1, cy - rh + 1);   if (r.w) out[n++] = r;     // top band
+        r = clampTo(cx - rmax, cy + rh, cx + rmax + 1, cy + rmax + 1);   if (r.w) out[n++] = r;     // bottom band
+        r = clampTo(cx - rmax, cy - rh, cx - rh + 1, cy + rh + 1);       if (r.w) out[n++] = r;     // left band
+        r = clampTo(cx + rh, cy - rh, cx + rmax + 1, cy + rh + 1);       if (r.w) out[n++] = r;     // right band
+        return n ? n : whole();
+    }
+    case ui::SW_STAR: {
+        const int b0 = phase(t0, kStarMs), b1 = phase(t1, kStarMs); int n = 0;
+        for (int k = 0; k < 5; k++) {
+            int ax0, ay0, ax1, ay1, bx0, by0, bx1, by1;
+            wedgeBox(sweepDirInt(b0 + k * 205, 40), R, ax0, ay0, ax1, ay1); wedgeBox(sweepDirInt(b1 + k * 205, 40), R, bx0, by0, bx1, by1);
+            const uieng::Rect r = clampTo(cx + std::min(ax0, bx0) - 9, cy + std::min(ay0, by0) - 9, cx + std::max(ax1, bx1) + 10, cy + std::max(ay1, by1) + 10);
+            if (r.w) out[n++] = r;
+        }
+        long area = 0; for (int i = 0; i < n; i++) area += long(out[i].w) * out[i].h;
+        return (n && area < long(radar.w) * radar.h) ? n : whole();                     // five overlapping wedges can cost more than the whole radar
+    }
+    default: return whole();
+    }
+}
+
 // Honor the theme's artwork, same policy as motif::drawMotif: a bitmap emblem
 // when the theme carries one, else the {7/3} heptagram.
 inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
@@ -698,7 +976,9 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         const bool clean=pal::centrepiece(sc.theme)==pal::CP_RADAR || cvlt || mascot || orbit || sigil || logo;
         const themepack::Emblem* picture = (orbit && W>=400) ? pal::emblem(sc.theme) : nullptr;     // the muffin picture fills the dial, as on the CYD
         if(picture)emblemInto(s,*picture,fcx,fcy,fr-1);
-        if(clean||sc.animateSweep)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384),picture!=nullptr);   // every theme sweeps with a tail when animated
+        const uint8_t sty=sc.animateSweep?liveStyle(sc.sweep,W):uint8_t(ui::SW_RADAR);   // which live search is drawn (radar sweep unless a wide panel asks otherwise)
+        const Touch tc=touchFor(sty,sc.now,fr);
+        if((clean||sc.animateSweep)&&sty==ui::SW_RADAR)radarTrail(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384),picture!=nullptr);   // every theme sweeps with a tail when animated
         for (int k=1;k<=3;k++){
             if(cvlt && W>=400)continue;  // the seal carries its own circles
             if(cvlt && k==1)continue; // two range rings leave the quiet seal uncluttered
@@ -746,14 +1026,14 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             }
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
         }
+        if(sty!=ui::SW_RADAR)drawSweepStyle(s,sty,fcx,fcy,fr,sc.now);                   // the chosen search, over the artwork
         if (W>=400 && ringKind(sc.theme)==RING_RUNES) { // the runic ring: 2x glyphs, lit by the sweep
             const int R=runeRingRadius(fr);
-            const SweepDir rd=sweepDir(sc.animateSweep?sweepAngle(sc.now):uint16_t(0));
             for (int k=0;k<kRunes;k++) {
                 int rx,ry; runePos(k,R,rx,ry);
                 const int gx=fcx+rx, gy=fcy+ry;
                 if (gy+6<s.y0 || gy-6>=s.y0+s.h || gx+6<=s.lo || gx-6>=s.hi) continue;
-                const int lv=sc.animateSweep?trailLevel(rd,rx,ry,kTailLevels):0;
+                const int lv=sc.animateSweep?touchLevel(tc,rx,ry):0;
                 const uint16_t ink=lv?ui::Canvas::mix(pal::EDGE_LIT,pal::BRIGHT,lv,kTailLevels):pal::EDGE_LIT;
                 const uint8_t* g=ui::runeBits(k);
                 for (int j=0;j<ui::RUNE_S;j++) {
@@ -770,12 +1050,11 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
         }
         if (W>=400 && ringKind(sc.theme)==RING_STARS) {  // the galaxy's stars: little sparkles on the ring, flaring as the sweep passes
             const int R=runeRingRadius(fr);
-            const SweepDir rd=sweepDir(sc.animateSweep?sweepAngle(sc.now):uint16_t(0));
             const uint16_t hue[3]={pal::ICE,pal::MAGENTA,pal::AMBER};
             for (int k=0;k<kRunes;k++) {
                 int rx,ry; runePos(k,R,rx,ry);
                 const int gx=fcx+rx, gy=fcy+ry;
-                const int lv=sc.animateSweep?trailLevel(rd,rx,ry,kTailLevels):0;
+                const int lv=sc.animateSweep?touchLevel(tc,rx,ry):0;
                 const uint16_t ink=lv?ui::Canvas::mix(hue[k%3],pal::BRIGHT,lv,kTailLevels):hue[k%3];
                 const int arm=((k&1)?2:3)+(lv?1:0);                 // alternate big and small, swell when lit
                 box(s,gx-arm,gy,2*arm+1,1,ink); box(s,gx,gy-arm,1,2*arm+1,ink);
@@ -783,16 +1062,15 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
             }
         }
         if(!clean && !sc.animateSweep) line(s, fcx, fcy, fcx + fr*4/5, fcy - fr*7/20, pal::WITCH);   // static ray
-        if(clean||sc.animateSweep)radarNeedle(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // over the artwork
+        if((clean||sc.animateSweep)&&sty==ui::SW_RADAR)radarNeedle(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // over the artwork
         if(cvlt){box(s,fcx-2,fcy,5,1,pal::DIM);box(s,fcx,fcy-2,1,5,pal::DIM);}
         if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
-        const SweepDir liveDir = sweepDir(sc.animateSweep ? sweepAngle(sc.now) : uint16_t(0));
         for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
             if (m.shown && m.band>=0 && m.band<3) {    // small SQUARE markers, not round dots
                 if (sc.animateSweep) {                  // live: bigger, and flaring while the sweep is on them
-                    const BlipLook lk = blipLook(m, liveDir, W);
+                    const BlipLook lk{ m.sizePx + (W >= 400 ? 2 : 1), touchLevel(tc, m.dx, m.dy) };
                     const int sq = lk.size, px = fcx + m.dx, py = fcy + m.dy;
                     uint16_t ink = band[m.band];
                     if (lk.flare) {
