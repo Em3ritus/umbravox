@@ -43,7 +43,7 @@ constexpr uint32_t IDLE_MS   = 10000;
 // host keeps it: an upload locks out every other console command.
 constexpr uint32_t TOTAL_MS  = 120000;
 // A radar clip (up to 780312 bytes) cannot cross a 115200-baud console in 120 s. theme.json and emblem.bin (9728 bytes
-// at most) keep exactly 120 s; a bigger file, which can only be radar.vid, earns 300 ms per KiB on top. The 10 s idle cap
+// at most) keep exactly 120 s; a bigger file (radar.vid or alert.snd) earns 300 ms per KiB on top. The 10 s idle cap
 // still guards a stalled host.
 // While an upload runs, the device's loop would take one console round trip per pass (~70 ms with the animated scan
 // screen: 1.3 KB/s, so a 650 KB clip could not finish). Instead the console is polled for up to POLL_SLICE_MS per pass,
@@ -177,6 +177,7 @@ struct LineBuf {
 //   SDPUT  /themes/<folder>/theme.json   (<= themepack::MAX_JSON bytes)
 //          /themes/<folder>/emblem.bin   (<= themepack::MAX_EMBLEM bytes)
 //          /themes/<folder>/radar.vid    (<= themepack::MAX_CLIP bytes)
+//          /themes/<folder>/alert.snd    (<= themepack::MAX_SOUND bytes)
 //   SDDEL  the two above, and their .tmp/.old leftovers (an interrupted
 //          upload's), and recognized legacy/organized capture files.
 //          Every active or draining writer is protected.
@@ -188,7 +189,7 @@ struct LineBuf {
 // path uses lower case for both; the folder keeps the case it was given (FAT
 // finds an existing folder in any case). Nothing else: no diag.log, perf.csv,
 // prefs, or any file in the root but a session log.
-enum Kind : uint8_t { K_NONE, K_THEME_JSON, K_EMBLEM, K_CLIP, K_SESSION };
+enum Kind : uint8_t { K_NONE, K_THEME_JSON, K_EMBLEM, K_CLIP, K_SOUND, K_SESSION };
 struct Path {
     Kind kind = K_NONE;
     bool temp = false;                 // a .tmp / .old leftover (delete only)
@@ -218,7 +219,8 @@ constexpr size_t PATH_IN_MAX = 120;
 inline uint32_t capOf(Kind k) {
     return k == K_THEME_JSON ? (uint32_t)themepack::MAX_JSON
          : k == K_EMBLEM     ? (uint32_t)themepack::MAX_EMBLEM
-         : k == K_CLIP       ? (uint32_t)themepack::MAX_CLIP : 0;
+         : k == K_CLIP       ? (uint32_t)themepack::MAX_CLIP
+         : k == K_SOUND      ? (uint32_t)themepack::MAX_SOUND : 0;
 }
 
 // "/themes/<folder>/<file>" where <file> is theme.json or emblem.bin, plus
@@ -250,9 +252,10 @@ inline bool themeFile(const char* path, Path& out, bool allowTemp) {
     if (ieq(file, base, "theme.json"))      out.kind = K_THEME_JSON;
     else if (ieq(file, base, "emblem.bin")) out.kind = K_EMBLEM;
     else if (ieq(file, base, "radar.vid"))  out.kind = K_CLIP;
+    else if (ieq(file, base, "alert.snd"))  out.kind = K_SOUND;
     else { out = Path(); return false; }
     snprintf(out.canon, sizeof out.canon, "/themes/%s/%s%s", out.folder,
-             out.kind == K_THEME_JSON ? "theme.json" : out.kind == K_EMBLEM ? "emblem.bin" : "radar.vid", suffix);
+             out.kind == K_THEME_JSON ? "theme.json" : out.kind == K_EMBLEM ? "emblem.bin" : out.kind == K_SOUND ? "alert.snd" : "radar.vid", suffix);
     return true;
 }
 
@@ -271,6 +274,7 @@ inline const char* putPolicy(const char* path, uint32_t size, Path& out) {
     if (size > capOf(out.kind))
         return out.kind == K_THEME_JSON ? "too large (theme.json max 4096 bytes)"
              : out.kind == K_EMBLEM     ? "too large (emblem.bin max 9728 bytes)"
+             : out.kind == K_SOUND      ? "too large (alert.snd max 288020 bytes)"
                                         : "too large (radar.vid max 780312 bytes)";
     return nullptr;
 }

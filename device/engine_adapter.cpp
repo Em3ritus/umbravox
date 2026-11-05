@@ -519,7 +519,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                     if(forgetArm_.tap(millis()))blebridge::forgetPhones();   // second tap within ARM_MS confirms
                 }else {
                     settingsctl::apply(settings_,set,hit.payload);
-                    if(settings_.editor==7&&(hit.payload==30||hit.payload==31||hit.payload==32))sound::alert(ui::CONF_MED,set.sound);   // hear the new volume
+                    if(settings_.editor==7&&(hit.payload==30||hit.payload==31||hit.payload==32))sound::alertFor(set.theme,ui::CONF_MED,set.sound);   // hear the new volume
                 }
                 cancelInput();break;
             case uieng::Action::DisplayControl: {

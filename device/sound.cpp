@@ -48,7 +48,13 @@ void codecMute() { wsbus::Guard g; rmw(0x31, 0xFF, 0x60); }
 // One task owns the codec. A cold start needs ~0.85 s before sound comes through (a 0.3 s lead-in lost the front of
 // every beep; 1 s was clean), so after a beep the task keeps the clocks running on silence for LINGER_MS and plays the
 // next alert at once. Then it mutes and gives the I2S channel (3 KB of internal RAM) back.
-std::atomic<int> pending{-1};
+// The waiting request: -1 level = none. Written by alert() (any task), taken by the beep task, under a spinlock so the
+// pointer, length and level are never read torn.
+struct Req { int level = -1, vol = 0; const int16_t* pcm = nullptr; uint32_t n = 0; };
+Req pendingReq;
+portMUX_TYPE reqMux = portMUX_INITIALIZER_UNLOCKED;
+Req takeReq() { Req r; portENTER_CRITICAL(&reqMux); r = pendingReq; pendingReq.level = -1; portEXIT_CRITICAL(&reqMux); return r; }
+bool haveReq() { portENTER_CRITICAL(&reqMux); const bool b = pendingReq.level >= 0; portEXIT_CRITICAL(&reqMux); return b; }
 constexpr int COLD_LEAD_MS = 850, LINGER_MS = 15000;
 
 void silence(i2s_chan_handle_t tx, int32_t* frame, int ms) {
@@ -76,11 +82,11 @@ bool session() {
         silence(tx, frame, COLD_LEAD_MS);
         uint32_t idleSince = millis();
         for (;;) {
-            const int req = pending.exchange(-1);
-            if (req >= 0) {
-                const int level = req >> 2, amp = AMPS[req & 3];
+            const Req req = takeReq();
+            if (req.level >= 0) {
+                const int level = req.level, amp = AMPS[req.vol & 3];
                 for (int at = 0;;) {
-                    const int n = alerttone::render(level, at, pcm, 128, amp);
+                    const int n = req.pcm ? alerttone::renderPcm(req.pcm, req.n, at, pcm, 128, amp) : alerttone::render(level, at, pcm, 128, amp);
                     if (n <= 0) break;
                     for (int i = 0; i < n; i++) frame[2 * i] = frame[2 * i + 1] = (int32_t)pcm[i] << 16;
                     size_t w = 0;
@@ -103,9 +109,9 @@ bool session() {
 
 void task(void*) {
     for (;;) {
-        if (!session()) pending.store(-1);
+        if (!session()) takeReq();
         busy.store(false);
-        if (pending.load() < 0) break;                  // an alert that arrived while closing: start again
+        if (!haveReq()) break;                          // an alert that arrived while closing: start again
         bool f = false;
         if (!busy.compare_exchange_strong(f, true)) break;
     }
@@ -114,17 +120,18 @@ void task(void*) {
 } // namespace
 
 namespace sound {
-void alert(uint8_t conf, uint16_t volume) {
+void alert(uint8_t conf, uint16_t volume, const int16_t* pcm, uint32_t n) {
     if (volume == 0) return;
-    pending.store((conf > 2 ? 2 : conf) * 4 + (volume > 3 ? 3 : volume));
+    Req r; r.level = conf > 2 ? 2 : conf; r.vol = volume > 3 ? 3 : volume; r.pcm = n ? pcm : nullptr; r.n = n;
+    portENTER_CRITICAL(&reqMux); pendingReq = r; portEXIT_CRITICAL(&reqMux);
     bool exp = false;
     if (!busy.compare_exchange_strong(exp, true)) return;       // the task is up: it takes the request itself
     if (xTaskCreate(task, "beep", 4096, nullptr, 3, nullptr) != pdPASS) {
         elog::event(elog::WARN, "sound", "no memory for the beep task");
-        busy.store(false); pending.store(-1);
+        busy.store(false); takeReq();
     }
 }
 }
 #else
-namespace sound { void alert(uint8_t, uint16_t) {} }
+namespace sound { void alert(uint8_t, uint16_t, const int16_t*, uint32_t) {} }
 #endif

@@ -52,7 +52,7 @@ uint16_t nSeen = 0;                          // valid-named folders listed
 // what Wi-Fi and BLE run out of.
 struct Scratch {
     char     names[MAX_FOLDERS][32];
-    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS];
+    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS], sndSz[MAX_FOLDERS];
     union {
         uint8_t      json[MAX_JSON];
         GuardScratch guard;
@@ -73,6 +73,10 @@ uint8_t*    spare = nullptr;
 // for the whole program. At most MAX_CLIPS: 2 x 780 KB is what PSRAM can spare.
 Clip        clips[MAX_CLIPS];
 int         nClips = 0;
+// Alert sounds (alert.snd), kept the same way: pal::addPack keeps the Sound POINTER and its samples live in a PSRAM
+// buffer for the whole program. At most MAX_SOUNDS sets.
+Sound       sounds[MAX_SOUNDS];
+int         nSounds = 0;
 
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
@@ -142,11 +146,12 @@ void measure() {
         S->jsonSz[i] = pathOf(path, S->names[i], "theme.json") ? sdlog::sizeOf(path) : 0;
         S->embSz[i]  = pathOf(path, S->names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
         S->clipSz[i] = pathOf(path, S->names[i], "radar.vid")  ? sdlog::sizeOf(path) : 0;
+        S->sndSz[i]  = pathOf(path, S->names[i], "alert.snd")  ? sdlog::sizeOf(path) : 0;
     }
 }
 
 uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot wrap it
-    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i];   // an edited clip gives the pack another try
+    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i] + S->sndSz[i];   // an edited clip gives the pack another try
     return t > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)t;
 }
 
@@ -214,7 +219,23 @@ const Clip* loadClip(const char* folder, uint32_t size, char (&why)[WHY_CAP], ui
     return &c;
 }
 
-bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, char (&why)[WHY_CAP]) {
+// alert.snd: the same, into its own PSRAM buffer, validated by themepack::parseSound.
+const Sound* loadSound(const char* folder, uint32_t size, char (&why)[WHY_CAP], uint8_t*& buf) {
+    buf = nullptr;
+    if (nSounds >= MAX_SOUNDS) { setWhy(why, "no room for more alert sounds (%d sets at most)", MAX_SOUNDS); return nullptr; }
+    if (size > MAX_SOUND) { setWhy(why, "alert.snd over %u bytes", (unsigned)MAX_SOUND); return nullptr; }
+    buf = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+    if (!buf) { setWhy(why, "no PSRAM for alert.snd"); return nullptr; }
+    char path[PATH_CAP];
+    const uint32_t n = pathOf(path, folder, "alert.snd") ? sdlog::readFile(path, buf, size) : 0;
+    if (n != size) { setWhy(why, "alert.snd could not be read"); heap_caps_free(buf); buf = nullptr; return nullptr; }
+    Sound& s = sounds[nSounds];
+    char swhy[48];
+    if (!parseSound(buf, n, s, swhy, capOf(swhy))) { setWhy(why, "%s", swhy); heap_caps_free(buf); buf = nullptr; return nullptr; }
+    return &s;
+}
+
+bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, char (&why)[WHY_CAP]) {
     static_assert(std::extent<std::remove_reference_t<decltype(std::declval<Scratch&>().buf.json)>>::value
                   == MAX_JSON, "theme.json buffer");
     char path[PATH_CAP];
@@ -234,19 +255,23 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, char (&
     uint8_t* clipBuf = nullptr;
     const Clip* clip = nullptr;
     if (cs > 0 && !(clip = loadClip(folder, cs, why, clipBuf))) return false;
+    uint8_t* sndBuf = nullptr;
+    const Sound* snd = nullptr;
+    if (ss > 0 && !(snd = loadSound(folder, ss, why, sndBuf))) { if (clipBuf) heap_caps_free(clipBuf); return false; }
 
     const Admit a = admit(folder, p, taken, nTaken);
-    if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); if (clipBuf) heap_caps_free(clipBuf); return false; }
+    if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); if (clipBuf) heap_caps_free(clipBuf); if (sndBuf) heap_caps_free(sndBuf); return false; }
 
     Pack probe = p;                          // addPack sanitises its own copy
     if (sanitizeStatus(probe))
         elog::event(elog::WARN, "theme", "%s: status colours too faint, replaced", folder);
-    const int id = pal::addPack(p, em, clip);
-    if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); if (clipBuf) heap_caps_free(clipBuf); return false; }
+    const int id = pal::addPack(p, em, clip, snd);
+    if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); if (clipBuf) heap_caps_free(clipBuf); if (sndBuf) heap_caps_free(sndBuf); return false; }
+    if (snd) nSounds++;
     if (clip) nClips++;                      // that buffer and slot now belong to the pack
     taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
-    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s", folder, p.name, id, clip ? " with a radar clip" : "");
+    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s%s", folder, p.name, id, clip ? " with a radar clip" : "", snd ? " with alert sounds" : "");
     return true;
 }
 
@@ -261,12 +286,13 @@ void visit(int i) {
     if (S->jsonSz[i] == 0) { skip(folder, "no theme.json"); return; }
     if (S->jsonSz[i] > MAX_JSON) { skip(folder, "theme.json over 4096 bytes"); return; }
     if (S->clipSz[i] > MAX_CLIP) { skip(folder, "radar.vid over 780312 bytes"); return; }
+    if (S->sndSz[i] > MAX_SOUND) { skip(folder, "alert.snd over 288020 bytes"); return; }
 
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), folder, total);
     if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
     char why[WHY_CAP] = "unknown";
-    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], why);
+    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], why);
     guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }

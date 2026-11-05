@@ -72,6 +72,26 @@ int main() {
         }
     }
 
+    puts("== a pack's own sound (16-bit samples) through the same volume steps");
+    {
+        std::vector<int16_t> src(1000);
+        for (int i = 0; i < 1000; i++) src[i] = (int16_t)((i % 50) * 400 - 10000);          // a saw, -10000..9600
+        auto run = [&](int amp) { std::vector<int16_t> o(1000); int n = renderPcm(src.data(), 1000, 0, o.data(), 1000, amp); o.resize(n); return o; };
+        const auto unity = run(kNormalAmp), quiet = run(kNormalAmp / 4), loud = run(kNormalAmp * 2);
+        expect(unity.size() == 1000 && run(kNormalAmp).size() == 1000, "the whole sound comes out");
+        expect(unity[500] == src[500], "NORMAL plays the samples as they are");
+        expect(quiet[500] == src[500] / 4 || std::abs(quiet[500] - src[500] / 4) <= 1, "a quarter of the amplitude is a quarter of the samples");
+        expect(std::abs(loud[500] - 2 * src[500]) <= 1, "twice the amplitude doubles them");
+        std::vector<int16_t> hot(1000, 30000), o(1000); renderPcm(hot.data(), 1000, 0, o.data(), 1000, kNormalAmp * 3);
+        expect(o[500] == 32767, "a hot sample clips at full scale instead of wrapping");
+        expect(std::abs(unity[0]) < 400 && std::abs(unity[999]) < 400, "the edges ramp so the speaker does not click");
+        expect(renderPcm(src.data(), 1000, 1000, nullptr, 50, kNormalAmp) == 0 && renderPcm(nullptr, 0, 0, nullptr, 50, kNormalAmp) == 0, "nothing after the end, or for no sound");
+        std::vector<int16_t> got; int16_t buf[7];
+        for (int at = 0;;) { const int n = renderPcm(src.data(), 1000, at, buf, 7, kNormalAmp); if (n <= 0) break; got.insert(got.end(), buf, buf + n); at += n; }
+        expect(got == unity, "chunked rendering equals one pass");
+        expect(kNormalAmp == 12000, "NORMAL is the tone's own volume, so custom and built-in sounds match");
+    }
+
     printf("%s\n", fails ? "FAILED" : "all passed");
     return fails ? 1 : 0;
 }

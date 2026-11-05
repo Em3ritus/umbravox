@@ -780,6 +780,31 @@ static void testGolden() {
 
 
 // --- radar.vid: the optional third file, up to 780312 bytes ------------------------------------
+static void testSoundFile() {
+    printf("alert.snd policy:\n");
+    sdcmd::Path p;
+    check("allowed, canonical lower case",
+          !sdcmd::putPolicy("/THEMES/x/Alert.SND", 4000, p) && !strcmp(p.canon, "/themes/x/alert.snd") && p.kind == sdcmd::K_SOUND);
+    check("exactly MAX_SOUND bytes is allowed", !sdcmd::putPolicy("/themes/x/alert.snd", (uint32_t)themepack::MAX_SOUND, p));
+    const char* why = sdcmd::putPolicy("/themes/x/alert.snd", (uint32_t)themepack::MAX_SOUND + 1, p);
+    check("one byte over is refused with the limit named", why && strstr(why, "alert.snd max 288020"));
+    check("empty is refused", sdcmd::putPolicy("/themes/x/alert.snd", 0, p) != nullptr);
+    check("not in the root", sdcmd::putPolicy("/alert.snd", 100, p) != nullptr);
+    check("other names still refused", sdcmd::putPolicy("/themes/x/alert.wav", 100, p) != nullptr && sdcmd::putPolicy("/themes/x/alert.snd2", 100, p) != nullptr);
+    check("capOf knows the sounds", sdcmd::capOf(sdcmd::K_SOUND) == (uint32_t)themepack::MAX_SOUND);
+    check("SDDEL: the file and its leftovers", !sdcmd::delPolicy("/themes/x/alert.snd", (const char*)nullptr, p) && !sdcmd::delPolicy("/themes/x/alert.snd.tmp", (const char*)nullptr, p)
+          && !sdcmd::delPolicy("/themes/x/ALERT.SND.OLD", (const char*)nullptr, p) && p.temp);
+    check("the time allowance covers the biggest file at the 1.3 KB/s the host tool can manage", sdcmd::totalMsFor((uint32_t)themepack::MAX_SOUND) >= 180000);
+    printf("alert.snd upload:\n");
+    {
+        Rig r;
+        const auto d = bytes(themepack::MAX_SOUND, 3);
+        check("the biggest sound file uploads", r.upload("/themes/snd/alert.snd", d) == doneFor(d));
+        check("and is intact, with no temp left", r.sd.get("/themes/snd/alert.snd") == d && !r.sd.has("/themes/snd/alert.snd.tmp"));
+        check("SDPUT one byte too many: ERR too large", r.send("SDPUT /themes/snd/alert.snd 288021 00000000").rfind("ERR too large", 0) == 0 && !r.con.uploading());
+    }
+}
+
 static void testClipFile() {
     printf("radar.vid policy:\n");
     sdcmd::Path p;
@@ -849,6 +874,7 @@ int main() {
     testDelete();
     testFixRound1();
     testClipFile();
+    testSoundFile();
     testGolden();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;

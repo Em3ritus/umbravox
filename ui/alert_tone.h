@@ -62,4 +62,26 @@ inline int render(int lv, int start, int16_t* out, int n, int amp) {
     return n;
 }
 
+// The volume at which a pack's own samples play unchanged ("NORMAL"); the volume steps scale them from here.
+constexpr int kNormalAmp = 12000;
+
+// Samples [start, start+n) of a pack's own 16-bit mono sound into out, scaled so `amp` == kNormalAmp plays them as stored
+// (QUIET and LOUD are other amps), clipped at full scale, with a 5 ms ramp in and out. Returns how many were written
+// (0 once the sound is over). A sample depends only on its index, so chunk size does not matter.
+inline int renderPcm(const int16_t* pcm, uint32_t total, int start, int16_t* out, int n, int amp) {
+    if (!pcm || start < 0 || (uint32_t)start >= total || n <= 0) return 0;
+    if ((uint32_t)n > total - (uint32_t)start) n = (int)(total - (uint32_t)start);
+    const int32_t gain = (int32_t)((int64_t)amp * 256 / kNormalAmp);                 // Q8
+    for (int w = 0; w < n; w++) {
+        const uint32_t i = (uint32_t)start + (uint32_t)w;
+        uint32_t e = i < total - 1 - i ? i : total - 1 - i;
+        if (e > (uint32_t)detail::kRamp) e = (uint32_t)detail::kRamp;
+        const int32_t env = (int32_t)(e * 256 / (uint32_t)detail::kRamp);
+        int32_t s = ((int32_t)pcm[i] * gain) >> 8;
+        s = (s * env) >> 8;
+        out[w] = (int16_t)(s > 32767 ? 32767 : s < -32767 ? -32767 : s);
+    }
+    return n;
+}
+
 } // namespace alerttone

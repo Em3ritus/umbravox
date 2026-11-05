@@ -1881,7 +1881,7 @@ void loop() {
                 // every few seconds would otherwise hold the screen on for
                 // as long as you were parked beside it.
                 wakeScreen = true;
-                sound::alert(s.alertConf, set.sound);              // one beep pattern per level; a no-op off the Waveshare
+                sound::alertFor(set.theme, s.alertConf, set.sound);              // one beep pattern per level; a no-op off the Waveshare
             }
             const uint32_t a = millis() - startedAt;
             s.alertAge = (uint16_t)(a > 60000 ? 60000 : a);

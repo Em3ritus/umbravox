@@ -439,6 +439,36 @@ bool parseClip(const uint8_t* data, size_t n, Clip& out, char* why, size_t whyCa
     return err == nullptr;
 }
 
+static const char* soundCheck(const uint8_t* d, size_t n, Sound& out) {
+    if (!d || n < (size_t)SND_HDR) return "alert.snd is too short";
+    if (d[0] != 'U' || d[1] != 'V' || d[2] != 'S' || d[3] != 'N') return "alert.snd is not a UVSN file";
+    if (d[4] != 1) return "alert.snd version is not 1";
+    if (d[5] != 0) return "alert.snd reserved bytes are not zero";
+    if ((d[6] | (d[7] << 8)) != SND_RATE) return "alert.snd rate must be 16000";
+    uint32_t c[3]; uint64_t total = 0;
+    for (int k = 0; k < 3; k++) {
+        c[k] = (uint32_t)d[8 + 4 * k] | ((uint32_t)d[9 + 4 * k] << 8) | ((uint32_t)d[10 + 4 * k] << 16) | ((uint32_t)d[11 + 4 * k] << 24);
+        if (c[k] > (uint32_t)MAX_SND_SAMPLES) return "alert.snd has a sound over 48000 samples";
+        total += c[k];
+    }
+    if (total == 0) return "alert.snd has no sounds";
+    if ((uint64_t)n != (uint64_t)SND_HDR + 2 * total) return "alert.snd length does not match its sounds";
+    size_t off = SND_HDR;
+    for (int k = 0; k < 3; k++) { out.n[k] = c[k]; out.pcm[k] = c[k] ? (const int16_t*)(d + off) : nullptr; off += 2 * (size_t)c[k]; }
+    return nullptr;
+}
+
+bool parseSound(const uint8_t* data, size_t n, Sound& out, char* why, size_t whyCap) {
+    for (int k = 0; k < 3; k++) { out.n[k] = 0; out.pcm[k] = nullptr; }
+    const char* err = soundCheck(data, n, out);
+    if (err) for (int k = 0; k < 3; k++) { out.n[k] = 0; out.pcm[k] = nullptr; }
+    if (why && whyCap) {
+        if (!err) why[0] = 0;
+        else { strncpy(why, err, whyCap - 1); why[whyCap - 1] = 0; }
+    }
+    return err == nullptr;
+}
+
 bool sanitizeStatus(Pack& p) {
     bool changed = false;
     const uint16_t bg1 = p.color[R_VOID], bg2 = p.color[R_PANEL];
