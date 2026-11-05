@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SND_RATE, MAX_SND_SAMPLES, MAX_SOUND_FILE, prepareSound, soundFile, readSoundFile, validateSounds, emptySounds, hasSounds, soundSeconds } from '../js/alertsound.js';
+import { cutSound, SND_RATE, MAX_SND_SAMPLES, MAX_SOUND_FILE, prepareSound, soundFile, readSoundFile, validateSounds, emptySounds, hasSounds, soundSeconds } from '../js/alertsound.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const sine = (hz, secs, amp = 0.5) => Float32Array.from({ length: Math.round(SND_RATE * secs) }, (_, i) => amp * Math.sin(2 * Math.PI * hz * i / SND_RATE));
@@ -95,4 +95,20 @@ test('the device parser accepts what the designer writes, and refuses what readS
   }
   assert.equal(disagree, 0, 'reader and device parser agree on every header mutation');
   fs.rmSync(dir, { recursive: true });
+});
+
+test('cutSound: the sound starts where you say, from a longer recording', () => {
+  // 1 s of 500 Hz, then 1 s of 1500 Hz, then 8 s of 3000 Hz
+  const a = sine(500, 1), b = sine(1500, 1), c = sine(3000, 8);
+  const song = new Float32Array(a.length + b.length + c.length); song.set(a, 0); song.set(b, a.length); song.set(c, a.length + b.length);
+  const hz = (p) => { let zc = 0; for (let i = 1; i < p.length; i++) zc += (p[i - 1] < 0) !== (p[i] < 0); return zc / 2 / (p.length / SND_RATE); };
+  const near = (x, y) => Math.abs(x - y) < 0.04 * y;
+  assert.ok(near(hz(cutSound(song, 0).subarray(0, 8000)), 500), 'from the start');
+  assert.ok(near(hz(cutSound(song, 1).subarray(2000, 10000)), 1500), 'from 1 s in');
+  assert.ok(near(hz(cutSound(song, 2.5)), 3000), 'from 2.5 s in');
+  assert.equal(cutSound(song, 0).length, MAX_SND_SAMPLES, 'still capped at the limit');
+  assert.ok(Math.abs(cutSound(song, 9).length - 16000) <= 3, 'near the end it is what is left (1 s, give or take the trimmed edge samples)');
+  assert.ok(near(hz(cutSound(song, -5).subarray(0, 8000)), 500), 'a negative start means the start');
+  assert.equal(cutSound(song, 100), null, 'past the end is nothing');
+  assert.equal(cutSound(song, NaN) !== null, true, 'a junk start means the start');
 });

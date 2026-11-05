@@ -134,7 +134,8 @@ samples as stored, so the designer normalizes each sound to 70% of full scale.
 
 The designer makes the file: on the Waveshare board a card under the preview takes any audio file per level
 (wav, mp3, ogg, m4a: whatever the browser decodes), resamples it to 16 kHz mono, trims silence at both ends, cuts it at
-6 seconds and plays it back for you. It travels with the theme like the video (card reader, USB, zip). Over USB the
+6 seconds and plays it back for you. A recording longer than that gets a **Start at** slider (tenths of a second) to
+pick which part is used. It travels with the theme like the video (card reader, USB, zip). Over USB the
 file is under 600 KB, so under a minute. `tools/sdput.py PORT put <folder>` sends an `alert.snd` too.
 
 ## radar.vid

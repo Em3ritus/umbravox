@@ -18,7 +18,7 @@ import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from '.
 import { installOverSerial, wrapWebSerial, usbSupported, BAUD } from './usbinstall.js';
 import { loadWasm, W, H, BOARDS } from './preview.js';
 import { grabFrames, grabGifFrames, isGifFile, buildClip } from './radarvideo.js';
-import { emptySounds, hasSounds, prepareSound, decodeToMono16k, playPcm, soundSeconds, LEVELS } from './alertsound.js';
+import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSeconds, LEVELS } from './alertsound.js';
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
 const $ = (id) => document.getElementById(id);
@@ -102,6 +102,7 @@ $('btn-blank').addEventListener('click', () => begin(blankTheme(), null));
 function begin(theme, emblem, clip = null, sounds = null) {
   state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
   $('open-msg').textContent = '';
+  for (const k of LEVELS) sndSrc[k] = null;
   paintVideoBar(); paintSoundBar();
   syncForm(); changed(); show('design');
 }
@@ -334,6 +335,8 @@ function syncTabs() {
 // js/alertsound.js turns it into the board's format (16 kHz mono, at most 6 s). They become part of the theme (alert.snd).
 const SND_NAMES = { low: 'LOW', med: 'MED', high: 'HIGH' };
 let sndBuilt = false;
+const sndSrc = { low: null, med: null, high: null };   // the decoded recording behind each sound ({f, start}), so Start at can re-cut it
+const clock = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
 function buildSoundBar() {
   if (sndBuilt) return; sndBuilt = true;
   const bar = $('soundbar');
@@ -343,11 +346,20 @@ function buildSoundBar() {
       '<input type="file" id="snd-' + k + '" accept="audio/*">' +
       '<button type="button" class="btn" id="snd-' + k + '-play" hidden>Play</button>' +
       '<button type="button" class="btn" id="snd-' + k + '-clear" hidden>Remove</button>' +
-      '<span class="small muted" id="snd-' + k + '-info"></span>';
+      '<span class="small muted" id="snd-' + k + '-info"></span>' +
+      '<label class="small" id="snd-' + k + '-startlab" for="snd-' + k + '-start" hidden>Start at <span id="snd-' + k + '-startval">0:00.0</span></label>' +
+      '<input type="range" id="snd-' + k + '-start" min="0" max="0" value="0" step="1" hidden aria-label="Where in the recording the ' + SND_NAMES[k] + ' sound starts">';
     bar.insertBefore(row, $('snd-msg'));
     $('snd-' + k).addEventListener('change', (e) => loadSound(k, e.target.files[0] || null));
     $('snd-' + k + '-play').addEventListener('click', () => playPcm(state.sounds[k]));
-    $('snd-' + k + '-clear').addEventListener('click', () => { state.sounds[k] = null; $('snd-' + k).value = ''; paintSoundBar(); changed(); });
+    $('snd-' + k + '-clear').addEventListener('click', () => { state.sounds[k] = null; sndSrc[k] = null; $('snd-' + k).value = ''; paintSoundBar(); changed(); });
+    $('snd-' + k + '-start').addEventListener('input', (e) => { $('snd-' + k + '-startval').textContent = clock(Number(e.target.value) / 10); });
+    $('snd-' + k + '-start').addEventListener('change', (e) => {
+      if (!sndSrc[k]) return;
+      sndSrc[k].start = Number(e.target.value) / 10;
+      const pcm = cutSound(sndSrc[k].f, sndSrc[k].start);
+      if (pcm) { state.sounds[k] = pcm; $('snd-msg').textContent = ''; paintSoundBar(); changed(); }
+    });
   }
 }
 function paintSoundBar() {
@@ -356,6 +368,10 @@ function paintSoundBar() {
     const pcm = state.sounds[k];
     $('snd-' + k + '-play').hidden = !pcm; $('snd-' + k + '-clear').hidden = !pcm;
     $('snd-' + k + '-info').textContent = pcm ? soundSeconds(pcm).toFixed(1) + ' s' : 'built-in beep';
+    const src = sndSrc[k], dur = src ? src.f.length / 16000 : 0;
+    const pick = !!pcm && dur > 6.5;                                   // only a recording longer than a sound has a choice of where to start
+    $('snd-' + k + '-start').hidden = !pick; $('snd-' + k + '-startlab').hidden = !pick;
+    if (pick) { const r = $('snd-' + k + '-start'); r.max = String(Math.max(0, Math.floor((dur - 0.5) * 10))); r.value = String(Math.round(src.start * 10)); $('snd-' + k + '-startval').textContent = clock(src.start); }
   }
 }
 async function loadSound(k, file) {
@@ -363,10 +379,11 @@ async function loadSound(k, file) {
   if (!file) return;
   try {
     msg.className = 'msg'; msg.textContent = 'Reading ' + file.name + '...';
-    const pcm = prepareSound(await decodeToMono16k(file));
+    const f = await decodeToMono16k(file);
+    const pcm = cutSound(f, 0);
     if (!pcm) throw new Error('there is nothing audible in it');
-    state.sounds[k] = pcm;
-    msg.textContent = file.size > 0 && soundSeconds(pcm) >= 6 ? 'Used the first 6 seconds of it.' : '';
+    state.sounds[k] = pcm; sndSrc[k] = { f, start: 0 };
+    msg.textContent = f.length / 16000 > 6.5 ? 'Used the first 6 seconds of it; move Start at to use another part.' : '';
     changed();
   } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this file: ' + ((e && e.message) || e); }
   finally { paintSoundBar(); }

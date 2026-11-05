@@ -33,6 +33,13 @@ export function prepareSound(f, { peak = 0.7, silence = 0.005, fadeMs = 5 } = {}
   return out;
 }
 
+// The sound starting `startSec` into a longer recording (16 kHz floats), prepared as above. A negative or junk start
+// means the start; past the end is nothing (null).
+export function cutSound(f, startSec = 0, opts) {
+  const at = Number.isFinite(startSec) && startSec > 0 ? Math.round(startSec * SND_RATE) : 0;
+  return at >= f.length ? null : prepareSound(f.subarray(at), opts);
+}
+
 // null when fine, else the reason (the device's refusals).
 export function validateSounds(s) {
   if (!hasSounds(s)) return 'alert.snd has no sounds';
