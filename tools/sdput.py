@@ -206,6 +206,7 @@ def selftest():
     check("...and the file reassembles byte for byte", b"".join(bytes.fromhex(s[0].split()[2]) for s in bsteps[1:-1]) == big)
     selftest_files(check)
     selftest_link(check)
+    selftest_ready(check)
     for a, ok in (("/WD-0001.csv", True), ("/themes/x/theme.json", True), ("/thèmes/x", False),
                   ("caf\u00e9", False), ("a b", False), ("a\tb", False), ("", False), ("x" * 121, False)):
         check("arg_ok(%r) is %s" % (a, ok), arg_ok(a) == ok)
@@ -280,6 +281,65 @@ def selftest_link(check):
         t.join(1)
         os.close(master)
         os.close(slave)
+
+
+def selftest_ready(check):
+    """The board resets when the port opens and takes seconds to boot (more with packs on the card), ignoring the console
+    meanwhile. Link.wait_ready must keep asking until it answers, return at once when it is already up, and give up
+    (False) on a dead port. A fake device on a pseudo-terminal that 'boots' for a while first."""
+    try:
+        import serial  # noqa: F401
+    except ImportError:
+        print("  skip wait_ready (pyserial missing)")
+        return
+    import pty
+    import select
+    import threading
+
+    def fake(boot_s):
+        master, slave = pty.openpty()
+        stop = threading.Event()
+        t0 = time.monotonic()
+
+        def run():
+            buf = b""
+            while not stop.is_set():
+                try:
+                    if not select.select([master], [], [], 0.05)[0]:
+                        continue
+                    buf += os.read(master, 4096)
+                except OSError:
+                    return
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    if time.monotonic() - t0 < boot_s:
+                        continue                                  # still booting: the console is not listening
+                    if line.startswith(b"SDLS"):
+                        os.write(master, b"=== SDLS /themes\nmy-pack/\n=== SDLS END\n")
+        th = threading.Thread(target=run, daemon=True)
+        th.start()
+        return master, slave, stop, th
+
+    for boot_s, limit, want, label in ((1.2, 10.0, True, "a board still booting is waited for"),
+                                       (0.0, 10.0, True, "a board that is already up answers at once"),
+                                       (99.0, 1.5, False, "a board that never answers gives up")):
+        master, slave, stop, th = fake(boot_s)
+        try:
+            link = Link(os.ttyname(slave))
+            t0 = time.monotonic()
+            ok = link.wait_ready(limit, interval=0.3)
+            took = time.monotonic() - t0
+            link.close()
+            check("wait_ready: %s (%.1f s)" % (label, took), ok == want)
+            if boot_s == 0.0:
+                check("wait_ready: ...in under a second", took < 1.0)
+            if boot_s == 1.2:
+                check("wait_ready: ...and not before it booted", took >= 0.5)
+        finally:
+            stop.set()
+            th.join(1)
+            os.close(master)
+            os.close(slave)
 
 
 def selftest_files(check):
@@ -446,6 +506,21 @@ class Link:
             # bytes, i.e. the whole timeout for every short reply.
             self.buf += self.s.read(max(1, self.s.in_waiting))
 
+    def wait_ready(self, timeout=60.0, interval=2.0):
+        """Opening the port resets the board, and it ignores the console until it has booted (about 6 s, more with packs
+        on the card). Ask for a listing every `interval` seconds until it answers; True once it does, False after
+        `timeout`. A board that was already up answers the first time, so this costs nothing then."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            self.send("SDLS /themes")
+            for line in self.lines(min(interval, max(0.05, end - time.monotonic()))):
+                if line.startswith("=== SDLS END"):
+                    for _ in self.lines(0.3):          # a second answer to an earlier probe must not reach the real command
+                        pass
+                    self.buf = b""
+                    return True
+        return False
+
     def expect(self, want, timeout):
         """The confirming reply `want`, an 'ERR ...' line, or None on timeout.
         Every other line (the device's own log output) is ignored."""
@@ -573,6 +648,9 @@ def main(argv):
         print("cannot open %s: %s" % (port, e), file=sys.stderr)
         return 1
     try:
+        if not link.wait_ready():
+            print("the board did not answer on %s within 60 s (is it booting, or is another program holding the port?)" % port, file=sys.stderr)
+            return 1
         if cmd == "put":
             if not put_all(link, files):
                 return 1
