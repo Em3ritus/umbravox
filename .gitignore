@@ -171,3 +171,5 @@ __pycache__/
 # Standalone flashing-tool virtual environment
 .venv-flash/
 sim/test_scan_fx
+sim/test_radar_video
+device/radarvid_data.h

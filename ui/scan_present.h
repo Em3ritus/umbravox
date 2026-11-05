@@ -63,6 +63,7 @@ public:
     void bridge(bool on) { sc_.bridgeOn=on; }
     void animate(bool enabled) { sc_.animateSweep = enabled; }
     void sweep(uint8_t style) { sc_.sweep = style; }
+    void video(const scanr::RadarVideo* v) { sc_.video = v; }   // a clip in the radar disc (wide panels)
     void fx(bool on) { sc_.fx.on = on; }                   // side-panel texture and motion (wide panels)
     scanr::Fx& fxState() { return sc_.fx; }                // the engine fills the history in just before a commit
     void alert(const scanr::AlertScene& a) { sc_.alert = a; }
@@ -197,7 +198,8 @@ inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b
                    && (!ma.shown || (ma.dx == mb.dx && ma.dy == mb.dy
                                      && ma.sizePx == mb.sizePx && ma.band == mb.band));
     }
-    p.marks = !markSame;
+    const bool vidSame = a.video == b.video && (!b.video || scanr::videoFrame(*a.video, a.now) == scanr::videoFrame(*b.video, b.now));
+    p.marks = !markSame || (W >= 400 && !vidSame);      // a new clip frame changes the whole disc, not just a wedge
     if (W >= 400 && a.fx.on && b.fx.on) {                              // wide panels: the tick, the sparklines and the peaks
         const bool tick = a.now / scanr::kFxMs != b.now / scanr::kFxMs;
         for (int k = 0; k < 3; k++) p.fxCard[k] = tick || __builtin_memcmp(a.fx.spark[k], b.fx.spark[k], sizeof a.fx.spark[k]) != 0;

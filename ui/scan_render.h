@@ -85,6 +85,11 @@ struct Fx {
     uint8_t peak[21] = {};                        // peak-hold per spectrum channel, 0..100
 };
 
+// A looping clip drawn 2x inside the radar disc of a wide panel (replaces the picture there). 4-bit grey, two pixels
+// per byte (high nibble first), row-major, `frames` frames back to back. The data is owned by the caller (flash).
+struct RadarVideo { int w, h, frames, fps; const uint8_t* px; };
+inline int videoFrame(const RadarVideo& v, uint32_t now) { return int((uint64_t(now) * uint64_t(v.fps) / 1000u) % uint64_t(v.frames)); }
+
 struct ScanScene {
     bool bridgeOn = false;
     // status
@@ -108,6 +113,7 @@ struct ScanScene {
     uint8_t sweep = 0;         // ui::Sweep id; only read when animateSweep (wide panels)
     AlertScene alert;          // takeover (wide panels only); a device with no alert leaves it inactive
     Fx fx;                     // side-panel texture and motion (wide panels only)
+    const RadarVideo* video = nullptr;   // a clip in the radar disc (wide panels only)
 };
 
 // --- projections (pure, host-testable): scene data -> draw-ready values --------
@@ -1000,6 +1006,31 @@ inline void fxBaseline(S& s, int sx0, int w, int barBase, uint32_t now) {       
     if (b > a) box(s, a, y, b - a, 1, pal::BRIGHT);
 }
 
+// The clip, 2x, inside the disc of radius r. One pass over the strip's rows; per row the disc's half width comes from
+// an integer square root, and each pixel is one nibble lookup and one store.
+inline void videoInto(S& s, const RadarVideo& v, uint32_t now, int cx, int cy, int r) {
+    uint16_t lut[16];
+    for (int g = 0; g < 16; g++) lut[g] = ui::Canvas::mix(pal::VOID, pal::BRIGHT, g, 15);
+    const uint8_t* fr = v.px + (size_t)videoFrame(v, now) * size_t((v.w * v.h + 1) / 2);
+    const int ox = cx - v.w, oy = cy - v.h;                              // top-left of the 2x picture
+    for (int y = s.y0; y < s.y0 + s.h; y++) {
+        const int dy = y - cy; if (dy < -r || dy > r) continue;
+        const int sy = (y - oy) >> 1; if (sy < 0 || sy >= v.h) continue;
+        const int half = isqrt(r * r - dy * dy);
+        int x0 = cx - half, x1 = cx + half + 1;
+        if (x0 < s.lo) x0 = s.lo; if (x1 > s.hi) x1 = s.hi;
+        uint16_t* row = s.px + (y - s.y0) * s.stride - s.lo;
+        const uint8_t* src = fr + (size_t)sy * v.w;                       // pixel index sy*w + sx; nibble parity from the whole index
+        for (int x = x0; x < x1; x++) {
+            const int sx = (x - ox) >> 1; if (sx < 0 || sx >= v.w) continue;
+            const size_t i = (size_t)sy * v.w + sx;
+            const uint8_t b = fr[i >> 1];
+            row[x] = lut[(i & 1) ? (b & 15) : (b >> 4)];
+        }
+        (void)src;
+    }
+}
+
 // --- compose one strip completely from the scene ------------------------------
 }  // namespace scanr
 #include "scan_alert.h"
@@ -1092,7 +1123,9 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
         }
-        if(cvlt && W>=400){                                                  // the whole CYD seal (face, figure, circles, runes) on the wide radar
+        if(sc.video && W>=400){                                              // a clip in the dial (device-supplied)
+            videoInto(s,*sc.video,sc.now,fcx,fcy,fr-1);
+        } else if(cvlt && W>=400){                                           // the whole CYD seal (face, figure, circles, runes) on the wide radar
             bitmapInto(s,fcx,fcy,fr-1,ui::BIG,ui::BIG_W,ui::BIG_H);
         } else if(cvlt || mascot || sigil || (orbit && !picture))crewArt(s,fcx,fcy,fr,cvlt?1:orbit?2:sigil?3:0,100);   // compact panels keep their pinned art
         const themepack::Emblem* e = pal::emblem(sc.theme);
