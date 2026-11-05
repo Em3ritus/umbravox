@@ -142,9 +142,34 @@ These numbers are the same ones the device and the designer use
    helper), the centrepiece (drop a PNG, or choose the heptagram) and the motion
    (sweeps, starting sweep, alert). The preview shows Scan, Mesh, Alert and Menu with
    colours after RGB565 clamping. The checks explain anything that is wrong.
+   Pick the board to preview above the screen: **CYD 2.8"** or **Waveshare 3.5"**
+   (see *Designing for the Waveshare 3.5"* below).
 4. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**. The
    Install page has two routes: write to the card in a card reader, or send the pack
-   over the CYD's USB cable with the card left in the CYD.
+   over the board's USB cable with the card left in the board.
+
+### Designing for the Waveshare 3.5"
+
+A pack is the same two files for every board, and the Waveshare reads it with the
+same loader as the CYD, so one pack can serve both. What changes is how the board draws it,
+and the designer previews that with the board's own drawing code:
+
+- **Board switch.** The preview card has a **CYD 2.8"** / **Waveshare 3.5"** switch. The Waveshare
+  preview is the full 480x320 engine screen (not a scaled-up CYD picture). It adds an **Aspect**
+  tab, and on the Alert tab a **Low / Medium / High** switch: Low and Medium take over the radar
+  area, High takes the whole screen. The choice is remembered in the browser.
+- **Same code as the board.** The preview is `ui/preview_ws.h` compiled to WebAssembly, the same
+  projection and compositor the firmware runs. `web/designer/test/wasm-parity.test.mjs` holds it to
+  the host render byte for byte (built-ins, both sample packs, every sweep, every alert style and
+  all three alert levels).
+- **Dial size does nothing there.** *Compact* and *Large* are CYD layout presets; the Waveshare
+  lays its radar out itself. The page says so when the Waveshare is selected.
+- **Gaze and Summon** stay unavailable to packs (they belong to the Baphomet seal), as on the CYD.
+- **Install over USB** filters the browser's port list to the Waveshare's native USB (an Espressif
+  "USB JTAG/serial debug unit", USB ID 303a:1001). The Waveshare's console is the chip's own USB
+  port, so the port disappears and comes back whenever the board restarts. That is normal.
+  **Not yet run against a real Waveshare with a card in it:** the protocol was checked only as far
+  as the board answering `SDLS` (it replied `sdlog: no card`), because no card was inserted.
 
 ### Install in the browser
 
