@@ -116,6 +116,8 @@ struct Settings {
     uint16_t meshProfile = 0;   // 0 Tracking (existing policy), 1 Discovery
     uint16_t bridgeApp = 1;   // remembered app: 1 WarDriveGo, 2 Biscuit
     uint16_t bleBridge = 0;   // 0 OFF, 1 WarDriveGo, 2 Biscuit; fills aligned extension
+    // Alert beep volume on a board with a speaker (Waveshare 3.5"): 0 OFF, 1 QUIET, 2 NORMAL, 3 LOUD. ATTUNE > recording > ALERT SOUND.
+    uint16_t sound = 2;
 };
 
 // Settings.orient. Unknown values clamp to LANDSCAPE.

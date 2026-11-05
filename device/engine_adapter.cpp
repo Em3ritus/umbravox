@@ -2,6 +2,7 @@
 //
 // Compiled always (device/*.cpp), but its body exists only under the opt-in so
 // legacy targets carry none of it.
+#include "sound.h"
 #include "engine_adapter.h"
 
 #if defined(UMBRAVOX_SCAN_ENGINE)
@@ -516,7 +517,10 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             case uieng::Action::SettingsControl:
                 if(hit.payload==settingsctl::FORGET_PHONES){
                     if(forgetArm_.tap(millis()))blebridge::forgetPhones();   // second tap within ARM_MS confirms
-                }else settingsctl::apply(settings_,set,hit.payload);
+                }else {
+                    settingsctl::apply(settings_,set,hit.payload);
+                    if(settings_.editor==7&&(hit.payload==30||hit.payload==31||hit.payload==32))sound::alert(ui::CONF_MED,set.sound);   // hear the new volume
+                }
                 cancelInput();break;
             case uieng::Action::DisplayControl: {
                 const int p=hit.payload;display_.error=false;

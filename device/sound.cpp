@@ -14,7 +14,7 @@
 namespace {
 constexpr gpio_num_t PIN_BCLK = GPIO_NUM_23, PIN_LRCLK = GPIO_NUM_10, PIN_DOUT = GPIO_NUM_25;
 constexpr uint8_t CODEC = 0x18;
-constexpr int AMP = 12000;                       // sample peak, of 32767
+constexpr int AMPS[4] = {0, 4500, 12000, 22000};  // sample peak of 32767, per Settings::sound
 constexpr int CODEC_VOLUME = 70;                 // percent
 std::atomic<bool> busy{false};
 
@@ -76,10 +76,11 @@ bool session() {
         silence(tx, frame, COLD_LEAD_MS);
         uint32_t idleSince = millis();
         for (;;) {
-            const int level = pending.exchange(-1);
-            if (level >= 0) {
+            const int req = pending.exchange(-1);
+            if (req >= 0) {
+                const int level = req >> 2, amp = AMPS[req & 3];
                 for (int at = 0;;) {
-                    const int n = alerttone::render(level, at, pcm, 128, AMP);
+                    const int n = alerttone::render(level, at, pcm, 128, amp);
                     if (n <= 0) break;
                     for (int i = 0; i < n; i++) frame[2 * i] = frame[2 * i + 1] = (int32_t)pcm[i] << 16;
                     size_t w = 0;
@@ -113,8 +114,9 @@ void task(void*) {
 } // namespace
 
 namespace sound {
-void alert(uint8_t conf) {
-    pending.store(conf > 2 ? 2 : conf);
+void alert(uint8_t conf, uint16_t volume) {
+    if (volume == 0) return;
+    pending.store((conf > 2 ? 2 : conf) * 4 + (volume > 3 ? 3 : volume));
     bool exp = false;
     if (!busy.compare_exchange_strong(exp, true)) return;       // the task is up: it takes the request itself
     if (xTaskCreate(task, "beep", 4096, nullptr, 3, nullptr) != pdPASS) {
@@ -124,5 +126,5 @@ void alert(uint8_t conf) {
 }
 }
 #else
-namespace sound { void alert(uint8_t) {} }
+namespace sound { void alert(uint8_t, uint16_t) {} }
 #endif

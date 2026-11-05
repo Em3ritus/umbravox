@@ -3,6 +3,7 @@
 #pragma once
 #include <stdint.h>
 namespace sound {
-// conf: ui::CONF_LOW / MED / HIGH. Returns at once; the beep plays on its own task. A beep already playing wins.
-void alert(uint8_t conf);
+// conf: ui::CONF_LOW / MED / HIGH. volume: ui::Settings::sound (0 OFF, 1 QUIET, 2 NORMAL, 3 LOUD; 0 plays nothing).
+// Returns at once; the beep plays on its own task, and a request that arrives while one plays replaces any waiting one.
+void alert(uint8_t conf, uint16_t volume);
 }
