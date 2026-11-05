@@ -385,9 +385,17 @@ there but is folded into item 4 here, and the USB route entries appear in both.
 What is tested and what is not. The pure rules are host-tested: the theme.json and
 emblem.bin parsers, pack admission, the boot-loop guard's decisions, the ASPECT drawing
 and the contrast rule. The SD card scan (`device/themeload.cpp`) and its NVS plumbing are
-only build-checked: they compile for the device, but they have not been run on a real
-card, and the hardware pass is still pending. Treat card-side behaviour as unverified
-until that pass is recorded.
+build-checked for every board, and have been run on one real card: the Waveshare 3.5".
+There, packs loaded at boot, the boot-loop guard skipped a pack that was mid-load at a
+reset and kept skipping it across reboots, and removing the folders for one full boot
+cleared it. The same board took a pack over its native USB port (the designer's own
+installer, driven from Node: size and CRC read back, then `loaded ... as theme 15` after a
+reboot). Not run: the install from a real browser over Web Serial, the card-reader route
+on the Waveshare, and any of it on the CYD. Treat those as unverified until recorded.
+
+One trap found in that test: opening the serial port resets the board. If that happens
+while it is loading packs, the guard counts it as a crash and puts the pack on the bad
+list. After a boot with packs on the card, wait about 15 seconds before opening the port.
 
 ## Check a pack on your computer
 
