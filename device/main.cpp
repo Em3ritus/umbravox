@@ -1830,6 +1830,7 @@ void loop() {
     constexpr uint32_t ALERT_MS = 6000;
     ui::AlertRec historyAlert;bool haveHistoryAlert=false;
     s.alertActive = false;
+    if (alertlog::takeLiveTestRequest()) { testStep = 0; testAt = millis(); }   // the OMENS test button: same sequence as the console TEST
     if (testAlert(s, millis())) {
         // a test alert is up; leave it alone
     } else if (set.alertMin != ui::CONF_OFF) {

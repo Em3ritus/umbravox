@@ -20,6 +20,10 @@ void push(const ui::AlertRec& a, uint32_t nowMs, uint32_t epoch,
           bool located, int32_t lat7, int32_t lon7);
 
 void pushTest(uint32_t nowMs); // explicit synthetic history test; never a detection
+// The OMENS test button also asks the main loop to raise the live test alert (the console TEST sequence, never logged
+// as a detection) so the takeover can be seen. One request, taken once.
+void requestLiveTest();
+bool takeLiveTestRequest();
 
 void fill(ui::State& s, int offset, uint32_t nowMs);
 bool find(uint32_t id,uint32_t nowMs,ui::Omen& out);

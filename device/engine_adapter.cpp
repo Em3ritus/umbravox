@@ -535,7 +535,11 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             }
             case uieng::Action::ToggleLabels:      set.labels = set.labels ? 0 : 1; break;
             case uieng::Action::SettingPage:       nav.setPage = (uint8_t)hit.payload; break;
-            case uieng::Action::AlertTest: alertlog::pushTest(millis());nav.scroll=0;cancelInput();break;
+            case uieng::Action::AlertTest:
+                alertlog::pushTest(millis());nav.scroll=0;
+                alertlog::requestLiveTest();                       // raise the live test alert...
+                router_.setScreen(uinav::Screen::Scan);nav.screen=ui::SCR_SCAN;   // ...and go where the takeover plays
+                cancelInput();break;
             case uieng::Action::AlertOpen: {
                 uint32_t id=0;if(hit.key)for(const char* p=hit.key;*p;p++){if(*p<'0'||*p>'9'){id=0;break;}id=id*10+uint32_t(*p-'0');}
                 alertDetailOpen_=alertlog::find(id,millis(),alertDetail_);alertDetailPage_=0;cancelInput();break;
