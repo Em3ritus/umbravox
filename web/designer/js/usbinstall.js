@@ -27,6 +27,8 @@ export const MAX_LS_ENTRIES = 1024;   // a listing longer than this is refused
 export const BAUD = 115200;
 // The CYD's USB-serial chip (WCH CH340).
 export const CH340 = { usbVendorId: 0x1a86, usbProductId: 0x7523 };
+// The Waveshare 3.5"'s ESP32-C5 native USB (USB-Serial/JTAG unit): its console is the chip's own USB port.
+export const ESP_NATIVE_USB = { usbVendorId: 0x303a, usbProductId: 0x1001 };
 
 export const TIMEOUTS = {
   settle: 1500,   // listen this long first: a board reset by the port opening shows its banner

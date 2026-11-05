@@ -59,3 +59,10 @@ test('bad requests throw instead of drawing the wrong thing', () => {
   assert.throws(() => preview.renderDraft('aspect', 0), /aspect/, 'the CYD has no engine ASPECT screen in the preview');
   assert.throws(() => preview.renderDraft('scan', 0, { board: 'waveshare', alertConf: 'purple' }), /alertConf/);
 });
+
+test('the Dial preset changes the CYD picture but not the Waveshare one (so the page says so)', () => {
+  const t = makeTemplate('cosmic');
+  const draw = (dial, board) => { preview.loadDraft({ ...t.theme, dial }, t.emblem); return Buffer.from(preview.renderDraft('scan', 24, { board })); };
+  assert.notEqual(draw('compact', 'cyd').compare(draw('large', 'cyd')), 0, 'the CYD honours the dial preset');
+  assert.equal(draw('compact', 'waveshare').compare(draw('large', 'waveshare')), 0, 'the Waveshare engine lays the dial out itself');
+});

@@ -15,12 +15,15 @@ import { limitsFor, placeLimitations, renderLimitList, DESIGN_PLACES } from './l
 import { installGate } from './gate.js';
 import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
-import { installOverSerial, wrapWebSerial, usbSupported, CH340, BAUD } from './usbinstall.js';
+import { installOverSerial, wrapWebSerial, usbSupported, BAUD } from './usbinstall.js';
 import { loadWasm, W, H, BOARDS } from './preview.js';
+import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { theme: null, emblem: null, tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
 let preview = null;       // null until the wasm loads (or if it cannot)
+// The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
+function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
 
 function el(tag, props = {}, ...kids) {
   const e = document.createElement(tag);
@@ -304,7 +307,7 @@ for (const b of $('tabs').children) b.addEventListener('click', () => { state.ta
 const BOARD_KEY = 'uvx.designer.board';
 function rememberBoard() { try { localStorage.setItem(BOARD_KEY, state.board); } catch (e) { /* private window: not remembered */ } }
 function recallBoard() { try { const b = localStorage.getItem(BOARD_KEY); if (b && preview && preview.boards().includes(b)) state.board = b; } catch (e) { /* not remembered */ } }
-for (const b of $('boards').children) b.addEventListener('click', () => { state.board = b.dataset.b; rememberBoard(); syncTabs(); t0 = performance.now(); if (state.view === 'install') paintInstall(); });
+for (const b of document.querySelectorAll('[data-b]')) b.addEventListener('click', () => { state.board = b.dataset.b; rememberBoard(); syncTabs(); t0 = performance.now(); if (state.view === 'install') paintInstall(); });
 for (const b of $('confs').children) b.addEventListener('click', () => { state.conf = b.dataset.c; syncTabs(); t0 = performance.now(); });
 function syncTabs() {
   const screens = BOARDS[state.board].screens;
@@ -313,8 +316,11 @@ function syncTabs() {
     b.hidden = !screens.includes(b.dataset.v);
     b.setAttribute('aria-selected', String(b.dataset.v === state.tab));
   }
-  for (const b of $('boards').children) b.setAttribute('aria-selected', String(b.dataset.b === state.board));
+  for (const b of document.querySelectorAll('[data-b]')) b.setAttribute('aria-selected', String(b.dataset.b === state.board));
   for (const b of $('confs').children) b.setAttribute('aria-selected', String(b.dataset.c === state.conf));
+  $('dial-note').hidden = BOARD_INFO[state.board].dialPreset;
+  const words = boardWords(state.board);
+  for (const n of document.querySelectorAll('[data-bt]')) n.textContent = words[n.dataset.bt];
   $('boardbar').hidden = !preview || preview.boards().length < 2;
   $('confs').hidden = !(state.board === 'waveshare' && state.tab === 'alert');   // only the engine UI has LOW/MED/HIGH takeovers
 }
@@ -326,7 +332,7 @@ function tick(now) {
   lastDraw = now;
   const ms = now - t0;
   const frame = state.tab === 'alert' ? Math.floor((ms % 2500) / 20) : Math.floor(ms / 20);
-  paint($('preview'), preview.renderDraft(state.tab, frame, { board: state.board, alertConf: state.conf }), state.board);
+  paint($('preview'), preview.renderDraft(state.tab, frame, { board: previewBoard(), alertConf: state.conf }), previewBoard());
 }
 
 // ---------------------------------------------------------------- build + download
@@ -353,7 +359,7 @@ $('btn-install').addEventListener('click', () => show('install'));
 // ---------------------------------------------------------------- install
 function logLine(text, cls = '') { $('log').append(el('li', { class: cls, text })); }
 function paintInstall() {
-  if (preview && preview.hasDraft()) paint($('install-preview'), preview.renderDraft('scan', 24, { board: state.board }), state.board);
+  if (preview && preview.hasDraft()) paint($('install-preview'), preview.renderDraft('scan', 24, { board: previewBoard() }), previewBoard());
 }
 function enterInstall() {
   let pack;
@@ -447,7 +453,7 @@ $('btn-write').addEventListener('click', async () => {
       return;
     }
     const done = $('done'); clear(done); $('done-head').className = 'num ok';
-    done.append(el('p', { text: 'Eject the card, put it in the CYD and reboot.' }),
+    done.append(el('p', { text: 'Eject the card, put it in ' + boardWords(state.board).name + ' and reboot.' }),
       el('p', { text: 'Menu -> ASPECT -> THEME, then step to  ' + theme.name + '.' }),
       el('p', { class: 'tiny muted', text: 'A theme that fails to load is skipped and the reason goes in /diag.log.' }));
     $('btn-write').disabled = false;
@@ -494,7 +500,7 @@ $('btn-usb-connect').addEventListener('click', async () => {
   if (!usbSupported() || usb.link) return;
   let port;
   try {
-    port = await navigator.serial.requestPort($('usb-all').checked ? {} : { filters: [CH340] });
+    port = await navigator.serial.requestPort(usbFilters(state.board, $('usb-all').checked) ? { filters: usbFilters(state.board, false) } : {});
   } catch (e) {
     if (e && e.name === 'NotFoundError') return;          // the chooser was closed
     usbLog('could not choose a port: ' + ((e && e.message) || e), 'err'); return;
@@ -517,7 +523,7 @@ $('btn-usb-connect').addEventListener('click', async () => {
 $('btn-usb-disconnect').addEventListener('click', () => { if (!usb.busy) usbDisconnect('disconnected; the port is free for other programs'); });
 if (usbSupported()) {
   navigator.serial.addEventListener('disconnect', (e) => {
-    if (usb.port && e.target === usb.port) { if (usb.ac) usb.ac.abort(); usbDisconnect('the CYD was unplugged'); }
+    if (usb.port && e.target === usb.port) { if (usb.ac) usb.ac.abort(); usbDisconnect(boardWords(state.board).name + ' was unplugged'); }
   });
 }
 $('btn-usb-cancel').addEventListener('click', () => { if (usb.ac) usb.ac.abort(); $('usb-collide').hidden = true; });
@@ -549,7 +555,7 @@ $('btn-usb-send').addEventListener('click', async () => {
     }
     const done = $('usb-done'); clear(done); $('usb-done-head').className = 'num ok';
     done.append(el('p', { text: 'The pack is on the card in /themes/' + res.folder + '/. It loads at the next boot.' }),
-      el('p', { text: 'Restart the CYD yourself: press its reset (RST) button, or unplug the USB cable and plug it back in. This page does not restart the board.' }),
+      el('p', { text: boardWords(state.board).restart }),
       el('p', { text: 'Then Menu -> ASPECT -> THEME, and step to  ' + theme.name + '.' }),
       el('p', { class: 'tiny muted', text: 'A theme that fails to load is skipped and the reason goes in /diag.log.' }));
   } catch (e) {
