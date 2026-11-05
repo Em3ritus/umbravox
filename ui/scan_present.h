@@ -115,7 +115,7 @@ inline int fieldRadius(int W, int H) {
 // scene is stable for its whole sliced redraw. Pure, host-tested (sim/test_scan_fx.cpp).
 class FxTracker {
 public:
-    static constexpr int kDecay = 3;                              // peak fall per tick: 100 -> 0 in ~8 s
+    static constexpr int kDecay = 6;                              // peak fall per tick: 100 -> 0 in ~8 s
     void reset() { init_ = false; }
     void advance(const ScanScene& sc, scanr::Fx& out) {
         const long c[3] = { sc.wifi, sc.g5, sc.ble };

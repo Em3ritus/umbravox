@@ -73,12 +73,12 @@ struct AlertScene {
 };
 
 // Texture and motion for the side panels of a wide (>= 400 px) panel: a sparkline in each count card and a peak-hold
-// cap in the spectrum, plus a glint and a baseline pulse that move on a 250 ms tick of `now`. Opt-in (`on`): a scene
+// cap in the spectrum, plus a glint and a baseline pulse that move on a 500 ms tick of `now`. Opt-in (`on`): a scene
 // that leaves it off, and every compact panel, draws exactly what it always did. The history lives in the engine
 // (scanpres::FxTracker) and is copied into each snapshot, so a sliced redraw never sees it move.
 static constexpr int      kSpark = 24;            // samples per card, one per kSparkTicks ticks (one per second)
-static constexpr uint32_t kFxMs = 250;            // one animation tick
-static constexpr int      kSparkTicks = 4;
+static constexpr uint32_t kFxMs = 500;            // one animation tick
+static constexpr int      kSparkTicks = 2;
 struct Fx {
     bool on = false;
     uint8_t spark[3][kSpark] = {};                // new sightings per sample, oldest first
@@ -964,8 +964,8 @@ inline void fxCard(S& s, const uieng::Rect& t, uint16_t accent, uint32_t now, in
         if (y < s.y0 || y >= s.y0 + s.h) continue;
         for (int x = t.x + 6; x < t.x + t.w - 2; x += 4) pt(s, x, y, dot);
     }
-    const int ticks = int((now / kFxMs + uint32_t(idx) * 4u) % 12u);        // the cards' glints chase each other, 3 s a pass
-    box(s, t.x + 4, t.y + 2 + ticks * (t.h - 6) / 12, t.w - 5, 2, ui::Canvas::mix(pal::PANEL, accent, 5, 16));
+    const int ticks = int((now / kFxMs + uint32_t(idx) * 2u) % 6u);         // the cards' glints chase each other, 3 s a pass
+    box(s, t.x + 4, t.y + 2 + ticks * (t.h - 6) / 6, t.w - 5, 2, ui::Canvas::mix(pal::PANEL, accent, 5, 16));
     const int base = t.y + t.h - 5, top = 11, x0 = t.x + 12;               // sparkline, scaled to its own window
     int mx = 4; for (int k = 0; k < kSpark; k++) if (spark[k] > mx) mx = spark[k];
     box(s, x0, base, kSpark * 3 - 1, 1, pal::EDGE);
@@ -994,8 +994,8 @@ inline void fxSpectrumBar(S& s, int x, int bw, int barBase, int barMax, int hgt,
 inline void fxBaseline(S& s, int sx0, int w, int barBase, uint32_t now) {                // a pulse running under the bars
     const int y = barBase + 1;
     box(s, sx0, y, w, 1, ui::Canvas::mix(pal::VOID, pal::EDGE, 3, 4));
-    const int tick = int((now / kFxMs) % uint32_t((w + 16) / 4));
-    const int px = sx0 - 12 + tick * 4;
+    const int tick = int((now / kFxMs) % uint32_t((w + 16) / 8));
+    const int px = sx0 - 12 + tick * 8;
     int a = px < sx0 ? sx0 : px, b = px + 12 > sx0 + w ? sx0 + w : px + 12;
     if (b > a) box(s, a, y, b - a, 1, pal::BRIGHT);
 }
