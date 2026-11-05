@@ -31,7 +31,7 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console bench_draw *.png
+	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console snd_check bench_draw *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
@@ -196,6 +196,9 @@ test_sdcmd: test_sdcmd.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/
 
 # The same Console on stdin/stdout, over the same fake card: the designer's
 # Web Serial client (web/designer/test/usbinstall.test.mjs) is run against it.
+snd_check: snd_check.cpp ../ui/themepack.cpp ../ui/themepack.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ snd_check.cpp ../ui/themepack.cpp -lm
+
 sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ sdcmd_console.cpp ../ui/themepack.cpp -lm
 

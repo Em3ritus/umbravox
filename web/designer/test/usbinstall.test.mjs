@@ -688,3 +688,23 @@ test('big files: every D line fits the device cap, chunks tile the file, 95 byte
   for (const s of d) { const h = s.line.split(' ')[2]; for (let i = 0; i < h.length; i += 2) back[o++] = parseInt(h.slice(i, i + 2), 16); }
   assert.deepEqual(back, big);
 });
+
+// ------------------------------------------------------------- alert.snd, the optional fourth file
+test('checkFiles takes alert.snd: big files first, then the emblem, theme.json last', () => {
+  const snd = { path: 'my-pack/alert.snd', data: new Uint8Array(20 + 2 * 50) };
+  const chk = checkFiles([...WITH_CLIP(), snd]);
+  assert.equal(chk.ok, true, chk.error);
+  assert.deepEqual(chk.ordered.map((f) => f.name), ['radar.vid', 'alert.snd', 'emblem.bin', 'theme.json']);
+  assert.equal(chk.ordered[1].devicePath, '/themes/my-pack/alert.snd');
+  const big = (n) => [{ path: 'x/theme.json', data: enc('{}') }, { path: 'x/alert.snd', data: new Uint8Array(n) }];
+  assert.equal(checkFiles(big(288020)).ok, true);
+  const r = checkFiles(big(288021));
+  assert.equal(r.ok, false); assert.match(r.error, /288020/);
+});
+
+test('the command allow-list admits SDPUT of alert.snd and nothing like it', () => {
+  assert.ok(isAllowedCommand('SDPUT /themes/my-pack/alert.snd 4000 00000000'));
+  assert.ok(!isAllowedCommand('SDPUT /themes/my-pack/alert.snd.tmp 4000 00000000'));
+  assert.ok(!isAllowedCommand('SDPUT /themes/my-pack/alert.wav 4000 00000000'));
+  assert.ok(!isAllowedCommand('SDDEL /themes/my-pack/alert.snd'));
+});

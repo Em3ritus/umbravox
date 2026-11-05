@@ -2,7 +2,7 @@
 """Install theme packs and delete files on the UMBRAVOX SD card over the wired
 USB console, without pulling the card.
 
-    sdput.py PORT put   <folder>    upload <folder>/radar.vid and emblem.bin (if present), then theme.json
+    sdput.py PORT put   <folder>    upload <folder>/radar.vid, alert.snd and emblem.bin (if present), then theme.json
     sdput.py PORT del   <path>      delete one file (theme files and old WD-*.csv logs only)
     sdput.py PORT rmdir <folder>    remove an EMPTY /themes/<folder>
     sdput.py PORT ls    [dir]       list the card's root (or a directory)
@@ -35,6 +35,7 @@ LINE_CAP = 200           # device: sdcmd::LINE_CAP
 MAX_JSON = 4096          # ui/themepack.h
 MAX_EMBLEM = 9728
 MAX_CLIP = 780312        # radar.vid: 12 + 150 frames of 5202 bytes
+MAX_SOUND = 288020       # alert.snd: 20 + three sounds of at most 48000 16-bit samples
 RETRIES = 3              # a failed chunk is resent up to this many times
 DOS_NAMES = {"con", "prn", "aux", "nul"} | {p + str(d) for p in ("com", "lpt") for d in range(10)}
 
@@ -128,6 +129,7 @@ def pack_files(folder):
     if not os.path.isdir(real):
         raise ValueError("%s is not a folder" % folder)
     clip = read_pack_file(real, "radar.vid", MAX_CLIP)
+    sound = read_pack_file(real, "alert.snd", MAX_SOUND)
     emblem = read_pack_file(real, "emblem.bin", MAX_EMBLEM)
     theme = read_pack_file(real, "theme.json", MAX_JSON)
     if theme is None:
@@ -135,6 +137,8 @@ def pack_files(folder):
     files = []
     if clip is not None:
         files.append(("/themes/%s/radar.vid" % name, clip))
+    if sound is not None:
+        files.append(("/themes/%s/alert.snd" % name, sound))
     if emblem is not None:
         files.append(("/themes/%s/emblem.bin" % name, emblem))
     files.append(("/themes/%s/theme.json" % name, theme))
@@ -349,6 +353,18 @@ def selftest_files(check):
         name, files = pack_files(d)
         check("radar.vid goes first, theme.json last", [f[0] for f in files] ==
               ["/themes/clip-pack/radar.vid", "/themes/clip-pack/emblem.bin", "/themes/clip-pack/theme.json"])
+        d = pack("big-snd")
+        with open(os.path.join(d, "alert.snd"), "wb") as fh:
+            fh.write(b"\0" * (MAX_SOUND + 1))
+        check("alert.snd over 288020 bytes refused before sending", refused(d, "over 288020"))
+        d = pack("snd-pack", emblem=b"UVE\x01")
+        with open(os.path.join(d, "alert.snd"), "wb") as fh:
+            fh.write(b"UVSN")
+        with open(os.path.join(d, "radar.vid"), "wb") as fh:
+            fh.write(b"UVRV")
+        name, files = pack_files(d)
+        check("big files first (radar.vid, alert.snd), then emblem.bin, theme.json last", [f[0] for f in files] ==
+              ["/themes/snd-pack/radar.vid", "/themes/snd-pack/alert.snd", "/themes/snd-pack/emblem.bin", "/themes/snd-pack/theme.json"])
         d = pack("sym-clip")
         os.symlink(secret, os.path.join(d, "radar.vid"))
         check("symlinked radar.vid refused", refused(d, "not a regular file"))

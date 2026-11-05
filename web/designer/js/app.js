@@ -18,10 +18,11 @@ import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from '.
 import { installOverSerial, wrapWebSerial, usbSupported, BAUD } from './usbinstall.js';
 import { loadWasm, W, H, BOARDS } from './preview.js';
 import { grabFrames, grabGifFrames, isGifFile, buildClip } from './radarvideo.js';
+import { emptySounds, hasSounds, prepareSound, decodeToMono16k, playPcm, soundSeconds, LEVELS } from './alertsound.js';
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { theme: null, emblem: null, clip: null, tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
+const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
@@ -39,7 +40,7 @@ const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
 // ---------------------------------------------------------------- views
 function installBlock() {
   if (!state.theme) return 'Choose a template first.';
-  const g = installGate(currentTheme(), state.emblem, state.clip);
+  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds);
   return g.ok ? null : g.reason;
 }
 function show(view) {
@@ -98,10 +99,10 @@ function buildStart() {
 }
 $('btn-blank').addEventListener('click', () => begin(blankTheme(), null));
 
-function begin(theme, emblem, clip = null) {
-  state.theme = theme; state.emblem = emblem; state.clip = clip; state.card = null;
+function begin(theme, emblem, clip = null, sounds = null) {
+  state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
   $('open-msg').textContent = '';
-  paintVideoBar();
+  paintVideoBar(); paintSoundBar();
   syncForm(); changed(); show('design');
 }
 
@@ -133,7 +134,7 @@ async function openThese(descs) {
     for (const d of sel.picked) read.push({ name: d.name, data: new Uint8Array(await d.file.arrayBuffer()) });
     const r = openPackFiles(read);
     if (!r.ok) { msg.className = 'msg err'; msg.textContent = r.error; return; }
-    begin(r.theme, r.emblem, r.clip);
+    begin(r.theme, r.emblem, r.clip, r.sounds);
     if (r.warnings.length) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'Opened with changes: ' + r.warnings.join(' '); }
   } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not read those files: ' + e.message; }
 }
@@ -287,7 +288,7 @@ function changed() {
 function currentTheme() { return themeFromState(state); }
 function refreshChecks() {
   const t = currentTheme();
-  checksNow = runChecks(t, state.emblem, state.clip);
+  checksNow = runChecks(t, state.emblem, state.clip, state.sounds);
   const ul = $('checks'); clear(ul);
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
@@ -326,6 +327,49 @@ function syncTabs() {
   $('boardbar').hidden = !preview || preview.boards().length < 2;
   $('confs').hidden = !(state.board === 'waveshare' && state.tab === 'alert');   // only the engine UI has LOW/MED/HIGH takeovers
   $('vidbar').hidden = !(preview && previewBoard() === 'waveshare');   // the clip plays in the Waveshare's scan radar
+  $('soundbar').hidden = !(preview && previewBoard() === 'waveshare'); // only the Waveshare has a speaker
+}
+
+// Alert sounds for the Waveshare's speaker: one optional sound per level. The browser decodes any audio file, and
+// js/alertsound.js turns it into the board's format (16 kHz mono, at most 3 s). They become part of the theme (alert.snd).
+const SND_NAMES = { low: 'LOW', med: 'MED', high: 'HIGH' };
+let sndBuilt = false;
+function buildSoundBar() {
+  if (sndBuilt) return; sndBuilt = true;
+  const bar = $('soundbar');
+  for (const k of LEVELS) {
+    const row = document.createElement('div'); row.className = 'vidrow';
+    row.innerHTML = '<label class="small" for="snd-' + k + '">' + SND_NAMES[k] + ' alert</label>' +
+      '<input type="file" id="snd-' + k + '" accept="audio/*">' +
+      '<button type="button" class="btn" id="snd-' + k + '-play" hidden>Play</button>' +
+      '<button type="button" class="btn" id="snd-' + k + '-clear" hidden>Remove</button>' +
+      '<span class="small muted" id="snd-' + k + '-info"></span>';
+    bar.insertBefore(row, $('snd-msg'));
+    $('snd-' + k).addEventListener('change', (e) => loadSound(k, e.target.files[0] || null));
+    $('snd-' + k + '-play').addEventListener('click', () => playPcm(state.sounds[k]));
+    $('snd-' + k + '-clear').addEventListener('click', () => { state.sounds[k] = null; $('snd-' + k).value = ''; paintSoundBar(); changed(); });
+  }
+}
+function paintSoundBar() {
+  buildSoundBar();
+  for (const k of LEVELS) {
+    const pcm = state.sounds[k];
+    $('snd-' + k + '-play').hidden = !pcm; $('snd-' + k + '-clear').hidden = !pcm;
+    $('snd-' + k + '-info').textContent = pcm ? soundSeconds(pcm).toFixed(1) + ' s' : 'built-in beep';
+  }
+}
+async function loadSound(k, file) {
+  const msg = $('snd-msg');
+  if (!file) return;
+  try {
+    msg.className = 'msg'; msg.textContent = 'Reading ' + file.name + '...';
+    const pcm = prepareSound(await decodeToMono16k(file));
+    if (!pcm) throw new Error('there is nothing audible in it');
+    state.sounds[k] = pcm;
+    msg.textContent = file.size > 0 && soundSeconds(pcm) >= 3 ? 'Used the first 3 seconds of it.' : '';
+    changed();
+  } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this file: ' + ((e && e.message) || e); }
+  finally { paintSoundBar(); }
 }
 
 // A video in the Waveshare radar. The browser decodes it; js/radarvideo.js turns it into the board's format, and it
@@ -377,7 +421,7 @@ function tick(now) {
 }
 
 // ---------------------------------------------------------------- build + download
-function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip); }
+function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip, state.sounds); }
 function download() {
   try {
     const pack = currentPack();
@@ -426,9 +470,9 @@ function enterInstall() {
   fillLimits('install', USB_PLACES);
   const un2 = $('usb-clip-note');
   un2.hidden = false;
-  un2.textContent = state.clip
-    ? 'This theme carries a video (about ' + Math.round((state.clip.data.length + 12) / 1024) + ' KB). Over USB that takes a few minutes; a card reader is instant.'
-    : 'If you took a video OUT of a theme you installed before, the USB route cannot delete the old radar.vid from the card (it only ever writes): the board would keep playing it. Delete it with tools/sdput.py, or use the card-reader route, which removes it.';
+  un2.textContent = (state.clip || hasSounds(state.sounds))
+    ? 'This theme carries ' + [state.clip && 'a video (about ' + Math.round((state.clip.data.length + 12) / 1024) + ' KB)', hasSounds(state.sounds) && 'alert sounds'].filter(Boolean).join(' and ') + '. Over USB a video takes a few minutes and sounds under a minute; a card reader is instant.'
+    : 'If you took a video or sounds OUT of a theme you installed before, the USB route cannot delete the old radar.vid or alert.snd from the card (it only ever writes): the board would keep playing it. Delete it with tools/sdput.py, or use the card-reader route, which removes it.';
   enterUsb();
 }
 $('btn-pick').addEventListener('click', async () => {

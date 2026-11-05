@@ -176,3 +176,4 @@ device/radarvid_data.h
 sim/test_radarclip
 sim/test_alert_tone
 sim/test_soundpack
+sim/snd_check

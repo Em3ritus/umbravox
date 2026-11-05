@@ -177,3 +177,19 @@ test('a corrupted clip read-back names radar.vid', async () => {
   assert.equal(r.verified, false);
   assert.deepEqual(r.mismatched, ['themes/my-pack/radar.vid']);
 });
+
+// ---- alert.snd on the card-reader route
+test('alert.snd is written before theme.json, and a pack without it removes the old one', async () => {
+  const snd = Uint8Array.from({ length: 20 + 2 * 100 }, (_, i) => (i * 3) & 255);
+  let root = new StubDir();
+  let r = await installToCard(root, [...FILES, { path: 'my-pack/alert.snd', data: snd }]);
+  assert.equal(r.verified, true);
+  assert.equal(r.wrote[r.wrote.length - 1], 'themes/my-pack/theme.json', 'theme.json last');
+  assert.deepEqual([...root.get('themes/my-pack/alert.snd')], [...snd]);
+  root = new StubDir();
+  root.put('themes/my-pack/alert.snd', 'old sounds');
+  root.put('themes/my-pack/theme.json', 'old');
+  r = await installToCard(root, FILES);
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(r.removed, ['themes/my-pack/alert.snd']);
+});

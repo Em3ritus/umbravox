@@ -41,6 +41,7 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
     theme.json            required
     emblem.bin            required only when "centrepiece" is "emblem"
     radar.vid             optional: a looping video for the Waveshare's radar
+    alert.snd             optional: your own alert sounds for the Waveshare's speaker (LOW, MED, HIGH)
 ```
 
 The designer writes only these. Any other file in a pack folder
@@ -111,6 +112,31 @@ Width and height are at most 96, `ncol` is 2 to 16, and the file is at most 9.5 
 rejected), and every pixel index must be lower than `ncol`. The designer makes this file from any PNG: it crops, shrinks and
 reduces the picture to 16 colours.
 
+## alert.snd
+
+Optional. Replaces the built-in alert beeps on the Waveshare (the only board with a speaker; the CYD ignores it). One
+sound per alert level, any of them may be missing, and a level without one keeps the built-in beep:
+
+```
+bytes 0-3   'U' 'V' 'S' 'N'
+byte  4     version, 1
+byte  5     reserved, 0
+bytes 6-7   sample rate, 16000 (u16 little-endian)
+bytes 8-19  sample counts for LOW, MED, HIGH (three u32 little-endian, each 0 to 48000; not all zero)
+then        the 16-bit little-endian mono samples of LOW, MED, HIGH, back to back
+```
+
+The length must match the counts exactly. A file that fails any check skips the **whole pack** (the reason is in
+`/diag.log`), like a bad `radar.vid`. The board keeps at most two sound sets in PSRAM (the first two packs that have
+one, by folder name), and the file's size counts in the boot-loop guard's total. The ALERT SOUND setting (Settings,
+recording tab: OFF, QUIET, NORMAL, LOUD) scales a pack's sounds as it scales the built-in beeps; NORMAL plays the
+samples as stored, so the designer normalizes each sound to 70% of full scale.
+
+The designer makes the file: on the Waveshare board a card under the preview takes any audio file per level
+(wav, mp3, ogg, m4a: whatever the browser decodes), resamples it to 16 kHz mono, trims silence at both ends, cuts it at
+3 seconds and plays it back for you. It travels with the theme like the video (card reader, USB, zip). Over USB the
+file is under 300 KB, so well under a minute. `tools/sdput.py PORT put <folder>` sends an `alert.snd` too.
+
 ## radar.vid
 
 An optional looping clip that the Waveshare 3.5" plays inside its radar, under the contacts and the sweep. The CYD
@@ -151,6 +177,7 @@ These numbers are the same ones the device and the designer use
 | `theme.json` | at most 4 KB (4,096 bytes) |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
 | `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; 2 clips held at once |
+| `alert.snd` | 16 kHz mono 16-bit, at most 48,000 samples (3 s) per level, at most 288,020 bytes; 2 sound sets held at once |
 | whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
 

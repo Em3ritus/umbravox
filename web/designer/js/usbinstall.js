@@ -54,7 +54,7 @@ export const crc32hex = (bytes) => crc32(bytes).toString(16).padStart(8, '0');
 const FOLDER_RE = new RegExp(limits.folderName.pattern);
 const DOS_RE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
 export const folderOk = (f) => typeof f === 'string' && FOLDER_RE.test(f) && !DOS_RE.test(f);
-const CAPS = { 'theme.json': limits.MAX_JSON, 'emblem.bin': limits.MAX_EMBLEM, 'radar.vid': limits.MAX_CLIP };
+const CAPS = { 'theme.json': limits.MAX_JSON, 'emblem.bin': limits.MAX_EMBLEM, 'radar.vid': limits.MAX_CLIP, 'alert.snd': limits.MAX_SOUND };
 
 // How long the page lets a whole upload run. The device allows each file 120 s, plus 300 ms per KiB for a file over
 // 9728 bytes (device/sdcmd.h totalMsFor); the page stays 10 s under that for the first file and adds the same extra for
@@ -64,7 +64,7 @@ export function uploadBudgetMs(files, base = 110000) {
 }
 
 const DEC = '(?:0|[1-9][0-9]{0,9})';
-const PATH = '/themes/[A-Za-z0-9_-]{1,31}/(?:theme\\.json|emblem\\.bin|radar\\.vid)';
+const PATH = '/themes/[A-Za-z0-9_-]{1,31}/(?:theme\\.json|emblem\\.bin|radar\\.vid|alert\\.snd)';
 const ALLOWED = [
   /^$/,                                                     // a lone newline: ends any partial line
   /^SDLS \/themes$/,
@@ -147,9 +147,9 @@ export function parseLs(lines) {
 }
 
 // files: [{path: '<folder>/<file>', data: Uint8Array}] as buildPack returns.
-// -> {ok, folder, ordered: [{path, devicePath, name, data}] radar.vid, emblem.bin, theme.json} | {ok:false, error}
+// -> {ok, folder, ordered: [{path, devicePath, name, data}] radar.vid, alert.snd, emblem.bin, theme.json} | {ok:false, error}
 export function checkFiles(files) {
-  const SHAPE = 'Over USB a pack is theme.json, plus emblem.bin if it has a picture and radar.vid if it has a video';
+  const SHAPE = 'Over USB a pack is theme.json, plus emblem.bin if it has a picture, radar.vid if it has a video and alert.snd if it has sounds';
   if (!Array.isArray(files) || !files.length) return { ok: false, error: SHAPE + '; there is no theme.json here.' };
   const folders = new Set(files.map((f) => String(f && f.path).split('/')[0]));
   if (folders.size !== 1) return { ok: false, error: 'A pack is one folder; these files are in ' + folders.size + '.' };
@@ -167,7 +167,7 @@ export function checkFiles(files) {
     seen.set(name, f);
   }
   if (!seen.has('theme.json')) return { ok: false, error: SHAPE + '; there is no theme.json here.' };
-  const ordered = ['radar.vid', 'emblem.bin', 'theme.json'].filter((n) => seen.has(n)).map((n) => ({
+  const ordered = ['radar.vid', 'alert.snd', 'emblem.bin', 'theme.json'].filter((n) => seen.has(n)).map((n) => ({
     path: seen.get(n).path, devicePath: '/themes/' + folder + '/' + n, name: n, data: seen.get(n).data,
   }));
   return { ok: true, folder, ordered };
@@ -339,7 +339,7 @@ function stateMessage(state, folder, failed, reason) {
   const dir = '/themes/' + folder;
   if (state === 'untouched') return MSG_UNTOUCHED;
   if (state === 'mixed') {
-    return dir + ' now holds new files (radar.vid and/or emblem.bin) but theme.json was not replaced: the card has them beside the old theme.json ' +
+    return dir + ' now holds new files (radar.vid, alert.snd and/or emblem.bin) but theme.json was not replaced: the card has them beside the old theme.json ' +
       '(or, in a new folder, without a theme.json, which the device skips). Run the install again.';
   }
   if (state === 'unknown') {

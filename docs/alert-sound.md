@@ -8,8 +8,11 @@ A new alert beeps once, with a pattern per confidence level so it can be told by
 | MED | two beeps, 1175 Hz, 110 ms each |
 | HIGH | six notes alternating 1568 and 988 Hz, 140 ms each |
 
+A pack can replace the beeps with its own sounds (`alert.snd`, see `docs/theme-packs.md`); a level it leaves out keeps the built-in beep.
 Only a *new* alert sounds (the same device re-detected holds its card and stays quiet, as it does for waking the screen).
-The OMENS test button walks all three levels. Nothing plays when alerts are OFF. There is no volume or mute setting yet.
+The OMENS test button walks all three levels. Nothing plays when alerts are OFF.
+
+Volume: Settings, recording tab, ALERT SOUND: OFF, QUIET, NORMAL (default), LOUD. Changing it plays a sample. OFF is a mute.
 
 ## How it works
 - `ui/alert_tone.h`: the patterns as 16 kHz mono samples, integers only, host-tested by `sim/test_alert_tone.cpp`.
