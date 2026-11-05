@@ -1,0 +1,61 @@
+// The preview module's board selection: the CYD (160x120 half-scale preview of 320x240) and the Waveshare 3.5" (480x320 engine).
+import { test, before } from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import { ROOT } from './_util.mjs';
+import { createPreview, BOARDS, W, H } from '../js/preview.js';
+import { makeTemplate } from '../js/model.js';
+
+let preview, M;
+before(async () => {
+  const r = spawnSync('bash', [path.join(ROOT, 'tools/build-designer-wasm.sh')], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  M = await (await import(pathToFileURL(path.join(ROOT, 'web/designer/wasm/uv_preview.js')).href)).default();
+  preview = createPreview(M);
+});
+
+test('BOARDS describes both boards with their own sizes and screens', () => {
+  assert.deepEqual([BOARDS.cyd.w, BOARDS.cyd.h], [160, 120]);
+  assert.deepEqual([BOARDS.waveshare.w, BOARDS.waveshare.h], [480, 320]);
+  assert.equal(W, BOARDS.cyd.w); assert.equal(H, BOARDS.cyd.h);       // the old exports stay the CYD
+  assert.deepEqual(BOARDS.cyd.screens, ['scan', 'mesh', 'alert', 'menu']);
+  assert.deepEqual(BOARDS.waveshare.screens, ['scan', 'mesh', 'alert', 'menu', 'aspect']);
+  assert.ok(BOARDS.waveshare.name.length && BOARDS.cyd.name.length);
+});
+
+test('the preview offers the Waveshare when the wasm has it, and the CYD stays the default', () => {
+  assert.deepEqual(preview.boards(), ['cyd', 'waveshare']);
+  assert.equal(preview.renderBuiltin(0, 'scan', 24).length, W * H * 4, 'no options: the CYD, as before');
+  assert.equal(createPreview({ _uv_render: M._uv_render, _malloc: M._malloc, _free: M._free, HEAPU8: M.HEAPU8 }).boards().join(), 'cyd', 'an older wasm without uv_render_ws offers only the CYD');
+});
+
+test('a built-in renders at the Waveshare size, and differs from the CYD frame', () => {
+  const ws = preview.renderBuiltin(0, 'scan', 24, { board: 'waveshare' });
+  assert.equal(ws.length, 480 * 320 * 4);
+  const cyd = preview.renderBuiltin(0, 'scan', 24);
+  assert.notEqual(Buffer.from(ws.subarray(0, 4000)).toString('hex'), Buffer.from(cyd.subarray(0, 4000)).toString('hex'));
+});
+
+test('a draft renders on the Waveshare, every Waveshare screen draws, and the alert confidence matters', () => {
+  const t = makeTemplate('cosmic'); const r = preview.loadDraft(t.theme, t.emblem);
+  assert.ok(r.ok, r.error);
+  const seen = new Set();
+  for (const screen of BOARDS.waveshare.screens) {
+    const px = preview.renderDraft(screen, 60, { board: 'waveshare' });
+    assert.equal(px.length, 480 * 320 * 4, screen);
+    seen.add(Buffer.from(px).toString('base64'));
+  }
+  assert.equal(seen.size, BOARDS.waveshare.screens.length, 'each screen is its own picture');
+  const low = Buffer.from(preview.renderDraft('alert', 60, { board: 'waveshare', alertConf: 'low' }));
+  const high = Buffer.from(preview.renderDraft('alert', 60, { board: 'waveshare', alertConf: 'high' }));
+  assert.notEqual(low.compare(high), 0, 'LOW takes the hero, HIGH the whole screen');
+});
+
+test('bad requests throw instead of drawing the wrong thing', () => {
+  { const t = makeTemplate('cosmic'); preview.loadDraft(t.theme, t.emblem); }
+  assert.throws(() => preview.renderDraft('scan', 0, { board: 'toaster' }), /board/);
+  assert.throws(() => preview.renderDraft('aspect', 0), /aspect/, 'the CYD has no engine ASPECT screen in the preview');
+  assert.throws(() => preview.renderDraft('scan', 0, { board: 'waveshare', alertConf: 'purple' }), /alertConf/);
+});
