@@ -170,3 +170,4 @@ __pycache__/
 
 # Standalone flashing-tool virtual environment
 .venv-flash/
+sim/test_scan_fx

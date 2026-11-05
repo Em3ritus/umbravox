@@ -307,7 +307,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
     sceneRec_ = rec;
     uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now; c.pmuOk = pmuOk; c.charging = charging; c.poi = poi::status(now);
     switch (cur_) {
-        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c, alertShown(s)); eScan_.back().animate(true); eScan_.back().sweep(s.set.sweep); eScan_.commit();
+        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c, alertShown(s)); eScan_.back().animate(true); eScan_.back().fx(true); eScan_.back().sweep(s.set.sweep); eScan_.commit();
             break;
         case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c, W_, H_); eDomain_.commit(); break;
         case uinav::Screen::Codex:  uiproj::codex(eCodex_.back(), s, c, W_, H_);   eCodex_.commit();  break;

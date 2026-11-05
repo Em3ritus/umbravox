@@ -64,7 +64,7 @@ public:
         Reg* r = nullptr;
         for (auto& q : regs_) if (q.used && q.x0 == x0 && q.bw == bw && q.id == id) { r = &q; break; }
         if (!r) for (auto& q : regs_) if (!q.used) { q = Reg{}; q.used = true; q.id = id; q.x0 = x0; q.bw = bw; q.lo = x0 + bw; q.hi = x0; q.top = h_; q.bottom = 0; r = &q; break; }
-        if (!r) r = &regs_[MaxReg - 1];                       // more regions than slots cannot happen (the engine caps at 8)
+        if (!r) r = &regs_[MaxReg - 1];                       // more regions than slots cannot happen (the engine caps at 12)
         for (int y = y0; y < y0 + count; ++y) {
             const uint16_t* src = pixels + (y - y0) * bw;
             const uint16_t* old = front_ + y * w_ + x0;

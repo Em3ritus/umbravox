@@ -72,6 +72,19 @@ struct AlertScene {
     char why[20] = {0};                        // supporting detail
 };
 
+// Texture and motion for the side panels of a wide (>= 400 px) panel: a sparkline in each count card and a peak-hold
+// cap in the spectrum, plus a glint and a baseline pulse that move on a 250 ms tick of `now`. Opt-in (`on`): a scene
+// that leaves it off, and every compact panel, draws exactly what it always did. The history lives in the engine
+// (scanpres::FxTracker) and is copied into each snapshot, so a sliced redraw never sees it move.
+static constexpr int      kSpark = 24;            // samples per card, one per kSparkTicks ticks (one per second)
+static constexpr uint32_t kFxMs = 250;            // one animation tick
+static constexpr int      kSparkTicks = 4;
+struct Fx {
+    bool on = false;
+    uint8_t spark[3][kSpark] = {};                // new sightings per sample, oldest first
+    uint8_t peak[21] = {};                        // peak-hold per spectrum channel, 0..100
+};
+
 struct ScanScene {
     bool bridgeOn = false;
     // status
@@ -94,6 +107,7 @@ struct ScanScene {
     bool animateSweep = false; // caller opt-in; static fixtures retain their exact pixels
     uint8_t sweep = 0;         // ui::Sweep id; only read when animateSweep (wide panels)
     AlertScene alert;          // takeover (wide panels only); a device with no alert leaves it inactive
+    Fx fx;                     // side-panel texture and motion (wide panels only)
 };
 
 // --- projections (pure, host-testable): scene data -> draw-ready values --------
@@ -737,6 +751,7 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
 // spectrum separation and no-intrusion invariants are host-testable. The channel
 // plan is FIXED (count is size-independent); bar width/pitch adapt.
 static constexpr int kChannels = 21, kCh24 = 13;   // 13 x 2.4GHz + 8 x 5GHz; one spectrum bar each
+static_assert(kChannels == sizeof(Fx::peak), "Fx::peak holds one entry per spectrum channel");
 // Hero sub-layout. Wide panels (layout A) keep the radar big in the middle and put the channel readout and
 // the spectrum in a right-hand column (`side`); compact panels keep the spectrum under the radar.
 struct HeroSub { uieng::Rect field, spectrum, side; int barBase, barMax; };
@@ -940,6 +955,51 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
 
 }
 
+// --- side-panel texture and motion (wide panel, ScanScene::fx.on) --------------------------------------------
+// Everything below draws with the same strip-clipped box/pt as the rest, so it is independent of strip and column
+// windows. Cheap by construction: a dot every 4 px, one glint row, 24 sparkline bars, 21 caps.
+inline void fxCard(S& s, const uieng::Rect& t, uint16_t accent, uint32_t now, int idx, const uint8_t* spark) {
+    const uint16_t dot = ui::Canvas::mix(pal::PANEL, accent, 3, 16);
+    for (int y = t.y + 4; y < t.y + t.h - 2; y += 4) {                      // dot texture, a quarter of a card in rows
+        if (y < s.y0 || y >= s.y0 + s.h) continue;
+        for (int x = t.x + 6; x < t.x + t.w - 2; x += 4) pt(s, x, y, dot);
+    }
+    const int ticks = int((now / kFxMs + uint32_t(idx) * 4u) % 12u);        // the cards' glints chase each other, 3 s a pass
+    box(s, t.x + 4, t.y + 2 + ticks * (t.h - 6) / 12, t.w - 5, 2, ui::Canvas::mix(pal::PANEL, accent, 5, 16));
+    const int base = t.y + t.h - 5, top = 11, x0 = t.x + 12;               // sparkline, scaled to its own window
+    int mx = 4; for (int k = 0; k < kSpark; k++) if (spark[k] > mx) mx = spark[k];
+    box(s, x0, base, kSpark * 3 - 1, 1, pal::EDGE);
+    for (int k = 0; k < kSpark; k++) {
+        if (!spark[k]) continue;
+        int h = spark[k] * top / mx; if (h < 1) h = 1;
+        const uint16_t ink = k == kSpark - 1 ? ui::Canvas::mix(accent, pal::BRIGHT, 1, 2) : ui::Canvas::mix(pal::PANEL, accent, 6 + k / 3, 16);
+        box(s, x0 + k * 3, base - h, 2, h, ink);
+    }
+}
+inline void fxSpectrumBack(S& s, int sx0, int w, int barBase, int barMax) {         // the grid, under the bars
+    const uint16_t g = ui::Canvas::mix(pal::VOID, pal::EDGE, 1, 2);
+    for (int q = 1; q <= 3; q++) {
+        const int y = barBase - barMax * q / 4;
+        if (y < s.y0 || y >= s.y0 + s.h) continue;
+        for (int x = sx0; x < sx0 + w; x += 2) pt(s, x, y, g);
+    }
+}
+inline void fxSpectrumBar(S& s, int x, int bw, int barBase, int barMax, int hgt, int peak, uint16_t col) {   // under + over one bar
+    const int ph = peak * barMax / 100;
+    if (ph > hgt + 1) {
+        box(s, x, barBase - ph, bw, ph - hgt, ui::Canvas::mix(pal::VOID, col, 1, 5));    // the afterglow of a bar that fell
+        box(s, x, barBase - ph, bw, 1, ui::Canvas::mix(col, pal::BRIGHT, 1, 2));         // the held peak
+    }
+}
+inline void fxBaseline(S& s, int sx0, int w, int barBase, uint32_t now) {                // a pulse running under the bars
+    const int y = barBase + 1;
+    box(s, sx0, y, w, 1, ui::Canvas::mix(pal::VOID, pal::EDGE, 3, 4));
+    const int tick = int((now / kFxMs) % uint32_t((w + 16) / 4));
+    const int px = sx0 - 12 + tick * 4;
+    int a = px < sx0 ? sx0 : px, b = px + 12 > sx0 + w ? sx0 + w : px + 12;
+    if (b > a) box(s, a, y, b - a, 1, pal::BRIGHT);
+}
+
 // --- compose one strip completely from the scene ------------------------------
 }  // namespace scanr
 #include "scan_alert.h"
@@ -956,8 +1016,10 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};
     char num[16]; const long vals[3] = { sc.wifi, sc.g5, sc.ble };
+    const bool fx = W >= 400 && sc.fx.on;                              // side-panel texture and motion
     for (int i=0;i<3;i++){ const uieng::Rect t=L.tiles[i];
         box(s, t.x, t.y, t.w, t.h, pal::PANEL);
+        if (fx) fxCard(s, t, band[i], sc.now, i, sc.fx.spark[i]);
         box(s, t.x, t.y, 3, t.h, band[i]);
         frame(s, t.x, t.y, t.w, t.h, pal::EDGE);
         txt(s, t.x+12, t.y+9, tlab[i], 1, pal::DIM);
@@ -1117,12 +1179,15 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     const int sx0   = hs.spectrum.x;
     const int pitch = (hs.spectrum.w / kChannels >= 2) ? hs.spectrum.w / kChannels : 2;
     const int bw    = (pitch > 3) ? pitch - 2 : (pitch > 2 ? pitch - 1 : 1);   // readable bar, small gap (don't merge)
+    if (fx) fxSpectrumBack(s, sx0, kChannels * pitch, hs.barBase, hs.barMax);
     if (sc.channels && sc.nChannels == kChannels)
         for (int i = 0; i < kChannels; i++) {
             int a = sc.channels[i]; a = a < 0 ? 0 : (a > 100 ? 100 : a);
             const int x = sx0 + i * pitch, hgt = a * hs.barMax / 100;
+            if (fx) fxSpectrumBar(s, x, bw, hs.barBase, hs.barMax, hgt, sc.fx.peak[i], i < kCh24 ? pal::MAGENTA : pal::ICE);
             box(s, x, hs.barBase - hgt, bw, hgt, i < kCh24 ? pal::MAGENTA : pal::ICE);
         }
+    if (fx) fxBaseline(s, sx0, kChannels * pitch, hs.barBase, sc.now);
     const int boundX = sx0 + kCh24 * pitch;                   // 2.4 | 5 GHz split (start of bar 13)
     box(s, boundX - 1, hs.barBase - hs.barMax, 1, hs.barMax, pal::EDGE);   // thin band divider
     const int labY = hr.y + hr.h - 8;
