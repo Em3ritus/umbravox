@@ -35,7 +35,7 @@ LINE_CAP = 200           # device: sdcmd::LINE_CAP
 MAX_JSON = 4096          # ui/themepack.h
 MAX_EMBLEM = 9728
 MAX_CLIP = 780312        # radar.vid: 12 + 150 frames of 5202 bytes
-MAX_SOUND = 288020       # alert.snd: 20 + three sounds of at most 48000 16-bit samples
+MAX_SOUND = 576020       # alert.snd: 20 + three sounds of at most 96000 16-bit samples
 RETRIES = 3              # a failed chunk is resent up to this many times
 DOS_NAMES = {"con", "prn", "aux", "nul"} | {p + str(d) for p in ("com", "lpt") for d in range(10)}
 
@@ -356,7 +356,7 @@ def selftest_files(check):
         d = pack("big-snd")
         with open(os.path.join(d, "alert.snd"), "wb") as fh:
             fh.write(b"\0" * (MAX_SOUND + 1))
-        check("alert.snd over 288020 bytes refused before sending", refused(d, "over 288020"))
+        check("alert.snd over 576020 bytes refused before sending", refused(d, "over 576020"))
         d = pack("snd-pack", emblem=b"UVE\x01")
         with open(os.path.join(d, "alert.snd"), "wb") as fh:
             fh.write(b"UVSN")

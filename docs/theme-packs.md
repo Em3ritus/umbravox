@@ -122,7 +122,7 @@ bytes 0-3   'U' 'V' 'S' 'N'
 byte  4     version, 1
 byte  5     reserved, 0
 bytes 6-7   sample rate, 16000 (u16 little-endian)
-bytes 8-19  sample counts for LOW, MED, HIGH (three u32 little-endian, each 0 to 48000; not all zero)
+bytes 8-19  sample counts for LOW, MED, HIGH (three u32 little-endian, each 0 to 96000; not all zero)
 then        the 16-bit little-endian mono samples of LOW, MED, HIGH, back to back
 ```
 
@@ -134,8 +134,8 @@ samples as stored, so the designer normalizes each sound to 70% of full scale.
 
 The designer makes the file: on the Waveshare board a card under the preview takes any audio file per level
 (wav, mp3, ogg, m4a: whatever the browser decodes), resamples it to 16 kHz mono, trims silence at both ends, cuts it at
-3 seconds and plays it back for you. It travels with the theme like the video (card reader, USB, zip). Over USB the
-file is under 300 KB, so well under a minute. `tools/sdput.py PORT put <folder>` sends an `alert.snd` too.
+6 seconds and plays it back for you. It travels with the theme like the video (card reader, USB, zip). Over USB the
+file is under 600 KB, so under a minute. `tools/sdput.py PORT put <folder>` sends an `alert.snd` too.
 
 ## radar.vid
 
@@ -177,7 +177,7 @@ These numbers are the same ones the device and the designer use
 | `theme.json` | at most 4 KB (4,096 bytes) |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
 | `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; 2 clips held at once |
-| `alert.snd` | 16 kHz mono 16-bit, at most 48,000 samples (3 s) per level, at most 288,020 bytes; 2 sound sets held at once |
+| `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; 2 sound sets held at once |
 | whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
 

@@ -697,9 +697,9 @@ test('checkFiles takes alert.snd: big files first, then the emblem, theme.json l
   assert.deepEqual(chk.ordered.map((f) => f.name), ['radar.vid', 'alert.snd', 'emblem.bin', 'theme.json']);
   assert.equal(chk.ordered[1].devicePath, '/themes/my-pack/alert.snd');
   const big = (n) => [{ path: 'x/theme.json', data: enc('{}') }, { path: 'x/alert.snd', data: new Uint8Array(n) }];
-  assert.equal(checkFiles(big(288020)).ok, true);
-  const r = checkFiles(big(288021));
-  assert.equal(r.ok, false); assert.match(r.error, /288020/);
+  assert.equal(checkFiles(big(576020)).ok, true);
+  const r = checkFiles(big(576021));
+  assert.equal(r.ok, false); assert.match(r.error, /576020/);
 });
 
 test('the command allow-list admits SDPUT of alert.snd and nothing like it', () => {

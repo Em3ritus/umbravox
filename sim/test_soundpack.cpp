@@ -1,5 +1,5 @@
 // Host test: alert.snd, the optional file of a theme pack that replaces the built-in alert beeps.
-//   format:  'U','V','S','N', version 1, 0, rate (u16 LE, 16000), three u32 LE sample counts (LOW, MED, HIGH; each 0..48000),
+//   format:  'U','V','S','N', version 1, 0, rate (u16 LE, 16000), three u32 LE sample counts (LOW, MED, HIGH; each 0..96000),
 //            then the 16-bit little-endian mono samples of LOW, MED, HIGH back to back. At least one count is non-zero;
 //            a level with count 0 keeps the built-in beep.
 // A pack is untrusted data, so this is built under the address and UB sanitizers and ends with a mutation fuzz whose
@@ -31,9 +31,9 @@ static bool parse_(const Buf& b, Sound& s, char* why = nullptr, size_t cap = 0) 
 int main() {
     puts("== constants");
     check("the header is 20 bytes and the rate 16 kHz", SND_HDR == 20 && SND_RATE == 16000);
-    check("three seconds at most per sound", MAX_SND_SAMPLES == 48000);
-    check("the biggest file is the header plus three 3-second sounds", MAX_SOUND == 20 + 3 * 48000 * 2u);
-    check("two sound sets fit the PSRAM budget with room to spare", MAX_SOUNDS == 2 && MAX_SOUNDS * MAX_SOUND < 700000);
+    check("six seconds at most per sound", MAX_SND_SAMPLES == 96000);
+    check("the biggest file is the header plus three 6-second sounds", MAX_SOUND == 20 + 3 * 96000 * 2u);
+    check("two sound sets fit the PSRAM budget with room to spare", MAX_SOUNDS == 2 && MAX_SOUNDS * MAX_SOUND < 1300000);
 
     puts("== parseSound: a good file");
     {
@@ -44,8 +44,8 @@ int main() {
         check("an empty level has no pointer", s.pcm[1] == nullptr);
         int16_t first; memcpy(&first, b.data() + SND_HDR, 2);
         check("samples are read as they are stored", s.pcm[0][0] == first);
-        auto one = makeSnd(1, 0, 0), big = makeSnd(48000, 48000, 48000);
-        check("one sample, and the maximum, are fine", parse_(one, s) && parse_(big, s) && big.size() == MAX_SOUND && s.n[2] == 48000);
+        auto one = makeSnd(1, 0, 0), big = makeSnd(96000, 96000, 96000);
+        check("one sample, and the maximum, are fine", parse_(one, s) && parse_(big, s) && big.size() == MAX_SOUND && s.n[2] == 96000);
     }
 
     puts("== parseSound: refusals, each with a reason");
@@ -62,7 +62,7 @@ int main() {
         { auto x = g; x.v[4] = 2; bad("a newer version", x, "version"); }
         { auto x = g; x.v[6] = 0x22; x.v[7] = 0x56; bad("22050 Hz: 16000 is the only rate", x, "16000"); }
         { auto x = g; x.v[5] = 1; bad("a reserved byte set", x, "reserved"); }
-        { auto x = g; x.v[8] = 0x81; x.v[9] = 0xBB; x.v[10] = 0; x.v[11] = 0; bad("48001 samples", x, "48000"); }
+        { auto x = g; x.v[8] = 0x01; x.v[9] = 0x77; x.v[10] = 0x01; x.v[11] = 0; bad("96001 samples", x, "96000"); }
         { auto x = makeSnd(0, 0, 0); bad("no sounds at all", x, "no sounds"); }
         { auto x = g; x.v.pop_back(); bad("one byte short", x, "length"); }
         { auto x = g; x.v.push_back(0); bad("one byte long", x, "length"); }

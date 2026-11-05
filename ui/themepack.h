@@ -91,10 +91,10 @@ struct Clip { uint8_t w, h, fps; uint16_t frames; const uint8_t* px; };
 bool parseClip(const uint8_t* data, size_t n, Clip& out, char* why, size_t whyCap);
 
 // alert.snd, the optional file that replaces the built-in alert beeps: 'U','V','S','N', version 1, 0, rate (u16 LE,
-// 16000), three u32 LE sample counts (LOW, MED, HIGH; each 0..MAX_SND_SAMPLES), then the 16-bit little-endian mono
+// 16000), three u32 LE sample counts (LOW, MED, HIGH; each 0..MAX_SND_SAMPLES (96000)), then the 16-bit little-endian mono
 // samples of LOW, MED, HIGH back to back. At least one count is non-zero; a level with count 0 keeps the built-in beep.
-constexpr int    SND_RATE = 16000, SND_HDR = 20, MAX_SND_SAMPLES = 48000;     // 3 s per sound
-constexpr size_t MAX_SOUND = SND_HDR + 3 * (size_t)MAX_SND_SAMPLES * 2;      // 288020
+constexpr int    SND_RATE = 16000, SND_HDR = 20, MAX_SND_SAMPLES = 96000;     // 6 s per sound
+constexpr size_t MAX_SOUND = SND_HDR + 3 * (size_t)MAX_SND_SAMPLES * 2;      // 576020
 constexpr int    MAX_SOUNDS = 2;          // sound sets held at once (PSRAM)
 
 // A parsed alert.snd. pcm[k] points INTO the buffer given to parseSound (null when n[k] == 0), so that buffer must

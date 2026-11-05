@@ -274,7 +274,7 @@ inline const char* putPolicy(const char* path, uint32_t size, Path& out) {
     if (size > capOf(out.kind))
         return out.kind == K_THEME_JSON ? "too large (theme.json max 4096 bytes)"
              : out.kind == K_EMBLEM     ? "too large (emblem.bin max 9728 bytes)"
-             : out.kind == K_SOUND      ? "too large (alert.snd max 288020 bytes)"
+             : out.kind == K_SOUND      ? "too large (alert.snd max 576020 bytes)"
                                         : "too large (radar.vid max 780312 bytes)";
     return nullptr;
 }

@@ -14,11 +14,11 @@ const sine = (hz, secs, amp = 0.5) => Float32Array.from({ length: Math.round(SND
 
 test('constants match the device', () => {
   assert.equal(SND_RATE, 16000);
-  assert.equal(MAX_SND_SAMPLES, 48000);
-  assert.equal(MAX_SOUND_FILE, 20 + 3 * 48000 * 2);
+  assert.equal(MAX_SND_SAMPLES, 96000);
+  assert.equal(MAX_SOUND_FILE, 20 + 3 * 96000 * 2);
 });
 
-test('prepareSound: trims silence, normalizes the peak, fades the edges, caps at 3 s', () => {
+test('prepareSound: trims silence, normalizes the peak, fades the edges, caps at 6 s', () => {
   const quiet = new Float32Array(SND_RATE * 2);
   quiet.set(sine(1000, 0.5, 0.1), 8000);                          // 0.5 s of tone, starting 0.5 s in, inside 2 s of silence
   const p = prepareSound(quiet);
@@ -27,7 +27,7 @@ test('prepareSound: trims silence, normalizes the peak, fades the edges, caps at
   const peak = Math.max(...Array.from(p, Math.abs));
   assert.ok(peak > 0.68 * 32767 && peak <= 0.72 * 32767, 'normalized to about 70% of full scale (got ' + peak + ')');
   assert.ok(Math.abs(p[0]) < 600 && Math.abs(p[p.length - 1]) < 600, 'fades in and out');
-  assert.equal(prepareSound(sine(500, 10)).length, MAX_SND_SAMPLES, 'ten seconds is cut at three');
+  assert.equal(prepareSound(sine(500, 10)).length, MAX_SND_SAMPLES, 'ten seconds is cut at six');
   assert.equal(prepareSound(new Float32Array(5000)), null, 'pure silence is nothing');
   assert.equal(prepareSound(new Float32Array(0)), null);
   const loud = sine(300, 0.2, 4);                                  // way past full scale
@@ -49,9 +49,9 @@ test('soundFile and readSoundFile round-trip, and match the layout', () => {
 
 test('validateSounds refuses what the device would', () => {
   const s = emptySounds(); assert.match(validateSounds(s), /no sounds/);
-  s.med = new Int16Array(48001); assert.match(validateSounds(s), /48000/);
-  s.med = new Int16Array(48000); assert.equal(validateSounds(s), null);
-  s.low = new Int16Array(48000); s.high = new Int16Array(48000);
+  s.med = new Int16Array(96001); assert.match(validateSounds(s), /96000/);
+  s.med = new Int16Array(96000); assert.equal(validateSounds(s), null);
+  s.low = new Int16Array(96000); s.high = new Int16Array(96000);
   assert.equal(soundFile(s).length, MAX_SOUND_FILE);
 });
 
@@ -62,7 +62,7 @@ test('readSoundFile refuses like the device', () => {
   assert.throws(() => readSoundFile(bad((x) => { x[4] = 2; })), /version/);
   assert.throws(() => readSoundFile(bad((x) => { x[5] = 1; })), /reserved/);
   assert.throws(() => readSoundFile(bad((x) => { x[6] = 0x22; x[7] = 0x56; })), /16000/);
-  assert.throws(() => readSoundFile(bad((x) => { x[8] = 0x81; x[9] = 0xBB; })), /48000/);
+  assert.throws(() => readSoundFile(bad((x) => { x[8] = 0x01; x[9] = 0x77; x[10] = 1; })), /96000/);
   assert.throws(() => readSoundFile(good.slice(0, good.length - 1)), /length/);
   assert.throws(() => readSoundFile(good.slice(0, 10)), /short/);
   assert.throws(() => readSoundFile(Uint8Array.from(good.slice(0, 20)).fill(0, 8, 20)), /no sounds|length/);
@@ -78,7 +78,7 @@ test('the device parser accepts what the designer writes, and refuses what readS
   const cases = [
     { low: prepareSound(sine(1000, 0.3)), med: null, high: null },
     { low: null, med: prepareSound(sine(700, 1)), high: prepareSound(sine(1500, 3)) },
-    { low: new Int16Array(48000).fill(7), med: new Int16Array(48000).fill(-7), high: new Int16Array(48000).fill(9) },
+    { low: new Int16Array(96000).fill(7), med: new Int16Array(96000).fill(-7), high: new Int16Array(96000).fill(9) },
     { low: Int16Array.from([1]), med: null, high: null },
   ];
   for (const s of cases) {

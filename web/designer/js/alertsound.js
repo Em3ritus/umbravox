@@ -1,18 +1,18 @@
 // The alert sounds a pack can carry: alert.snd (device side: ui/themepack.h parseSound). Three optional sounds, one per
-// alert level (LOW, MED, HIGH), as 16 kHz mono 16-bit samples, up to 3 seconds each. A level without a sound keeps the
+// alert level (LOW, MED, HIGH), as 16 kHz mono 16-bit samples, up to 6 seconds each. A level without a sound keeps the
 // board's built-in beep. This file holds the pure parts (conversion, file writer and reader), which Node tests; the
 // browser-only decoding and preview playback are at the bottom.
 export const SND_RATE = 16000;
-export const MAX_SND_SAMPLES = 48000;                              // 3 s
+export const MAX_SND_SAMPLES = 96000;                              // 6 s
 export const SND_HEADER = 20;
-export const MAX_SOUND_FILE = SND_HEADER + 3 * MAX_SND_SAMPLES * 2; // 288020, limits.json MAX_SOUND
+export const MAX_SOUND_FILE = SND_HEADER + 3 * MAX_SND_SAMPLES * 2; // 576020, limits.json MAX_SOUND
 export const LEVELS = ['low', 'med', 'high'];
 
 export const emptySounds = () => ({ low: null, med: null, high: null });
 export const hasSounds = (s) => !!s && LEVELS.some((k) => s[k] && s[k].length > 0);
 export const soundSeconds = (pcm) => (pcm ? pcm.length / SND_RATE : 0);
 
-// Float samples (-1..1, 16 kHz mono) to the stored form: leading and trailing silence trimmed, cut at 3 s, normalized to
+// Float samples (-1..1, 16 kHz mono) to the stored form: leading and trailing silence trimmed, cut at 6 s, normalized to
 // 70% of full scale (the board's NORMAL volume plays samples as stored), 5 ms fades in and out. null if there is nothing
 // audible.
 export function prepareSound(f, { peak = 0.7, silence = 0.005, fadeMs = 5 } = {}) {

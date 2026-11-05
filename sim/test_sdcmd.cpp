@@ -787,7 +787,7 @@ static void testSoundFile() {
           !sdcmd::putPolicy("/THEMES/x/Alert.SND", 4000, p) && !strcmp(p.canon, "/themes/x/alert.snd") && p.kind == sdcmd::K_SOUND);
     check("exactly MAX_SOUND bytes is allowed", !sdcmd::putPolicy("/themes/x/alert.snd", (uint32_t)themepack::MAX_SOUND, p));
     const char* why = sdcmd::putPolicy("/themes/x/alert.snd", (uint32_t)themepack::MAX_SOUND + 1, p);
-    check("one byte over is refused with the limit named", why && strstr(why, "alert.snd max 288020"));
+    check("one byte over is refused with the limit named", why && strstr(why, "alert.snd max 576020"));
     check("empty is refused", sdcmd::putPolicy("/themes/x/alert.snd", 0, p) != nullptr);
     check("not in the root", sdcmd::putPolicy("/alert.snd", 100, p) != nullptr);
     check("other names still refused", sdcmd::putPolicy("/themes/x/alert.wav", 100, p) != nullptr && sdcmd::putPolicy("/themes/x/alert.snd2", 100, p) != nullptr);
@@ -801,7 +801,7 @@ static void testSoundFile() {
         const auto d = bytes(themepack::MAX_SOUND, 3);
         check("the biggest sound file uploads", r.upload("/themes/snd/alert.snd", d) == doneFor(d));
         check("and is intact, with no temp left", r.sd.get("/themes/snd/alert.snd") == d && !r.sd.has("/themes/snd/alert.snd.tmp"));
-        check("SDPUT one byte too many: ERR too large", r.send("SDPUT /themes/snd/alert.snd 288021 00000000").rfind("ERR too large", 0) == 0 && !r.con.uploading());
+        check("SDPUT one byte too many: ERR too large", r.send("SDPUT /themes/snd/alert.snd 576021 00000000").rfind("ERR too large", 0) == 0 && !r.con.uploading());
     }
 }
 

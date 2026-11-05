@@ -448,7 +448,7 @@ static const char* soundCheck(const uint8_t* d, size_t n, Sound& out) {
     uint32_t c[3]; uint64_t total = 0;
     for (int k = 0; k < 3; k++) {
         c[k] = (uint32_t)d[8 + 4 * k] | ((uint32_t)d[9 + 4 * k] << 8) | ((uint32_t)d[10 + 4 * k] << 16) | ((uint32_t)d[11 + 4 * k] << 24);
-        if (c[k] > (uint32_t)MAX_SND_SAMPLES) return "alert.snd has a sound over 48000 samples";
+        if (c[k] > (uint32_t)MAX_SND_SAMPLES) return "alert.snd has a sound over 96000 samples";
         total += c[k];
     }
     if (total == 0) return "alert.snd has no sounds";

@@ -331,7 +331,7 @@ function syncTabs() {
 }
 
 // Alert sounds for the Waveshare's speaker: one optional sound per level. The browser decodes any audio file, and
-// js/alertsound.js turns it into the board's format (16 kHz mono, at most 3 s). They become part of the theme (alert.snd).
+// js/alertsound.js turns it into the board's format (16 kHz mono, at most 6 s). They become part of the theme (alert.snd).
 const SND_NAMES = { low: 'LOW', med: 'MED', high: 'HIGH' };
 let sndBuilt = false;
 function buildSoundBar() {
@@ -366,7 +366,7 @@ async function loadSound(k, file) {
     const pcm = prepareSound(await decodeToMono16k(file));
     if (!pcm) throw new Error('there is nothing audible in it');
     state.sounds[k] = pcm;
-    msg.textContent = file.size > 0 && soundSeconds(pcm) >= 3 ? 'Used the first 3 seconds of it.' : '';
+    msg.textContent = file.size > 0 && soundSeconds(pcm) >= 6 ? 'Used the first 6 seconds of it.' : '';
     changed();
   } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this file: ' + ((e && e.message) || e); }
   finally { paintSoundBar(); }

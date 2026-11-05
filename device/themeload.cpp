@@ -286,7 +286,7 @@ void visit(int i) {
     if (S->jsonSz[i] == 0) { skip(folder, "no theme.json"); return; }
     if (S->jsonSz[i] > MAX_JSON) { skip(folder, "theme.json over 4096 bytes"); return; }
     if (S->clipSz[i] > MAX_CLIP) { skip(folder, "radar.vid over 780312 bytes"); return; }
-    if (S->sndSz[i] > MAX_SOUND) { skip(folder, "alert.snd over 288020 bytes"); return; }
+    if (S->sndSz[i] > MAX_SOUND) { skip(folder, "alert.snd over 576020 bytes"); return; }
 
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), folder, total);

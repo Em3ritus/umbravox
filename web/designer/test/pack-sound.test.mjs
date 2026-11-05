@@ -14,8 +14,8 @@ const sounds = (lo = 3200, me = 0, hi = 16000) => ({ low: lo ? tone(lo) : null, 
 const clip = () => buildClip([Uint8Array.from({ length: CLIP_SIZE * CLIP_SIZE }, (_, i) => i % 16)]);
 const name = (f) => f.path.split('/')[1];
 
-test('limits know the sounds: MAX_SOUND 288020, two sets at most', () => {
-  assert.equal(limits.MAX_SOUND, 20 + 3 * 48000 * 2);
+test('limits know the sounds: MAX_SOUND 576020, two sets at most', () => {
+  assert.equal(limits.MAX_SOUND, 20 + 3 * 96000 * 2);
   assert.equal(limits.MAX_SOUNDS, 2);
 });
 
@@ -33,7 +33,7 @@ test('no sounds, or an empty set, is exactly the pack it was; a bad set is refus
   assert.deepEqual(buildPack(t.theme, null).files.map(name), ['theme.json']);
   assert.deepEqual(buildPack(t.theme, null, null, null).files.map(name), ['theme.json']);
   assert.deepEqual(buildPack(t.theme, null, null, emptySounds()).files.map(name), ['theme.json']);
-  assert.throws(() => buildPack(t.theme, null, null, { low: new Int16Array(48001), med: null, high: null }), /48000/);
+  assert.throws(() => buildPack(t.theme, null, null, { low: new Int16Array(96001), med: null, high: null }), /96000/);
 });
 
 test('checks report the sounds, and hold them to the limit', () => {
@@ -44,14 +44,14 @@ test('checks report the sounds, and hold them to the limit', () => {
   assert.match(text(r), /Alert sounds: LOW 0\.2 s, MED built-in, HIGH 1\.0 s/);
   assert.match(text(r), /Waveshare/);
   assert.ok(r.every((c) => c.level !== 'error'));
-  const bad = runChecks(t.theme, null, null, { low: new Int16Array(48001), med: null, high: null });
-  assert.ok(bad.some((c) => c.level === 'error' && /48000/.test(c.text)));
+  const bad = runChecks(t.theme, null, null, { low: new Int16Array(96001), med: null, high: null });
+  assert.ok(bad.some((c) => c.level === 'error' && /96000/.test(c.text)));
 });
 
 test('the install gate sees a bad sound set', () => {
   const t = makeTemplate('umbravox');
   assert.equal(installGate(t.theme, null, null, sounds()).ok, true);
-  assert.equal(installGate(t.theme, null, null, { low: new Int16Array(48001), med: null, high: null }).ok, false);
+  assert.equal(installGate(t.theme, null, null, { low: new Int16Array(96001), med: null, high: null }).ok, false);
 });
 
 test('opening a pack folder brings its sounds back, and a bad alert.snd is dropped with a warning', () => {
