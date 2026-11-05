@@ -44,7 +44,7 @@ function run(cmd, args) {
 before(async () => {
   // Fresh simulator (make is incremental): a stale binary would compare the
   // wasm against code that no longer exists.
-  run('make', ['-s', '-C', path.join(ROOT, 'sim'), 'umbravox']);
+  run('make', ['-s', '-C', path.join(ROOT, 'sim'), 'umbravox', 'ws_preview_png']);
   run('bash', [BUILD]);
   assert.ok(fs.existsSync(WASM_JS) && fs.existsSync(WASM_BIN),
     'the build script ran but did not produce uv_preview.js / uv_preview.wasm');
@@ -247,4 +247,93 @@ test('uv_load_pack rejects hostile input cleanly and keeps the current draft', (
   // The failed loads must not have clobbered the live draft's emblem buffer.
   same('draft after hostile loads', wasmRender(3, 'scan', 24, -1, -1), before);
   assert.equal(loadFixture(PACKS[0]), BUILTIN_COUNT, 'a good pack still loads after failures');
+});
+
+// ---- the Waveshare 3.5" engine preview (480x320) ------------------------------
+// uv_render_ws draws ui/preview_ws.h; sim/ws_preview_png is the same call on the host.
+
+const WS_W = 480, WS_H = 320;
+const WS_SCREEN = { scan: 0, mesh: 1, alert: 2, menu: 3, aspect: 4 };
+const CONF = { low: 0, med: 1, high: 2 };
+const WS_SIM = path.join(ROOT, 'sim/ws_preview_png');
+
+function wsSim({ theme, pack, screen, frame, sweep, alert, conf }) {
+  const out = path.join(tmp, `w${simN++}.rgba`);
+  const args = [String(theme), String(WS_SCREEN[screen]), String(frame), String(sweep), String(alert), String(conf), out];
+  if (pack) args.push('--pack', path.join(ROOT, pack));
+  run(WS_SIM, args);
+  const b = fs.readFileSync(out);
+  assert.equal(b.length, WS_W * WS_H * 4);
+  return new Uint8Array(b);
+}
+
+function wsWasm(theme, screen, frame, sweep, alert, conf) {
+  const n = WS_W * WS_H * 4;
+  const ptr = M._malloc(n);
+  try {
+    M._uv_render_ws(theme, WS_SCREEN[screen], frame, sweep, alert, conf, ptr);
+    return M.HEAPU8.slice(ptr, ptr + n);
+  } finally { M._free(ptr); }
+}
+
+function wsSame(name, a, b) {
+  if (Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0) return;
+  let px = 0;
+  for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) px++;
+  assert.fail(`${name}: ${px} of ${WS_W * WS_H} pixels differ`);
+}
+
+function wsCases() {
+  const c = [];
+  for (const screen of ['scan', 'mesh', 'menu', 'aspect'])
+    for (const frame of [0, 24, 600]) c.push({ screen, frame, sweep: -1, alert: -1, conf: 2 });
+  for (const conf of ['low', 'med', 'high'])
+    for (const frame of [5, 45, 160]) c.push({ screen: 'alert', frame, sweep: -1, alert: -1, conf: CONF[conf] });
+  return c;
+}
+
+function wsCheckTheme(label, theme, pack) {
+  for (const k of wsCases())
+    wsSame(`WS ${label} ${k.screen} frame ${k.frame} conf ${k.conf}`, wsWasm(theme, k.screen, k.frame, k.sweep, k.alert, k.conf), wsSim({ theme, pack, ...k }));
+}
+
+test('the module reports the Waveshare canvas size', () => {
+  assert.equal(M._uv_ws_width(), WS_W);
+  assert.equal(M._uv_ws_height(), WS_H);
+});
+
+for (const [label, id] of Object.entries(BUILTINS)) {
+  test(`Waveshare built-in ${label}: wasm equals the host engine byte for byte`, () => {
+    M._uv_clear_packs();
+    wsCheckTheme(label, id, null);
+  });
+}
+
+for (const dir of PACKS) {
+  test(`Waveshare pack ${dir}: wasm equals the host engine`, () => {
+    const id = loadFixture(dir);
+    assert.equal(id, BUILTIN_COUNT, `uv_load_pack: ${id < 0 ? err() : ''}`);
+    wsCheckTheme(dir, id, dir);
+  });
+}
+
+test('Waveshare COSMIC MUFFIN: every sweep and every alert style match', () => {
+  M._uv_clear_packs();
+  const t = BUILTINS['COSMIC MUFFIN'];
+  for (let sw = 0; sw < SWEEP_COUNT; sw++)
+    wsSame(`WS COSMIC sweep ${sw}`, wsWasm(t, 'scan', 24, sw, -1, 2), wsSim({ theme: t, screen: 'scan', frame: 24, sweep: sw, alert: -1, conf: 2 }));
+  for (let al = 0; al < ALERT_STYLES; al++)
+    for (const conf of [0, 2])
+      wsSame(`WS COSMIC alert style ${al} conf ${conf}`, wsWasm(t, 'alert', 60, -1, al, conf), wsSim({ theme: t, screen: 'alert', frame: 60, sweep: -1, alert: al, conf }));
+});
+
+test('the Waveshare comparison is not vacuous: screens, themes and frames differ, and it is not the CYD image', () => {
+  M._uv_clear_packs();
+  const seen = new Set();
+  for (const t of Object.values(BUILTINS))
+    for (const [screen, frame] of [['scan', 0], ['scan', 24], ['mesh', 0], ['menu', 0], ['aspect', 0], ['alert', 60]])
+      seen.add(Buffer.from(wsWasm(t, screen, frame, -1, -1, 2)).toString('base64'));
+  assert.equal(seen.size, 18, 'every theme/screen/frame pair should render a distinct image');
+  const a = wsWasm(0, 'scan', 0, -1, -1, 2);
+  assert.ok(new Set(Array.from({ length: WS_W * WS_H }, (_, i) => a[4 * i] << 16 | a[4 * i + 1] << 8 | a[4 * i + 2])).size > 8);
 });

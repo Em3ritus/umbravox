@@ -20,6 +20,10 @@ HDR = $(wildcard ../ui/*.h) png_writer.h
 $(BIN): $(SRC) $(HDR) packload.h
 	$(CXX) $(CXXFLAGS) -o $@ $(SRC) -lm
 
+# Host reference for the designer's Waveshare (480x320 engine) preview; web/designer/test/wasm-parity.test.mjs builds and compares it.
+ws_preview_png: ws_preview_png.cpp $(SRC_NOMAIN) $(HDR) packload.h
+	$(CXX) $(CXXFLAGS) -o $@ ws_preview_png.cpp $(SRC_NOMAIN) -lm
+
 run: $(BIN)
 	./$(BIN) umbravox.png
 
@@ -27,7 +31,7 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) $(TESTS) sdcmd_console bench_draw *.png
+	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console bench_draw *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops

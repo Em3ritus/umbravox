@@ -1,14 +1,21 @@
 // Host reference for the designer's Waveshare preview: the same prevws::render() the WebAssembly bridge calls.
 //   ws_preview_png THEME SCREEN FRAME SWEEP ALERT_STYLE ALERT_CONF OUT.png
+//   ws_preview_png ... OUT --pack DIR   renders the pack in DIR (THEME is then ignored: the pack's id is used)
 //   ws_preview_png ... OUT.rgba      writes the raw RGBA bytes the browser gets (for the parity test)
 #include "../ui/preview_ws.h"
 #include "png_writer.h"
+#include "packload.h"
 #include <cstdlib>
 #include <cstring>
 int main(int argc, char** argv) {
     if (argc < 8) { std::fprintf(stderr, "usage: %s THEME SCREEN FRAME SWEEP ALERT_STYLE ALERT_CONF OUT\n", argv[0]); return 2; }
     std::vector<uint16_t> px(prevws::W * prevws::H);
-    prevws::render(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), px.data());
+    int theme = atoi(argv[1]);
+    if (argc >= 10 && !std::strcmp(argv[8], "--pack")) {
+        char why[96] = ""; theme = packload::load(argv[9], why, sizeof why);
+        if (theme < 0) { std::fprintf(stderr, "pack refused: %s\n", why); return 3; }
+    }
+    prevws::render(theme, atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), px.data());
     const char* out = argv[7]; const size_t n = std::strlen(out);
     if (n > 5 && !std::strcmp(out + n - 5, ".rgba")) {
         FILE* f = std::fopen(out, "wb"); if (!f) return 1;

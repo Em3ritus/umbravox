@@ -17,6 +17,7 @@
 #include "../../../ui/palette.h"
 #include "../../../ui/signatures.h"
 #include "../../../ui/themepack.h"
+#include "../../../ui/preview_ws.h"
 #include <emscripten/emscripten.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -172,6 +173,18 @@ EMSCRIPTEN_KEEPALIVE void uv_render(int theme, int screen, int frame, int sweep,
     }
 
     for (int i = 0; i < ui::W * ui::H; i++) rgb565ToRgba(g_canvas.px[i], out + 4 * i);
+}
+
+// The Waveshare 3.5" engine UI (480x320), one frame as RGBA. Same arguments as uv_render plus the alert's confidence
+// (ui::CONF_LOW 0, MED 1, HIGH 2); screen 4 is ASPECT. The drawing is ui/preview_ws.h, shared with the host reference.
+EMSCRIPTEN_KEEPALIVE int uv_ws_width() { return prevws::W; }
+EMSCRIPTEN_KEEPALIVE int uv_ws_height() { return prevws::H; }
+EMSCRIPTEN_KEEPALIVE void uv_render_ws(int theme, int screen, int frame, int sweep,
+                                       int alert_style, int alert_conf, unsigned char* out) {
+    if (!out) return;
+    static uint16_t px[prevws::W * prevws::H];
+    prevws::render(theme, screen, frame, sweep, alert_style, alert_conf, px);
+    for (int i = 0; i < prevws::W * prevws::H; i++) rgb565ToRgba(px[i], out + 4 * i);
 }
 
 } // extern "C"

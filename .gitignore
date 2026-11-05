@@ -1,4 +1,5 @@
 sim/umbravox
+sim/ws_preview_png
 sim/*.png
 # The simulator's default output name, if run from the repo root.
 /umbravox.png
