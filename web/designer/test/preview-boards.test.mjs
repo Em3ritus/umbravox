@@ -66,3 +66,38 @@ test('the Dial preset changes the CYD picture but not the Waveshare one (so the 
   assert.notEqual(draw('compact', 'cyd').compare(draw('large', 'cyd')), 0, 'the CYD honours the dial preset');
   assert.equal(draw('compact', 'waveshare').compare(draw('large', 'waveshare')), 0, 'the Waveshare engine lays the dial out itself');
 });
+
+// ---- the radar clip -----------------------------------------------------------
+import { buildClip, CLIP_SIZE } from '../js/radarvideo.js';
+const clip = n => buildClip(Array.from({ length: n }, (_, f) => Uint8Array.from({ length: CLIP_SIZE * CLIP_SIZE }, (_, i) => (i + f * 7) % 16)));
+
+test('the preview takes a radar clip, shows it on the Waveshare only, and lets it go', () => {
+  assert.equal(preview.hasRadarVideo(), false);
+  const before = preview.renderBuiltin(1, 'scan', 7, { board: 'waveshare' });
+  const cydBefore = preview.renderBuiltin(1, 'scan', 7);
+  assert.deepEqual(preview.setRadarVideo(clip(4)), { ok: true });
+  assert.equal(preview.hasRadarVideo(), true);
+  assert.notDeepEqual(preview.renderBuiltin(1, 'scan', 7, { board: 'waveshare' }), before);
+  assert.deepEqual(preview.renderBuiltin(1, 'scan', 7), cydBefore, 'the CYD preview is untouched');
+  preview.clearRadarVideo();
+  assert.equal(preview.hasRadarVideo(), false);
+  assert.deepEqual(preview.renderBuiltin(1, 'scan', 7, { board: 'waveshare' }), before);
+});
+
+test('a refused clip says why and leaves the previous one playing', () => {
+  assert.deepEqual(preview.setRadarVideo(clip(3)), { ok: true });
+  const shown = preview.renderBuiltin(1, 'scan', 5, { board: 'waveshare' });
+  const r = preview.setRadarVideo({ ...clip(2), w: 64 });
+  assert.equal(r.ok, false); assert.match(r.error, /102/);
+  assert.equal(preview.hasRadarVideo(), true);
+  assert.deepEqual(preview.renderBuiltin(1, 'scan', 5, { board: 'waveshare' }), shown);
+  preview.clearRadarVideo();
+});
+
+test('the Waveshare Scan tab never flips to a demo alert: that belongs to the Alert tab', () => {
+  // The CYD demo raises an alert every other 60-frame block; on the 480x320 engine that is a takeover of the whole screen,
+  // nav bar included. The nav bar (SCAN, DOMAIN, CODEX...) is static, so it must look the same in every frame.
+  const nav = (img) => { const rows = []; for (let y = 285; y < 315; y++) rows.push(Buffer.from(img.slice(4 * (y * 480 + 8), 4 * (y * 480 + 300))).toString('base64')); return rows.join(); };
+  const ref = nav(preview.renderBuiltin(2, 'scan', 10, { board: 'waveshare' }));
+  for (const f of [70, 130, 250, 370]) assert.equal(nav(preview.renderBuiltin(2, 'scan', f, { board: 'waveshare' })), ref, `frame ${f}: a demo alert covers the nav bar`);
+});

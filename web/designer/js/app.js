@@ -17,6 +17,7 @@ import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
 import { installOverSerial, wrapWebSerial, usbSupported, BAUD } from './usbinstall.js';
 import { loadWasm, W, H, BOARDS } from './preview.js';
+import { grabFrames, buildClip } from './radarvideo.js';
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
 const $ = (id) => document.getElementById(id);
@@ -323,7 +324,34 @@ function syncTabs() {
   for (const n of document.querySelectorAll('[data-bt]')) n.textContent = words[n.dataset.bt];
   $('boardbar').hidden = !preview || preview.boards().length < 2;
   $('confs').hidden = !(state.board === 'waveshare' && state.tab === 'alert');   // only the engine UI has LOW/MED/HIGH takeovers
+  $('vidbar').hidden = !(preview && previewBoard() === 'waveshare' && state.tab === 'scan');   // the clip plays in the Waveshare's scan radar
 }
+
+// A video in the Waveshare radar (preview only). The browser decodes it; js/radarvideo.js turns it into the board's format.
+let vidFile = null, vidBusy = false;
+async function loadVideo() {
+  if (!vidFile || vidBusy || !preview) return;
+  vidBusy = true;
+  const msg = $('vid-msg'), url = URL.createObjectURL(vidFile);
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  try {
+    msg.className = 'msg'; msg.textContent = 'Reading the video...';
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('the browser cannot read this video')); });
+    const frames = await grabFrames(v, { vpos: Number($('vid-pos').value) / 100, onProgress: (d, n) => { msg.textContent = `Converting ${d} / ${n} frames...`; } });
+    const r = preview.setRadarVideo(buildClip(frames));
+    if (!r.ok) throw new Error(r.error);
+    msg.textContent = `${frames.length} frames, ${(frames.length / 12).toFixed(1)} s, looping.`;
+    $('vid-clear').hidden = false; t0 = performance.now();
+  } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this video: ' + ((e && e.message) || e); }
+  finally { URL.revokeObjectURL(url); vidBusy = false; }
+}
+$('vid-file').addEventListener('change', (e) => { vidFile = e.target.files[0] || null; loadVideo(); });
+$('vid-pos').addEventListener('change', () => { if (preview && preview.hasRadarVideo()) loadVideo(); });
+$('vid-clear').addEventListener('click', () => {
+  preview.clearRadarVideo(); vidFile = null; $('vid-file').value = ''; $('vid-clear').hidden = true;
+  $('vid-msg').className = 'msg'; $('vid-msg').textContent = '';
+});
 
 let t0 = performance.now(), lastDraw = 0;
 function tick(now) {

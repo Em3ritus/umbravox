@@ -162,6 +162,13 @@ and the designer previews that with the board's own drawing code:
   projection and compositor the firmware runs. `web/designer/test/wasm-parity.test.mjs` holds it to
   the host render byte for byte (built-ins, both sample packs, every sweep, every alert style and
   all three alert levels).
+- **Radar video (preview only).** On the Waveshare Scan tab, **Radar video** takes a video file and plays it in the
+  radar as the board would draw it: cropped to a square (the Crop slider picks which part of a tall video), 102x102,
+  12 frames a second, 16 grey levels, looping, at most 12 seconds, audio dropped. The browser does the conversion; it
+  is not saved with the pack, and a pack cannot carry a clip yet. To put a clip on the board, run
+  `tools/video2radar.py` and build the header it writes (`device/radarvid_data.h`, gitignored) into the firmware;
+  the seal theme then plays it. On a Waveshare the clip costs about 40% of the frame rate while it plays.
+  The Scan tab never shows the demo alert (that is the Alert tab's job).
 - **Dial size does nothing there.** *Compact* and *Large* are CYD layout presets; the Waveshare
   lays its radar out itself. The page says so when the Waveshare is selected.
 - **Gaze and Summon** stay unavailable to packs (they belong to the Baphomet seal), as on the CYD.

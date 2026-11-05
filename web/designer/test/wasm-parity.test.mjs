@@ -337,3 +337,71 @@ test('the Waveshare comparison is not vacuous: screens, themes and frames differ
   const a = wsWasm(0, 'scan', 0, -1, -1, 2);
   assert.ok(new Set(Array.from({ length: WS_W * WS_H }, (_, i) => a[4 * i] << 16 | a[4 * i + 1] << 8 | a[4 * i + 2])).size > 8);
 });
+
+// ---- the radar clip in the Waveshare preview ------------------------------------
+// A synthetic 102x102 clip, loaded through uv_set_video, must draw exactly what the host reference draws with the same bytes.
+import { packLevels, buildClip } from '../js/radarvideo.js';
+
+function syntheticClip(frames = 7) {
+  const fs_ = [];
+  for (let f = 0; f < frames; f++) {
+    const l = new Uint8Array(102 * 102);
+    for (let y = 0; y < 102; y++) for (let x = 0; x < 102; x++)
+      l[y * 102 + x] = (Math.abs(x - (10 + 12 * f)) < 3 || ((x + y + f * 5) % 23 === 0)) ? 15 : (f * 2 + (x >> 4)) % 9;
+    fs_.push(l);
+  }
+  return buildClip(fs_);
+}
+function loadClip(c) {
+  const ptr = M._malloc(c.data.length);
+  try { M.HEAPU8.set(c.data, ptr); return M._uv_set_video(ptr, c.frames, c.w, c.h, c.fps); } finally { M._free(ptr); }
+}
+function clipFile(c) {
+  const f = path.join(tmp, `clip${simN++}.vid`);
+  const h = Buffer.alloc(16); [c.w, c.h, c.frames, c.fps].forEach((v, i) => h.writeInt32LE(v, 4 * i));
+  fs.writeFileSync(f, Buffer.concat([h, Buffer.from(c.data)]));
+  return f;
+}
+function wsSimVideo(k, file) {
+  const out = path.join(tmp, `v${simN++}.rgba`);
+  run(WS_SIM, [String(k.theme), String(WS_SCREEN[k.screen]), String(k.frame), '-1', '-1', '2', out, '--video', file]);
+  return new Uint8Array(fs.readFileSync(out));
+}
+
+test('radar clip: wasm equals the host engine for built-ins, several frames, scan and alert', () => {
+  M._uv_clear_packs();
+  const c = syntheticClip();
+  assert.equal(loadClip(c), 0);
+  const file = clipFile(c);
+  for (const theme of [1, 2]) for (const frame of [0, 3, 7, 40, 133])
+    wsSame(`WS video theme ${theme} frame ${frame}`, wsWasm(theme, 'scan', frame, -1, -1, 2), wsSimVideo({ theme, screen: 'scan', frame }, file));
+  wsSame('WS video under a HIGH alert', wsWasm(2, 'alert', 60, -1, 0, 2), wsSimVideo({ theme: 2, screen: 'alert', frame: 60 }, file));
+  M._uv_clear_video();
+});
+
+test('radar clip: it changes the picture, plays over time, and clears', () => {
+  M._uv_clear_packs();
+  M._uv_clear_video();
+  const none = wsWasm(1, 'scan', 7, -1, -1, 2);
+  assert.equal(loadClip(syntheticClip()), 0);
+  const a = wsWasm(1, 'scan', 7, -1, -1, 2), b = wsWasm(1, 'scan', 7 + 5, -1, -1, 2);
+  assert.notEqual(Buffer.compare(Buffer.from(none), Buffer.from(a)), 0, 'the clip shows');
+  assert.notEqual(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0, 'it advances with the frame counter');
+  const mesh = wsWasm(1, 'mesh', 7, -1, -1, 2);
+  M._uv_clear_video();
+  assert.equal(Buffer.compare(Buffer.from(wsWasm(1, 'scan', 7, -1, -1, 2)), Buffer.from(none)), 0, 'clearing restores the old picture');
+  assert.equal(Buffer.compare(Buffer.from(wsWasm(1, 'mesh', 7, -1, -1, 2)), Buffer.from(mesh)), 0, 'other screens never had it');
+});
+
+test('radar clip: the CYD preview never shows it, and a bad clip is refused', () => {
+  const cyd = () => { const n = W * H * 4, p = M._malloc(n); try { M._uv_render(1, 0, 7, -1, -1, p); return M.HEAPU8.slice(p, p + n); } finally { M._free(p); } };
+  M._uv_clear_video();
+  const before = cyd();
+  assert.equal(loadClip(syntheticClip()), 0);
+  assert.equal(Buffer.compare(Buffer.from(cyd()), Buffer.from(before)), 0);
+  const bad = syntheticClip(2);
+  assert.ok(loadClip({ ...bad, w: 64 }) < 0, 'a wrong size is refused');
+  assert.ok(loadClip({ ...bad, frames: 0 }) < 0, 'no frames is refused');
+  assert.ok(loadClip({ ...bad, frames: 100000 }) < 0, 'an over-size clip is refused');
+  M._uv_clear_video();
+});

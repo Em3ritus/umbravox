@@ -3,6 +3,7 @@
 // it does not touch the DOM, so Node can test it against the simulator.
 import { buildPack } from './pack.js';
 import { sweepId, startSweep } from './model.js';
+import { validateClip } from './radarvideo.js';
 
 // The boards the preview can draw. cyd: the 320x240 screen at half scale (the legacy canvas path). waveshare: the 3.5"
 // 480x320 engine UI at full size (ui/preview_ws.h through uv_render_ws).
@@ -26,6 +27,7 @@ export function createPreview(M) {
   };
 
   const hasWs = typeof M._uv_render_ws === 'function';
+  let hasClip = false;
 
   // opts: {board: 'cyd' (default) | 'waveshare', alertConf: 'low' | 'med' | 'high' (Waveshare only; default high)}.
   function paint(theme, screen, frame, sweep, opts = {}) {
@@ -61,6 +63,19 @@ export function createPreview(M) {
       return { ok: true, id };
     },
     hasDraft: () => draft !== null,
+    // A radar clip (js/radarvideo.js buildClip) drawn in the Waveshare radar, preview only: the CYD never shows it.
+    // {ok:true}, or {ok:false, error} with the previous clip still playing.
+    setRadarVideo(clip) {
+      const why = validateClip(clip);
+      if (why) return { ok: false, error: why };
+      if (typeof M._uv_set_video !== 'function') return { ok: false, error: 'this build of the preview has no video support' };
+      const rc = withBytes(clip.data, (p) => M._uv_set_video(p, clip.frames, clip.w, clip.h, clip.fps));
+      if (rc !== 0) return { ok: false, error: 'the preview refused the clip (' + rc + ')' };
+      hasClip = true;
+      return { ok: true };
+    },
+    clearRadarVideo() { if (typeof M._uv_clear_video === 'function') M._uv_clear_video(); hasClip = false; },
+    hasRadarVideo: () => hasClip,
     // The boards this build of the wasm can draw ('waveshare' needs uv_render_ws).
     boards: () => (hasWs ? ['cyd', 'waveshare'] : ['cyd']),
     // One frame of the current draft as RGBA: 160x120 for the CYD, 480x320 for the Waveshare.

@@ -1,0 +1,81 @@
+// The radar clip: what the designer turns a video into so the Waveshare preview can play it in the radar. The same
+// format the board plays (ui/scan_render.h RadarVideo, made by tools/video2radar.py): 102x102 px, 12 fps, 16 grey
+// levels, two pixels per byte with the high nibble first. This module is pure (no DOM); the browser step that fills
+// frames from a <video> element is `grabFrames`, kept at the bottom.
+export const CLIP_SIZE = 102;
+export const CLIP_FPS = 12;
+export const MAX_BYTES = 786432;                                   // the wasm's clip buffer (bridge.cpp)
+export const FRAME_BYTES = Math.ceil(CLIP_SIZE * CLIP_SIZE / 2);   // 5202
+export const MAX_FRAMES = Math.floor(MAX_BYTES / FRAME_BYTES);     // 151; capped at 150 = 12.5 s
+
+// BT.601 luma of an RGBA buffer (the weights ffmpeg's gray uses), one byte per pixel.
+export function lumaFromRgba(rgba) {
+  const n = rgba.length >> 2, g = new Uint8Array(n);
+  for (let i = 0; i < n; i++) g[i] = Math.round(0.299 * rgba[4 * i] + 0.587 * rgba[4 * i + 1] + 0.114 * rgba[4 * i + 2]);
+  return g;
+}
+
+// Gray (0..255) to 16 levels: `black` becomes 0, `white` becomes 15, clamped.
+export function levelsFromGray(gray, black = 24, white = 235) {
+  if (!(white > black)) throw new Error('the white point must be above the black point');
+  const out = new Uint8Array(gray.length), span = white - black;
+  for (let i = 0; i < gray.length; i++) {
+    const q = Math.min(1, Math.max(0, (gray[i] - black) / span));
+    out[i] = Math.round(q * 15);
+  }
+  return out;
+}
+
+// Two levels per byte, high nibble first; an odd count is padded with a 0 nibble.
+export function packLevels(levels) {
+  const out = new Uint8Array((levels.length + 1) >> 1);
+  for (let i = 0; i < levels.length; i += 2) out[i >> 1] = (levels[i] << 4) | (i + 1 < levels.length ? levels[i + 1] : 0);
+  return out;
+}
+
+// Frames of CLIP_SIZE*CLIP_SIZE levels each -> the clip the wasm takes.
+export function buildClip(frames) {
+  if (!frames.length) throw new Error('no frames');
+  if (frames.length > Math.min(150, MAX_FRAMES)) throw new Error(`too many frames (${frames.length}; at most 150)`);
+  const data = new Uint8Array(frames.length * FRAME_BYTES);
+  frames.forEach((f, k) => {
+    if (f.length !== CLIP_SIZE * CLIP_SIZE) throw new Error(`frame ${k} is the wrong size (${f.length} px)`);
+    data.set(packLevels(f), k * FRAME_BYTES);
+  });
+  return { w: CLIP_SIZE, h: CLIP_SIZE, frames: frames.length, fps: CLIP_FPS, data };
+}
+
+// null when the clip is playable, else why not.
+export function validateClip(c) {
+  if (!c || c.w !== CLIP_SIZE || c.h !== CLIP_SIZE) return `the clip must be ${CLIP_SIZE}x${CLIP_SIZE}`;
+  if (!(c.frames >= 1)) return 'the clip has no frames';
+  if (!(c.fps >= 1 && c.fps <= 30)) return 'the clip fps must be 1 to 30';
+  if (c.data.length !== c.frames * FRAME_BYTES) return `the clip has ${c.data.length} bytes, expected ${c.frames * FRAME_BYTES}`;
+  if (c.data.length > MAX_BYTES) return 'the clip is over the size limit';
+  return null;
+}
+
+// Browser only: seek a <video> through its length at CLIP_FPS, crop a square (full width, `vpos` 0..1 from the top
+// to the bottom of the spare height) and scale it to CLIP_SIZE. Resolves to an array of level frames.
+// onProgress(done, total) is called after each frame. Never touched by the Node tests.
+export async function grabFrames(video, { vpos = 0.5, black = 24, white = 235, maxSeconds = 12, onProgress } = {}) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = CLIP_SIZE;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  const side = Math.min(video.videoWidth, video.videoHeight);
+  const sx = (video.videoWidth - side) / 2, sy = (video.videoHeight - side) * vpos;
+  const secs = Math.min(video.duration, maxSeconds), total = Math.max(1, Math.min(150, Math.floor(secs * CLIP_FPS)));
+  const frames = [];
+  for (let k = 0; k < total; k++) {
+    await new Promise((res, rej) => {
+      const ok = () => { video.removeEventListener('error', bad); res(); };
+      const bad = () => { video.removeEventListener('seeked', ok); rej(new Error('the browser could not read this video')); };
+      video.addEventListener('seeked', ok, { once: true }); video.addEventListener('error', bad, { once: true });
+      video.currentTime = Math.min(video.duration - 0.001, k / CLIP_FPS);
+    });
+    ctx.drawImage(video, sx, sy, side, side, 0, 0, CLIP_SIZE, CLIP_SIZE);
+    frames.push(levelsFromGray(lumaFromRgba(ctx.getImageData(0, 0, CLIP_SIZE, CLIP_SIZE).data), black, white));
+    if (onProgress) onProgress(k + 1, total);
+  }
+  return frames;
+}

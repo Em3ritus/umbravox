@@ -187,4 +187,21 @@ EMSCRIPTEN_KEEPALIVE void uv_render_ws(int theme, int screen, int frame, int swe
     for (int i = 0; i < prevws::W * prevws::H; i++) rgb565ToRgba(px[i], out + 4 * i);
 }
 
+// The radar clip for the Waveshare preview: 4-bit grey frames, two pixels per byte (the format tools/video2radar.py
+// writes and the board plays). One clip at a time, copied in; 102x102 only, to match what the converter makes.
+// Returns 0, or a negative number when refused (the previous clip, if any, stays).
+EMSCRIPTEN_KEEPALIVE int uv_set_video(const unsigned char* data, int frames, int w, int h, int fps) {
+    static uint8_t buf[786432];
+    static scanr::RadarVideo rv;
+    if (!data || w != 102 || h != 102) return -1;
+    if (frames < 1 || fps < 1 || fps > 30) return -2;
+    const long bytes = (long)frames * ((w * h + 1) / 2);
+    if (bytes > (long)sizeof buf) return -3;
+    memcpy(buf, data, (size_t)bytes);
+    rv = scanr::RadarVideo{ w, h, frames, fps, buf };
+    prevws::g_video = &rv;
+    return 0;
+}
+EMSCRIPTEN_KEEPALIVE void uv_clear_video() { prevws::g_video = nullptr; }
+
 } // extern "C"

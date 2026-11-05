@@ -15,6 +15,16 @@ int main(int argc, char** argv) {
         char why[96] = ""; theme = packload::load(argv[9], why, sizeof why);
         if (theme < 0) { std::fprintf(stderr, "pack refused: %s\n", why); return 3; }
     }
+    std::vector<uint8_t> clip; scanr::RadarVideo rv{};       // --video FILE: 4 x int32 LE (w, h, frames, fps), then the packed frames
+    for (int i = 8; i + 1 < argc; i++) if (!std::strcmp(argv[i], "--video")) {
+        FILE* vf = std::fopen(argv[i + 1], "rb"); if (!vf) { std::fprintf(stderr, "cannot open %s\n", argv[i + 1]); return 4; }
+        int32_t hd[4]; if (std::fread(hd, 4, 4, vf) != 4) return 4;
+        clip.resize((size_t)hd[2] * ((hd[0] * hd[1] + 1) / 2));
+        if (std::fread(clip.data(), 1, clip.size(), vf) != clip.size()) return 4;
+        std::fclose(vf);
+        rv = scanr::RadarVideo{ hd[0], hd[1], hd[2], hd[3], clip.data() };
+        prevws::g_video = &rv;
+    }
     prevws::render(theme, atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), px.data());
     const char* out = argv[7]; const size_t n = std::strlen(out);
     if (n > 5 && !std::strcmp(out + n - 5, ".rgba")) {

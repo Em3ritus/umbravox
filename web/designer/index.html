@@ -126,6 +126,17 @@
         </div>
         <div class="screen"><canvas id="preview" width="160" height="120" aria-label="Preview of the device screen"></canvas></div>
         <div id="preview-msg" class="msg" role="status"></div>
+        <div class="vidbar" id="vidbar" hidden>
+          <div class="vidrow">
+            <label class="small" for="vid-file">Radar video <span class="muted">(preview only)</span></label>
+            <input type="file" id="vid-file" accept="video/*">
+            <label class="small" for="vid-pos">Crop</label>
+            <input type="range" id="vid-pos" min="0" max="100" value="50" aria-label="Which part of a tall video fills the radar: top to bottom">
+            <button type="button" id="vid-clear" class="btn" hidden>Remove</button>
+          </div>
+          <div id="vid-msg" class="msg" role="status"></div>
+          <p class="tiny muted">Plays in the Waveshare radar here, at 102x102 and 12 frames a second in 16 greys, as the board would draw it. A theme pack cannot carry a clip yet: to put one on the board, convert it with tools/video2radar.py and build it into the firmware.</p>
+        </div>
         <p class="tiny muted">Runs the real device drawing code, so it is exactly what the panel will show.</p>
       </div>
       <div class="card">
