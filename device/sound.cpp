@@ -17,6 +17,7 @@ constexpr uint8_t CODEC = 0x18;
 constexpr int AMPS[4] = {0, 4500, 12000, 22000};  // sample peak of 32767, per Settings::sound
 constexpr int CODEC_VOLUME = 70;                 // percent
 std::atomic<bool> busy{false};
+std::atomic<bool> reading{false};                  // true while the task renders from a pack's samples (Req::pcm)
 
 bool wr(uint8_t reg, uint8_t v) { Wire.beginTransmission(CODEC); Wire.write(reg); Wire.write(v); return Wire.endTransmission() == 0; }
 bool rd(uint8_t reg, uint8_t& v) {
@@ -85,6 +86,7 @@ bool session() {
             const Req req = takeReq();
             if (req.level >= 0) {
                 const int level = req.level, amp = AMPS[req.vol & 3];
+                reading.store(req.pcm != nullptr);
                 for (int at = 0;;) {
                     const int n = req.pcm ? alerttone::renderPcm(req.pcm, req.n, at, pcm, 128, amp) : alerttone::render(level, at, pcm, 128, amp);
                     if (n <= 0) break;
@@ -93,6 +95,7 @@ bool session() {
                     if (i2s_channel_write(tx, frame, (size_t)n * 8, &w, 200) != ESP_OK) break;
                     at += n;
                 }
+                reading.store(false);
                 idleSince = millis();
             } else {
                 if ((int32_t)(millis() - idleSince) > LINGER_MS) break;
@@ -120,6 +123,10 @@ void task(void*) {
 } // namespace
 
 namespace sound {
+bool playing() {
+    portENTER_CRITICAL(&reqMux); const bool queued = pendingReq.level >= 0 && pendingReq.pcm != nullptr; portEXIT_CRITICAL(&reqMux);
+    return reading.load() || queued;
+}
 void alert(uint8_t conf, uint16_t volume, const int16_t* pcm, uint32_t n) {
     if (volume == 0) return;
     Req r; r.level = conf > 2 ? 2 : conf; r.vol = volume > 3 ? 3 : volume; r.pcm = n ? pcm : nullptr; r.n = n;
@@ -133,5 +140,5 @@ void alert(uint8_t conf, uint16_t volume, const int16_t* pcm, uint32_t n) {
 }
 }
 #else
-namespace sound { void alert(uint8_t, uint16_t, const int16_t*, uint32_t) {} }
+namespace sound { void alert(uint8_t, uint16_t, const int16_t*, uint32_t) {} bool playing() { return false; } }
 #endif

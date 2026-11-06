@@ -3,9 +3,14 @@
 // Everything a pack decides goes through ui/themepack (host-tested): this file
 // lists, measures and reads files, backs the boot-loop guard's GuardKv with
 // Preferences, and hands parsed packs to pal::addPack. Every buffer is fixed:
-// the folder list, the theme.json buffer, and at most MAX_PACKS emblem buffers
-// of MAX_EMBLEM bytes each in PSRAM, and at most MAX_CLIPS radar clips, each allocated at its measured size (already
-// checked against MAX_CLIP) in PSRAM. Nothing else is sized from a file.
+// the folder list, the theme.json buffer, at most MAX_PACKS emblem buffers of MAX_EMBLEM bytes each in PSRAM, and ONE
+// radar clip buffer (MAX_CLIP) and ONE alert sound buffer (MAX_SOUND) in PSRAM. Nothing else is sized from a file.
+//
+// A pack's radar.vid and alert.snd are NOT read at boot: scan() registers the pack (theme.json, emblem) and remembers
+// where its clip and sounds are. tick() reads them from the card when the pack's theme is selected, into the two fixed
+// buffers, and drops them when another theme is selected (the decisions are packmedia::Controller, host-tested). So the
+// card can hold more packs than PSRAM could hold clips. That read is bracketed by the same boot-loop guard record as a
+// boot-time load: a reset during it skips the pack on the next boot.
 //
 // Buffer capacities are never passed by hand: every helper that fills a
 // buffer takes it as an array reference (char (&)[N]) and derives N itself,
@@ -25,6 +30,8 @@
 #include "elog.h"
 #include "palette.h"
 #include "themepack.h"
+#include "packmedia.h"
+#include "sound.h"
 
 namespace themeload {
 namespace {
@@ -69,14 +76,17 @@ Scratch* S = nullptr;
 Emblem      emblems[MAX_PACKS];
 uint8_t*    spare = nullptr;
 
-// Radar clips (radar.vid). pal::addPack keeps the Clip POINTER and Clip::px points into the PSRAM buffer, so both live
-// for the whole program. At most MAX_CLIPS: 2 x 780 KB is what PSRAM can spare.
-Clip        clips[MAX_CLIPS];
-int         nClips = 0;
-// Alert sounds (alert.snd), kept the same way: pal::addPack keeps the Sound POINTER and its samples live in a PSRAM
-// buffer for the whole program. At most MAX_SOUNDS sets.
-Sound       sounds[MAX_SOUNDS];
-int         nSounds = 0;
+// Where each registered pack's clip and sounds are, by pack slot (pal::packSlot). PSRAM, allocated by scan(): they are
+// read only when a theme is selected.
+struct PackMedia { char folder[32]; uint32_t clipSz, sndSz, total; uint8_t id; };
+PackMedia* media = nullptr;
+packmedia::Controller<MAX_PACKS> ctl;        // which pack's media is resident, and when to swap (host-tested)
+// The one resident pack's media. pal keeps the Clip/Sound POINTERS, and px / pcm point into these buffers, which are
+// allocated at the first load and then reused (never freed: no PSRAM fragmentation), each at its format's maximum size.
+uint8_t*    clipBuf = nullptr;
+uint8_t*    sndBuf = nullptr;
+Clip        clipNow;
+Sound       sndNow;
 
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
@@ -197,45 +207,52 @@ const Emblem* loadEmblem(const char* folder, uint32_t size, char (&why)[WHY_CAP]
     return &e;
 }
 
-// radar.vid: read whole into its own PSRAM buffer, then validated by themepack::parseClip. Null with `why` set on any
-// failure (the buffer is freed); on success the buffer and its slot belong to the pack, to be released by
-// releaseClip() if the pack is then refused.
-const Clip* loadClip(const char* folder, uint32_t size, char (&why)[WHY_CAP], uint8_t*& buf) {
-    buf = nullptr;
-    if (nClips >= MAX_CLIPS) { setWhy(why, "no room for another clip (%d at most)", MAX_CLIPS); return nullptr; }
-    if (size > MAX_CLIP) { setWhy(why, "radar.vid over %u bytes", (unsigned)MAX_CLIP); return nullptr; }
-    buf = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-    if (!buf) { setWhy(why, "no PSRAM for radar.vid"); return nullptr; }
+// radar.vid into the clip buffer, then validated by themepack::parseClip. False with `why` set on any failure.
+bool readClip(const PackMedia& m, char (&why)[WHY_CAP]) {
+    if (m.clipSz > MAX_CLIP) { setWhy(why, "radar.vid over %u bytes", (unsigned)MAX_CLIP); return false; }
+    if (!clipBuf) clipBuf = (uint8_t*)heap_caps_malloc(MAX_CLIP, MALLOC_CAP_SPIRAM);
+    if (!clipBuf) { setWhy(why, "no PSRAM for radar.vid"); return false; }
     char path[PATH_CAP];
-    const uint32_t n = pathOf(path, folder, "radar.vid") ? sdlog::readFile(path, buf, size) : 0;
-    if (n != size) { setWhy(why, "radar.vid could not be read"); heap_caps_free(buf); buf = nullptr; return nullptr; }
-    Clip& c = clips[nClips];                 // the slot the next admitted clip takes
+    const uint32_t n = pathOf(path, m.folder, "radar.vid") ? sdlog::readFile(path, clipBuf, m.clipSz) : 0;
+    if (n != m.clipSz) { setWhy(why, "radar.vid could not be read"); return false; }
     char cwhy[48];
-    if (!parseClip(buf, n, c, cwhy, capOf(cwhy))) {
-        setWhy(why, "%s", cwhy);             // already names radar.vid
-        heap_caps_free(buf); buf = nullptr;
-        return nullptr;
-    }
-    return &c;
+    if (!parseClip(clipBuf, n, clipNow, cwhy, capOf(cwhy))) { setWhy(why, "%s", cwhy); return false; }   // already names radar.vid
+    return true;
 }
 
-// alert.snd: the same, into its own PSRAM buffer, validated by themepack::parseSound.
-const Sound* loadSound(const char* folder, uint32_t size, char (&why)[WHY_CAP], uint8_t*& buf) {
-    buf = nullptr;
-    if (nSounds >= MAX_SOUNDS) { setWhy(why, "no room for more alert sounds (%d sets at most)", MAX_SOUNDS); return nullptr; }
-    if (size > MAX_SOUND) { setWhy(why, "alert.snd over %u bytes", (unsigned)MAX_SOUND); return nullptr; }
-    buf = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-    if (!buf) { setWhy(why, "no PSRAM for alert.snd"); return nullptr; }
+// alert.snd into the sound buffer, validated by themepack::parseSound.
+bool readSound(const PackMedia& m, char (&why)[WHY_CAP]) {
+    if (m.sndSz > MAX_SOUND) { setWhy(why, "alert.snd over %u bytes", (unsigned)MAX_SOUND); return false; }
+    if (!sndBuf) sndBuf = (uint8_t*)heap_caps_malloc(MAX_SOUND, MALLOC_CAP_SPIRAM);
+    if (!sndBuf) { setWhy(why, "no PSRAM for alert.snd"); return false; }
     char path[PATH_CAP];
-    const uint32_t n = pathOf(path, folder, "alert.snd") ? sdlog::readFile(path, buf, size) : 0;
-    if (n != size) { setWhy(why, "alert.snd could not be read"); heap_caps_free(buf); buf = nullptr; return nullptr; }
-    Sound& s = sounds[nSounds];
+    const uint32_t n = pathOf(path, m.folder, "alert.snd") ? sdlog::readFile(path, sndBuf, m.sndSz) : 0;
+    if (n != m.sndSz) { setWhy(why, "alert.snd could not be read"); return false; }
     char swhy[48];
-    if (!parseSound(buf, n, s, swhy, capOf(swhy))) { setWhy(why, "%s", swhy); heap_caps_free(buf); buf = nullptr; return nullptr; }
-    return &s;
+    if (!parseSound(sndBuf, n, sndNow, swhy, capOf(swhy))) { setWhy(why, "%s", swhy); return false; }
+    return true;
 }
 
-bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, char (&why)[WHY_CAP]) {
+// Read a pack's clip and sounds into the two buffers, inside the boot-loop guard (the record is what a reset during the
+// read leaves behind, and what the next boot's guardBoot turns into "skip this pack"). A file that cannot be used is
+// logged and left out; true if at least one of the pack's files was loaded.
+bool loadMedia(const PackMedia& m, bool& gotClip, bool& gotSnd) {
+    gotClip = gotSnd = false;
+    char safe[32];
+    logSafe(safe, m.folder);
+    char rec[BAD_REC];
+    formatLoading(rec, capOf(rec), m.folder, m.total);
+    if (!nvs.begin(NS, /*readOnly=*/false)) { elog::event(elog::WARN, "theme", "%s: media not loaded, NVS unavailable", safe); return false; }
+    if (!guardSet(KV, cur, rec)) { nvs.end(); elog::event(elog::WARN, "theme", "%s: media not loaded, could not set the guard", safe); return false; }
+    char why[WHY_CAP] = "";
+    if (m.clipSz) { gotClip = readClip(m, why); if (!gotClip) elog::event(elog::WARN, "theme", "%s: radar clip not used: %s", safe, why); }
+    if (m.sndSz)  { gotSnd  = readSound(m, why); if (!gotSnd)  elog::event(elog::WARN, "theme", "%s: alert sounds not used: %s", safe, why); }
+    guardClear(KV, cur);                     // read (or cleanly refused): nothing in flight
+    nvs.end();
+    return gotClip || gotSnd;
+}
+
+bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, uint32_t packTotal, char (&why)[WHY_CAP]) {
     static_assert(std::extent<std::remove_reference_t<decltype(std::declval<Scratch&>().buf.json)>>::value
                   == MAX_JSON, "theme.json buffer");
     char path[PATH_CAP];
@@ -252,26 +269,24 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_
     const Emblem* em = nullptr;
     if ((p.centre == CENTRE_EMBLEM || p.centre == CENTRE_RADAR_EMBLEM) && !(em = loadEmblem(folder, es, why))) return false;
 
-    uint8_t* clipBuf = nullptr;
-    const Clip* clip = nullptr;
-    if (cs > 0 && !(clip = loadClip(folder, cs, why, clipBuf))) return false;
-    uint8_t* sndBuf = nullptr;
-    const Sound* snd = nullptr;
-    if (ss > 0 && !(snd = loadSound(folder, ss, why, sndBuf))) { if (clipBuf) heap_caps_free(clipBuf); return false; }
-
     const Admit a = admit(folder, p, taken, nTaken);
-    if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); if (clipBuf) heap_caps_free(clipBuf); if (sndBuf) heap_caps_free(sndBuf); return false; }
+    if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); return false; }
 
     Pack probe = p;                          // addPack sanitises its own copy
     if (sanitizeStatus(probe))
         elog::event(elog::WARN, "theme", "%s: status colours too faint, replaced", folder);
-    const int id = pal::addPack(p, em, clip, snd);
-    if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); if (clipBuf) heap_caps_free(clipBuf); if (sndBuf) heap_caps_free(sndBuf); return false; }
-    if (snd) nSounds++;
-    if (clip) nClips++;                      // that buffer and slot now belong to the pack
+    const int id = pal::addPack(p, em);      // no clip or sounds yet: tick() attaches them when this theme is selected
+    if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); return false; }
+    const int slot = pal::packSlot((uint8_t)id);
+    if (media && slot >= 0 && (cs > 0 || ss > 0)) {
+        PackMedia& m = media[slot];
+        snprintf(m.folder, sizeof m.folder, "%s", folder);
+        m.clipSz = cs; m.sndSz = ss; m.total = packTotal; m.id = (uint8_t)id;
+        ctl.setHasMedia(slot, true);
+    }
     taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
-    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s%s", folder, p.name, id, clip ? " with a radar clip" : "", snd ? " with alert sounds" : "");
+    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s%s", folder, p.name, id, cs ? " with a radar clip" : "", ss ? " with alert sounds" : "");
     return true;
 }
 
@@ -292,7 +307,7 @@ void visit(int i) {
     formatLoading(rec, capOf(rec), folder, total);
     if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
     char why[WHY_CAP] = "unknown";
-    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], why);
+    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], total, why);
     guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }
@@ -311,6 +326,10 @@ void scan() {
         return;
     }
     S = new (p) Scratch();
+    if (!media) {                             // PSRAM, one entry per pack slot; without it packs load but carry no clip or sounds
+        media = (PackMedia*)heap_caps_calloc(MAX_PACKS, sizeof(PackMedia), MALLOC_CAP_SPIRAM);
+        if (!media) elog::event(elog::WARN, "theme", "no PSRAM for the pack media table: clips and sounds disabled");
+    }
     scanWith();
     S->~Scratch();
     heap_caps_free(p);
@@ -347,5 +366,32 @@ void scanWith() {
 }
 
 uint8_t skipped() { return nSkipped; }
+
+void tick(uint8_t themeId, uint32_t nowMs, bool immediate) {
+    if (!media) return;
+    ctl.want(pal::packSlot(themeId), nowMs, immediate);
+    for (int step = 0; step < 2; step++) {           // a switch is an UNLOAD then a LOAD: do both in one call
+        const packmedia::Step st = ctl.next(nowMs);
+        if (st.kind == packmedia::Step::NOTHING) return;
+        if (sound::playing()) return;                // its samples are in the buffer about to be replaced: next frame
+        const PackMedia& m = media[st.slot];
+        if (st.kind == packmedia::Step::UNLOAD) {
+            pal::setPackMedia(m.id, nullptr, nullptr);
+            ctl.done(st, true);
+            continue;
+        }
+        const uint32_t t0 = millis();
+        bool gotClip = false, gotSnd = false;
+        const bool ok = loadMedia(m, gotClip, gotSnd);
+        if (ok) {
+            pal::setPackMedia(m.id, gotClip ? &clipNow : nullptr, gotSnd ? &sndNow : nullptr);
+            char safe[32];
+            logSafe(safe, m.folder);
+            elog::event(elog::INFO, "theme", "%s: media loaded in %u ms (clip %u B, sounds %u B)", safe,
+                        (unsigned)(millis() - t0), (unsigned)(gotClip ? m.clipSz : 0), (unsigned)(gotSnd ? m.sndSz : 0));
+        }
+        ctl.done(st, ok);
+    }
+}
 
 } // namespace themeload

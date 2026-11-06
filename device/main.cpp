@@ -1031,6 +1031,10 @@ static capturepaths::ActiveFiles activeCaptureFiles(){
  return a;
 }
 
+// THEME <n>: a development aid (like TEST and PERF): ask for theme n as if it had been picked in Settings. The draw path
+// applies it (it owns the settings); not saved. Lets a pack's load-on-select be exercised from the host.
+static volatile int consoleTheme = -1;
+
 // Returns true when REBOOT was received (loop() restarts the board).
 bool pollConsole() {
     static sdcmd::LineBuf lb;
@@ -1093,6 +1097,10 @@ bool pollConsole() {
                 Serial.printf("discovery: busy=%u started=%lu completed=%lu failed=%lu omitted=%lu\n",(unsigned)discovery::busy(),(unsigned long)m.started,(unsigned long)m.completed,(unsigned long)m.failed,(unsigned long)m.omitted);
             } else if (!strcmp(line,"BRIDGE")) {
                 Serial.printf("bridge: %s\n",blebridge::status());
+            } else if (!strncmp(line, "THEME", 5)) {
+                const int n = atoi(line + 5);
+                if (n >= 0 && n < pal::themeCount()) { consoleTheme = n; Serial.printf("theme %d requested (%s)\n", n, pal::themeName((uint8_t)n)); }
+                else Serial.printf("THEME 0..%d\n", pal::themeCount() - 1);
             } else if (!strncmp(line, "TEST", 4)) {
                 testStep = 0;
                 testAt   = millis();
@@ -1595,10 +1603,12 @@ void loop() {
         // the first navTouch runs before the draw-time apply below. Same
         // task, before any draw, so this is safe.
         pal::setTheme(set.theme);
+        themeload::tick(set.theme, millis(), true);   // the saved theme's clip and sounds, before the first frame
         mesh::netId = prefs::netId(mesh::netId);   // NVS overrides the build default
         Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::netId,
                       mesh::netId == 0 ? " (open -- ENROLL to make a private net)" : "");
     }
+    if (consoleTheme >= 0) { set.theme = (uint8_t)consoleTheme; consoleTheme = -1; }   // THEME <n> from the console
 
     // tp was read at the TOP of the loop (before GPS/render); consumed here.
 
@@ -2112,6 +2122,7 @@ void loop() {
     // edits `set`; the change takes effect here, at the top of the next draw.
     static uint8_t lastTheme = 0xFF;
     bool themeChanged = false;
+    themeload::tick(s.set.theme, millis());       // a pack's clip and sounds are read once its theme has stayed selected
     if (lastTheme != s.set.theme) {
         pal::setTheme(s.set.theme);
         lastTheme = s.set.theme;

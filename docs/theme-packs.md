@@ -20,7 +20,7 @@ palettes keep **UMBRAVOX** as the header; Appearance still shows each palette's
 name. Crew themes retain their individual mastheads.
 
 Existing built-in IDs 0–7 are unchanged; the six new palettes occupy IDs 8–13.
-The eight-slot SD pack/override limit is separate from the built-in count and
+The twelve-slot SD pack/override limit is separate from the built-in count and
 has not increased. All bundled palettes remain available even when that SD
 limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
 
@@ -126,9 +126,10 @@ bytes 8-19  sample counts for LOW, MED, HIGH (three u32 little-endian, each 0 to
 then        the 16-bit little-endian mono samples of LOW, MED, HIGH, back to back
 ```
 
-The length must match the counts exactly. A file that fails any check skips the **whole pack** (the reason is in
-`/diag.log`), like a bad `radar.vid`. The board keeps at most two sound sets in PSRAM (the first two packs that have
-one, by folder name), and the file's size counts in the boot-loop guard's total. The ALERT SOUND setting (Settings,
+The length must match the counts exactly. A file that fails any check is not used: the pack still loads, without its
+sounds, and `/diag.log` says why when its theme is selected ("alert sounds not used: ..."); `sim/umbravox --check-pack`
+reports the same problem up front. The sounds are read from the card when the pack's theme is selected, not at boot, so
+any number of packs may carry them; the file's size counts in the boot-loop guard's total. The ALERT SOUND setting (Settings,
 recording tab: OFF, QUIET, NORMAL, LOUD) scales a pack's sounds as it scales the built-in beeps; NORMAL plays the
 samples as stored, so the designer normalizes each sound to 70% of full scale.
 
@@ -172,7 +173,7 @@ These numbers are the same ones the device and the designer use
 
 | what | limit |
 |---|---|
-| packs the device loads | 8 (the first 8 by folder name) |
+| packs the device loads | 12 (the first 12 by folder name) |
 | folders examined under `/themes` | 32 (the first 32 by name); further folders are not read, but are logged to `/diag.log` and counted as skipped. Folders with invalid names are also logged and counted. |
 | folder name | 1-31 letters, digits, `-` or `_`; anything else is skipped |
 | `name` | 20 characters, unique, not one of the four reserved names. The settings screen shows only the first 12, so two long names that start the same look identical there (the designer warns). |
@@ -180,8 +181,8 @@ These numbers are the same ones the device and the designer use
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
-| `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; 2 clips held at once |
-| `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; 2 sound sets held at once |
+| `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
+| `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; read from the card when the pack's theme is selected (one set in memory at a time) |
 | whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
 
@@ -379,14 +380,22 @@ can delete or reboot.
 - Packs are read once, at **boot**, after the card mounts. After adding, changing or
   removing a pack, reboot.
 - Folders are read in sorted name order. The first 32 folders are examined; of those,
-  the first 8 valid packs load. A pack that fails any rule is skipped whole, never
+  the first 12 valid packs load. A pack that fails any rule is skipped whole, never
   partly applied.
 - Packs appear in the THEME picker on ASPECT after the built-ins. The choice is saved
   by name, so adding or removing other packs does not change what is selected.
 - If the non-volatile storage (NVS) is unavailable, no packs load, because the boot-loop guard cannot be kept; this is logged.
 - If the saved pack is missing or invalid at boot, the device falls back to UMBRAVOX.
-- Every admitted emblem is held in memory for the session (at most 8 packs, 76 KB of
-  emblem data), so switching themes does not read the card.
+- Every admitted emblem is held in memory for the session (at most 12 packs, 114 KB of
+  emblem data). A pack's radar clip and alert sounds are NOT: they are read from the card when its theme is selected
+  (see "Clip and sounds load on select" below).
+- **Clip and sounds load on select.** At boot the device reads only each pack's `theme.json` and emblem. When a pack's
+  theme has stayed selected for 0.4 s (so stepping through the theme list loads nothing), its `radar.vid` and `alert.snd`
+  are read into memory and the previous pack's are dropped; the saved theme's are read at boot. Only one pack's clip and
+  sounds are in memory at a time, so the number of packs with a clip is limited only by the 12-pack cap. Reading takes
+  about 2 seconds for a large pack (roughly 460 KB/s) and the screen waits for it; until then the theme shows without video
+  and with the built-in beeps. If an alert sound is playing, the switch waits for it to finish. A clip or sound that cannot
+  be used is logged and left out; the pack still works without it.
 - Skipped packs are logged to `/diag.log` with the reason. ASPECT shows the count: the
   words `N SKIPPED` to the left of the dial preview and `DIAG LOG` to the right of it.
 - **Boot-loop guard.** Before loading a pack the device records its folder and size in
@@ -395,7 +404,8 @@ can delete or reboot.
   boot, and the failure is logged. Editing the pack so its size changes gives it another
   try. Removing the folder does too, but only after the device has completed one boot
   with the folder absent: a same-size pack put straight back stays on the list. The guard
-  covers loading only. A pack that crashes the loader is skipped on the next boot; a pack
+  covers loading only: at boot, and again when a pack's clip and sounds are read on selecting its theme. A pack that
+  crashes the loader is skipped on the next boot; a pack
   that loads fine but faults later, when drawn, is not covered (see Troubleshooting).
 - The Baphomet seal's own sweeps and rite are not in packs; alerts always show.
 
@@ -407,7 +417,7 @@ there but is folded into item 4 here, and the USB route entries appear in both.
 
 1. **Reboot.** A new or changed pack needs a reboot to appear. The device reads the SD
    card at boot only.
-2. **Eight packs.** At most 8 packs load, chosen as the first 8 by folder name, and only
+2. **Twelve packs.** At most 12 packs load, chosen as the first 12 by folder name, and only
    the first 32 folders (by name) are examined at all. Folder names are letters,
    digits, `-` and `_` only. A theme name must be unique and cannot be UMBRAVOX,
    BAPH0MAU5, CVLT OF BAPH0MAU5 or COSMIC MUFFIN; otherwise that pack is skipped.
@@ -481,12 +491,12 @@ rule is applied to the last path component and `.` is not a valid folder name.
 
 | symptom | likely cause |
 |---|---|
-| The pack is not in the THEME picker | You did not reboot; the folder is not directly under `/themes`; it is beyond the first 8 packs or first 32 folders by name; or it was skipped (check ASPECT for `N SKIPPED` and `/diag.log`). |
+| The pack is not in the THEME picker | You did not reboot; the folder is not directly under `/themes`; it is beyond the first 12 packs or first 32 folders by name; or it was skipped (check ASPECT for `N SKIPPED` and `/diag.log`). |
 | `N SKIPPED` shows on ASPECT | Read `/diag.log` for the reason. Run `sim/umbravox --check-pack <folder>` for the same message. |
 | Skipped: duplicate or reserved name | The `name` is already used by an earlier pack or is one of the four reserved names. |
 | Skipped: name, header or author | A double quote, a backslash, or a character outside the allowed set. |
 | Skipped: emblem | `centrepiece` is `emblem` but `emblem.bin` is missing, too big, over 96x96 or over 16 colours. |
-| Skipped: radar.vid | `radar.vid` is not a valid clip (wrong header, not 102x102, length not matching its frames), over 780,312 bytes, or two other packs already hold the two clips the board has room for. |
+| Skipped: radar.vid | `radar.vid` is over 780,312 bytes. (A clip that is malformed, not 102x102 or the wrong length does not skip the pack: it loads without video, and `/diag.log` says "radar clip not used: ..." when its theme is selected.) |
 | Skipped: missing sweeps or colors | `sweeps` or one of the 20 colours is missing or malformed. |
 | Colours look different from the design | RGB565 rounding, or a status or alert-edge colour was replaced for contrast. |
 | The device went back to UMBRAVOX | The saved pack was renamed, removed or skipped. Select it again. |

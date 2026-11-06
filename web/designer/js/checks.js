@@ -116,7 +116,7 @@ export function runChecks(theme, emblem, clip = null, sounds = null) {
     if (bad) out.push(error('Radar video: ' + bad + '.'));
     else {
       out.push(ok('Radar video: ' + clip.frames + ' frames, ' + (clip.frames / clip.fps).toFixed(1) + ' s, ' + Math.round((12 + (clip.palette ? 32 : 0) + clip.data.length) / 1024) + ' KB, ' + (clip.palette ? 'in its own colours' : "in the theme's colours") + '. Only the Waveshare plays it; the CYD ignores it.'));
-      out.push(warn('Over USB a radar video takes minutes to send (a card reader is instant); the board keeps at most ' + limits.MAX_CLIPS + ' clips in memory, the first ones by folder name.'));
+      out.push(warn('Over USB a radar video takes minutes to send (a card reader is instant); the board reads a pack\'s clip from the card when you select its theme, which takes about two seconds.'));
     }
   }
 
@@ -126,7 +126,7 @@ export function runChecks(theme, emblem, clip = null, sounds = null) {
     else {
       const part = (k, pcm) => k + ' ' + (pcm && pcm.length ? soundSeconds(pcm).toFixed(1) + ' s' : 'built-in');
       const bytes = SND_HEADER + 2 * ['low', 'med', 'high'].reduce((n, k) => n + (sounds[k] ? sounds[k].length : 0), 0);
-      out.push(ok('Alert sounds: ' + part('LOW', sounds.low) + ', ' + part('MED', sounds.med) + ', ' + part('HIGH', sounds.high) + ' (' + Math.round(bytes / 1024) + ' KB). Only the Waveshare has a speaker; the CYD ignores them. The board keeps at most ' + limits.MAX_SOUNDS + ' sound sets in memory, the first ones by folder name.'));
+      out.push(ok('Alert sounds: ' + part('LOW', sounds.low) + ', ' + part('MED', sounds.med) + ', ' + part('HIGH', sounds.high) + ' (' + Math.round(bytes / 1024) + ' KB). Only the Waveshare has a speaker; the CYD ignores them. The board reads a pack\'s sounds from the card when you select its theme.'));
     }
   }
 
