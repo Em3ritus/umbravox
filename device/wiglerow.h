@@ -1,5 +1,5 @@
 // One WigleWifi-1.6 row, WiFi or BLE. Pure (csv.h only), so the bytes are
-// pinned on the host (sim/test_wiglerow.cpp, against synthetic fixtures)
+// pinned on the host (sim/test_wiglerow.cpp, against golden WigleWifi-1.6 rows)
 // and the SD append path and the console WIGLE dump cannot drift apart.
 //
 // snprintf into the caller's buffer rather than Print::printf: that mallocs

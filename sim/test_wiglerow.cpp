@@ -1,8 +1,8 @@
 // Host test for the WiGLE row formatters (device/wiglerow.h), shared by the
-// SD append path and the console WIGLE dump. The golden rows below are
-// synthetic fixtures: made-up MACs, SSIDs and coordinates chosen to exercise
-// the format's edge cases (2.4/5 GHz, comma-in-SSID quoting, hidden SSID, BLE,
-// worst-case buffer), so the append logger must produce the same bytes.
+// SD append path and the console WIGLE dump. Golden rows use synthetic values
+// (made-up MACs, SSIDs, times and coordinates) in the exact WigleWifi-1.6 column
+// layout the old whole-file exporter wrote, so the append logger must produce
+// the same bytes for the same data.
 #include "../device/wiglerow.h"
 #include <stdio.h>
 #include <string.h>
@@ -15,43 +15,43 @@ static void check(const char* what, bool ok) {
 
 int main() {
     char buf[256];
-    printf("WiFi rows match the golden fixtures byte for byte:\n");
+    printf("WiFi rows match the field CSV byte for byte:\n");
     {
         const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
-        // 2026-10-23 18:37:21 UTC
-        const int n = wiglerow::wifi(buf, sizeof buf, m, "TESTNET-2G", "[WPA2-PSK-CCMP][ESS]",
-                                     1792780641u, 4, -88, 111111100, -222222200);
-        check("WPA2 2.4 GHz row", strcmp(buf, "02:00:00:00:00:01,\"TESTNET-2G\",[WPA2-PSK-CCMP][ESS],"
-              "2026-10-23 18:37:21,4,2427,-88,11.1111100,-22.2222200,0,30,,,WIFI\n") == 0);
+        // 2026-01-01 00:00:00 UTC
+        const int n = wiglerow::wifi(buf, sizeof buf, m, "TESTNET-A", "[WPA2-PSK-CCMP][ESS]",
+                                     1767225600u, 4, -88, 123456789, -987654321);
+        check("TESTNET-A row", strcmp(buf, "02:00:00:00:00:01,\"TESTNET-A\",[WPA2-PSK-CCMP][ESS],"
+              "2026-01-01 00:00:00,4,2427,-88,12.3456789,-98.7654321,0,30,,,WIFI\n") == 0);
         check("length returned", n == (int)strlen(buf));
     }
     {
         const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02};
         wiglerow::wifi(buf, sizeof buf, m, "TESTNET-5G", "[WPA2-PSK-CCMP][ESS]",
-                       1793044703u, 36, -80, 333333300, -444444400);
+                       1767229261u, 36, -80, 123456800, -987654400);
         check("5 GHz row (channel 36 -> 5180)", strcmp(buf, "02:00:00:00:00:02,\"TESTNET-5G\","
-              "[WPA2-PSK-CCMP][ESS],2026-10-26 19:58:23,36,5180,-80,33.3333300,-44.4444400,0,30,,,WIFI\n") == 0);
+              "[WPA2-PSK-CCMP][ESS],2026-01-01 01:01:01,36,5180,-80,12.3456800,-98.7654400,0,30,,,WIFI\n") == 0);
     }
     {
         const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x03};
-        wiglerow::wifi(buf, sizeof buf, m, "TEST,NET", "[OPEN][ESS]",
-                       1793045046u, 6, -97, 123456700, -765432100);
-        check("SSID with a comma stays quoted", strcmp(buf, "02:00:00:00:00:03,\"TEST,NET\","
-              "[OPEN][ESS],2026-10-26 20:04:06,6,2437,-97,12.3456700,-76.5432100,0,30,,,WIFI\n") == 0);
+        wiglerow::wifi(buf, sizeof buf, m, "Test,Net,", "[OPEN][ESS]",
+                       1767312045u, 6, -97, 123457000, -987655000);
+        check("SSID with a comma stays quoted", strcmp(buf, "02:00:00:00:00:03,\"Test,Net,\","
+              "[OPEN][ESS],2026-01-02 00:00:45,6,2437,-97,12.3457000,-98.7655000,0,30,,,WIFI\n") == 0);
     }
     {
         const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x04};
         wiglerow::wifi(buf, sizeof buf, m, "", "[WPA3-SAE-CCMP][ESS]",
-                       1793044702u, 6, -93, 100000000, -100000000);
+                       1767232801u, 6, -93, 123456790, -987654330);
         check("hidden network: empty quoted SSID", strcmp(buf, "02:00:00:00:00:04,\"\","
-              "[WPA3-SAE-CCMP][ESS],2026-10-26 19:58:22,6,2437,-93,10.0000000,-10.0000000,0,30,,,WIFI\n") == 0);
+              "[WPA3-SAE-CCMP][ESS],2026-01-01 02:00:01,6,2437,-93,12.3456790,-98.7654330,0,30,,,WIFI\n") == 0);
     }
     printf("BLE row keeps the WigleWifi-1.6 column set:\n");
     {
         const uint8_t m[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x05};
-        wiglerow::ble(buf, sizeof buf, m, "TESTTAG", 1793044702u, -71, 100000000, -100000000);
-        check("BLE row", strcmp(buf, "02:00:00:00:00:05,\"TESTTAG\",Misc [LE],2026-10-26 19:58:22,"
-              "0,0,-71,10.0000000,-10.0000000,0,30,,,BLE\n") == 0);
+        wiglerow::ble(buf, sizeof buf, m, "Tile", 1767232801u, -71, 123456790, -987654330);
+        check("BLE row", strcmp(buf, "02:00:00:00:00:05,\"Tile\",Misc [LE],2026-01-01 02:00:01,"
+              "0,0,-71,12.3456790,-98.7654330,0,30,,,BLE\n") == 0);
     }
     printf("worst case fits applog's row buffer:\n");
     {
