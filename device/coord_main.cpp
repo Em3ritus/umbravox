@@ -278,6 +278,7 @@ void report() {
         b.seq     = seq++;
         b.lossPct = loss;
         b.count   = (uint8_t)n;
+        { const int carried = meshcore::count(); b.nodes = (uint8_t)(carried > 255 ? 255 : carried); }
         for (int i = 0; i < n; i++) {
             b.recs[i] = batch[i];
             const uint32_t age = sendAt - batchAt[i];

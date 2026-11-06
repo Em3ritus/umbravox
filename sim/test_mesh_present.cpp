@@ -44,6 +44,10 @@ int main(){
         expect(meshNavigate(2,1,4)==MESH_NETWORK_PAGE && meshNavigate(MESH_NETWORK_PAGE,1,4)==0,"Network toggles independently");
 
     }
+    {   mshr::MeshScene x, y; y.coordNodes = 2; bool st=false, body=false;
+        mshpres::sceneDirty(x, y, st, body);
+        expect(body, "a change in the coordinator node count repaints the page");
+    }
     printf("\n%s  %d/%d checks passed\n", fails?"FAILED":"PASSED", checks-fails, checks);
     return fails?1:0;
 }

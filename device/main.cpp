@@ -352,6 +352,7 @@ struct Coord {
     uint8_t  clusterId;
     uint16_t nodes;        // nodes balanced onto this coordinator
     uint8_t  lossPct;      // its cluster's report loss, from its last batch
+    int16_t  carried;      // nodes the coordinator itself reports in its batches; -1 = it never said (older firmware)
 };
 // At most two slices exist (chanplan::partition never makes a third), so at
 // most two coordinators ever get one -- ruling: a slice-less coordinator is
@@ -446,6 +447,7 @@ void handleReg(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     coords_[idx].lastMs = now;
     coords_[idx].clusterId = (uint8_t)idx;
     coords_[idx].nodes = 0;
+    coords_[idx].carried = -1;
     coords_[idx].lossPct = 0;
     Serial.printf("collector: coordinator %02X:%02X:%02X -> cluster %d (%d live)\n",
                   mac[3], mac[4], mac[5], idx, nCoord_);
@@ -538,6 +540,17 @@ bool active() { return nCoord_ > 0; }
 
 // Live coordinators, and the worst report loss among them. Both read the
 // coordinator table the receive callback also writes, so take the same lock.
+// Nodes the live coordinators carry: each coordinator's own count from its batches, or this handheld's tally for one that
+// does not send it (older firmware).
+int carriedNodes() {
+    int n = 0;
+    portENTER_CRITICAL(&mux);
+    for (int i = 0; i < nCoord_; i++)
+        if (coords_[i].live) n += coords_[i].carried >= 0 ? coords_[i].carried : coords_[i].nodes;   // its own count if it sends one
+    portEXIT_CRITICAL(&mux);
+    return n;
+}
+
 int count() {
     portENTER_CRITICAL(&mux);
     const int n = nCoord_;
@@ -567,7 +580,7 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
         pushEv(EV_REG, c->h.mac, c->wants5);
         return true;
     }
-    if (mesh::valid(data, len, mesh::MSG_CBATCH, (int)sizeof(mesh::ClusterBatch))) {
+    if (mesh::valid(data, len, mesh::MSG_CBATCH, mesh::CBATCH_MIN_LEN)) {
         const mesh::ClusterBatch* b = (const mesh::ClusterBatch*)data;
         // Only a coordinator we have registered may deliver. A batch never
         // creates a coordinator entry (only a CoordReg does), so a stray or
@@ -579,6 +592,7 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
             if (coords_[i].live && macEq(coords_[i].mac, b->h.mac)) {
                 coords_[i].lastMs = millis();
                 coords_[i].lossPct = b->lossPct;
+                coords_[i].carried = (int16_t)mesh::batchNodes(b, len);
                 known = true;
             }
         portEXIT_CRITICAL(&mux);
@@ -1115,8 +1129,8 @@ bool pollConsole() {
                      (unsigned long)tot, (unsigned long)mg, (unsigned long)vr,
                      (unsigned long)ln, (unsigned long)ns,
                      (unsigned long)meshcore::reportsRx());
-                logf("meshstat: coordinator batches=%lu records=%lu\n",
-                     (unsigned long)collector::batches(), (unsigned long)collector::records());
+                logf("meshstat: coordinator batches=%lu records=%lu nodes carried=%d\n",
+                     (unsigned long)collector::batches(), (unsigned long)collector::records(), collector::carriedNodes());
             } else if (!strncmp(line, "WIGLE", 5)) {
                 // One file, two sources. Main owns the markers; the header
                 // lives in wigle.h so Serial and the SD file cannot disagree.
@@ -1590,6 +1604,7 @@ void loop() {
         const uint8_t own = meshcore::lossPct(), cl = collector::maxLossPct();
         s.meshLossPct = own > cl ? own : cl;
         s.meshCoords  = (uint8_t)collector::count();
+        s.meshCoordNodes = (uint16_t)collector::carriedNodes();
         s.netId       = mesh::netId;
         s.enrollSecs  = (uint8_t)enroll::secsLeft(millis());
     }
