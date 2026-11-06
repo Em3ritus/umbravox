@@ -672,10 +672,13 @@ void tick(uint32_t now) {
 
 } // namespace collector
 
-// The Arduino default (8 KB) is not enough: the SD console's END path (loop -> pollConsole -> Console::finish -> note ->
-// elog -> sdlog::append -> FatFs) peaks near 8.3 KB since the capture-file protection was added, and overflowed the stack
-// ("Stack protection fault" on the first sdput END). 12 KB leaves about 4 KB of headroom for about 4 KB of internal RAM.
+// The Arduino default (8 KB) is not enough on the CYD: the SD console's END path (loop -> pollConsole -> Console::finish ->
+// note -> elog -> sdlog::append -> FatFs) peaks near 8.3 KB since the capture-file protection was added, and overflowed the
+// stack ("Stack protection fault" on the first sdput END). 12 KB leaves about 4 KB of headroom for about 4 KB of internal RAM.
+// Not on the Waveshare: its internal RAM already sits at the 55 KB floor (the [mem] line below), so it keeps the 8 KB default.
+#if !(defined(WS_C5_35) || defined(WS_C5_28))
 SET_LOOP_TASK_STACK_SIZE(12*1024);
+#endif
 void setup() {
     Serial.begin(115200);
     delay(200);
