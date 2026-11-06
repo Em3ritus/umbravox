@@ -734,7 +734,7 @@ void setup() {
         Serial.println("gfx->begin() FAILED");
         for (;;) delay(1000);
     }
-    gfx->fillScreen(RGB565_BLACK);
+    gfx->fillScreen(pal::VOID);
 
 #if defined(UMBRAVOX_SCAN_ENGINE)
     // The native engine composes the whole board-sized panel in bounded
@@ -2079,6 +2079,9 @@ void loop() {
         // decision itself runs every pass, above.)
         if (animOn) {
             if (animStep.enter) {
+                // The canvas is smaller than the panel on the Waveshare (320x240 doubled, in a 480x320 panel):
+                // blank the whole glass, or the border keeps the last UI frame around the animation.
+                gfx->fillScreen(pal::VOID);
                 canvas.clear(pal::VOID);
                 const ui::Rect all{0, 0, canvas.w, canvas.h};
                 blitRect(canvas.px, all);
