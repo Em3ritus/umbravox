@@ -670,6 +670,8 @@ void tick(uint32_t now) {
     }
 }
 
+uint32_t batches() { return batchesRx; }   // MESHSTAT: batches / records taken from live coordinators
+uint32_t records() { return recsRx; }
 } // namespace collector
 
 // The Arduino default (8 KB) is not enough on the CYD: the SD console's END path (loop -> pollConsole -> Console::finish ->
@@ -1113,6 +1115,8 @@ bool pollConsole() {
                      (unsigned long)tot, (unsigned long)mg, (unsigned long)vr,
                      (unsigned long)ln, (unsigned long)ns,
                      (unsigned long)meshcore::reportsRx());
+                logf("meshstat: coordinator batches=%lu records=%lu\n",
+                     (unsigned long)collector::batches(), (unsigned long)collector::records());
             } else if (!strncmp(line, "WIGLE", 5)) {
                 // One file, two sources. Main owns the markers; the header
                 // lives in wigle.h so Serial and the SD file cannot disagree.
