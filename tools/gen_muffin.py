@@ -41,7 +41,7 @@ def main():
     canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 255))
     canvas.alpha_composite(scaled, ((SIZE-scaled.width)//2, (SIZE-scaled.height)//2))
     small = canvas.convert("RGB")
-    q = small.quantize(colors=NCOL, method=Image.MEDIANCUT, dither=Image.NONE)
+    q = small.quantize(colors=NCOL, method=Image.MEDIANCUT, dither=Image.NONE, kmeans=8)   # k-means keeps the vivid colours
 
     pal = q.getpalette()                  # flat [r,g,b, ...]
     idx = list(q.getdata())

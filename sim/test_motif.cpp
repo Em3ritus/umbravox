@@ -113,10 +113,12 @@ int main(int argc, char** argv) {
             // the footer text (rows 108..114, cols 29..45). Re-pinned again
             // for the footer's mesh node count (glyph + "0", DIM): the only
             // pixels that moved are rows 108..114, cols 56..67.
-            0x9AEF124Eu, 0x4768E261u, 0x3E46EFE6u, 0xCB8FC0BAu,
-            0x98443D4Fu, 0x3B0FCDF5u, 0xB8989D41u, 0xA7A853D7u,
-            0x3462C731u, 0x5ED8CDD4u, 0x10423CCBu, 0xC65AC96Eu,
-            0x63009A05u, 0xD478848Eu, 0x5BA0A744u, 0x1FE8CF87u,
+            // Re-pinned for the new COSMIC MUFFIN picture (tools/gif2radar.py --still, ui/muffin.h): scan 0,1 and the alert styles that
+            // draw the muffin changed; BAPH0MAU5 (scan 2,3) and the alert styles without the muffin did not.
+            0x263FA851u, 0xEBDE426Fu, 0x3E46EFE6u, 0xCB8FC0BAu,
+            0x2ADB5AA3u, 0x01C1A044u, 0x288CB121u, 0xA7A853D7u,
+            0x3462C731u, 0x5ED8CDD4u, 0x99D5C150u, 0xC65AC96Eu,
+            0x23B63315u, 0xD518259Cu, 0x48B65089u, 0xCD178FBBu,
         };
         uint32_t g[16]; computeGuard(g);
         for (int i = 0; i < 16; i++) {

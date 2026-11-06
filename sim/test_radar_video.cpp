@@ -150,6 +150,34 @@ int main() {
         expect(sawNarrow, "between clip frames only the sweep repaints");
     }
 
+    puts("== an emblem theme (COSMIC MUFFIN) shows the clip, not its emblem on top of it");
+    {
+        pal::setTheme(pal::TH_COSMICMUFFIN);
+        scanpres::SceneStore e, ev;
+        for (auto* st : {&e, &ev}) {
+            st->begin(pal::TH_COSMICMUFFIN, 5000); st->animate(false); st->sweep(ui::SW_RADAR);
+            st->gps({true, 3, 12, 500}); st->status(3, true, 78, Rec::Off); st->counts(1665, 418, 2903);
+            st->channel("CH 06", "2.4 GHz"); for (int i = 0; i < 21; i++) st->setChannel(i, scanfix::CHANNELS[i]);
+        }
+        ev.video(&v);
+        const auto pe = full(W, H, e.scene()), pv = full(W, H, ev.scene());
+        const int f = videoFrame(v, 5000), g = (3 * f + 1) % 16;
+        // The muffin fills most of the dial. Inside a box around its centre every pixel of the clip render must be the clip's
+        // flat grey or its marker column (the sweep is off-centre at this clock); the emblem's own colours must not appear.
+        int foreign = 0, foreignNoClip = 0, box = 0;
+        for (int y = cy - 30; y <= cy + 30; y++) for (int x = cx - 30; x <= cx + 30; x++) {
+            box++;
+            const uint16_t c = pv[y * W + x];
+            if (c != grey(g) && c != grey(15)) foreign++;
+            const uint16_t c0 = pe[y * W + x];
+            if (c0 != grey(g) && c0 != grey(15)) foreignNoClip++;
+        }
+        printf("       box %d px: %d not clip colours with the clip, %d without\n", box, foreign, foreignNoClip);
+        expect(foreignNoClip > box / 4, "without a clip the emblem fills the box");
+        expect(foreign < box / 20, "with a clip the emblem is not drawn over it");
+        pal::setTheme(pal::TH_BAPH0MAU5);
+    }
+
     printf("%s\n", fails ? "FAILED" : "all passed");
     return fails ? 1 : 0;
 }
