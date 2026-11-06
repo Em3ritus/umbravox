@@ -1,8 +1,20 @@
 # Release and deployment maintenance
 
-The fork's current development and default branch is `main`.
-The public installer is https://em3ritus.github.io/umbravox/ and is served
-from the root of `gh-pages`. Source lives in `web/native/`.
+`main` is the development and default branch.
+The public installer is https://em3ritus.github.io/umbravox/, deployed to GitHub Pages by the **Release** workflow
+(`.github/workflows/release.yml`); there is no `gh-pages` branch. Source lives in `web/native/`.
+
+## Making a release
+
+Run it from `main` on a commit you have tested on hardware: Actions > Release > Run workflow, and enter the tag
+(for example `v1.1.0`). It runs the host and installer tests, builds the four installable boards
+(`nm-cyd-c5-engine`, `ws-c5-35-engine`, `ws-c5-28-engine`, `xiao-c5-node`), packages each with
+`tools/package-firmware.py` (images, `manifest.json`, `SHA256SUMS.txt`, source snapshot), assembles the installer site
+from those ZIPs with `tools/assemble-native-installer.py` (which re-verifies every checksum and size limit), creates the
+GitHub release holding the four ZIPs (named `umbravox-<board>.zip`, so `releases/latest/download/...` links never
+change), then deploys the site. A successful run is not hardware acceptance. By hand, the same steps work locally:
+`pio run -e <board>`, `package-firmware.py`, then `assemble-native-installer.py OUTPUT NM_ZIP WS35_ZIP WS28_ZIP XIAO_ZIP`
+into a fresh empty directory, and check `SITE-SHA256SUMS.txt`.
 
 ## Flashing tool versions
 
@@ -12,19 +24,10 @@ Keep historical package source and firmware hashes intact when updating guidance
 
 ## Preserve the working installer
 
-Documentation and CI updates do not require redeploying the installer or rebuilding
-published firmware. For an intentional installer update, run all native installer
-tests, assemble into a fresh empty directory with
-`tools/assemble-native-installer.py OUTPUT NM_ZIP WS35_ZIP WS28_ZIP XIAO_ZIP`, and verify
-`SITE-SHA256SUMS.txt`. Include the reviewed XIAO node ZIP as the fourth package. Use the reviewed board ZIPs; assembly does not compile firmware.
-Review the site diff, manifests, board order, revision identifiers and checksums
-before updating `gh-pages`. Verify the served revision after Pages finishes.
-Never substitute the legacy `web/dist` output for this native site.
-
-The manual legacy web preview workflow only uploads an Actions artifact. It has
-no Pages deployment job. CI builds the three native engine targets as well as
-legacy CYD, node and coordinator targets, and tests the native installer separately.
-A successful build is not hardware acceptance.
+Documentation and CI updates do not redeploy the installer or rebuild published firmware: only the Release workflow
+deploys Pages. Never substitute the legacy `web/dist` output for the native site (the manual legacy preview workflow only
+uploads an Actions artifact). CI builds the native engine targets as well as legacy CYD, node and coordinator targets,
+and tests the native installer and the packager separately.
 
 ## Release evidence
 
@@ -51,6 +54,6 @@ commit is reachable from `main` (recovery SHAs 3548d43, 0e9266a, 8d7e455).
 `gh-pages` contains deployment output only.
 Earlier prereleases remain available for provenance and recovery. Their historical
 board support and validation notes apply to those artifacts, not the current set.
-Use the combined `f963f3a` prerelease for the current published package set.
+The `f963f3a` prerelease is slickrick773's, on his repository; it is not part of this repository's releases.
 Design journals and implementation plans
 record past decisions and are not the current product specification.

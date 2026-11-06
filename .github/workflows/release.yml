@@ -1,0 +1,148 @@
+name: Release
+
+# Manual. Builds the four installable boards from the commit this runs on, packages each as a ZIP
+# (tools/package-firmware.py), assembles the browser installer from those ZIPs
+# (tools/assemble-native-installer.py), publishes a GitHub release holding the ZIPs, then deploys the
+# installer to GitHub Pages. Run it from main, on the commit you have tested on hardware:
+#   Actions > Release > Run workflow, enter the tag (for example v1.1.0).
+# A successful build is not hardware acceptance (docs/RELEASE-MAINTENANCE.md). The release is created as a
+# pre-release unless you untick that box.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create on this commit, e.g. v1.1.0"
+        required: true
+      prerelease:
+        description: "Mark the release as a pre-release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Tests before packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: The tag is unused and well formed
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.]+)?$ ]] || { echo "tag must look like v1.2.3 (got '$TAG')"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then echo "tag $TAG already exists"; exit 1; fi
+      - run: make -C sim test
+      - run: node --test web/native/test/*.test.mjs
+      - run: python3 tools/test_assemble_native_installer.py
+      - run: python3 tools/test_package_firmware.py
+
+  package:
+    name: Package ${{ matrix.environment }}
+    needs: verify
+    strategy:
+      fail-fast: true
+      matrix:
+        environment: [nm-cyd-c5-engine, ws-c5-35-engine, ws-c5-28-engine, xiao-c5-node]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Build firmware
+        run: pio run -e ${{ matrix.environment }}
+      - name: Package
+        run: python3 tools/package-firmware.py ${{ matrix.environment }} .pio/build/${{ matrix.environment }} dist --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.environment }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  site:
+    name: Assemble the installer
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+      - name: Assemble (this verifies every package's checksums and limits)
+        run: |
+          python3 tools/assemble-native-installer.py site \
+            dist/umbravox-nm-cyd-c5-engine.zip dist/umbravox-ws-c5-35-engine.zip \
+            dist/umbravox-ws-c5-28-engine.zip dist/umbravox-xiao-c5-node.zip
+      - name: Check the site inventory
+        run: |
+          cd site && sha256sum --check --quiet SITE-SHA256SUMS.txt
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  release:
+    name: Publish the GitHub release
+    needs: site
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          flag=""; [ "$PRERELEASE" = "true" ] && flag="--prerelease"
+          cat > notes.md <<NOTES
+          Firmware packages for the four installable boards, built from commit ${GITHUB_SHA} by the Release workflow.
+          Each ZIP holds the four images the installer writes, manifest.json, SHA256SUMS.txt and a source snapshot of this commit.
+          Install in your browser: https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/
+
+          A successful build is not hardware acceptance; see docs/RELEASE-MAINTENANCE.md for what has been tested on boards.
+          NOTES
+          gh release create "$TAG" dist/*.zip --target "$GITHUB_SHA" --title "UMBRAVOX $TAG" --notes-file notes.md $flag
+
+  deploy:
+    name: Deploy the installer to Pages
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

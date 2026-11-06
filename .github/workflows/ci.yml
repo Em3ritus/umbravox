@@ -35,6 +35,8 @@ jobs:
           actions-cache-folder: emsdk-cache
       - name: Build the WebAssembly preview
         run: bash tools/build-designer-wasm.sh
+      - name: Install Pillow (the gif2radar selftest needs it)
+        run: python3 -m pip install pillow
       - name: Run the designer tests
         run: npm test
 
@@ -48,6 +50,7 @@ jobs:
           node-version: "22"
       - run: node --test web/native/test/*.test.mjs
       - run: python3 tools/test_assemble_native_installer.py
+      - run: python3 tools/test_package_firmware.py
 
   device-build:
     name: Build ${{ matrix.environment }}
