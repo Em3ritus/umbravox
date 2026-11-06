@@ -226,6 +226,21 @@ uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap) {
     return got;
 }
 
+uint32_t readAt(const char* path, uint32_t off, uint8_t* buf, uint32_t len) {
+    if (!mounted || !path || path[0] != '/' || !buf || len == 0) return 0;
+    File f = SD.open(path, FILE_READ);
+    if (!f) return 0;
+    if (f.isDirectory() || !f.seek(off)) { f.close(); return 0; }
+    uint32_t got = 0;
+    while (got < len) {
+        const size_t k = f.read(buf + got, len - got);
+        if (k == 0 || k > len - got) break;
+        got += (uint32_t)k;
+    }
+    f.close();
+    return got;
+}
+
 uint32_t sizeOf(const char* name) {
     if (!mounted || !name || !name[0]) return 0;
     File f = SD.open(name, FILE_READ);

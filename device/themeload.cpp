@@ -207,49 +207,75 @@ const Emblem* loadEmblem(const char* folder, uint32_t size, char (&why)[WHY_CAP]
     return &e;
 }
 
-// radar.vid into the clip buffer, then validated by themepack::parseClip. False with `why` set on any failure.
-bool readClip(const PackMedia& m, char (&why)[WHY_CAP]) {
-    if (m.clipSz > MAX_CLIP) { setWhy(why, "radar.vid over %u bytes", (unsigned)MAX_CLIP); return false; }
-    if (!clipBuf) clipBuf = (uint8_t*)heap_caps_malloc(MAX_CLIP, MALLOC_CAP_SPIRAM);
-    if (!clipBuf) { setWhy(why, "no PSRAM for radar.vid"); return false; }
-    char path[PATH_CAP];
-    const uint32_t n = pathOf(path, m.folder, "radar.vid") ? sdlog::readFile(path, clipBuf, m.clipSz) : 0;
-    if (n != m.clipSz) { setWhy(why, "radar.vid could not be read"); return false; }
-    char cwhy[48];
-    if (!parseClip(clipBuf, n, clipNow, cwhy, capOf(cwhy))) { setWhy(why, "%s", cwhy); return false; }   // already names radar.vid
-    return true;
+// A pack's media is read in slices, one per pass of the main loop, so the screen keeps updating during the ~2 s a switch
+// takes (the SD shares the display's SPI bus, so a slice is also a pause in drawing: keep it short).
+constexpr uint32_t SLICE = 16384;                 // ~35 ms at the card's ~460 KB/s
+
+struct Load {
+    bool active = false;
+    int  slot = packmedia::NONE;
+    packmedia::Progress prog;
+    bool clipOk = false, sndOk = false;           // file read in full and still wanted
+    uint32_t t0 = 0;
+} job;
+
+// Parse a file once it has been read in full; logs why a file is left out.
+void finishFile(const PackMedia& m, int file) {
+    char safe[32], why[WHY_CAP] = "";
+    logSafe(safe, m.folder);
+    if (file == 0) {
+        char cwhy[48];
+        if (parseClip(clipBuf, m.clipSz, clipNow, cwhy, capOf(cwhy))) job.clipOk = true;
+        else { setWhy(why, "%s", cwhy); elog::event(elog::WARN, "theme", "%s: radar clip not used: %s", safe, why); }
+    } else {
+        char swhy[48];
+        if (parseSound(sndBuf, m.sndSz, sndNow, swhy, capOf(swhy))) job.sndOk = true;
+        else { setWhy(why, "%s", swhy); elog::event(elog::WARN, "theme", "%s: alert sounds not used: %s", safe, why); }
+    }
 }
 
-// alert.snd into the sound buffer, validated by themepack::parseSound.
-bool readSound(const PackMedia& m, char (&why)[WHY_CAP]) {
-    if (m.sndSz > MAX_SOUND) { setWhy(why, "alert.snd over %u bytes", (unsigned)MAX_SOUND); return false; }
-    if (!sndBuf) sndBuf = (uint8_t*)heap_caps_malloc(MAX_SOUND, MALLOC_CAP_SPIRAM);
-    if (!sndBuf) { setWhy(why, "no PSRAM for alert.snd"); return false; }
-    char path[PATH_CAP];
-    const uint32_t n = pathOf(path, m.folder, "alert.snd") ? sdlog::readFile(path, sndBuf, m.sndSz) : 0;
-    if (n != m.sndSz) { setWhy(why, "alert.snd could not be read"); return false; }
-    char swhy[48];
-    if (!parseSound(sndBuf, n, sndNow, swhy, capOf(swhy))) { setWhy(why, "%s", swhy); return false; }
-    return true;
-}
-
-// Read a pack's clip and sounds into the two buffers, inside the boot-loop guard (the record is what a reset during the
-// read leaves behind, and what the next boot's guardBoot turns into "skip this pack"). A file that cannot be used is
-// logged and left out; true if at least one of the pack's files was loaded.
-bool loadMedia(const PackMedia& m, bool& gotClip, bool& gotSnd) {
-    gotClip = gotSnd = false;
+// Open the load: set the guard record (what a reset during the read leaves behind for the next boot), size the buffers.
+// False: nothing can be loaded (logged), no record left.
+bool beginLoad(const PackMedia& m, int slot) {
     char safe[32];
     logSafe(safe, m.folder);
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), m.folder, m.total);
     if (!nvs.begin(NS, /*readOnly=*/false)) { elog::event(elog::WARN, "theme", "%s: media not loaded, NVS unavailable", safe); return false; }
-    if (!guardSet(KV, cur, rec)) { nvs.end(); elog::event(elog::WARN, "theme", "%s: media not loaded, could not set the guard", safe); return false; }
-    char why[WHY_CAP] = "";
-    if (m.clipSz) { gotClip = readClip(m, why); if (!gotClip) elog::event(elog::WARN, "theme", "%s: radar clip not used: %s", safe, why); }
-    if (m.sndSz)  { gotSnd  = readSound(m, why); if (!gotSnd)  elog::event(elog::WARN, "theme", "%s: alert sounds not used: %s", safe, why); }
-    guardClear(KV, cur);                     // read (or cleanly refused): nothing in flight
+    const bool set = guardSet(KV, cur, rec);
     nvs.end();
-    return gotClip || gotSnd;
+    if (!set) { elog::event(elog::WARN, "theme", "%s: media not loaded, could not set the guard", safe); return false; }
+    uint32_t cs = m.clipSz, ss = m.sndSz;
+    if (cs > MAX_CLIP)  { elog::event(elog::WARN, "theme", "%s: radar clip not used: radar.vid over %u bytes", safe, (unsigned)MAX_CLIP); cs = 0; }
+    if (ss > MAX_SOUND) { elog::event(elog::WARN, "theme", "%s: alert sounds not used: alert.snd over %u bytes", safe, (unsigned)MAX_SOUND); ss = 0; }
+    if (cs && !clipBuf) clipBuf = (uint8_t*)heap_caps_malloc(MAX_CLIP, MALLOC_CAP_SPIRAM);
+    if (ss && !sndBuf)  sndBuf  = (uint8_t*)heap_caps_malloc(MAX_SOUND, MALLOC_CAP_SPIRAM);
+    if (cs && !clipBuf) { elog::event(elog::WARN, "theme", "%s: radar clip not used: no PSRAM", safe); cs = 0; }
+    if (ss && !sndBuf)  { elog::event(elog::WARN, "theme", "%s: alert sounds not used: no PSRAM", safe); ss = 0; }
+    job.prog.start(cs, ss);
+    job.active = true; job.slot = slot; job.clipOk = job.sndOk = false; job.t0 = millis();
+    return true;
+}
+
+// One slice. True when the load has ended (every file read, or given up on).
+bool stepLoad(const PackMedia& m) {
+    if (job.prog.done()) return true;
+    const packmedia::Progress::Slice sl = job.prog.next(SLICE);
+    char path[PATH_CAP];
+    uint8_t* dst = sl.file == 0 ? clipBuf : sndBuf;
+    const uint32_t total = sl.file == 0 ? m.clipSz : m.sndSz;
+    const bool ok = pathOf(path, m.folder, sl.file == 0 ? "radar.vid" : "alert.snd")
+                 && sdlog::readAt(path, sl.off, dst + sl.off, sl.len) == sl.len;
+    if (!ok) {
+        char safe[32];
+        logSafe(safe, m.folder);
+        elog::event(elog::WARN, "theme", "%s: %s could not be read", safe, sl.file == 0 ? "radar.vid" : "alert.snd");
+        job.prog.skipFile();
+        return job.prog.done();
+    }
+    job.prog.advance(sl.len);
+    if (sl.off + sl.len == total) finishFile(m, sl.file);
+    return job.prog.done();
 }
 
 bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, uint32_t packTotal, char (&why)[WHY_CAP]) {
@@ -370,7 +396,25 @@ uint8_t skipped() { return nSkipped; }
 void tick(uint8_t themeId, uint32_t nowMs, bool immediate) {
     if (!media) return;
     ctl.want(pal::packSlot(themeId), nowMs, immediate);
-    for (int step = 0; step < 2; step++) {           // a switch is an UNLOAD then a LOAD: do both in one call
+    if (job.active) {                                // a load in progress: one more slice (all of them at boot)
+        const PackMedia& m = media[job.slot];
+        bool end = stepLoad(m);
+        while (immediate && !end) end = stepLoad(m);
+        if (!end) return;
+        if (nvs.begin(NS, /*readOnly=*/false)) { guardClear(KV, cur); nvs.end(); }   // read (or cleanly refused): nothing in flight
+        job.active = false;
+        const bool ok = job.clipOk || job.sndOk;
+        if (ok) {
+            pal::setPackMedia(m.id, job.clipOk ? &clipNow : nullptr, job.sndOk ? &sndNow : nullptr);
+            char safe[32];
+            logSafe(safe, m.folder);
+            elog::event(elog::INFO, "theme", "%s: media loaded in %u ms (clip %u B, sounds %u B)", safe,
+                        (unsigned)(millis() - job.t0), (unsigned)(job.clipOk ? m.clipSz : 0), (unsigned)(job.sndOk ? m.sndSz : 0));
+        }
+        ctl.done(packmedia::Step{packmedia::Step::LOAD, job.slot}, ok);
+        return;
+    }
+    for (int step = 0; step < 2; step++) {           // a switch is an UNLOAD then the start of a LOAD
         const packmedia::Step st = ctl.next(nowMs);
         if (st.kind == packmedia::Step::NOTHING) return;
         if (sound::playing()) return;                // its samples are in the buffer about to be replaced: next frame
@@ -380,17 +424,9 @@ void tick(uint8_t themeId, uint32_t nowMs, bool immediate) {
             ctl.done(st, true);
             continue;
         }
-        const uint32_t t0 = millis();
-        bool gotClip = false, gotSnd = false;
-        const bool ok = loadMedia(m, gotClip, gotSnd);
-        if (ok) {
-            pal::setPackMedia(m.id, gotClip ? &clipNow : nullptr, gotSnd ? &sndNow : nullptr);
-            char safe[32];
-            logSafe(safe, m.folder);
-            elog::event(elog::INFO, "theme", "%s: media loaded in %u ms (clip %u B, sounds %u B)", safe,
-                        (unsigned)(millis() - t0), (unsigned)(gotClip ? m.clipSz : 0), (unsigned)(gotSnd ? m.sndSz : 0));
-        }
-        ctl.done(st, ok);
+        if (!beginLoad(m, st.slot)) { ctl.done(st, false); return; }
+        if (immediate) tick(themeId, nowMs, true);   // boot: run the whole load now
+        return;
     }
 }
 

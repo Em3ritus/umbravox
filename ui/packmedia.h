@@ -24,6 +24,31 @@ struct Step {
     int  slot = NONE;
 };
 
+// A load cut into slices. A pack's media is two files read back to back (file 0 = radar.vid, file 1 = alert.snd); reading
+// 1.4 MB in one go freezes the screen for ~2 s, so the device reads one slice per pass of its main loop instead.
+//   start(size0, size1); while (!done()) { Slice s = next(MAX); read s.len bytes of file s.file at s.off; advance(s.len); }
+// skipFile() abandons the current file (it could not be read): the other one still loads.
+class Progress {
+public:
+    struct Slice { int file = 0; uint32_t off = 0; uint32_t len = 0; };
+    void start(uint32_t size0, uint32_t size1) { size_[0] = size0; size_[1] = size1; file_ = 0; off_ = 0; settle(); }
+    bool done() const { return file_ >= 2; }
+    Slice next(uint32_t maxLen) const {
+        Slice s;
+        if (done()) return s;
+        const uint32_t left = size_[file_] - off_;
+        s.file = file_; s.off = off_; s.len = left < maxLen ? left : maxLen;
+        return s;
+    }
+    void advance(uint32_t n) { off_ += n; settle(); }
+    void skipFile() { if (!done()) { off_ = size_[file_]; settle(); } }
+private:
+    void settle() { while (file_ < 2 && off_ >= size_[file_]) { file_++; off_ = 0; } }   // past a finished or empty file
+    uint32_t size_[2] = {0, 0};
+    int      file_ = 0;
+    uint32_t off_ = 0;
+};
+
 template <int N>
 class Controller {
 public:

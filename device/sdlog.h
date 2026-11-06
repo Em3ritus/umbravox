@@ -72,6 +72,9 @@ bool     rotate(const char* name, const char* to);                  // to <- nam
 constexpr uint32_t LIST_MAX = 256;
 bool     listDir(const char* path, void (*cb)(const char* name, bool isDir, void* ctx), void* ctx);
 uint32_t readFile(const char* path, uint8_t* buf, uint32_t cap);
+// readAt() is readFile for a slice: up to `len` bytes starting at byte `off`, into buf. Returns how many it read (0 on any
+// failure). Opens and closes the file each call, so nothing stays open between slices of a long load.
+uint32_t readAt(const char* path, uint32_t off, uint8_t* buf, uint32_t len);
 
 // The FILES screen's walk (device/filescan.h): like listDir, but cb also gets
 // the size from the entry already open (no second open per file, which on

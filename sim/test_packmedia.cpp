@@ -87,6 +87,39 @@ int main() {
       c.setHasMedia(99, true); c.setHasMedia(-5, true); c.want(99, 0, true); c.want(-5, 0, true);
       check("an out-of-range slot is ignored, not indexed", c.next(0).kind == Step::NOTHING); }
 
+    // --- Progress: a load cut into slices so the screen keeps updating between them -------------------------------
+    { packmedia::Progress p; p.start(100, 50);
+      check("two files: not done at the start", !p.done());
+      auto a = p.next(64);
+      check("first slice: file 0, offset 0, the slice size", a.file == 0 && a.off == 0 && a.len == 64);
+      p.advance(a.len);
+      auto b = p.next(64);
+      check("second slice finishes file 0 with what is left", b.file == 0 && b.off == 64 && b.len == 36);
+      p.advance(b.len);
+      auto c = p.next(64);
+      check("then file 1 from offset 0", c.file == 1 && c.off == 0 && c.len == 50);
+      p.advance(c.len);
+      check("done once every byte of both is read", p.done() && p.next(64).len == 0); }
+
+    { packmedia::Progress p; p.start(0, 30);
+      auto a = p.next(64);
+      check("a missing first file is skipped", a.file == 1 && a.len == 30); p.advance(30);
+      check("and the load ends", p.done()); }
+
+    { packmedia::Progress p; p.start(0, 0);
+      check("nothing to read: done at once", p.done()); }
+
+    { packmedia::Progress p; p.start(10, 20);
+      p.skipFile();
+      auto a = p.next(64);
+      check("skipFile abandons the current file and moves to the next", a.file == 1 && a.off == 0 && a.len == 20);
+      p.skipFile();
+      check("skipping the last file ends the load", p.done()); }
+
+    { packmedia::Progress p; p.start(1000, 0); uint32_t total = 0, n = 0;
+      while (!p.done()) { auto s = p.next(256); total += s.len; n++; p.advance(s.len); }
+      check("slices add up to the file, none over the slice size", total == 1000 && n == 4); }
+
     printf(fails ? "FAILED %d\n" : "packmedia: decisions passed\n", fails);
     return fails ? 1 : 0;
 }
