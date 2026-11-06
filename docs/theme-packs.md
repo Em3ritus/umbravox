@@ -13,9 +13,9 @@ and everything a pack cannot do.
 
 ## Bundled palettes and header names
 
-Fourteen themes are available without an SD card. The general palettes are
-UMBRAVOX, EMBER, PHOSPHOR, GLACIER, OBSIDIAN, CYBER, ULTRAVIOLET, and DUNE.
-The six additions use the clean radar and require no bitmap artwork. General
+Ten themes are available without an SD card. The general palettes are
+UMBRAVOX, EMBER, GLACIER, OBSIDIAN, CYBER, and ULTRAVIOLET.
+The additions use the clean radar and require no bitmap artwork. General
 palettes keep **UMBRAVOX** as the header; Appearance still shows each palette's
 name. Crew themes retain their individual mastheads.
 

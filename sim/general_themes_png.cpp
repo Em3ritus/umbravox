@@ -18,7 +18,7 @@ struct ThemeFrame:scanr::Sink {
 };
 int main(int argc,char** argv){
     if(argc!=2){fprintf(stderr,"usage: general_themes_png OUTPUT_DIRECTORY\n");return 1;}
-    for(const char* slug:{"phosphor","glacier","obsidian","cyber","ultraviolet","dune"}){
+    for(const char* slug:{"glacier","obsidian","cyber","ultraviolet"}){
         const std::string folder=std::string("packs/")+slug;
         std::ifstream f(folder+"/theme.json");std::string json((std::istreambuf_iterator<char>(f)),{});
         themepack::Pack pack{};char why[96];

@@ -1,12 +1,15 @@
 # Bundled themes
 
-Every firmware target includes the same fourteen bundled themes:
-UMBRAVOX, CVLT OF BAPH0MAU5, COSMIC MUFFIN, SLICK, BAPH0MAU5,
-EM3RITUS, EMBER, SKULD, PHOSPHOR, GLACIER, OBSIDIAN, CYBER, ULTRAVIOLET, and DUNE. No SD card is needed for their palettes or logos.
+Every firmware target includes the same ten bundled themes:
+UMBRAVOX, CVLT OF BAPH0MAU5, COSMIC MUFFIN, SLICK, EMBER, SKULD, GLACIER, OBSIDIAN, CYBER, and ULTRAVIOLET.
+No SD card is needed for their palettes or logos. BAPH0MAU5, EM3RITUS, PHOSPHOR, DUNE and COSMIC MUFFIN 2 were
+bundled in earlier builds and are no longer built in; their folders under `packs/` still work as ordinary SD packs.
+Built-in themes are saved by ID, and the IDs after SLICK moved up when those were removed: a device that saved one of them
+may come up on a different built-in theme (or UMBRAVOX, if its old ID is now out of range) after updating, until it is re-selected.
 The native UI adapts to panel size; the legacy NM renderer retains its own layout.
 
-The original three theme IDs stay unchanged. Crew themes retain IDs 3–7,
-matching the prior alphabetical SD pack order. Saved crew names resolve even
+The original three theme IDs stay unchanged. The bundled themes after them take IDs 3–9 in the order listed above
+(the `FOLDERS` order in `tools/generate_bundled_themes.py`). Saved crew names resolve even
 when their SD pack is absent. New custom themes follow the bundled set.
 
 An SD pack with a bundled crew name overrides that entry instead of adding a

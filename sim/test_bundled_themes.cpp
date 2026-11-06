@@ -9,12 +9,12 @@
 #include <cstdio>
 struct Fb:scanr::Sink {int w;std::vector<uint16_t> p;Fb(int W,int H):w(W),p(W*H){}void strip(int x,int y,int W,int H,const uint16_t* b)override{for(int r=0;r<H;r++)std::copy_n(b+r*W,W,p.data()+(y+r)*w+x);}};
 int main(){
- const char* folders[]={"slick","z-baph0mau5","z-em3ritus","z-ember","z-skuld","phosphor","glacier","obsidian","cyber","ultraviolet","dune","z-cosmic-muffin-2"};
- const char* names[]={"SLICK","BAPH0MAU5","EM3RITUS","EMBER","SKULD","PHOSPHOR","GLACIER","OBSIDIAN","CYBER","ULTRAVIOLET","DUNE","COSMIC MUFFIN 2"};
+ const char* folders[]={"slick","z-ember","z-skuld","glacier","obsidian","cyber","ultraviolet"};
+ const char* names[]={"SLICK","EMBER","SKULD","GLACIER","OBSIDIAN","CYBER","ULTRAVIOLET"};
  scanr::Compositor comp;
- for(int i=0;i<12;i++){
-  pal::clearPacks();const int id=3+i;assert(pal::themeCount()==15);assert(!strcmp(pal::themeName(id),names[i]));
-  if(id==pal::TH_EMBER || (id>=pal::TH_PHOSPHOR && id<pal::TH_COSMIC2))assert(!strcmp(pal::header(id),"UMBRAVOX"));
+ for(int i=0;i<7;i++){
+  pal::clearPacks();const int id=3+i;assert(pal::themeCount()==10);assert(!strcmp(pal::themeName(id),names[i]));
+  if(id==pal::TH_EMBER || (id>=pal::TH_GLACIER && id<pal::TH_COUNT))assert(!strcmp(pal::header(id),"UMBRAVOX"));
   assert(pal::resolveSaved(names[i],0)==id && pal::resolveSaved("",id)==id);
   std::string base=std::string("../packs/")+folders[i]+"/";
   std::ifstream jf(base+"theme.json");std::string json((std::istreambuf_iterator<char>(jf)),{});themepack::Pack pack{};char why[96];assert(themepack::parse(json.data(),json.size(),pack,why,sizeof why));
@@ -30,14 +30,14 @@ int main(){
    for(int k=0;k<e.w*e.h;k++)assert(themepack::pixel(*builtin,k)==themepack::pixel(e,k));
   }
   for(auto wh:{std::pair<int,int>{320,240},{480,320}}){pal::clearPacks();pal::setTheme(id);Fb before(wh.first,wh.second),after(wh.first,wh.second);auto scene=scanfix::demo(id);comp.renderFull(wh.first,wh.second,scene,before);
-   assert(pal::addPack(pack,raw.empty()?nullptr:&e)==id);assert(pal::themeCount()==15);pal::setTheme(id);comp.renderFull(wh.first,wh.second,scene,after);assert(before.p==after.p);
+   assert(pal::addPack(pack,raw.empty()?nullptr:&e)==id);assert(pal::themeCount()==10);pal::setTheme(id);comp.renderFull(wh.first,wh.second,scene,after);assert(before.p==after.p);
   }
-  pack.color[themepack::R_WITCH]^=0xFFFF;assert(pal::addPack(pack,raw.empty()?nullptr:&e)==id);pal::setTheme(id);assert(pal::WITCH==pack.color[themepack::R_WITCH] && pal::themeCount()==15);
+  pack.color[themepack::R_WITCH]^=0xFFFF;assert(pal::addPack(pack,raw.empty()?nullptr:&e)==id);pal::setTheme(id);assert(pal::WITCH==pack.color[themepack::R_WITCH] && pal::themeCount()==10);
  }
  // Old SD copies must not restore a personal masthead on a general theme.
  pal::clearPacks();themepack::Pack legacy{};snprintf(legacy.name,sizeof legacy.name,"EMBER");snprintf(legacy.header,sizeof legacy.header,"EMBER");
  assert(pal::addPack(legacy,nullptr)==pal::TH_EMBER);assert(!strcmp(pal::header(pal::TH_EMBER),"UMBRAVOX"));
- pal::clearPacks();assert(pal::themeCount()==15);
+ pal::clearPacks();assert(pal::themeCount()==10);
  const auto& muffin=ui::muffinEmblem();for(int k=0;k<ui::MUFFIN_W*ui::MUFFIN_H;k++)assert(themepack::pixel(muffin,k)==ui::MUFFIN_PX[k]);
- puts("bundled themes: fifteen without SD; palettes/artwork exact; stable saved IDs; overrides without duplicates; both-size pixel parity PASS");
+ puts("bundled themes: ten without SD; palettes/artwork exact; stable saved IDs; overrides without duplicates; both-size pixel parity PASS");
 }
