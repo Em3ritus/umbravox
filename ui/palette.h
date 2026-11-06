@@ -117,6 +117,12 @@ const themepack::Emblem* emblem(uint8_t id);
 const themepack::Clip* clip(uint8_t id);
 // The alert sounds a pack carries (alert.snd), or null: built-ins never have them. Stored by pointer like the clip.
 const themepack::Sound* sound(uint8_t id);
+// Attach (or, with nulls, detach) a registered pack's clip and sounds after addPack: the device reads them from the card when
+// the pack's theme is selected, not at boot (ui/packmedia.h). False for an id that is not a pack. The pointers are stored, not
+// copied, so what they point at must stay valid until detached. Same threading rule as addPack: the loop task only.
+bool setPackMedia(uint8_t id, const themepack::Clip* c, const themepack::Sound* snd);
+// The pack slot (0.. in the order packs were added) of a theme id, or -1 for a built-in or an unknown id.
+int packSlot(uint8_t id);
 
 // The masthead text on the scan screen.
 const char* header(uint8_t id);

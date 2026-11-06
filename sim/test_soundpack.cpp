@@ -88,6 +88,29 @@ int main() {
         check("clearPacks forgets the sounds", pal::sound((uint8_t)id) == nullptr);
     }
 
+    puts("== palette: a pack's clip and sounds can be attached and detached after it is registered (load on select)");
+    {
+        pal::clearPacks();
+        auto b = makeSnd(20, 30, 40); Sound s; parse_(b, s);
+        Clip c{}; c.w = 102; c.h = 102; c.fps = 10; c.frames = 3;
+        Pack p{}; strcpy(p.name, "LAZY TEST"); strcpy(p.header, "LAZY TEST"); p.centre = CENTRE_RADAR; p.sweeps = 1; p.sweep = 0; p.artOpacity = 100; p.artScale = 82;
+        for (int i = 0; i < N_COLORS; i++) p.color[i] = (uint16_t)(0x1111 * (i % 13) + 0x0842);
+        const int id = pal::addPack(p, nullptr);
+        check("registered without media", id >= pal::TH_COUNT && pal::clip((uint8_t)id) == nullptr && pal::sound((uint8_t)id) == nullptr);
+        check("setPackMedia reports success for a pack", pal::setPackMedia((uint8_t)id, &c, &s));
+        check("the clip is now there", pal::clip((uint8_t)id) == &c);
+        check("and the sounds", pal::sound((uint8_t)id) == &s);
+        pal::setPackMedia((uint8_t)id, nullptr, nullptr);
+        check("detached: both null again", pal::clip((uint8_t)id) == nullptr && pal::sound((uint8_t)id) == nullptr);
+        pal::setPackMedia((uint8_t)id, &c, nullptr);
+        check("a clip without sounds", pal::clip((uint8_t)id) == &c && pal::sound((uint8_t)id) == nullptr);
+        check("packSlot: a pack's slot, in the order added", pal::packSlot((uint8_t)id) == 0);
+        check("packSlot: -1 for a built-in and for an unknown id", pal::packSlot(pal::TH_UMBRAVOX) == -1 && pal::packSlot(250) == -1);
+        check("a built-in id is refused", !pal::setPackMedia(pal::TH_UMBRAVOX, &c, &s) && pal::clip(pal::TH_UMBRAVOX) == nullptr);
+        check("an unknown id is refused", !pal::setPackMedia(250, &c, &s) && pal::sound(250) == nullptr);
+        pal::clearPacks();
+    }
+
     puts("== fuzz: 4000 mutations of a good file");
     {
         auto g = makeSnd(60, 0, 90); srand(7); int bad = 0;

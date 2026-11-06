@@ -270,6 +270,16 @@ const themepack::Sound* sound(uint8_t id) {
     return s >= 0 ? PACK_SOUND[s] : nullptr;
 }
 
+int packSlot(uint8_t id) { return slotOf(id); }
+
+bool setPackMedia(uint8_t id, const themepack::Clip* c, const themepack::Sound* snd) {
+    const int s = slotOf(id);
+    if (s < 0) return false;
+    PACK_CLIP[s] = c;
+    PACK_SOUND[s] = snd;
+    return true;
+}
+
 const themepack::Emblem* emblem(uint8_t id) {
     if (id == TH_COSMICMUFFIN) return &ui::muffinEmblem();
     const int s = slotOf(id);

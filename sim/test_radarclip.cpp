@@ -113,7 +113,7 @@ int main() {
         check("videoFor mirrors it for the renderer", rv && rv->w == 102 && rv->h == 102 && rv->frames == 2 && rv->fps == 12 && rv->px == c.px);
         check("videoFor is null for a theme without a clip", radarclip::videoFor(pal::TH_UMBRAVOX) == nullptr);
         check("the table is small (internal RAM is scarce): one entry per possible theme, not per byte value",
-              radarclip::kSlots == pal::TH_COUNT + themepack::MAX_PACKS && sizeof(radarclip::Video) * radarclip::kSlots < 800);   // 32 bytes each now it carries the palette pointer: 736 in all
+              radarclip::kSlots == pal::TH_COUNT + themepack::MAX_PACKS && sizeof(radarclip::Video) * radarclip::kSlots < 900);   // 32 bytes each (it carries the palette pointer): 864 in all with 12 pack slots
         check("an id past the table has no clip, and does not read outside it", radarclip::videoFor((uint8_t)radarclip::kSlots) == nullptr && radarclip::videoFor(255) == nullptr);
         pal::addPack(p, nullptr);                                         // the same name again, no clip: it replaces the slot
         check("re-adding the pack without a clip drops it", pal::clip((uint8_t)id) == nullptr && radarclip::videoFor((uint8_t)id) == nullptr);

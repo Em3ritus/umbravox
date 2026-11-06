@@ -146,9 +146,9 @@ int main() {
             expect++;
             check("count tracks", pal::themeCount() == expect);
         }
-        check("eight packs -> eleven themes", pal::themeCount() == (pal::TH_COUNT+8));
-        check("ninth pack refused", pal::addPack(mkPack("NINE", themepack::DIAL_LARGE, 1, 0, 0), nullptr) == -1);
-        check("count unchanged after refusal", pal::themeCount() == (pal::TH_COUNT+8));
+        check("a full table -> built-ins plus MAX_PACKS themes", pal::themeCount() == (pal::TH_COUNT+themepack::MAX_PACKS));
+        check("one pack too many is refused", pal::addPack(mkPack("NINE", themepack::DIAL_LARGE, 1, 0, 0), nullptr) == -1);
+        check("count unchanged after refusal", pal::themeCount() == (pal::TH_COUNT+themepack::MAX_PACKS));
 
         check("findPack SANE", pal::findPack("SANE") == (pal::TH_COUNT+0));
         check("findPack LOUD", pal::findPack("LOUD") == (pal::TH_COUNT+1));
@@ -198,9 +198,9 @@ int main() {
         check("large pack has COSMIC geometry",
               ui::DIAL_H == cDialH && ui::SPEC_H == cSpecH && ui::R_STAR == cRStar);
 
-        pal::setTheme(pal::TH_COUNT+8);   // one past the last pack
+        pal::setTheme(pal::TH_COUNT+themepack::MAX_PACKS);   // one past the last pack
         check("id past the packs falls back to UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
-        check("themeName past the packs is UMBRAVOX", !strcmp(pal::themeName(pal::TH_COUNT+8), "UMBRAVOX"));
+        check("themeName past the packs is UMBRAVOX", !strcmp(pal::themeName(pal::TH_COUNT+themepack::MAX_PACKS), "UMBRAVOX"));
         check("built-ins untouched by packs", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD);
     }
 
@@ -219,7 +219,7 @@ int main() {
     // the device never calls clearPacks.
     printf("clearPacks:\n");
     {
-        check("table full before clearing", pal::themeCount() == (pal::TH_COUNT+8));
+        check("table full before clearing", pal::themeCount() == (pal::TH_COUNT+themepack::MAX_PACKS));
         pal::clearPacks();
         check("cleared: only the built-ins", pal::themeCount() == pal::TH_COUNT);
         check("old pack id 3 is UMBRAVOX again", !strcmp(pal::themeName((pal::TH_COUNT+0)), "UMBRAVOX"));

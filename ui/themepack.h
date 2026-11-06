@@ -14,7 +14,7 @@
 namespace themepack {
 
 constexpr int FORMAT = 1;
-constexpr int MAX_PACKS = 8;
+constexpr int MAX_PACKS = 12;      // packs registered at once. Clips and sounds are NOT held per pack (ui/packmedia.h): about 290 bytes of internal RAM a slot
 constexpr int MAX_NAME = 20;
 constexpr int MAX_HEADER = 18;
 constexpr int MAX_AUTHOR = 24;
@@ -35,7 +35,7 @@ constexpr int    CLIP_W = 102, CLIP_H = 102, CLIP_HDR = 12, MAX_CLIP_FRAMES = 15
 constexpr size_t CLIP_FRAME_BYTES = (CLIP_W * CLIP_H + 1) / 2;                       // 5202
 constexpr size_t MAX_CLIP = CLIP_HDR + (size_t)MAX_CLIP_FRAMES * CLIP_FRAME_BYTES;   // 780312
 constexpr int    CLIP_PAL_BYTES = 32;     // version 2: 16 RGB565 colours (little-endian) between the header and the frames
-constexpr int    MAX_CLIPS = 2;     // clips held at once (PSRAM budget: each is up to MAX_CLIP bytes)
+constexpr int    MAX_CLIPS = 2;     // HOST loader (sim/packload.h, the designer preview) only. The device holds ONE clip, read when its theme is selected
 
 enum Dial { DIAL_COMPACT, DIAL_LARGE };
 enum Centre { CENTRE_HEPTAGRAM, CENTRE_EMBLEM, CENTRE_RADAR, CENTRE_MASCOT, CENTRE_SIGIL, CENTRE_RADAR_EMBLEM };
@@ -99,7 +99,7 @@ bool parseClip(const uint8_t* data, size_t n, Clip& out, char* why, size_t whyCa
 // samples of LOW, MED, HIGH back to back. At least one count is non-zero; a level with count 0 keeps the built-in beep.
 constexpr int    SND_RATE = 16000, SND_HDR = 20, MAX_SND_SAMPLES = 96000;     // 6 s per sound
 constexpr size_t MAX_SOUND = SND_HDR + 3 * (size_t)MAX_SND_SAMPLES * 2;      // 576020
-constexpr int    MAX_SOUNDS = 2;          // sound sets held at once (PSRAM)
+constexpr int    MAX_SOUNDS = 2;          // HOST loader only, as MAX_CLIPS. The device holds ONE sound set, read when its theme is selected
 
 // A parsed alert.snd. pcm[k] points INTO the buffer given to parseSound (null when n[k] == 0), so that buffer must
 // outlive the Sound and be 2-byte aligned (a heap buffer is).
