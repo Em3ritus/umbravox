@@ -6,7 +6,8 @@ name: Release
 # installer to GitHub Pages. Run it from main, on the commit you have tested on hardware:
 #   Actions > Release > Run workflow, enter the tag (for example v1.1.0).
 # A successful build is not hardware acceptance (docs/RELEASE-MAINTENANCE.md). The release is created as a
-# pre-release unless you untick that box.
+# pre-release unless you untick that box. "Dry run" (ticked by default) stops after the installer site is
+# assembled: nothing is released and nothing is deployed. Do a dry run first, then run it again with the box unticked.
 on:
   workflow_dispatch:
     inputs:
@@ -15,6 +16,10 @@ on:
         required: true
       prerelease:
         description: "Mark the release as a pre-release"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Dry run: build, package and assemble only; do not release or deploy"
         type: boolean
         default: true
 
@@ -103,10 +108,19 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+      - name: Keep the packages for inspection (dry runs download these)
+        uses: actions/upload-artifact@v4
+        with:
+          name: assembled-site-and-zips
+          path: |
+            site/SITE-SHA256SUMS.txt
+            dist/*.zip
+          retention-days: 7
 
   release:
     name: Publish the GitHub release
     needs: site
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -136,6 +150,7 @@ jobs:
   deploy:
     name: Deploy the installer to Pages
     needs: release
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
