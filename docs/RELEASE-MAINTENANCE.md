@@ -1,7 +1,7 @@
 # Release and deployment maintenance
 
 The fork's current development and default branch is `main`.
-The public installer is https://slickrick773.github.io/umbravox/ and is served
+The public installer is https://em3ritus.github.io/umbravox/ and is served
 from the root of `gh-pages`. Source lives in `web/native/`.
 
 ## Flashing tool versions

@@ -6,8 +6,8 @@ Discover Wi-Fi and Bluetooth LE devices, inspect networks, map observations,
 and save captures for analysis. Run standalone, connect to a phone app, or
 expand coverage with coordinated scanning nodes.
 
-[Install in your browser](https://slickrick773.github.io/umbravox/) ·
-[Published prerelease and downloads](https://github.com/slickrick773/umbravox/releases/tag/f963f3a)
+[Install in your browser](https://em3ritus.github.io/umbravox/) ·
+[Published prerelease and downloads](https://github.com/Em3ritus/umbravox/releases/tag/f963f3a)
 
 ![Native UMBRAVOX SCAN and CODEX, side by side](docs/native-ui-preview.png)
 
@@ -33,7 +33,7 @@ See [node validation](docs/XIAO-NODE-VALIDATION.md) and
 
 ## Installation
 
-Use desktop Chrome or Edge, a USB data cable, and the [browser installer](https://slickrick773.github.io/umbravox/).
+Use desktop Chrome or Edge, a USB data cable, and the [browser installer](https://em3ritus.github.io/umbravox/).
 Select your exact board: Waveshare 3.5″, Waveshare 2.8″, or NM-CYD-C5.
 After all four images verify, press RESET without holding BOOT.
 
@@ -92,7 +92,7 @@ Local GPS-dependent recordings need a valid board GPS fix. Phone GPS supplies
 the phone app's records and is not assumed to feed back into the board.
 Native portrait mode and direct WiGLE / WDG Wars / Wardrift API uploads are not
 included. The XIAO ESP32-C5 node is available as a separate download on the
-[handheld prerelease](https://github.com/slickrick773/umbravox/releases/tag/f963f3a).
+[handheld prerelease](https://github.com/Em3ritus/umbravox/releases/tag/f963f3a).
 See [XIAO node installation](docs/XIAO-NODE.md) for flashing and enrollment.
 
 ## Development
@@ -119,3 +119,5 @@ GPL-3.0-or-later — see [LICENSE](LICENSE).
 The device-signature tables and their confidence grading are derived from
 [SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD) (GPL-3.0); see
 [NOTICE](NOTICE) for details and credit.
+
+Porting the project to the Waveshare C5 display was done by [slickrick773](https://github.com/slickrick773).

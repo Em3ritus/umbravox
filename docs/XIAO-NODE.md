@@ -6,11 +6,11 @@ Use it with the UMBRAVOX native handheld prerelease f963f3a (Waveshare firmware
 a66bd3b; previous Waveshare bce092c and NM 45e7ed3 are protocol-compatible). Mesh protocol: version 4; default network ID: 0
 (open). Previously stored enrollment survives these writes.
 
-Download [umbravox-a66bd3b-xiao-c5-node.zip](https://github.com/slickrick773/umbravox/releases/download/f963f3a/umbravox-a66bd3b-xiao-c5-node.zip).
+Download [umbravox-a66bd3b-xiao-c5-node.zip](https://github.com/Em3ritus/umbravox/releases/download/f963f3a/umbravox-a66bd3b-xiao-c5-node.zip).
 
 ## Install in your browser
 
-Open the [browser installer](https://slickrick773.github.io/umbravox/) in desktop
+Open the [browser installer](https://em3ritus.github.io/umbravox/) in desktop
 Chrome or Edge. Select **Seeed Studio XIAO ESP32-C5 — scanning node (8 MB)**,
 confirm the board selection, connect its USB serial port, then install.
 Wait for **Verified: all four images hashed OK**, then press RESET without
