@@ -5,6 +5,10 @@
 #include "board.h"
 #include <unistd.h>
 #include "applog.h"
+#include "elog.h"
+#include <errno.h>
+#include <string.h>
+#include <esp_heap_caps.h>
 
 namespace sdlog {
 namespace {
@@ -315,7 +319,18 @@ bool upWrite(const uint8_t* data, uint32_t len) {
     // every 43 chunks of 96 bytes), so most chunks cost a memcpy.
     const size_t w = upF.write(data, len);
     noteStall(t0);
-    if (w != len) upOk = false;
+    if (w != len) {
+        upOk = false;
+        // The console only says "write failed"; record why, so a one-off card error can be told from memory pressure
+        // (this file shares the display's SPI bus, and a 4 KB stdio flush is when it fails).
+        const int e = errno;
+        elog::event(elog::WARN, "sd", "upload write short: %u of %u, errno %d (%s), internal free %u largest %u min %u, took %u ms",
+                    (unsigned)w, (unsigned)len, e, strerror(e),
+                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                    (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                    (unsigned)(millis() - t0));
+    }
     return w == len;
 }
 
