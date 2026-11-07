@@ -177,3 +177,13 @@ sim/test_radarclip
 sim/test_alert_tone
 sim/test_soundpack
 sim/snd_check
+/sim/test_alert_takeover
+/sim/test_cosmic_clip
+/sim/test_mesh_timing_queue
+/sim/test_node_queue
+/sim/test_packmedia
+/sim/test_radar_window
+/sim/test_scan_layout
+/sim/test_sweep_styles
+/sim/test_sweep_tail
+/sim/test_theme_art
