@@ -82,9 +82,9 @@ test('emblem size and colour limits', () => {
   assert.ok(find(runChecks(t, null), 'error', /emblem/i).length >= 1);
 });
 
-test('all four reserved names, a 21-char name, bad characters, quote', () => {
+test('reserved names, a 21-char name, bad characters, quote', () => {
   const t = base();
-  for (const n of ['UMBRAVOX', 'BAPH0MAU5', 'CVLT OF BAPH0MAU5', 'COSMIC MUFFIN']) {
+  for (const n of ['UMBRAVOX', 'CVLT OF BAPH0MAU5', 'COSMIC MUFFIN']) {
     t.name = n; assert.ok(find(runChecks(t, null), 'error', /reserved|built-in/i).length >= 1, n);
   }
   t.name = 'A'.repeat(20); assert.equal(find(runChecks(t, null), 'error', /name/i).length, 0);

@@ -25,14 +25,19 @@ void write(const ui::Settings& s) {
     nvs.putUChar("bright",  s.bright);
     nvs.putUShort("dwell",  s.dwellMs);
     nvs.putUChar("bleduty", s.bleDuty);
+    nvs.putUChar("blebridge", s.bleBridge);
+    nvs.putUChar("bridgeapp", s.bridgeApp);
+    nvs.putUChar("discoverytx",s.activeDiscovery);
+    nvs.putUShort("nodedwell",s.nodeDwellMs);
+    nvs.putUChar("meshprofile",s.meshProfile);
     nvs.putUChar("bands",   s.bands);
     nvs.putUChar("alertmin", s.alertMin);
     nvs.putUChar("idle",    s.idleIdx);
     nvs.putUChar("idlemode", s.idleMode);
     nvs.putUChar("autolog", s.autoLog);
-    // Every field settingsEqual compares must also be stored here and read in
-    // load(), or the save timer never settles and hammers flash. Anyone who
-    // takes a spare byte for a new setting must add it to both.
+    // Durable fields are written and read individually. pcapEnabled is deliberately
+    // session-only: stored/lastSeen below still track it so the timer settles,
+    // but recording is never resumed by loading preferences.
     nvs.putUChar("theme",   s.theme);
     // A pack is saved by NAME as well: its id is only its slot in this boot's
     // load order, which adding or removing another pack shifts. Cleared (an
@@ -70,6 +75,11 @@ bool load(ui::Settings& s) {
     in.bright  = nvs.getUChar("bright",  s.bright);
     in.dwellMs = nvs.getUShort("dwell",  s.dwellMs);
     in.bleDuty = nvs.getUChar("bleduty", s.bleDuty);
+    in.bleBridge = nvs.getUChar("blebridge", s.bleBridge);
+    in.activeDiscovery=nvs.getUChar("discoverytx",s.activeDiscovery);
+    in.nodeDwellMs=nvs.getUShort("nodedwell",s.nodeDwellMs);
+    in.meshProfile=nvs.getUChar("meshprofile",s.meshProfile);
+    in.bridgeApp = nvs.getUChar("bridgeapp", in.bleBridge ? in.bleBridge : 1);
     in.bands   = nvs.getUChar("bands",   s.bands);
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);

@@ -35,12 +35,17 @@ inline void fromNative(int r, int nx, int ny, int& x, int& y) {
     }
 }
 
+inline void toPanel(int calRot, int r, int px, int py, int& x, int& y) {
+    int nx, ny;
+    toNative(calRot, px, py, nx, ny);
+    fromNative(r, nx, ny, x, y);
+}
+
 // A panel point measured in rotation `calRot` -> 2x canvas coordinates for a
 // display now in rotation `r`.
 inline void toCanvas(int calRot, int r, int px, int py, int& cx, int& cy) {
-    int nx, ny, x, y;
-    toNative(calRot, px, py, nx, ny);
-    fromNative(r, nx, ny, x, y);
+    int x, y;
+    toPanel(calRot, r, px, py, x, y);
     cx = x / 2;
     cy = y / 2;
 }

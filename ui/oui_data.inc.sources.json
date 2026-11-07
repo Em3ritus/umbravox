@@ -1,0 +1,44 @@
+{
+  "retrieved": "2026-10-31",
+  "mirror_commit": "32ea8eb95d7538038033636de6059c44cf92f9b7",
+  "sources": [
+    {
+      "file": "oui.csv",
+      "registry": "MA-L",
+      "rows": 40426,
+      "sha256": "d25109d804d5b35bc81072b7e5fa7a43b759d7833a0d8535a039813c35f730bf",
+      "official": "https://standards-oui.ieee.org/oui/oui.csv",
+      "retrieved_from": "https://raw.githubusercontent.com/runZeroInc/mac-tracker/32ea8eb95d7538038033636de6059c44cf92f9b7/data/ieee/oui.csv"
+    },
+    {
+      "file": "mam.csv",
+      "registry": "MA-M",
+      "rows": 6664,
+      "sha256": "851bf9764e0e93446ce7e46a946be6dd03a3f3919713279253b4ff18bd55adc6",
+      "official": "https://standards-oui.ieee.org/oui28/mam.csv",
+      "retrieved_from": "https://raw.githubusercontent.com/runZeroInc/mac-tracker/32ea8eb95d7538038033636de6059c44cf92f9b7/data/ieee/mam.csv"
+    },
+    {
+      "file": "oui36.csv",
+      "registry": "MA-S",
+      "rows": 7253,
+      "sha256": "17c6a833382ed29499c4658b5988961d40bbb10ddae2cd27fb0d418341590272",
+      "official": "https://standards-oui.ieee.org/oui36/oui36.csv",
+      "retrieved_from": "https://raw.githubusercontent.com/runZeroInc/mac-tracker/32ea8eb95d7538038033636de6059c44cf92f9b7/data/ieee/oui36.csv"
+    },
+    {
+      "file": "iab.csv",
+      "registry": "IAB",
+      "rows": 4575,
+      "sha256": "6e71aa3d47f00f19d09cb3b31ce1038de1834703420f0ce4ce111da586f1a533",
+      "official": "https://standards-oui.ieee.org/iab/iab.csv",
+      "retrieved_from": "https://raw.githubusercontent.com/runZeroInc/mac-tracker/32ea8eb95d7538038033636de6059c44cf92f9b7/data/ieee/iab.csv"
+    }
+  ],
+  "unique_prefixes": {
+    "24": 40423,
+    "28": 6664,
+    "36": 11828
+  },
+  "name_bytes": 791075
+}

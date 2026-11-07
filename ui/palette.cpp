@@ -49,27 +49,30 @@ constexpr Row THEMES[TH_COUNT] = {
     {   "UMBRAVOX", "UMBRAVOX", CP_HEPTAGRAM,
         0b11111111101,               // every sweep but the gaze (incl. cosmic)
         13, 70, 109, 48,   22, 26, 31, 20,   85, 16,
-        rgb(0x07,0x04,0x0E), rgb(0x13,0x0B,0x22), rgb(0x18,0x0F,0x2C),
-        rgb(0x2E,0x1F,0x52), rgb(0x56,0x36,0x97),
-        rgb(0x6B,0x4F,0x9E), rgb(0xC2,0xAB,0xE4), rgb(0xF2,0xE8,0xFF),
-        rgb(0x9D,0x7B,0xFF), rgb(0xD6,0xC2,0xFF), rgb(0xC9,0xB8,0x97),
-        rgb(0x9D,0x7B,0xFF), rgb(0xD6,0xC2,0xFF),
-        rgb(0xD6,0xC2,0xFF), rgb(0xF2,0xE8,0xFF),
-        // No bitmap centrepiece here, but a working ramp from the theme's own
-        // darkest to brightest (VOID, EDGE, DIM, BRIGHT) rather than a
-        // placeholder that renders nothing -- that kind survives to a release.
-        { rgb(0x07,0x04,0x0E), rgb(0x2E,0x1F,0x52),
-          rgb(0x6B,0x4F,0x9E), rgb(0xF2,0xE8,0xFF) },
-        rgb(0xD0,0x2B,0xB4), rgb(0x6F,0xD3,0xF5), rgb(0x4A,0xDE,0x80),
+        // Design #1 (WS35 proposal, full-design-scan): a crisp near-neutral dark
+        // instead of the old purple wash. void/panel/grid/edge from the design
+        // chrome; edgeLit is the seal/heptagram tone; accents are the proposal's
+        // softer pink/cyan/green.
+        rgb(0x0B,0x0C,0x13), rgb(0x17,0x18,0x23), rgb(0x23,0x24,0x2F),
+        rgb(0x36,0x34,0x44), rgb(0x57,0x44,0x65),
+        rgb(0xA9,0xA2,0xB7), rgb(0xE1,0xDC,0xE9), rgb(0xFA,0xF5,0xFF),
+        rgb(0xB7,0x9A,0xFF), rgb(0xD6,0xC2,0xFF), rgb(0xC9,0xB8,0x97),
+        rgb(0xB7,0x9A,0xFF), rgb(0xD6,0xC2,0xFF),
+        rgb(0xD6,0xC2,0xFF), rgb(0xFA,0xF5,0xFF),
+        // A working ramp from the theme's own darkest to brightest
+        // (VOID, EDGE, DIM, BRIGHT).
+        { rgb(0x0B,0x0C,0x13), rgb(0x36,0x34,0x44),
+          rgb(0xA9,0xA2,0xB7), rgb(0xFA,0xF5,0xFF) },
+        rgb(0xDC,0x8E,0xC8), rgb(0x89,0xCC,0xE9), rgb(0x78,0xD9,0xAD),
         rgb(0xF5,0x9E,0x0B), rgb(0xEF,0x44,0x44),
     },
-    {   "BAPH0MAU5", "CVLT OF BAPH0MAU5", CP_SEAL,
+    {   "CVLT OF BAPH0MAU5", "CVLT OF BAPH0MAU5", CP_SEAL,
         0b11111111111,               // all sweeps, cosmic + gaze
         13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
         rgb(0x06,0x03,0x0C), rgb(0x13,0x09,0x21), rgb(0x1D,0x11,0x33),
-        rgb(0x3C,0x20,0x62), rgb(0x74,0x3C,0xB4),
-        rgb(0x7E,0x56,0xBC), rgb(0xCA,0xB0,0xEA), rgb(0xFF,0xFA,0xFF),
-        rgb(0x9B,0x62,0xF0), rgb(0xD6,0xBC,0xFF), rgb(0xE4,0xDA,0xF6),
+        rgb(54,34,71), rgb(0x74,0x3C,0xB4),
+        rgb(174,151,199), rgb(0xCA,0xB0,0xEA), rgb(0xFF,0xFA,0xFF),
+        rgb(167,111,231), rgb(0xD6,0xBC,0xFF), rgb(0xE4,0xDA,0xF6),
         rgb(0x3B,0xFF,0x6E), rgb(0xC4,0xFF,0xD4),
         rgb(0x24,0xC4,0x50), rgb(0x3B,0xFF,0x6E),
         { rgb(0x06,0x03,0x0C), rgb(0x3E,0x30,0x55),
@@ -80,18 +83,20 @@ constexpr Row THEMES[TH_COUNT] = {
     {   "COSMIC MUFFIN", "COSMIC MVFFIN", CP_EMBLEM,
         0b11111111101,               // every sweep but the gaze -- no eyes (0x7FD)
         13, 90, 109, 57,   33, 37, 42, 31,    0,  0,
-        rgb(0x09,0x07,0x1C), rgb(0x16,0x10,0x3A), rgb(0x1E,0x16,0x46),
-        rgb(0x3A,0x2A,0x6E), rgb(0xA8,0x4D,0xFF),
-        rgb(0x8A,0x7B,0xD0), rgb(0xE8,0xDE,0xFF), rgb(0xFF,0xFF,0xFF),
-        rgb(0xA8,0x4D,0xFF), rgb(0xFF,0x1F,0xCC), rgb(0xFF,0xD0,0x4A),
-        rgb(0x1E,0xF5,0xEE), rgb(0xFF,0x1F,0xCC),
-        rgb(0xFF,0x58,0xB0), rgb(0xFF,0xF0,0xD0),
-        { rgb(0x09,0x07,0x1C), rgb(0x3A,0x2A,0x6E),
-          rgb(0xA8,0x4D,0xFF), rgb(0xFF,0xF0,0xE8) },
-        rgb(0xFF,0x1F,0xCC), rgb(0x1E,0xF5,0xEE), rgb(0x3B,0xFF,0x9E),
-        rgb(0xFF,0xC2,0x4A), rgb(0xFF,0x4D,0x6A),
+        rgb(0x0A,0x0A,0x1E), rgb(0x12,0x12,0x34), rgb(0x1C,0x1C,0x44),
+        rgb(0x2A,0x2A,0x52), rgb(0x4D,0xE0,0xFF),
+        rgb(0x8A,0x88,0xB8), rgb(0xE8,0xE6,0xFF), rgb(0xFF,0xFF,0xFF),
+        rgb(0xFF,0x5F,0xD0), rgb(0xFF,0x8F,0xE0), rgb(0xFF,0xC2,0x4D),
+        rgb(0x4D,0xE0,0xFF), rgb(0xFF,0x5F,0xD0),
+        rgb(0xFF,0x5F,0xD0), rgb(0xFF,0xE0,0xF5),
+        { rgb(0x0A,0x0A,0x1E), rgb(0x2A,0x2A,0x52), rgb(0x8A,0x88,0xB8), rgb(0xFF,0xFF,0xFF) },
+        rgb(0xFF,0x5F,0xD0), rgb(0x4D,0xE0,0xFF), rgb(0x57,0xFF,0xB0),
+        rgb(0xFF,0xC2,0x4D), rgb(0xFF,0x5C,0x7A),
     },
+#include "bundled_theme_rows.inc"
 };
+struct BundledMeta {uint8_t sweep, rite, opacity, scale; bool diamond; const themepack::Emblem* emblem;};
+#include "bundled_theme_assets.inc"
 
 // Theme packs, appended after the built-ins at ids TH_COUNT + slot. Static
 // storage: a pack Row's name and header point into PACKS, so they live as long
@@ -99,18 +104,19 @@ constexpr Row THEMES[TH_COUNT] = {
 themepack::Pack           PACKS[themepack::MAX_PACKS];
 Row                       PACK_ROWS[themepack::MAX_PACKS];
 const themepack::Emblem*  PACK_EMBLEM[themepack::MAX_PACKS];
-int                       nPacks = 0;
+int                       nPacks = 0, nCustom = 0;
+uint8_t PACK_IDS[themepack::MAX_PACKS]{};
 
 // The slot for a pack theme id, or -1 for a built-in or an id past the packs.
 inline int slotOf(uint8_t id) {
-    const int s = (int)id - (int)TH_COUNT;
-    return (s >= 0 && s < nPacks) ? s : -1;
+    for(int s=0;s<nPacks;s++)if(PACK_IDS[s]==id)return s;
+    return -1;
 }
 
 inline const Row& row(uint8_t id) {
-    if (id < TH_COUNT) return THEMES[id];
     const int s = slotOf(id);
-    return s >= 0 ? PACK_ROWS[s] : THEMES[TH_UMBRAVOX];
+    if(s>=0)return PACK_ROWS[s];
+    return THEMES[id<TH_COUNT?id:TH_UMBRAVOX];
 }
 
 } // namespace
@@ -156,11 +162,13 @@ uint16_t    sweepMask(uint8_t id) { return row(id).sweeps; }
 
 // --- theme packs ----------------------------------------------------------
 
-int themeCount() { return TH_COUNT + nPacks; }
+int themeCount() { return TH_COUNT + nCustom; }
 
 int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
-    if (nPacks >= themepack::MAX_PACKS) return -1;
-    const int slot = nPacks;
+    int slot=nPacks;
+    for(int i=0;i<nPacks;i++)if(!strncmp(PACKS[i].name,in.name,themepack::MAX_NAME+1)){slot=i;break;}
+    const bool append=slot==nPacks;
+    if(append && nPacks>=themepack::MAX_PACKS)return -1;
     themepack::Pack& p = PACKS[slot];
     p = in;
 
@@ -174,7 +182,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
         p.header[themepack::MAX_HEADER] = 0;
     }
     if (p.dial != themepack::DIAL_LARGE) p.dial = themepack::DIAL_COMPACT;
-    if (p.centre != themepack::CENTRE_EMBLEM) p.centre = themepack::CENTRE_HEPTAGRAM;
+    if (p.centre != themepack::CENTRE_EMBLEM && p.centre != themepack::CENTRE_RADAR && p.centre != themepack::CENTRE_MASCOT && p.centre != themepack::CENTRE_SIGIL && p.centre != themepack::CENTRE_RADAR_EMBLEM) p.centre = themepack::CENTRE_HEPTAGRAM;
     if ((unsigned)p.rite > (unsigned)themepack::RITE_LOCKON) p.rite = themepack::RITE_WARD;
     // The starting sweep must be one the pack offers, or clampSettings could
     // fall back to a sweep that is itself withdrawn.
@@ -191,7 +199,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     Row r = THEMES[p.dial == DIAL_LARGE ? TH_COSMICMUFFIN : TH_UMBRAVOX];   // geometry
     r.name = p.name;
     r.header = p.header;
-    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : CP_HEPTAGRAM;
+    r.centre = p.centre == CENTRE_EMBLEM ? CP_EMBLEM : p.centre == CENTRE_RADAR ? CP_RADAR : p.centre == CENTRE_MASCOT ? CP_MASCOT : p.centre == CENTRE_SIGIL ? CP_SIGIL : p.centre == CENTRE_RADAR_EMBLEM ? CP_RADAR_EMBLEM : CP_HEPTAGRAM;
     r.sweeps = p.sweeps;
     const uint16_t* c = p.color;
     r.void_ = c[R_VOID];   r.panel = c[R_PANEL];     r.grid = c[R_GRID];
@@ -206,8 +214,12 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e) {
     r.amber = c[R_AMBER];  r.red = c[R_RED];
     PACK_ROWS[slot] = r;
     PACK_EMBLEM[slot] = e;
-    nPacks++;
-    return TH_COUNT + slot;
+    int id=append?-1:PACK_IDS[slot];
+    for(int i=TH_SLICK;i<TH_COUNT;i++)if(!strcmp(p.name,THEMES[i].name)){id=i;break;}
+    if(id<0)id=TH_COUNT+nCustom++;
+    PACK_IDS[slot]=id;
+    if(append)nPacks++;
+    return id;
 }
 
 // Host tools and tests only; the device never calls it (see palette.h).
@@ -215,13 +227,14 @@ void clearPacks() {
     memset(PACKS, 0, sizeof PACKS);
     memset(PACK_ROWS, 0, sizeof PACK_ROWS);
     for (int s = 0; s < themepack::MAX_PACKS; s++) PACK_EMBLEM[s] = nullptr;
-    nPacks = 0;
+    nPacks = nCustom = 0;
 }
 
 int findPack(const char* name) {
     if (!name || !name[0]) return -1;
     for (int s = 0; s < nPacks; s++)
-        if (!strcmp(PACKS[s].name, name)) return TH_COUNT + s;
+        if (!strcmp(PACKS[s].name, name)) return PACK_IDS[s];
+    for(int i=TH_SLICK;i<TH_COUNT;i++)if(!strcmp(THEMES[i].name,name))return i;
     return -1;
 }
 
@@ -233,23 +246,33 @@ uint8_t resolveSaved(const char* name, uint8_t savedId) {
     return savedId < TH_COUNT ? savedId : (uint8_t)TH_UMBRAVOX;
 }
 
+const BundledMeta* bundled(uint8_t id){return id>=TH_SLICK && id<TH_COUNT?&BUNDLED_META[id-TH_SLICK]:nullptr;}
+uint8_t artOpacity(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artOpacity<=100?PACKS[s].artOpacity:(bundled(id)?bundled(id)->opacity:100);}
+uint8_t artScale(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artScale>=25 && PACKS[s].artScale<=100?PACKS[s].artScale:(bundled(id)?bundled(id)->scale:82);}
+
+bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 ? PACKS[s].diamond : (bundled(id) && bundled(id)->diamond);}
+
 Centrepiece centrepiece(uint8_t id) { return row(id).centre; }
-const char* header(uint8_t id)      { return row(id).header; }
+const char* header(uint8_t id) {
+    // General palettes retain the product identity, including older SD overrides.
+    if(id==TH_EMBER || (id>=TH_PHOSPHOR && id<TH_COUNT))return "UMBRAVOX";
+    return row(id).header;
+}
 
 const themepack::Emblem* emblem(uint8_t id) {
     if (id == TH_COSMICMUFFIN) return &ui::muffinEmblem();
     const int s = slotOf(id);
-    return s >= 0 ? PACK_EMBLEM[s] : nullptr;
+    return s >= 0 ? PACK_EMBLEM[s] : (bundled(id)?bundled(id)->emblem:nullptr);
 }
 
 uint8_t startSweep(uint8_t id) {
     const int s = slotOf(id);
-    return s >= 0 ? PACKS[s].sweep : (uint8_t)ui::SW_RADAR;
+    return s >= 0 ? PACKS[s].sweep : (bundled(id)?bundled(id)->sweep:(uint8_t)ui::SW_RADAR);
 }
 
 uint8_t packRite(uint8_t id) {
     const int s = slotOf(id);
-    return (uint8_t)(s >= 0 ? PACKS[s].rite : themepack::RITE_WARD);
+    return (uint8_t)(s >= 0 ? PACKS[s].rite : (bundled(id)?bundled(id)->rite:themepack::RITE_WARD));
 }
 
 } // namespace pal

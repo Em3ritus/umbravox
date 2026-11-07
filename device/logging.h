@@ -67,7 +67,14 @@ void begin(bool wasActive, const Hooks& hooks, uint32_t nowMs, uint32_t nowEpoch
 
 void toggle(uint32_t nowMs, uint32_t nowEpoch);
 void start(uint32_t nowMs, uint32_t nowEpoch);
+// Blocking shutdown drain, retained for reboot and legacy callers.
 void stop(uint32_t nowMs);
+// UI stop: returns without SD I/O. tick drains at most STOP_BATCH_ROWS per
+// pass, with a three-second elapsed deadline (an SD call itself can overrun).
+constexpr uint32_t STOP_BATCH_ROWS = 64;
+void requestStop(uint32_t nowMs);
+bool saving();
+uint32_t lastStopLoss(); // retained until the next session; also reported by onStopLoss
 
 // Every loop. Flushes while ACTIVE; promotes NO_CARD to ACTIVE when a card
 // appears; checks the rollover rule.

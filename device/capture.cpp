@@ -1,7 +1,20 @@
+#include "evidence_csv.h"
+#include "ble_bridge_protocol.h"
+#include "active_discovery.h"
+#include "sight_order.h"
+#include "radio_policy.h"
 #include "capture.h"
+#if defined(UMBRAVOX_SCAN_ENGINE)
+#include "pcap.h"
+#include "clients.h"
+#include "probe_evidence.h"
+#include <esp_timer.h>
+#endif
 #include <new>
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_event.h>
+#include <esp_netif.h>
 #include <esp_wifi.h>
 #include <esp_heap_caps.h>
 #include "signatures.h"
@@ -21,6 +34,10 @@
 
 namespace cap {
 namespace {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+clients::Storage* clientStore=nullptr;
+evidence::Storage* evidenceStore=nullptr;
+#endif
 
 // How long we sit on each channel. Too short and beacons (typically every
 // 102ms) are missed; too long and the cycle takes forever. 220ms catches at
@@ -28,12 +45,14 @@ namespace {
 // just under 5 seconds.
 uint32_t dwellMs = 220;        // adjustable; see ATTUNE
 uint8_t  bandMode = 0;         // 0 both, 1 = 2.4 only, 2 = 5 only
+bool activeDiscovery=false;
 int      campIdx = -1;         // >=0: hold this channel index, do not hop
 
 constexpr int N_CHAN = ui::CH24 + ui::CH5;
 // The dedup table lives in PSRAM, which is what makes this number a real
-// one rather than a budget. A Node is 92 bytes on the C5, so 32768 slots is
-// ~3MB of the ~7MB free, and the table is touched once per packet and never
+// one rather than a budget. The full-SSID table lives in PSRAM; its
+// actual node size and allocation size are reported at boot.
+// The table is touched once per packet and never
 // in the draw path, so the extra latency of external RAM costs nothing that
 // matters.
 //
@@ -52,8 +71,10 @@ static_assert(applog::ROLL_HARD_APS > applog::ROLLOVER_APS && applog::ROLL_HARD_
 constexpr int RECENT = ui::MAX_CONTACTS;
 
 struct Node {
+    ui::ApInfo info;
+    uint32_t observations;
     uint8_t  mac[6];
-    char     ssid[ui::SSID_MAX];
+    char     ssid[ui::AP_SSID_MAX];
     int8_t   rssi;
     uint8_t  band;        // ui::Band
     uint8_t  chan;
@@ -109,10 +130,13 @@ uint8_t*  logBits_ = nullptr;
 struct Blip { uint16_t angle; uint8_t dist, band; uint32_t lastMs; bool live; };
 Blip recent_[RECENT];
 
+volatile uint32_t nLocated = 0;
 volatile uint32_t nFrames = 0, nLocal = 0, nUnique24 = 0, nUnique5 = 0;
 // Bumped whenever the table is cleared, so caches built from it (the map)
 // know to rebuild.
 uint32_t tableGen = 0;
+// Only table clears invalidate the bridge cursor; name updates must not rewind it.
+uint32_t bridgeGen = 0;
 
 // Devices first discovered by each source, kept as a running count rather
 // than derived on demand: scanning 8192 slots per node per frame to answer
@@ -128,13 +152,9 @@ bool     chanOk[N_CHAN];        // false if the radio refused the channel
 
 // --- probe requests ------------------------------------------------------
 //
-// A client looking for a named network is telling you it has joined that
-// network before. A phone that probes for a hotel SSID has stayed there.
-// This is the one capture here that is about people rather than
-// infrastructure, which is also why it is worth treating carefully.
-//
-// Broadcast probes -- the ones with no SSID -- are discarded: they say only
-// "a device is here", which the rest of the radio already told us.
+// Named probe requests show what was requested, not proof of past membership.
+// The legacy path retains named probes only; native capture also records wildcard
+// requests and preserves complete raw SSIDs for pair identity.
 constexpr int PROBE_TABLE = 512;
 struct Probe {
     uint8_t  mac[6];
@@ -168,7 +188,7 @@ portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 int chanAt(int i);
 void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             const char* name, const ui::Hit& sig, uint32_t ageMs, uint8_t src,
-            uint16_t auth);
+            uint16_t auth, const ui::ApInfo* info=nullptr);
 
 // Keyed per boot (dedup.h): a cluster of BSSIDs precomputed to share one
 // probe chain does not collide here. Drawn in begin(), once the radio is up.
@@ -191,8 +211,28 @@ uint8_t rssiToDist(int8_t rssi) {
 
 // Runs on the WiFi task. Keep it short: no printf, no allocation, no blocking.
 void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_MGMT) return;
     const wifi_promiscuous_pkt_t* p = (const wifi_promiscuous_pkt_t*)buf;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(pcap::active() && type!=WIFI_PKT_MISC && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=14)
+        pcap::receive(p->payload,p->rx_ctrl.sig_len-4,esp_timer_get_time());
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore && (type==WIFI_PKT_MGMT || type==WIFI_PKT_DATA) && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=28){
+        clients::Event e;
+        if(clients::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,p->rx_ctrl.channel,millis(),e)){
+            portENTER_CRITICAL(&mux);clientStore->queue.push(e);portEXIT_CRITICAL(&mux);
+        }
+    }
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    evidence::Event parsedEvidence;
+    const bool haveEvidence=type==WIFI_PKT_MGMT && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=28 &&
+        evidence::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,p->rx_ctrl.channel,millis(),parsedEvidence);
+    if(haveEvidence && evidenceStore){
+        portENTER_CRITICAL(&mux);evidenceStore->queue.push(parsedEvidence);portEXIT_CRITICAL(&mux);
+    }
+#endif
+    if (type != WIFI_PKT_MGMT) return;
     if (p->rx_ctrl.sig_len < 24) return;
 
     const uint8_t* f = p->payload;
@@ -210,6 +250,9 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
 
     // 4 = probe request: a client calling out for a network by name.
     if (subtype == 4) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        return; // parsed into the bounded evidence queue above
+#endif
         if (p->rx_ctrl.sig_len < 26 || !probes) return;
         const uint8_t* src = f + 10;                  // addr2, the client
         if (f[24] != 0) return;                       // first element is SSID
@@ -269,11 +312,17 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     // zero length is a hidden network, which is a finding, not an absence.
     const uint8_t* ssid = nullptr;
     uint8_t ssidLen = 0;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(!haveEvidence || parsedEvidence.kind!=evidence::Advertisement)return;
+    ssidLen=parsedEvidence.len;ssid=ssidLen?parsedEvidence.name:nullptr;
+#else
     if (p->rx_ctrl.sig_len >= 38 && f[36] == 0) {
         ssidLen = f[37];
         if (ssidLen > 0 && (36 + 2 + ssidLen) <= p->rx_ctrl.sig_len) ssid = f + 38;
         else ssidLen = 0;
     }
+
+#endif
 
     // The channel comes from our own hop state, not from rx_ctrl: that field
     // is 4 bits wide and cannot represent anything above channel 15, so it is
@@ -283,9 +332,9 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
 
     // Match before taking the lock -- the tables are const and the matcher
     // touches no shared state.
-    char nameBuf[ui::ALERT_NAME];
+    char nameBuf[ui::AP_SSID_MAX];
     int nb = 0;
-    for (; nb < ui::ALERT_NAME - 1 && nb < ssidLen && ssid; nb++) {
+    for (; nb < ui::AP_SSID_MAX - 1 && nb < ssidLen && ssid; nb++) {
         const char c = (char)ssid[nb];
         nameBuf[nb] = (c >= 32 && c < 127) ? c : '.';
     }
@@ -297,7 +346,9 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     portENTER_CRITICAL(&mux);
     nLocal++;                       // heard on our own radio, not relayed
     portEXIT_CRITICAL(&mux);
-    insert(bssid, rssi, h, band, nameBuf, sig, 0, 0, auth);
+    // sig_len includes four FCS bytes, which are not information elements.
+    const auto info=ui::parseApInfo(f+24,p->rx_ctrl.sig_len>=40?p->rx_ctrl.sig_len-28:0);
+    insert(bssid, rssi, h, band, nameBuf, sig, 0, 0, auth,&info);
 }
 
 // The evil-twin rule, shared by the inline pass and the deferred one: entry
@@ -317,7 +368,7 @@ bool isTwin(const Node& o, const Node* self, const char* name, uint16_t auth,
             const uint8_t* mac) {
     if (&o == self || !o.ssid[0] || !o.auth) return false;
     if (o.auth == auth) return false;
-    for (int k = 0; k < (int)ui::SSID_MAX; k++) {
+    for (int k = 0; k < (int)ui::AP_SSID_MAX; k++) {
         if (o.ssid[k] != name[k]) return false;
         if (!o.ssid[k]) break;
     }
@@ -333,6 +384,7 @@ void flagTwin(int slot, const char* name) {
         alert_.threat = ui::TH_ROGUE;
         alert_.conf   = ui::CONF_MED;
         alert_.why    = "SSID AUTH CLASH";
+        memcpy(alert_.mac,table_[slot].mac,6);alert_.address=ui::AlertAddress::WifiBssid;
         int k = 0;
         for (; k < ui::ALERT_NAME - 1 && name[k]; k++) alert_.name[k] = name[k];
         alert_.name[k] = 0;
@@ -344,7 +396,7 @@ void flagTwin(int slot, const char* name) {
 // came off our own radio or arrived over the mesh from a node.
 void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             const char* name, const ui::Hit& sig, uint32_t ageMs, uint8_t src,
-            uint16_t auth) {
+            uint16_t auth, const ui::ApInfo* info) {
     const bool is5 = band == ui::BAND_5;
     const int h = chanIdx;
 
@@ -357,6 +409,8 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
             alert_.threat = sig.threat;
             alert_.conf   = sig.conf;
             alert_.why    = sig.why;
+            memcpy(alert_.mac,bssid,6);alert_.address=ui::AlertAddress::WifiBssid;
+            memset(alert_.name,0,sizeof alert_.name);
             for (int k = 0; k < ui::ALERT_NAME - 1 && name[k]; k++) alert_.name[k] = name[k];
             alert_.atMs   = millis();
         }
@@ -391,6 +445,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         table_[i].bestRssi = -127;
         table_[i].finder = src;
         table_[i].auth = 0;
+        table_[i].info=ui::ApInfo{};table_[i].observations=0;
         if (src < MAX_SRC) foundBy_[src]++;
         order_[nOrder++] = (uint16_t)i;
         nUsed++;
@@ -398,6 +453,8 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         dedup::noteInsert(maxProbe_, hit);
         if (dedup::longProbe(hit)) nLongProbes++;
     }
+    if(table_[slot].observations!=UINT32_MAX)++table_[slot].observations;
+    if(info && info->valid)table_[slot].info=*info;
     table_[slot].rssi   = rssi;
     table_[slot].chan   = (uint8_t)chanAt(h);
     table_[slot].lastMs = millis();
@@ -411,6 +468,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
         if (gpstrack::at(millis(), ageMs, la, lo)) {
             table_[slot].lat7 = la;
             table_[slot].lon7 = lo;
+            if(!table_[slot].located)++nLocated;
             table_[slot].located = true;
             table_[slot].bestRssi = rssi;
         }
@@ -459,7 +517,7 @@ void insert(const uint8_t* bssid, int8_t rssi, int chanIdx, uint8_t band,
     if (auth) table_[slot].auth = auth;
     if (name && name[0] && table_[slot].ssid[0] == 0) {
         int k = 0;
-        for (; k < (int)ui::SSID_MAX - 1 && name[k]; k++) table_[slot].ssid[k] = name[k];
+        for (; k < (int)ui::AP_SSID_MAX - 1 && name[k]; k++) table_[slot].ssid[k] = name[k];
         table_[slot].ssid[k] = 0;
     }
     // Now that it has a name and security, other APs can be its twin: the
@@ -488,6 +546,12 @@ bool park(int i) {
 }
 
 } // namespace
+
+void setActive(bool on){activeDiscovery=on; if(on)discovery::begin();}
+void activeRecord(const wifi_ap_record_t& r){
+    char ssid[33]{};memcpy(ssid,r.ssid,32);
+    ingest(r.bssid,r.rssi,r.primary,r.primary>14?1:0,ssid,0,0,discovery::auth(r));
+}
 
 void begin() {
     // PSRAM. The internal-RAM fallback below cannot succeed: the table is
@@ -532,16 +596,37 @@ void begin() {
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; chanOk[i] = true; }
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
 
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    void* evidenceMemory=heap_caps_malloc(sizeof(evidence::Storage),MALLOC_CAP_SPIRAM);
+    if(evidenceMemory)evidenceStore=new(evidenceMemory) evidence::Storage();
+    Serial.printf("capture: probe evidence %s (%u bytes PSRAM)\n",evidenceStore?"ready":"unavailable",evidenceStore?(unsigned)sizeof(evidence::Storage):0);
+#else
     probes = (Probe*)heap_caps_malloc(sizeof(Probe) * PROBE_TABLE, MALLOC_CAP_SPIRAM);
     if (!probes) probes = (Probe*)calloc(PROBE_TABLE, sizeof(Probe));
     if (probes) for (int i = 0; i < PROBE_TABLE; i++) probes[i].used = false;
     Serial.printf("capture: %d probe slots\n", probes ? PROBE_TABLE : 0);
 
+#endif
+
+#if UMBRAVOX_PASSIVE_ONLY
+    // Initialize directly in NULL mode: never start a station or AP, even briefly.
+    ESP_ERROR_CHECK(esp_netif_init());
+    const esp_err_t eventErr = esp_event_loop_create_default();
+    if (eventErr != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(eventErr);
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
+    ESP_ERROR_CHECK(esp_wifi_start());
+#else
     WiFi.mode(WIFI_MODE_STA);
+#endif
     // With the radio on, esp_random() is the hardware RNG. Before any frame
     // can reach insert() (the promiscuous callback is registered below).
     hashSeed = esp_random();
+#if !UMBRAVOX_PASSIVE_ONLY
     WiFi.disconnect();
+#endif
     delay(100);
 
     // AUTO is what makes esp_wifi_set_band() legal later; in a single-band
@@ -549,9 +634,27 @@ void begin() {
     const esp_err_t be = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
     Serial.printf("capture: band mode AUTO -> %s\n", esp_err_to_name(be));
 
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // Optional, PSRAM-only: never consume scarce internal heap as a fallback.
+    void* clientMemory=heap_caps_malloc(sizeof(clients::Storage),MALLOC_CAP_SPIRAM);
+    if(clientMemory)clientStore=new(clientMemory) clients::Storage();
+    Serial.printf("capture: clients %s (%u bytes PSRAM)\n",clientStore?"ready":"unavailable",clientStore?(unsigned)sizeof(clients::Storage):0);
+#endif
     wifi_promiscuous_filter_t filt = {};
     filt.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore)filt.filter_mask|=WIFI_PROMIS_FILTER_MASK_DATA;
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    const esp_err_t clientFilter=esp_wifi_set_promiscuous_filter(&filt);
+    if(clientFilter!=ESP_OK && clientStore){
+        Serial.printf("capture: client DATA filter failed: %s; unavailable\n",esp_err_to_name(clientFilter));
+        clientStore->~Storage();heap_caps_free(clientStore);clientStore=nullptr;
+        filt.filter_mask=WIFI_PROMIS_FILTER_MASK_MGMT;esp_wifi_set_promiscuous_filter(&filt);
+    }
+#else
     esp_wifi_set_promiscuous_filter(&filt);
+#endif
     esp_wifi_set_promiscuous_rx_cb(&onPacket);
     esp_wifi_set_promiscuous(true);
 
@@ -574,7 +677,39 @@ void begin() {
     hopAt = millis();
 }
 
+// Fill only a known, still-unnamed AP. Do not fabricate signal, position,
+// observations or a new table row from a client's association request.
+#if defined(UMBRAVOX_SCAN_ENGINE)
+static void applyNameEvidence(const uint8_t* mac){
+    const auto* a=evidenceStore->store.find(mac);if(!a||!a->hidden||!a->len||a->conflict)return;
+    char name[ui::AP_SSID_MAX];evidence::display(name,a->name,a->len);
+    const auto sig=ui::matchWifi(mac,name);
+    portENTER_CRITICAL(&mux);
+    const auto hit=dedup::find(hashMac(mac),TABLE,nUsed,INSERT_LIMIT,maxProbe_,
+        [](uint32_t i){return used_[i];},[mac](uint32_t i){return macEq(table_[i].mac,mac);});
+    if(hit.kind==dedup::FOUND && evidenceStore->store.resolve(mac,table_[hit.slot].ssid,name)){
+        memcpy(table_[hit.slot].ssid,name,strlen(name)+1);
+        if(sig.threat!=ui::TH_NONE && sig.conf>=table_[hit.slot].conf){table_[hit.slot].threat=sig.threat;table_[hit.slot].conf=sig.conf;table_[hit.slot].why=sig.why;}
+        if(table_[hit.slot].auth)(*twinF).add(name,hashSeed);
+        ++tableGen;
+    }
+    portEXIT_CRITICAL(&mux);
+}
+#endif
 void tick(uint32_t nowMs) {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(evidenceStore)for(int i=0;i<evidence::DRAIN;i++){
+        evidence::Event e;portENTER_CRITICAL(&mux);const bool got=evidenceStore->queue.pop(e);portEXIT_CRITICAL(&mux);
+        if(!got)break;
+        if(evidenceStore->store.observe(e))applyNameEvidence(e.ap);
+    }
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore)for(int i=0;i<clients::DRAIN;i++){
+        clients::Event e;portENTER_CRITICAL(&mux);const bool got=clientStore->queue.pop(e);portEXIT_CRITICAL(&mux);
+        if(!got)break;clientStore->table.observe(e);
+    }
+#endif
     // One bounded chunk (<= CHUNK entries, ~1 ms with the lock held) of a
     // deferred evil-twin check, on the loop task, as the budget allows.
     portENTER_CRITICAL(&mux);
@@ -606,6 +741,7 @@ void tick(uint32_t nowMs) {
             alert_.threat = ui::TH_DEAUTH;
             alert_.conf   = ui::CONF_HIGH;
             alert_.why    = "FLOOD";
+            memcpy(alert_.mac,deauthTarget,6);alert_.address=ui::AlertAddress::WifiTarget;
             snprintf(alert_.name, ui::ALERT_NAME, "%02X:%02X:%02X %lu/S",
                      deauthTarget[3], deauthTarget[4], deauthTarget[5],
                      (unsigned long)(deauthRate * 1000 / DEAUTH_WINDOW_MS));
@@ -613,6 +749,8 @@ void tick(uint32_t nowMs) {
             portEXIT_CRITICAL(&mux);
         }
     }
+
+    if(discovery::service(nowMs,activeRecord))return;
 
     // Camping: the Core does this once it has nodes. It is not a sacrifice
     // -- channel 1 carries real traffic, so the Core becomes its full-time
@@ -648,6 +786,7 @@ void tick(uint32_t nowMs) {
     }
     park(hop);
     hopAt = nowMs;
+    if(activeDiscovery)discovery::start((uint8_t)chanAt(hop),dwellMs,nowMs);
 }
 
 void fill(ui::State& s, uint32_t nowMs) {
@@ -681,21 +820,20 @@ void fill(ui::State& s, uint32_t nowMs) {
     s.nContacts = (uint8_t)n;
 }
 
-void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
-    s.detail = ui::Detail{};
-    int seen = 0;
-    for (int i = (int)nOrder - 1; i >= 0; i--) {
-        const Node& nd = table_[order_[i]];
-        if (only5 && nd.band != ui::BAND_5) continue;
-        if (seen++ != index) continue;
-
+static void fillDetailSlot(ui::State& s, int slot, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    const Node& nd=table_[slot];
         ui::Detail& d = s.detail;
         d.valid = true;
-        for (int k = 0; k < ui::SSID_MAX; k++) d.ssid[k] = nd.ssid[k];
+        for (int k = 0; k < ui::AP_SSID_MAX; k++) d.ssid[k] = nd.ssid[k];
+        d.located = nd.located; d.lat7 = nd.lat7; d.lon7 = nd.lon7; d.bestRssi = nd.bestRssi;
         for (int k = 0; k < 6; k++) d.mac[k] = nd.mac[k];
         d.rssi = nd.rssi;  d.band = nd.band;  d.chan = nd.chan;
         d.threat = nd.threat; d.conf = nd.conf;
-        d.auth = nd.auth;
+        d.auth = nd.auth; d.info=nd.info;d.observations=nd.observations;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        if(evidenceStore){const auto* a=evidenceStore->store.find(nd.mac);if(a && a->hidden && a->len){char name[33];evidence::display(name,a->name,a->len);if(a->conflict)d.nameEvidence=3;else if(!strcmp(name,nd.ssid))d.nameEvidence=a->source;}}
+#endif
         for (int k = 0; k < 19 && nd.why && nd.why[k]; k++) d.why[k] = nd.why[k];
         d.firstAgoS = (nowMs - nd.firstMs) / 1000;
         d.lastAgoS  = (nowMs - nd.lastMs) / 1000;
@@ -705,7 +843,14 @@ void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
         const int start = nd.histN < ui::HIST_N ? 0 : nd.histN % ui::HIST_N;
         for (int k = 0; k < n; k++) d.hist[k] = nd.hist[(start + k) % ui::HIST_N];
         d.histN = (uint8_t)n;
-        return;
+}
+void fillDetail(ui::State& s, int index, bool only5, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    int seen=0;
+    for(int i=(int)nOrder-1;i>=0;--i){
+        const int slot=order_[i];
+        if(only5 && table_[slot].band!=ui::BAND_5)continue;
+        if(seen++==index){fillDetailSlot(s,slot,nowMs);return;}
     }
 }
 
@@ -718,20 +863,88 @@ uint16_t sightCount(bool only5) {
     return (uint16_t)(c > 65535 ? 65535 : c);
 }
 
-void fillSights(ui::State& s, int offset, bool only5) {
-    s.totalSights = sightCount(only5);
+void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs) {
+    s.detail=ui::Detail{};
+    const auto hit=dedup::find(hashMac(mac),TABLE,nUsed,INSERT_LIMIT,maxProbe_,
+        [](uint32_t i){return used_[i];},[mac](uint32_t i){return macEq(table_[i].mac,mac);});
+    if(hit.kind==dedup::FOUND)fillDetailSlot(s,hit.slot,nowMs);
+}
+
+void bridgePlan(char* out, unsigned cap) {
+    if(!cap)return;
+    out[0]=0;unsigned used=0;
+    for(int i=0;i<N_CHAN;++i){
+        if(!chanOk[i] || (bandMode==1 && i>=ui::CH24) || (bandMode==2 && i<ui::CH24))continue;
+        const int n=snprintf(out+used,cap-used,"%s%d",used?",":"",chanAt(i));
+        if(n<0 || unsigned(n)>=cap-used){out[0]=0;return;}
+        used+=unsigned(n);
+    }
+}
+
+int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint32_t now, uint32_t& staleVisits) {
+    if(generation!=bridgeGen){generation=bridgeGen;cursor=0;}
+    for(int examined=0;examined<32;++examined){
+        portENTER_CRITICAL(&mux);
+        if(cursor>=nOrder){portEXIT_CRITICAL(&mux);return -1;}
+        const Node& nd=table_[order_[cursor++]];
+        if(uint32_t(now-nd.lastMs)>bridgewire::AP_FRESH_MS){++staleVisits;portEXIT_CRITICAL(&mux);continue;}
+        memcpy(out.mac,nd.mac,6);memcpy(out.ssid,nd.ssid,32);out.ssid[32]=0;
+        out.rssi=nd.rssi;out.channel=nd.chan;out.auth=nd.auth;out.at=nd.lastMs;
+        portEXIT_CRITICAL(&mux);return 1;
+    }
+    return 0;
+}
+
+void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly) {
+    s.totalSights = locatedOnly ? locatedCount() : sightCount(only5);
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    static sightorder::Cache ranking;
+    if (!ranking.rows) {
+        ranking.rows = static_cast<sightorder::Entry*>(heap_caps_malloc(
+            TABLE * sizeof(sightorder::Entry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!ranking.rows) { s.nSights = 0; s.totalSights = 0; return; }
+    }
+    const uint32_t now = millis();
+    const int filter = (only5 ? 1 : 0) | (locatedOnly ? 2 : 0);
+    if (ranking.due(now, filter, tableGen)) {
+        ranking.count = 0;
+        const uint32_t count = nOrder;
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint16_t slot = order_[i];
+            if (only5 && table_[slot].band != ui::BAND_5) continue;
+            if (locatedOnly && !table_[slot].located) continue;
+            ranking.rows[ranking.count++] = {slot, table_[slot].rssi};
+        }
+        sightorder::sort(ranking.rows, ranking.count);
+        ranking.at = now; ranking.filter = filter; ranking.generation = tableGen;
+    }
+    s.totalSights = ranking.count;
+#endif
+
     int n = 0, skipped = 0;
-    // Newest first: that is the order you care about while moving.
+    // Native lists use the global RSSI snapshot; legacy keeps its index contract.
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    (void)skipped;
+    for (uint32_t i = offset < 0 ? 0u : (uint32_t)offset; i < ranking.count && n < ui::MAX_SIGHTS; ++i) {
+        const uint16_t slot = ranking.rows[i].slot;
+        const Node& nd = table_[slot];
+#else
     for (int i = (int)nOrder - 1; i >= 0 && n < ui::MAX_SIGHTS; i--) {
         const Node& nd = table_[order_[i]];
         if (only5 && nd.band != ui::BAND_5) continue;
+        if (locatedOnly && !nd.located) continue;
         if (skipped < offset) { skipped++; continue; }
+#endif
         ui::Sighting& g = s.sights[n++];
         int k = 0;
-        for (; k < ui::SSID_MAX - 1 && nd.ssid[k]; k++) g.ssid[k] = nd.ssid[k];
+        for (; k < ui::AP_SSID_MAX - 1 && nd.ssid[k]; k++) g.ssid[k] = nd.ssid[k];
         g.ssid[k] = 0;
         for (int m = 0; m < 6; m++) g.mac[m] = nd.mac[m];
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        g.rssi = ranking.rows[i].rssi;
+#else
         g.rssi = nd.rssi;
+#endif
         g.band = nd.band;
         g.chan = nd.chan;
     }
@@ -768,13 +981,16 @@ uint8_t  nPlotsC = 0;
 uint16_t plotTotalC = 0, plotBeyondC = 0;
 }
 
-void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix) {
+void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix, int mapRadius) {
+    s.plotRadius = mapRadius;
     s.rangeM = (uint16_t)rangeM;
     const uint32_t now = millis();
-    if (plotproj::stale(plotCache, now, rangeM, haveFix, tableGen)) {
+    static int cachedRadius=0;
+    if (cachedRadius != mapRadius || plotproj::stale(plotCache, now, rangeM, haveFix, tableGen)) {
+        cachedRadius=mapRadius;
         nPlotsC = 0; plotTotalC = 0; plotBeyondC = 0;
         if (haveFix && rangeM > 0) {
-            const plotproj::Proj p = plotproj::make(rangeM, myLat7, myLon7, ui::MAP_R);
+            const plotproj::Proj p = plotproj::make(rangeM, myLat7, myLon7, mapRadius);
             for (uint32_t i = 0; i < nOrder; i++) {
                 const Node& nd = table_[order_[i]];
                 if (!nd.located) continue;
@@ -795,10 +1011,30 @@ void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool ha
     for (int i = 0; i < nPlotsC; i++) s.plots[i] = plotsC[i];
 }
 
-// Newest first. `randomised` flags a locally-administered address, which is
-// what a modern phone uses when it is trying not to be tracked -- worth
-// showing, because an un-randomised probe is a far stronger identifier.
-void fillEchoes(ui::State& s, int offset, uint32_t nowMs) {
+// Newest first. A local MAC does not prove randomization or device identity.
+void fillEchoes(ui::State& s, int offset, uint32_t nowMs,int limit) {
+    limit=std::max(1,std::min(limit,ui::MAX_ECHO_ROWS));
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    s.nEchoes=0;s.echoTotal=0;s.echoClients=0;s.echoDrops=s.echoEvicted=0;s.echoAvailable=evidenceStore!=nullptr;
+    if(!evidenceStore)return;
+    uint16_t ids[ui::MAX_ECHO_ROWS];
+    s.echoTotal=evidenceStore->store.page(nowMs,offset,limit,ids,s.echoClients);s.scroll=offset;
+    portENTER_CRITICAL(&mux);s.echoDrops=evidenceStore->queue.dropped;portEXIT_CRITICAL(&mux);
+    s.echoEvicted=evidenceStore->store.evicted;
+    s.nEchoes=std::min(limit,int(s.echoTotal)-offset);
+    for(int i=0;i<s.nEchoes;i++){
+        auto& out=s.echoes[i];out={};const auto& r=evidenceStore->store.probes[ids[i]];
+        evidence::display(out.ssid,r.last.name,r.last.len);memcpy(out.mac,r.last.sta,6);
+        out.rssi=r.last.rssi;out.chan=r.last.channel;out.agoS=(nowMs-r.last.at)/1000;out.observations=r.count;
+        out.randomised=(out.mac[0]&2)!=0;out.wildcard=r.last.len==0;
+        if(clientStore){uint32_t best=clients::RETAIN_MS;
+            for(const auto& v:clientStore->table.rows)if(v.used&&clients::equal(v.last.sta,out.mac)&&uint32_t(nowMs-v.last.at)<best){
+                best=nowMs-v.last.at;out.linked=true;memcpy(out.ap,v.last.ap,6);
+            }
+        }
+    }
+    return;
+#endif
     s.nEchoes = 0;
     s.echoTotal = nProbes;
     if (!probes) return;
@@ -840,8 +1076,20 @@ void fillEchoes(ui::State& s, int offset, uint32_t nowMs) {
     s.nEchoes = (uint8_t)n;
 }
 
-uint16_t echoCount()  { return nProbes; }
-uint32_t probeFrames() { return nProbeFrames; }
+uint16_t echoCount() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    return evidenceStore?evidenceStore->store.count:0;
+#else
+    return nProbes;
+#endif
+}
+uint32_t probeFrames() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    uint32_t n=0;portENTER_CRITICAL(&mux);if(evidenceStore)n=evidenceStore->queue.probes;portEXIT_CRITICAL(&mux);return n;
+#else
+    return nProbeFrames;
+#endif
+}
 
 uint32_t deauths()    { return nDeauth; }
 uint32_t deauthPerS() { return deauthRate * 1000 / DEAUTH_WINDOW_MS; }
@@ -923,11 +1171,21 @@ uint32_t exportRows(Print& out, uint32_t& skipped) {
 }
 
 uint16_t locatedCount() {
-    uint32_t c = 0;
-    for (uint32_t i = 0; i < nOrder; i++) if (table_[order_[i]].located) c++;
-    return (uint16_t)(c > 65535 ? 65535 : c);
+    const uint32_t c=nLocated;
+    return (uint16_t)(c>65535?65535:c);
 }
 
+bool setRawCapture(bool on){
+    static bool raw=false;
+    if(raw==on)return true;
+    wifi_promiscuous_filter_t f{};
+    f.filter_mask=WIFI_PROMIS_FILTER_MASK_MGMT | (on?(WIFI_PROMIS_FILTER_MASK_DATA|WIFI_PROMIS_FILTER_MASK_CTRL):0);
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore)f.filter_mask|=WIFI_PROMIS_FILTER_MASK_DATA;
+#endif
+    if(esp_wifi_set_promiscuous_filter(&f)!=ESP_OK)return false;
+    raw=on;return true;
+}
 void setDwell(uint16_t ms)  { dwellMs = ms < 20 ? 20 : ms; }
 
 void setCamp(int chan) {
@@ -948,11 +1206,24 @@ void setBands(uint8_t mode) {
 }
 
 void reset() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(evidenceStore){
+        portENTER_CRITICAL(&mux);evidenceStore->queue.head=evidenceStore->queue.size=0;evidenceStore->queue.dropped=evidenceStore->queue.probes=0;portEXIT_CRITICAL(&mux);
+        for(auto& p:evidenceStore->store.probes)p={};for(auto& a:evidenceStore->store.aps)a={};
+        evidenceStore->store.count=0;evidenceStore->store.evicted=evidenceStore->store.conflicts=0;
+    }
+#endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(clientStore){
+        portENTER_CRITICAL(&mux);clientStore->queue.head=clientStore->queue.size=clientStore->queue.peak=0;clientStore->queue.drops=0;portEXIT_CRITICAL(&mux);
+        for(auto& row:clientStore->table.rows)row={};clientStore->table.evictions=0;
+    }
+#endif
     portENTER_CRITICAL(&mux);
     for (int i = 0; i < TABLE; i++) used_[i] = false;
     for (int i = 0; i < RECENT; i++) recent_[i].live = false;
     for (int i = 0; i < N_CHAN; i++) { loadCount[i] = 0; loadPct[i] = 0; }
-    nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
+    nLocated = 0; nUsed = 0; nOrder = 0; nFrames = 0; nLocal = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0; nTableDrops = 0; nLongProbes = 0;
     (*twinF).clear(); (*twinR) = twinbudget::DeferRing{}; twinJob.active = false;
     nTwinDeferred = 0;
@@ -961,6 +1232,7 @@ void reset() {
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     alert_ = ui::AlertRec{};
     tableGen++;
+    bridgeGen++;
     portEXIT_CRITICAL(&mux);
 }
 
@@ -972,12 +1244,13 @@ void reset() {
 void rollover() {
     portENTER_CRITICAL(&mux);
     memset(used_, 0, sizeof(bool) * TABLE);
-    nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
+    nLocated = 0; nUsed = 0; nOrder = 0; nUnique24 = 0; nUnique5 = 0;
     maxProbe_ = 0;                  // an empty table has no probe chains
     (*twinF).clear();             // no SSIDs; queued checks die with tableGen
     twinJob.active = false;
     for (int i = 0; i < MAX_SRC; i++) foundBy_[i] = 0;
     tableGen++;
+    bridgeGen++;
     portEXIT_CRITICAL(&mux);
 }
 
@@ -1005,3 +1278,41 @@ void twinStats(uint32_t& deferred, uint32_t& lost, uint32_t& stale) {
 }
 
 } // namespace cap
+
+namespace cap {
+void fillClients(ui::State& s,int offset,int limit,uint32_t now){
+    s.clients={};
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    if(!clientStore || !s.detail.valid || s.detail.band==ui::BAND_BLE)return;
+    auto& out=s.clients;out.available=true;limit=std::max(1,std::min(limit,ui::CLIENT_ROWS));
+    clients::Record rows[ui::CLIENT_ROWS];
+    out.total=clientStore->table.page(s.detail.mac,now,offset,limit,rows);out.offset=offset;
+    out.count=std::min(limit,int(out.total)-offset);
+    portENTER_CRITICAL(&mux);out.drops=clientStore->queue.drops;portEXIT_CRITICAL(&mux);
+    out.evictions=clientStore->table.evictions;
+    for(int i=0;i<out.count;i++){
+        const auto& r=rows[i];auto& v=out.rows[i];memcpy(v.mac,r.last.sta,6);
+        v.rssi=r.stationRssi;v.hasRssi=r.hasRssi && uint32_t(now-r.rssiAt)<60000;
+        v.channel=r.last.channel;v.ageS=(now-r.last.at)/1000;v.frames=r.frames;v.evidence=r.evidence;
+    }
+#else
+    (void)offset;(void)limit;(void)now;
+#endif
+}
+}
+
+#if defined(UMBRAVOX_SCAN_ENGINE)
+namespace cap {
+size_t evidenceCsvRow(unsigned slot,char* out,size_t capacity,uint32_t now,uint32_t epoch){
+ uint32_t drops=0;
+ if(slot<clients::CAPACITY){
+  if(!clientStore)return 0;
+  portENTER_CRITICAL(&mux);drops=clientStore->queue.drops;portEXIT_CRITICAL(&mux);
+  return evidencecsv::client(out,capacity,clientStore->table.rows[slot],now,epoch,drops,clientStore->table.evictions);
+ }
+ slot-=clients::CAPACITY;if(slot>=evidence::PROBES||!evidenceStore)return 0;
+ portENTER_CRITICAL(&mux);drops=evidenceStore->queue.dropped;portEXIT_CRITICAL(&mux);
+ return evidencecsv::probe(out,capacity,evidenceStore->store.probes[slot],now,epoch,drops,evidenceStore->store.evicted);
+}
+}
+#endif

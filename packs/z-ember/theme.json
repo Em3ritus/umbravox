@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "name": "EMBER",
+  "author": "slickrick773",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "radar",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#0B0B12",
+    "panel": "#15151F",
+    "grid": "#24232D",
+    "edge": "#36333F",
+    "edgeLit": "#80644F",
+    "dim": "#A6B7C9",
+    "text": "#D6E0EA",
+    "bright": "#F2F6FA",
+    "witch": "#FF7A2A",
+    "witchHi": "#FFAA60",
+    "bone": "#BBC8D6",
+    "sweep": "#FF7A2A",
+    "sweepHi": "#FF9A4A",
+    "live": "#FFAA60",
+    "liveHi": "#F2F6FA",
+    "magenta": "#FF7A2A",
+    "ice": "#FFC45D",
+    "green": "#78DBAB",
+    "amber": "#FFC45D",
+    "red": "#FF6D79"
+  },
+  "badge": "diamond"
+}

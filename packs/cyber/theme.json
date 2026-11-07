@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "name": "CYBER",
+  "author": "slickrick773",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "radar",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#000000",
+    "panel": "#061006",
+    "grid": "#0B230D",
+    "edge": "#1D5824",
+    "edgeLit": "#31A33D",
+    "dim": "#8DBA91",
+    "text": "#BFECC3",
+    "bright": "#E9FFEB",
+    "witch": "#39FF14",
+    "witchHi": "#A3FF8C",
+    "bone": "#B7D8B9",
+    "sweep": "#20C943",
+    "sweepHi": "#7DFF68",
+    "live": "#39FF14",
+    "liveHi": "#D5FFCC",
+    "magenta": "#39FF14",
+    "ice": "#49DBB8",
+    "green": "#B7E86A",
+    "amber": "#FFD166",
+    "red": "#FF727B"
+  }
+}

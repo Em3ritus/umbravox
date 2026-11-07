@@ -108,15 +108,11 @@ int main(int argc, char** argv) {
     printf("regression guard (built-in COSMIC MUFFIN and BAPH0MAU5):\n");
     {
         static const uint32_t WANT[16] = {
-            // Scan renders 0..3 re-pinned on integration for the field-fixes
-            // footer ("NO FIX" -> "NO GPS"): the only pixels that moved are
-            // the footer text (rows 108..114, cols 29..45). Re-pinned again
-            // for the footer's mesh node count (glyph + "0", DIM): the only
-            // pixels that moved are rows 108..114, cols 56..67.
-            0x9AEF124Eu, 0x4768E261u, 0x3E46EFE6u, 0xCB8FC0BAu,
-            0x98443D4Fu, 0x3B0FCDF5u, 0xB8989D41u, 0xA7A853D7u,
-            0x3462C731u, 0x5ED8CDD4u, 0x10423CCBu, 0xC65AC96Eu,
-            0x63009A05u, 0xD478848Eu, 0x5BA0A744u, 0x1FE8CF87u,
+            // Approved refreshed Cosmic artwork; legacy motif geometry unchanged.
+            0x5A1CB09Cu, 0x11E32DAEu, 0x57D1210Cu, 0xDFEE32FEu,
+            0xAE98A637u, 0x480ACD76u, 0xA50E4263u, 0x31CF93CFu,
+            0xE1BFB741u, 0x6B5BF093u, 0x49F3564Bu, 0xCCCB3B68u,
+            0x1BAAEB9Bu, 0x38343B82u, 0x4C315202u, 0x593E869Eu,
         };
         uint32_t g[16]; computeGuard(g);
         for (int i = 0; i < 16; i++) {

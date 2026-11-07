@@ -10,7 +10,16 @@
 class Print;
 namespace applog { struct Source; }
 
+namespace bridgewire { struct Ap; }
+
 namespace cap {
+// Bounded bridge iterator: at most 32 records examined per call; no table sorting.
+// Returns 1 record, 0 more work, -1 end. Cursor generation resets on rollover.
+void bridgePlan(char* out, unsigned cap);
+int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint32_t now, uint32_t& staleVisits);
+
+// Main-loop bounded CSV snapshot source; slot 0..767.
+size_t evidenceCsvRow(unsigned slot,char* out,size_t capacity,uint32_t now,uint32_t epoch);
 
 void begin();
 
@@ -20,9 +29,13 @@ void tick(uint32_t nowMs);
 // Publish counts, per-channel load and the contact field into `s`.
 void fill(ui::State& s, uint32_t nowMs);
 
-// Fill the codex rows, newest first, starting `offset` rows down.
+// Fill codex rows starting `offset` rows down. WS native uses a cached global
+// strongest-RSSI-first order; legacy retains newest-first/index-based detail.
 // `only5` restricts to the 5GHz band, which is what the 5 GHZ tile opens.
-void fillSights(ui::State& s, int offset, bool only5);
+void fillSights(ui::State& s, int offset, bool only5, bool locatedOnly=false);
+void fillDetailByAddress(ui::State& s, const uint8_t* mac, uint32_t nowMs);
+// Local station observations for the selected AP; native engine only.
+void fillClients(ui::State& s,int offset,int limit,uint32_t nowMs);
 uint16_t sightCount(bool only5);
 
 // Everything known about the device at `index` in that filtered list.
@@ -48,10 +61,10 @@ uint16_t foundBy(uint8_t src);
 // window. A flood is the one finding here that is measured rather than
 // matched.
 // Project located devices onto the territory map at the given scale.
-void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix);
+void fillPlots(ui::State& s, int rangeM, int32_t myLat7, int32_t myLon7, bool haveFix, int mapRadius=42);
 
-// Probe requests: clients calling out for networks they have joined before.
-void fillEchoes(ui::State& s, int offset, uint32_t nowMs);
+// Probe requests: observed requests, not proof of prior network membership.
+void fillEchoes(ui::State& s, int offset, uint32_t nowMs,int limit=ui::MAX_ECHO_ROWS);
 uint16_t echoCount();
 uint32_t probeFrames();
 
@@ -75,7 +88,9 @@ void rollover();
 // is what will not upload to WiGLE.
 uint16_t locatedCount();
 
+bool setRawCapture(bool on);
 void setDwell(uint16_t ms);
+void setActive(bool on);
 // Hold one channel instead of sweeping. 0 resumes the sweep.
 void setCamp(int chan);
 bool camping();

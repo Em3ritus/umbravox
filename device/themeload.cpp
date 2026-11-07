@@ -200,7 +200,7 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]
         return false;
     }
     const Emblem* em = nullptr;
-    if (p.centre == CENTRE_EMBLEM && !(em = loadEmblem(folder, es, why))) return false;
+    if ((p.centre == CENTRE_EMBLEM || p.centre == CENTRE_RADAR_EMBLEM) && !(em = loadEmblem(folder, es, why))) return false;
 
     const Admit a = admit(folder, p, taken, nTaken);
     if (a != ADMIT_OK) { setWhy(why, "%s", admitWhy(a)); return false; }

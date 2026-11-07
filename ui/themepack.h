@@ -26,7 +26,7 @@ constexpr int MAX_EMBLEM_COLORS = 16;
 constexpr int N_COLORS = 20;
 
 enum Dial { DIAL_COMPACT, DIAL_LARGE };
-enum Centre { CENTRE_HEPTAGRAM, CENTRE_EMBLEM };
+enum Centre { CENTRE_HEPTAGRAM, CENTRE_EMBLEM, CENTRE_RADAR, CENTRE_MASCOT, CENTRE_SIGIL, CENTRE_RADAR_EMBLEM };
 enum Rite { RITE_WARD, RITE_SUPERNOVA, RITE_VORTEX, RITE_COMET, RITE_LOCKON };
 
 enum Role : uint8_t {
@@ -44,6 +44,9 @@ struct Pack {
     Rite rite;
     uint16_t sweeps;            // bitmask over ui::Sweep
     uint8_t sweep;              // ui::Sweep; always a member of `sweeps`
+    bool diamond;             // optional native-header badge
+    uint8_t artOpacity;        // 0..100, parsed default 100
+    uint8_t artScale;          // 25..100 percent of radar radius, default 82
     uint16_t color[N_COLORS];   // RGB565, indexed by Role
 };
 
@@ -58,7 +61,12 @@ struct Emblem {
     uint8_t w, h, ncol;
     uint16_t pal[MAX_EMBLEM_COLORS];  // RGB565
     const uint8_t* px;
+    bool packed4 = false; // firmware assets: two palette indices per byte
 };
+
+inline uint8_t pixel(const Emblem& e, int index) {
+    return e.packed4 ? ((index&1) ? (e.px[index/2]&15) : (e.px[index/2]>>4)) : e.px[index];
+}
 
 // Parse n bytes of emblem.bin: 'U','V','E',1, w, h, ncol, 0, ncol little-endian
 // RGB565 values, then w*h indices. Everything is validated (size, limits, total
@@ -78,7 +86,9 @@ bool sanitizeStatus(Pack& p);
 // spaces, non-ASCII, NULL) is not a pack folder.
 bool folderNameOk(const char* folder);
 
-enum Admit { ADMIT_OK, ADMIT_BAD_FOLDER, ADMIT_RESERVED, ADMIT_DUPLICATE, ADMIT_FULL };
+// Fixed underlying type makes unknown diagnostic codes representable without UB.
+// Named admission outcomes and their numeric values are unchanged.
+enum Admit : int { ADMIT_OK, ADMIT_BAD_FOLDER, ADMIT_RESERVED, ADMIT_DUPLICATE, ADMIT_FULL };
 
 // Decide whether a parsed pack in `folder` joins the n already admitted packs
 // (takenNames[0..nTaken), NULL entries ignored). The name must not be a

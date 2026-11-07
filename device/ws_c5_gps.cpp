@@ -1,7 +1,9 @@
-#if defined(WS_C5_35)
+#if (defined(WS_C5_35) || defined(WS_C5_28))
 #include "ws_c5_gps.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include "ws_c5_bus.h"
+#include "i2c_budget.h"
 #include "board.h"
 
 // Waveshare LC76G_RPI_I2C (i2c_read.c / i2c_write.c), one read cycle:
@@ -13,6 +15,12 @@
 // The demo settles 10 ms before each step. The module clock-stretches, so
 // 3 ms is enough and keeps the stall short; a cycle that comes back empty
 // costs nothing, a long loop stall costs touch.
+//
+// Engine builds sample touch on a periodic task. The whole GPS protocol cycle
+// retains bus ownership (never reopen between commands). Shorter payloads keep
+// the same drain capacity; a remaining-time budget prevents per-step timeouts
+// accumulating. Driver/controller restart and task scheduling are measured on
+// hardware, not asserted to have a hard real-time bound by this source.
 
 namespace gpsi2c {
 namespace {
@@ -20,20 +28,40 @@ namespace {
 constexpr uint8_t  CR_ADDR   = 0x50;   // command/register writes
 constexpr uint8_t  RD_ADDR   = 0x54;   // data reads
 constexpr uint8_t  WR_ADDR   = 0x58;   // data writes (wake)
-constexpr uint32_t CHUNK     = 1024;   // most read per cycle; bounds the stall
-constexpr uint32_t PERIOD_MS = 500;    // at most two cycles a second
-constexpr uint32_t STEP_MS   = 3;
-constexpr uint16_t TIMEOUT_MS = 300;   // generous: the module clock-stretches
-constexpr uint32_t WAKE_AFTER = 8;     // empty cycles in a row before a wake
+#if defined(UMBRAVOX_SCAN_ENGINE)
+// Same 1 KiB/s drain capacity as 512 bytes / 500 ms, shorter atomic ownership.
+constexpr uint32_t CHUNK = 128;
+constexpr uint32_t PERIOD_MS = 125;
+#else
+constexpr uint32_t CHUNK = 512;
+constexpr uint32_t PERIOD_MS = 500;
+#endif
+constexpr uint32_t STEP_MS   = 3;      // per-step settle (clock-stretch is the real settle)
+constexpr uint16_t TIMEOUT_MS = 100;   // fail-fast: a healthy step answers in a few ms, so
+                                       // 100ms still covers real clock-stretch but a cold/
+                                       // non-answering step fails fast instead of blocking 300ms
+constexpr uint32_t WAKE_AFTER = 4000 / PERIOD_MS;     // empty cycles in a row before a wake
 // With no module on the bus every cycle fails, and the core logs each failed
 // transfer. After this many failures in a row, drop to one quiet presence
 // check every ABSENT_MS until the module answers again.
-constexpr uint32_t ABSENT_AFTER = 6;
+constexpr uint32_t ABSENT_AFTER = 3000 / PERIOD_MS;
 constexpr uint32_t ABSENT_MS    = 10000;
 
 bool absent = false;
 
 Stats st;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+uint32_t cycleStart = 0;
+constexpr uint32_t CYCLE_BUDGET_MS = 40;
+bool transactionTime() {
+    const uint16_t left = i2cbudget::remaining(cycleStart, millis(), CYCLE_BUDGET_MS);
+    if (!left) { ++st.budgetExhausted; return false; }
+    Wire.setTimeOut(left);
+    return true;
+}
+#else
+bool transactionTime() { return true; }
+#endif
 
 void put32le(uint8_t* b, uint32_t v) {
     b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8);
@@ -43,31 +71,47 @@ uint32_t get32le(const uint8_t* b) {
     return b[0] | (b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
 }
 
+uint8_t endWrite(uint8_t addr) {
+    const uint8_t error = Wire.endTransmission();
+    if (error) {
+        ++st.writeFailures[addr == CR_ADDR ? 0 : addr == RD_ADDR ? 1 : 2];
+        st.lastWriteError = error;
+    }
+    return error;
+}
+
 uint8_t writeCr(uint32_t reg, uint32_t len) {   // 0 = ok, else Wire's error
+    if (!transactionTime()) return 5;
     uint8_t b[8];
     put32le(b, reg);
     put32le(b + 4, len);
     Wire.beginTransmission(CR_ADDR);
     Wire.write(b, sizeof b);
-    return Wire.endTransmission();
+    return endWrite(CR_ADDR);
 }
 
 size_t readBytes(uint8_t* buf, size_t n) {
+    if (!transactionTime()) return 0;
     const size_t got = Wire.requestFrom(RD_ADDR, n);
+    if (got != n) ++st.shortReads;
     for (size_t i = 0; i < got; i++) buf[i] = (uint8_t)Wire.read();
     return got;
 }
 
 uint8_t dummy(uint8_t addr) {   // 1-byte write; 0 = ACKed
+    if (!transactionTime()) return 5;
     Wire.beginTransmission(addr);
     Wire.write((uint8_t)0);
-    return Wire.endTransmission();
+    return endWrite(addr);
 }
 
 // The C5 bus quirk touch.cpp also works around: re-open once before a
 // transaction (never between its steps), with the long timeout the module's
 // clock stretching needs. Returns the timeout to put back afterwards.
 uint16_t openBus() {
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    cycleStart = millis();
+#endif
     const uint16_t saved = Wire.getTimeOut();
     Wire.end();
     Wire.begin(board::PIN_SDA, board::PIN_SCL, 100000u);
@@ -80,6 +124,8 @@ uint16_t openBus() {
 int poll(void (*sink)(char, uint32_t), uint32_t now) {
     static uint8_t buf[CHUNK];
     int out = -1;
+    {
+    wsbus::Guard guard;
     const uint16_t savedTo = openBus();
     do {
         delay(STEP_MS);
@@ -103,15 +149,17 @@ int poll(void (*sink)(char, uint32_t), uint32_t now) {
         if (writeCr(0xAA512000UL, len) != 0) break;
         delay(STEP_MS);
         if (readBytes(buf, len) != len) break;
-        for (uint32_t i = 0; i < len; i++) sink((char)buf[i], now);
         out = (int)len;
     } while (0);
-    Wire.setTimeOut(savedTo);   // touch must not inherit 300 ms
+    Wire.setTimeOut(savedTo);
+    } // parser runs without bus ownership; the touch task can now sample
+    for (int i = 0; i < out; i++) sink((char)buf[i], now);
     return out;
 }
 
 // Demo Ql_Wake_I2C: the module's I2C side can doze after a while idle.
 bool wake() {
+    wsbus::Guard guard;
     bool ok = false;
     const uint16_t savedTo = openBus();
     do {

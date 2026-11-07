@@ -4,7 +4,7 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
-SRC = main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp
+SRC = ../ui/oui.cpp main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -77,7 +77,7 @@ test_ble_ad: test_ble_ad.cpp ../device/ble_ad.h
 
 # theme.json is read off an SD card anyone can write to: sanitizers, as above.
 test_themepack: test_themepack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/model.h ../ui/palette.h
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
 
 test_elog: test_elog.cpp ../device/elog.h
 	$(CXX) $(CXXFLAGS) -o $@ test_elog.cpp -lm
@@ -192,7 +192,156 @@ test_sdcmd: test_sdcmd.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/
 sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ sdcmd_console.cpp ../ui/themepack.cpp -lm
 
-TESTS = test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity
+# --- UI design engine (ws-ui-engine): resolution-independent layout + the
+# composited dirty-tile presentation core, asserted against the delivered
+# geometry.json oracle. These were previously only buildable via the g++ line
+# in each test's header; wiring them here puts the engine lane under `make test`.
+# The oracle test is header-only; the render/present/engine tests need the theme
+# model + font (PAL_DEPS), same as the other draw tests.
+ENGINE_HDR = ../ui/crew_art.h ../ui/domain_range.h ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
+             ../ui/domain_render.h ../ui/domain_present.h \
+             ../ui/codex_render.h ../ui/codex_present.h \
+             ../ui/menu_render.h ../ui/menu_present.h \
+             ../ui/sub_render.h ../ui/mesh_render.h ../ui/mesh_present.h \
+             ../ui/omens_render.h ../ui/omens_present.h \
+             ../ui/echoes_render.h ../ui/echoes_present.h \
+             ../ui/attune_render.h ../ui/attune_present.h \
+             ../ui/aspect_render.h ../ui/aspect_present.h \
+             ../ui/detail_render.h ../ui/detail_present.h \
+             ../ui/files_render.h ../ui/files_present.h \
+             ../ui/router.h ../ui/project.h ../ui/gnss.h ../ui/model.h
+
+test_layout_engine: test_layout_engine.cpp ../ui/layout_engine.h oracle_hits.inc
+	$(CXX) $(CXXFLAGS) -o $@ test_layout_engine.cpp -lm
+
+test_scan_present: test_scan_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_scan_present.cpp $(PAL_DEPS) -lm
+
+test_scan_render: test_scan_render.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_scan_render.cpp $(PAL_DEPS) -lm
+
+test_scan_engine: test_scan_engine.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_scan_engine.cpp $(PAL_DEPS) -lm
+
+test_domain_present: test_domain_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_domain_present.cpp $(PAL_DEPS) -lm
+
+test_domain_render: test_domain_render.cpp domain_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_domain_render.cpp $(PAL_DEPS) -lm
+
+test_domain_engine: test_domain_engine.cpp domain_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_domain_engine.cpp $(PAL_DEPS) -lm
+
+test_codex_present: test_codex_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_codex_present.cpp $(PAL_DEPS) -lm
+
+test_codex_render: test_codex_render.cpp codex_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_codex_render.cpp $(PAL_DEPS) -lm
+
+test_codex_engine: test_codex_engine.cpp codex_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_codex_engine.cpp $(PAL_DEPS) -lm
+
+test_menu_present: test_menu_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_menu_present.cpp $(PAL_DEPS) -lm
+
+test_menu_render: test_menu_render.cpp menu_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_menu_render.cpp $(PAL_DEPS) -lm
+
+test_menu_engine: test_menu_engine.cpp menu_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_menu_engine.cpp $(PAL_DEPS) -lm
+
+test_mesh_present: test_mesh_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_mesh_present.cpp $(PAL_DEPS) -lm
+
+test_mesh_render: test_mesh_render.cpp mesh_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_mesh_render.cpp $(PAL_DEPS) -lm
+
+test_mesh_engine: test_mesh_engine.cpp mesh_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_mesh_engine.cpp $(PAL_DEPS) -lm
+
+test_omens_present: test_omens_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_omens_present.cpp $(PAL_DEPS) -lm
+
+test_omens_render: test_omens_render.cpp omens_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_omens_render.cpp $(PAL_DEPS) -lm
+
+test_omens_engine: test_omens_engine.cpp omens_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_omens_engine.cpp $(PAL_DEPS) -lm
+
+test_echoes_present: test_echoes_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_echoes_present.cpp $(PAL_DEPS) -lm
+
+test_echoes_render: test_echoes_render.cpp echoes_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_echoes_render.cpp $(PAL_DEPS) -lm
+
+test_echoes_engine: test_echoes_engine.cpp echoes_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_echoes_engine.cpp $(PAL_DEPS) -lm
+
+test_attune_present: test_attune_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_attune_present.cpp $(PAL_DEPS) -lm
+
+test_attune_render: test_attune_render.cpp attune_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_attune_render.cpp $(PAL_DEPS) -lm
+
+test_attune_engine: test_attune_engine.cpp attune_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_attune_engine.cpp $(PAL_DEPS) -lm
+
+test_aspect_present: test_aspect_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_aspect_present.cpp $(PAL_DEPS) -lm
+
+test_aspect_render: test_aspect_render.cpp aspect_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_aspect_render.cpp $(PAL_DEPS) -lm
+
+test_aspect_engine: test_aspect_engine.cpp aspect_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_aspect_engine.cpp $(PAL_DEPS) -lm
+
+test_detail_present: test_detail_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_detail_present.cpp $(PAL_DEPS) -lm
+
+test_detail_render: test_detail_render.cpp detail_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_detail_render.cpp $(PAL_DEPS) -lm
+
+test_detail_engine: test_detail_engine.cpp detail_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_detail_engine.cpp $(PAL_DEPS) -lm
+
+test_files_present: test_files_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_files_present.cpp $(PAL_DEPS) -lm
+
+test_files_render: test_files_render.cpp files_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_files_render.cpp $(PAL_DEPS) -lm
+
+test_files_engine: test_files_engine.cpp files_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_files_engine.cpp $(PAL_DEPS) -lm
+
+# The router is pure (Action/payload -> transitions/State), so it needs no theme
+# model or font -- it links against layout_engine.h alone.
+test_router: test_router.cpp ../ui/router.h ../ui/layout_engine.h
+	$(CXX) $(CXXFLAGS) -o $@ test_router.cpp -lm
+
+# The State->Store projections. Needs the theme model + the signature/auth name
+# tables (ui/signatures.cpp, ui/wifi_auth.cpp) on top of PAL_DEPS.
+test_project: ../ui/oui_data.inc test_project.cpp ../ui/project.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test_project.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+
+test_sight_order: test_sight_order.cpp ../device/sight_order.h
+	$(CXX) $(CXXFLAGS) -o $@ test_sight_order.cpp
+
+test_ble_bridge: test_ble_bridge.cpp ../device/ble_bridge_protocol.h ../device/ble_bridge_init.h $(HDR) $(SRC_NOMAIN)
+	$(CXX) $(CXXFLAGS) -o $@ test_ble_bridge.cpp $(SRC_NOMAIN) -lm
+
+test_header: test_header.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_header.cpp $(PAL_DEPS) ../ui/signatures.cpp -lm
+
+test_poi: test_poi.cpp ../device/poi.cpp ../device/poi.h $(HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_poi.cpp ../device/poi.cpp $(PAL_DEPS) -lm
+
+test_bundled_themes: test_bundled_themes.cpp $(HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_bundled_themes.cpp $(PAL_DEPS) -lm
+
+test_node_queue: test_node_queue.cpp ../device/node_queue.h ../device/mesh.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_node_queue.cpp
+
+TESTS = test_node_queue test_bundled_themes test_ws28_touch test_clean_radar test_oui_registry test_alert_history test_storage_paths test_settings_controls test_display_controls test_evidence_csv test_probe_ui test_probe_evidence test_client_ui test_clients test_gpx test_mesh_telemetry test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -208,7 +357,13 @@ sdput-check:
 	 python3 -I ../tools/sdput.py transcript packs/cosmic-clone | cmp - sdput_golden.txt && \
 	 echo "sdput-check: selftest passed, sdput_golden.txt matches tools/sdput.py"
 
-test: $(TESTS) sdcmd_console emblem-check sdput-check
+ble-library-check:
+	@python3 -B -m unittest discover -s ../tools/tests -p test_ble_callback_library.py
+
+oui-generator-check:
+	@python3 -I ../tools/test_generate_oui.py
+
+test: oui-generator-check $(TESTS) sdcmd_console emblem-check sdput-check ble-library-check
 	@rc=0; for t in $(TESTS); do \
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc
@@ -250,3 +405,83 @@ bench: bench_draw
 	@./bench_draw 2000
 
 .PHONY: bench run sheet clean test regress emblem-check sdput-check
+
+# Input retention and off-screen presentation, with exact fake-panel comparisons.
+test_input_presentation: test_input_presentation.cpp ../device/i2c_budget.h ../ui/input_events.h ../ui/pending_hit.h ../ui/frame_present.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_input_presentation.cpp $(PAL_DEPS) -lm
+
+# Exact raster parity and animated-field restoration at both native profiles.
+test_scan_latency: test_scan_latency.cpp scan_fixture.h ../ui/frame_present.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_scan_latency.cpp $(PAL_DEPS) -lm
+
+bench_scan: bench_scan.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ bench_scan.cpp $(PAL_DEPS) -lm
+
+bridge_png: bridge_png.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
+	$(CXX) $(CXXFLAGS) -o $@ bridge_png.cpp $(PAL_DEPS) ../ui/signatures.cpp -lm
+
+ui_review_png: ../ui/oui_data.inc ui_review_png.cpp $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -o $@ ui_review_png.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+
+test_active_discovery: test_active_discovery.cpp ../device/active_discovery.cpp ../device/active_discovery.h ../device/mesh_timing.h ../device/chanplan.h
+	$(CXX) $(CXXFLAGS) -Idiscovery_stubs -I../ui -o $@ test_active_discovery.cpp ../device/active_discovery.cpp
+
+test_ap_info: test_ap_info.cpp ../ui/ap_info.h ../ui/oui.cpp ../ui/oui_data.inc
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_ap_info.cpp ../ui/oui.cpp
+
+test_pcap: test_pcap.cpp ../device/pcap.cpp ../device/pcap.h
+	$(CXX) $(CXXFLAGS) -pthread -fsanitize=address,undefined -o $@ test_pcap.cpp ../device/pcap.cpp
+
+test_mesh_telemetry: ../device/node_diagnostics.h ../device/meshcore.h test_mesh_telemetry.cpp ../device/mesh_timing.h $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -I../ui -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_mesh_telemetry.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+
+test_gpx: test_gpx.cpp ../device/gpx.cpp ../device/gpx.h ../device/sdlog.h ../device/csv.h ../ui/gnss.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_gpx.cpp ../device/gpx.cpp
+
+test_clients: test_clients.cpp ../device/clients.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_clients.cpp
+
+
+test_client_ui: test_client_ui.cpp $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_client_ui.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+
+test_probe_evidence: test_probe_evidence.cpp ../device/probe_evidence.h ../device/clients.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_probe_evidence.cpp
+
+test_probe_ui: test_probe_ui.cpp $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_probe_ui.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+
+test_evidence_csv: test_evidence_csv.cpp ../device/evidence_csv.cpp ../device/evidence_csv.h ../device/clients.h ../device/probe_evidence.h ../device/csv.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_evidence_csv.cpp ../device/evidence_csv.cpp
+
+menu_layout_preview: menu_layout_preview.cpp $(HDR) $(PAL_DEPS) ../ui/signatures.cpp
+	$(CXX) $(CXXFLAGS) -o $@ menu_layout_preview.cpp $(PAL_DEPS) ../ui/signatures.cpp -lm
+
+# Native display controls, geometry, transitions and bounded touch trail.
+test_display_controls: test_display_controls.cpp $(HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ $< $(PAL_DEPS) -lm
+
+display_controls_preview: display_controls_preview.cpp $(HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(PAL_DEPS) -lm
+
+# General settings use the real production adjustment path.
+test_settings_controls: test_settings_controls.cpp $(HDR) $(SRC_NOMAIN)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ $< $(SRC_NOMAIN) -lm
+
+# Writer path helpers must invalidate their native binaries too.
+test_logging test_pcap test_gpx test_evidence_csv: ../device/storage_paths.h ../ui/capture_paths.h
+
+test_storage_paths: test_storage_paths.cpp $(HDR) ../device/storage_paths.h ../device/filescan.h ../device/sdcmd.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ $< $(PAL_DEPS) -lm
+
+test_alert_history: test_alert_history.cpp ../device/alertlog.cpp ../device/alertlog.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -I../ui -fsanitize=address,undefined -o $@ test_alert_history.cpp ../device/alertlog.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
+
+test_oui_registry: test_oui_registry.cpp ../ui/oui.cpp ../ui/oui_data.inc
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_oui_registry.cpp ../ui/oui.cpp
+
+test_clean_radar: test_clean_radar.cpp $(wildcard ../packs/*/theme.json) $(wildcard ../packs/*/emblem.bin) $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_clean_radar.cpp $(PAL_DEPS) -lm
+
+test_ws28_touch: test_ws28_touch.cpp ../device/cst3530_sample.h ../ui/display_controls.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_ws28_touch.cpp

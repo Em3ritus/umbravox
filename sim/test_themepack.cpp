@@ -258,7 +258,7 @@ static void admissionTests() {
     check("admit reserved UMBRAVOX", admit("a", named("UMBRAVOX"), none, 0) == ADMIT_RESERVED);
     check("admit reserved CVLT", admit("a", named("CVLT OF BAPH0MAU5"), none, 0) == ADMIT_RESERVED);
     check("admit reserved COSMIC MUFFIN", admit("a", named("COSMIC MUFFIN"), none, 0) == ADMIT_RESERVED);
-    check("admit reserved BAPH0MAU5 (the built-in's displayed name)", admit("a", named("BAPH0MAU5"), none, 0) == ADMIT_RESERVED);
+    check("admit new BAPH0MAU5 pack after Cvlt rename", admit("a", named("BAPH0MAU5"), none, 0) == ADMIT_OK);
     check("BAPH0MAU not reserved", admit("a", named("BAPH0MAU"), none, 0) == ADMIT_OK);
     check("BAPH0MAU55 not reserved", admit("a", named("BAPH0MAU55"), none, 0) == ADMIT_OK);
     check("lowercase baph0mau5 not reserved", admit("a", named("baph0mau5"), none, 0) == ADMIT_OK);
@@ -299,8 +299,10 @@ static void admissionTests() {
     for (int i = 0; i < 5; i++) for (int j = i + 1; j < 5; j++)
         if (!strcmp(admitWhy(all[i]), admitWhy(all[j]))) distinct = false;
     check("admitWhy distinct per value", distinct);
-    check("admitWhy out-of-range value still a string",
-          admitWhy((Admit)99) && *admitWhy((Admit)99));
+    check("admitWhy unknown positive code has explicit fallback",
+          !strcmp(admitWhy(static_cast<Admit>(99)), "unknown admission result"));
+    check("admitWhy unknown negative code has explicit fallback",
+          !strcmp(admitWhy(static_cast<Admit>(-1)), "unknown admission result"));
 
     // sortNames
     {

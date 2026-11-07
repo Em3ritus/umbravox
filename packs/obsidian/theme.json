@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "name": "OBSIDIAN",
+  "author": "slickrick773",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "radar",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#0B0D10",
+    "panel": "#191D23",
+    "grid": "#292E36",
+    "edge": "#484F5A",
+    "edgeLit": "#747E8C",
+    "dim": "#AEB6C2",
+    "text": "#D7DCE3",
+    "bright": "#F3F5F8",
+    "witch": "#B2BFCE",
+    "witchHi": "#E2E9F2",
+    "bone": "#C8C4BB",
+    "sweep": "#7D8A9B",
+    "sweepHi": "#DDE6F0",
+    "live": "#B2BFCE",
+    "liveHi": "#F3F5F8",
+    "magenta": "#91BDE0",
+    "ice": "#BEACD9",
+    "green": "#9ACCB1",
+    "amber": "#F0BE62",
+    "red": "#FF7479"
+  }
+}

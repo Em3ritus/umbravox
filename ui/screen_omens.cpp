@@ -54,14 +54,14 @@ void drawOmens(Canvas& c, const State& s, Dirty* d) {
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
 
-    c.text(10, HEAD_Y, "OMEN", pal::EDGE_LIT);
+    c.text(10, HEAD_Y, "TYPE", pal::EDGE_LIT);
     c.text(58, HEAD_Y, "SOURCE", pal::EDGE_LIT);
     c.textRight(155, HEAD_Y, "AGE", pal::EDGE_LIT);
     c.hline(5, RULE_Y, 148, pal::EDGE);
 
     if (s.nOmens == 0) {
-        c.textCenter(W / 2, ROW_Y + 20, "NOTHING HAS FIRED", pal::DIM);
-        c.textCenter(W / 2, ROW_Y + 32, "WHICH IS THE GOOD OUTCOME", pal::EDGE_LIT);
+        c.textCenter(W / 2, ROW_Y + 20, s.set.alertMin==CONF_OFF?"ALERTS DISABLED":"NO MATCHES RECORDED", pal::DIM);
+        c.textCenter(W / 2, ROW_Y + 32, "THIS BOOT / CHECK LEVEL", pal::EDGE_LIT);
     }
 
     char buf[24];
@@ -71,7 +71,7 @@ void drawOmens(Canvas& c, const State& s, Dirty* d) {
         const uint16_t cc = confColor(o.conf);
 
         c.fill(3, y + 2, 2, ROW_HT - 4, cc);
-        c.text(9, y + 2, threatName(o.threat), cc);
+        c.text(9, y + 2, o.test?"TEST ALERT":threatName(o.threat), cc);
 
         // A hit with no fix cannot be returned to, so say so rather than
         // leaving the row looking complete.

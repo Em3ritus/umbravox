@@ -1,3 +1,4 @@
+import { BUILTIN_COUNT } from './_util.mjs';
 // The designer's preview module, through the real wasm, against the simulator.
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,7 +59,7 @@ test('a draft loaded through preview.js renders byte-identical to the simulator 
   const f = openFixture('cosmic-clone');
   const r = preview.loadDraft(f.theme, f.emblem);
   assert.equal(r.ok, true, r.error);
-  assert.equal(r.id, 3);
+  assert.equal(r.id, BUILTIN_COUNT);
   const mine = preview.renderDraft('scan', 24);
   assert.deepEqual(Buffer.from(mine), Buffer.from(sim(['--pack', path.join(ROOT, 'sim/packs/cosmic-clone'), '--frame', '24', '--screen', 'scan'])));
   const al = preview.renderDraft('alert', 20);

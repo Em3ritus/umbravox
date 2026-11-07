@@ -67,6 +67,17 @@ constexpr uint8_t ROTATION_TALL = ROTATION;
 constexpr int     CANVAS_X_TALL = CANVAS_X;
 constexpr int     CANVAS_Y_TALL = CANVAS_Y;
 
+#elif defined(WS_C5_28)
+// Waveshare v1.2.0 schematic and Arduino 06_lvgl_demo / 03_SD_Card.
+constexpr int8_t PIN_SCK=6, PIN_MOSI=7, PIN_MISO=8;
+constexpr int8_t PIN_CS=10, PIN_DC=9, PIN_RST=-1, PIN_BL=-1;
+constexpr int8_t PIN_SD_CS=23, PIN_SDA=0, PIN_SCL=1, PIN_TOUCH_IRQ=5;
+constexpr uint8_t ROTATION=1;
+constexpr int PANEL_W=320, PANEL_H=240, CANVAS_X=0, CANVAS_Y=0;
+constexpr bool HAS_STATUS_STRIP=false, HAS_PORTRAIT=false;
+constexpr uint8_t ROTATION_TALL=ROTATION;
+constexpr int CANVAS_X_TALL=0, CANVAS_Y_TALL=0;
+
 #elif defined(NM_CYD_C5)
 
 // LCD, touch and the SD card all share one SPI bus. Confirmed against
@@ -104,7 +115,11 @@ constexpr uint8_t ROTATION_LANDSCAPE = 3;
 constexpr uint8_t ROTATION_PORTRAIT  = 0;
 constexpr uint8_t ROTATION      = FLIP_180 ? (ROTATION_LANDSCAPE + 2) & 3 : ROTATION_LANDSCAPE;
 constexpr uint8_t ROTATION_TALL = FLIP_180 ? (ROTATION_PORTRAIT  + 2) & 3 : ROTATION_PORTRAIT;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+constexpr bool    HAS_PORTRAIT  = false; // native engine currently uses landscape geometry
+#else
 constexpr bool    HAS_PORTRAIT  = true;
+#endif
 
 constexpr int PANEL_W = 320;
 constexpr int PANEL_H = 240;
@@ -117,7 +132,7 @@ constexpr int CANVAS_X_TALL = 0;
 constexpr int CANVAS_Y_TALL = 0;
 
 #else
-#error "no board selected: build with -DNM_CYD_C5 or -DWS_C5_35"
+#error "no board selected: build with -DNM_CYD_C5, -DWS_C5_35 or -DWS_C5_28"
 #endif
 
 } // namespace board

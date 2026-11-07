@@ -49,3 +49,9 @@ export function gradient(w, h) {
   }
   return d;
 }
+
+// Independently read the firmware enum; never assume a fixed draft slot.
+const themeEnum = /enum ThemeId[^\{]*\{([^}]+)\}/.exec(read("ui/palette.h"));
+if (!themeEnum) throw new Error("ThemeId enum missing");
+export const BUILTIN_COUNT = themeEnum[1].split(",").findIndex(x => x.trim() === "TH_COUNT");
+if (BUILTIN_COUNT < 1) throw new Error("TH_COUNT missing");

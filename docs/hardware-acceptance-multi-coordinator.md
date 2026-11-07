@@ -1,5 +1,11 @@
 # Multi-Coordinator Mesh — Hardware Acceptance Runbook
 
+> Historical acceptance procedure and results. Its v3 protocol references, upload
+> commands and separate-bootloader workaround describe that revision. Current
+> firmware uses protocol v4. For current installations use
+> [flashing tools](FLASHING-TOOLS.md) and [XIAO node installation](XIAO-NODE.md),
+> or the README in the native handheld package.
+
 Step-by-step to validate the coordinator-tier mesh (merged at `cdf5a68`) on real boards.
 Spec: `docs/superpowers/specs/2026-10-19-multi-coordinator-mesh-design.md`.
 Plan's checklist: the "Hardware Acceptance" section of `docs/superpowers/plans/2026-10-19-multi-coordinator-mesh.md`.

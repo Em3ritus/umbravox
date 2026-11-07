@@ -5,12 +5,10 @@
 // SCL 26) and Waveshare's LC76G module speaks I2C. So the GPS rides the bus
 // the touch panel, the expander and the PMU are already on.
 //
-// Why synchronous, on the main loop: an LC76G read is several transactions,
-// and no other device may be addressed in the middle of one (Quectel). Run
-// whole from loop(), nothing else on the bus can interleave -- touch, the
-// expander and the PMU are all read from loop() too -- so none of them needs
-// a lock. The price is a short stall while a cycle runs, throttled to two a
-// second.
+// GPS cycles run from loop(), while native-engine touch runs on its own task.
+// Every runtime client holds the shared recursive bus lock across controller
+// restart and transactions. The GPS parser runs after releasing that lock.
+// Engine reads are bounded to 128-byte chunks at a 125 ms cadence.
 //
 // Protocol and the Recovery / Wake routines follow Waveshare's LC76G_RPI_I2C
 // demo.
@@ -26,6 +24,10 @@ struct Stats {
     uint32_t fails  = 0;   // cycles that failed on the bus
     uint32_t recov  = 0;   // recovery nudges that got an ACK
     uint32_t wakes  = 0;   // wake sequences that completed
+    uint32_t writeFailures[3] = {}; // command 0x50 / read-recovery 0x54 / wake 0x58
+    uint32_t shortReads = 0;       // fewer bytes than requested at 0x54
+    uint32_t budgetExhausted = 0;  // transaction skipped before calling Wire
+    uint32_t lastWriteError = 0;   // Wire status, not an ESP-IDF error code
 };
 
 // After exio::begin() has opened the bus. Sizes Wire's buffer for a cycle.

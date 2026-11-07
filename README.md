@@ -1,281 +1,116 @@
 # UMBRAVOX
 
-**A passive, dual-band wardriver for the ESP32-C5 — with a summoning-circle console instead of a dashboard.**
+**RF discovery, wardriving & network exploration for ESP32-C5.**
 
-![UMBRAVOX](docs/umbravox.png)
+Discover Wi-Fi and Bluetooth LE devices, inspect networks, map observations,
+and save captures for analysis. Run standalone, connect to a phone app, or
+expand coverage with coordinated scanning nodes.
 
-## What it is
+[Install in your browser](https://slickrick773.github.io/umbravox/) ·
+[Published prerelease and downloads](https://github.com/slickrick773/umbravox/releases/tag/f963f3a)
 
-UMBRAVOX turns a ~$15 touchscreen dev board into a handheld scanner for the radio
-spectrum around you. It listens — WiFi, Bluetooth LE and GPS — deduplicates
-everything it hears, maps it, flags the devices worth knowing about (cameras,
-trackers, plate readers, drones…), and logs it all to an SD card in
-[WiGLE](https://wigle.net/)-compatible CSV you can upload straight to the usual
-wardriving maps.
+![Native UMBRAVOX SCAN and CODEX, side by side](docs/native-ui-preview.png)
 
-It is **wardriving's passive half**: it only receives. It never transmits,
-probes, associates or attacks — it reads what the air is already broadcasting.
-Add extra scanning boards over a wireless mesh and it covers more of the spectrum
-at once, folding every radio's catch into one deduplicated picture.
+Stock UMBRAVOX theme, native 480×320 production-renderer previews using synthetic
+demonstration data. These are not hardware photographs.
 
-And instead of a dashboard, it renders a dark, occult, technomancer interface —
-switchable themes, animated dials, a summoning-circle aesthetic.
+## Boards and validation
 
-> ### 🜏 Passive by design
-> UMBRAVOX scans, aggregates, maps and exports — nothing more. It deliberately
-> ships **none** of the transmit-side offensive tooling: no deauth, beacon/BLE
-> spam, Evil Portal, Karma or PMKID capture. It listens; it does not announce
-> itself or interfere with anything. Please keep it that way, and check your
-> local laws before you go wardriving.
+| Board | Native UI | Current hardware evidence |
+| --- | --- | --- |
+| Waveshare ESP32-C5-Touch-LCD-3.5 | 480×320 | Browser installation, all four image hashes, and boot confirmed |
+| Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed |
+| NerdMinder NM-CYD-C5 | 320×240 shared engine | Earlier firmware flashing and operation confirmed; latest build compile-checked |
 
-## Features
+Current firmware packages use source `a66bd3b` and include matching source snapshots.
+The retained prerelease tag `f963f3a` identifies the original release source;
+the release notes identify current firmware and installer revisions separately.
+Latest hardware follow-up covers the Waveshare 3.5-inch WDGO fixes, ten XIAO nodes,
+and a fifteen-minute stationary mesh/bridge observation. Latest Waveshare 2.8-inch
+and NM images are compile-checked; earlier images have the hardware evidence above.
+See [node validation](docs/XIAO-NODE-VALIDATION.md) and
+[GPS recovery](docs/FLASHING-TOOLS.md#external-gps-after-flashing) for boundaries.
 
-- **Dual-band WiFi capture** — promiscuous sniffing of management frames (beacons,
-  probe responses) across all 13 channels of 2.4 GHz and the 8 non-DFS channels
-  of 5 GHz, deduplicated by BSSID.
-- **Passive BLE scanning** — advertisers deduplicated by address and parsed by
-  hand from the raw advertisement, so it never sends a scan request.
-- **GPS mapping** — NMEA fix and satellite tracking geolocate every finding.
-- **SD logging** — WiGLE-format CSV, appended to the session file in small
-  batches. After a power cut the file keeps every whole line written so far;
-  rows not yet flushed, or still held back for a better position (up to about
-  2 minutes), are lost. Session files are named `WD-<date>-<time>.csv`
-  (`WD-NNNN.csv` before the GPS has given a date), always lowercase, and a
-  new file starts at 20,000 APs. A reboot resumes into a new file and never
-  touches the old one. **AUTO LOG** (settings page 2) starts a session by itself
-  once the GPS fix holds. Not yet verified on hardware.
-- **On-unit file explorer** — the FILES screen (settings page 2) lists the session
-  logs on the card, newest first, with date and size, their total and the card's
-  capacity, and deletes one
-  after a YES / NO confirmation. The file being logged to is marked REC and cannot
-  be deleted. Not yet verified on hardware.
-- **Threat & point-of-interest alerts** — 162 device signatures (surveillance
-  cameras, ALPRs, AirTag / Tile / Find My trackers, Remote ID drones,
-  Flipper / pentest gear, card-skimmer modules…), each with its own confidence
-  grade so a weak guess stays quiet instead of crying wolf.
-  → [the full detection list](docs/detections.md)
-- **Optional multi-node mesh** — headless scanning nodes and an optional
-  coordinator tier report back wirelessly, isolated per-fleet so neighbouring
-  setups never cross-talk.
-- **Field diagnostics** — a plain-text `/diag.log` on the card records the reset
-  reason and errors, and a `/perf.csv` records how the instrument is running
-  (frame cost, stalls, heap, capture and mesh rates), so a problem or a
-  slowdown in the field can be sent back as a file.
-- **Three themes, on-device** — UMBRAVOX (violet heptagram), CVLT OF BAPH0MAU5
-  (a summoning seal) and COSMIC MUFFIN (a neon galaxy-frosted muffin on a
-  deep-space dial). Each has its own centrepiece and its own alert: a warding
-  circle, a summoning rite, or — on COSMIC MUFFIN — your pick of Supernova,
-  Vortex, Comet Strike or Lock-On.
-- **Eleven dial sweeps** — radar, gaze, pulse, star and candle, plus six cosmic
-  ones (galaxy, orbit, starfall, pulsar, comet, aurora). Sweeps are drawn in
-  whichever theme's colours are active, so every theme can use every sweep
-  (the gaze needs the seal's eyes, so it stays with BAPH0MAU5).
+## Installation
 
-## Portrait mode (first version, not yet hardware-verified)
+Use desktop Chrome or Edge, a USB data cable, and the [browser installer](https://slickrick773.github.io/umbravox/).
+Select your exact board: Waveshare 3.5″, Waveshare 2.8″, or NM-CYD-C5.
+After all four images verify, press RESET without holding BOOT.
 
-ATTUNE → PAGE 2 → **ORIENT** switches the NM-CYD-C5 between LANDSCAPE (the
-default) and PORTRAIT, live, with no reboot; the choice is saved and the board
-boots into it. Portrait draws a tall 120×160 canvas at 2×, which fills the
-240×320 panel.
+First native-UI installation replaces the partition table with two 6 MiB app
+slots, including migration from NM's old 3 MiB slot. Back up needed internal
+flash data first; existing internal filesystem data may become inaccessible.
+External SD is not written. No full-chip erase is performed. OTA is not implemented.
 
-- **Laid out for portrait:** the scan screen (tiles, the theme's dial or
-  emblem, the spectrum, a full-width START/STOP), the alert cards (every rite,
-  including the COSMIC MUFFIN styles and theme-pack rites), the menu
-  (GRIMOIRE), both ATTUNE settings pages, and FILES.
-- **Everything else** (codex, sighting, map, mesh, omens, echoes, aspect)
-  shows a "PORTRAIT LAYOUT COMING" card with a BACK button. To get the full UI
-  back, go to ATTUNE page 2 and set ORIENT to LANDSCAPE.
-- **NM-CYD-C5 only.** The Waveshare 3.5" stays landscape; its ORIENT row
-  reads "LANDSCAPE ONLY".
-- **If portrait comes up upside down for your case:** in `device/board.h`,
-  change `ROTATION_PORTRAIT` from 0 to 2. `FLIP_180 = true` turns both
-  orientations over for a board mounted the other way up. Touch follows
-  either change.
-- **Not yet verified on hardware:** this has been tested in the simulator and
-  host tests only. Touch accuracy and portrait frame cost on the real board are
-  still to be confirmed.
+See [Waveshare partitions](docs/WAVESHARE-PARTITIONS.md),
+[NM native engine](docs/NM-NATIVE-ENGINE.md), and
+[installer details](web/native/README.md).
 
-## Theme packs
+## Discover and inspect
 
-You can give UMBRAVOX your own look without a toolchain. A theme pack is a small
-data-only folder on the SD card (`/themes/<name>/theme.json`, plus an optional
-`emblem.bin`) that sets the colours, the centrepiece picture, the sweeps and the
-alert rite. The [theme designer](https://em3ritus.github.io/umbravox/designer/)
-builds one with a live preview and can write it to the card; the reference,
-including every limit, is [docs/theme-packs.md](docs/theme-packs.md). Packs cannot run
-code or touch the radios.
+- **Dual-band Wi-Fi discovery:** scan 2.4 GHz and supported 5 GHz channels, with selectable active/passive scanning and configurable dwell timing. Active mode transmits probe requests; hidden network names are not guaranteed to resolve.
+- **Bluetooth LE discovery:** observe nearby advertisements alongside Wi-Fi scanning, with configurable scan allocation.
+- **SCAN:** live Wi-Fi/5 GHz/BLE counts, channel activity bars and a theme-aware signal field. The SCAN field visualizes signal activity, not measured direction or distance.
+- **CODEX:** browse discovered devices, sort APs by signal strength, and open full AP details including SSID, BSSID, channel, RSSI and security information.
+- **Deeper AP details:** vendor/OUI lookup, signal history, first/last observation ages, advertised PHY capabilities and channel width, country, beacon interval and WPS information when available in received frames.
+- **DOMAIN:** browse located APs with a geographic view, adjustable range and access to full AP details. Locations require available location evidence; unknown positions are not invented.
+- **Clients and probes:** inspect observed station/AP relationships and requested network names. Hidden-name resolution uses captured evidence; a probe alone does not prove association.
+- **Alerts:** review signature matches with evidence and confidence, plus a clearly labeled test alert. A vendor or signature match is an indication, not proof of a device's owner or purpose.
 
-## Hardware
+## Record and export
 
-Primary target is the **RockBase NM-CYD-C5** — a "Cheap Yellow Display" for the C5:
+- WiGLE-compatible Wi-Fi CSV recordings.
+- GPX tracks from valid GPS fixes during recording.
+- Client and probe CSV companion files.
+- Raw 802.11 PCAP capture for inspection in Wireshark, controlled separately from normal recording.
+- A dedicated **POI** action for marking points of interest.
+- Organized session and capture folders on SD, with a Files browser, access to legacy recordings, and protection against deleting files that are still in use.
 
-| | |
-|---|---|
-| MCU | ESP32-C5 — single core, dual-band WiFi 6 + BLE 5, 16 MB flash, 8 MB PSRAM |
-| Display | 2.8" 320×240 ST7789 |
-| Touch | XPT2046 (resistive, polled — no IRQ line) |
-| GPS | external NMEA receiver on header P5 (GPIO 4 RX, 9600 baud) |
-| Storage | microSD on the shared SPI bus (CS 10) |
+## Connect your phone and nodes
 
-**GPS module.** A GY-GPS6MV2 (u-blox NEO-6M) works at its factory defaults:
-VCC to 3V3 (its regulator also takes 5 V), GND to GND, module **TXD to P5 RX
-(GPIO 4)**; RXD stays unconnected, as UMBRAVOX never writes to the GPS. The
-footer reads `NO GPS` until a 2D/3D fix, then `FIXED`; give it about 30 s
-outdoors from cold, and expect no fix indoors. The `GPS` console command prints
-bytes received, sentences good/bad by type, fix quality, satellites and HDOP,
-and, on the UART boards only, a one-time line in `/diag.log` flags "no data"
-(wiring) or "no valid NMEA" (baud). Wiring, expected output, troubleshooting and a bench checklist:
-[docs/gps-gy-gps6mv2.md](docs/gps-gy-gps6mv2.md). Tested against NMEA fixtures
-only, not yet on the real module.
+- **WarDriveGo and Biscuit BLE bridge:** stream Wi-Fi observations to the selected phone app. Toggle the bridge from the header; the phone supplies location for its own records. This is not a BLE-device or raw-PCAP export stream.
+- **Coordinated scanning nodes:** distribute channel work and configure scanning mode/dwell from the handheld.
+- **Nodes diagnostics:** inspect applied versus requested settings, report freshness, queue occupancy/drops and delivery failures.
+- Bridge streaming, local scanning and SD recording have separate controls. Stopping recording does not stop discovery.
 
-Scanning **nodes** and **coordinators** are headless — any ESP32-C5 board works
-(Waveshare ESP32-C5 and Seeed XIAO ESP32-C5 are both confirmed). They need only
-power and a radio: no display, touch or GPS.
+## Native touchscreen interface
 
-## How it works
+- Native landscape layouts at **480×320** and **320×240**.
+- Persistent navigation, scrolling lists and full AP detail pages.
+- Header GPS, Nodes, bridge, SD and battery indicators; absent batteries do not display a fabricated charge level.
+- Dedicated Scanning, Recording, Bridge and Nodes settings pages.
+- Separate display/touch controls for brightness, idle behavior and touch testing.
+- Bundled general and crew themes, plus SD theme-pack support. The release screenshots use the stock **UMBRAVOX** theme.
 
-**Simulator-first UI.** The look is the risky part, and iterating on it over USB
-reflashes is how a project like this dies. The entire interface compiles and runs
-on a PC, rendering frames straight to PNG. Device and simulator share one copy of
-the UI code and fill the same plain `State` struct (`ui/model.h`) — on the board
-a collector fills it from real radios, on the PC it's filled with invented
-numbers — so the art can never drift from what the glass actually draws.
+## Scope
 
-**160×120, blitted 1:2 to the panel.** The framebuffer fits in internal SRAM, and
-because the C5 is single-core every redraw steals CPU from packet capture. A small
-buffer, dirty-rectangle blitting and a dependency-free renderer (`g++` + `make`,
-PNGs written without zlib) keep a frame cheap. The chunky-pixel look is a side
-effect of that budget, not a filter on top of it.
+Active Wi-Fi scanning transmits probe requests. BLE bridges and node reporting
+also transmit; this firmware is not receive-only. Scan mode, recording and bridge
+state are separate controls.
 
-**The mesh (optional).** One radio sweeping 21 channels visits each only about
-once every 5 seconds, so a beacon on a channel you aren't parked on is simply
-gone. More radios is the real fix:
+Local GPS-dependent recordings need a valid board GPS fix. Phone GPS supplies
+the phone app's records and is not assumed to feed back into the board.
+Native portrait mode and direct WiGLE / WDG Wars / Wardrift API uploads are not
+included. The XIAO ESP32-C5 node is available as a separate download on the
+[handheld prerelease](https://github.com/slickrick773/umbravox/releases/tag/f963f3a).
+See [XIAO node installation](docs/XIAO-NODE.md) for flashing and enrollment.
 
-```
-            nodes ──► coordinator ──┐
-            nodes ──► coordinator ──┼──► CYD (collector) ──► screen + SD + WiGLE
-            nodes ──────────────────┘
-```
+## Development
 
-- **0 coordinators** — the flat mesh: nodes report straight to the CYD, which
-  parks on the report channel whenever a node is present. Fully backward-compatible.
-- **1–2 coordinators** — a middle tier that splits the spectrum by band (e.g. one
-  owns 2.4 GHz, one owns 5 GHz), each running its own cluster of nodes and folding
-  results up to the CYD. Scales toward ~12 co-located nodes; you add one when a
-  report channel's loss climbs past ~10–15%.
-
-Transport is **ESP-NOW** (no AP, no association), isolated per-fleet by a network
-id you set over the air with an on-screen **ENROLL** button, so two setups in the
-same room keep to their own gear. **ENROLL** moves open boards onto your net;
-**RESET** stays on the net until every board has left, so none is left behind. If
-a board is ever stranded, `NETSET <id>` on the USB console puts the CYD back on a
-known net to go and fetch it (details in [docs/design-notes.md](docs/design-notes.md)).
-It is otherwise **unauthenticated by design**
-(magic + version only) — an encrypted cluster mode is on the roadmap, but
-ESP-NOW's encrypted-peer cap fights the node-count goal, so for now treat the mesh
-as trusted-RF-range only.
-
-## Getting started
-
-### Simulator (PC) — no hardware needed
-
-Build the UI and render it straight to PNG:
+The native UI lives in `ui/`, with device integration under `device/`, host tests
+under `sim/`, and the browser installer under `web/native/`.
 
 ```sh
-cd sim
-make                               # build the simulator + host tests
-./umbravox out.png                 # render one frame (4×, 640×480)
-./umbravox out.png --scale 2       # 320×240 — exactly what the panel shows
-./umbravox out.png --theme 2       # 0 UMBRAVOX, 1 CVLT OF BAPH0MAU5, 2 COSMIC MUFFIN
-./umbravox out.png --sweep 5       # pick a sweep (0-10)
-./umbravox out.png --theme 2 --alert 1 --frame 20   # an alert style mid-rite
-./umbravox out.png --screen codex  # pick a screen
-make test                          # run the host test suite
-make regress                       # compare rendered screens to baselines
+make -C sim test
+node --test web/native/test/*.test.mjs
+bash tools/build-designer-wasm.sh
+npm test
 ```
 
-### Flash a board
-
-The easy way is **[flashing from your browser](https://em3ritus.github.io/umbravox/)**
-— a desktop Chromium browser (Chrome, Edge, Opera), no toolchain. Or build it
-yourself with [PlatformIO](https://platformio.org/) on the
-[pioarduino](https://github.com/pioarduino/platform-espressif32) platform (stock
-`espressif32` has no ESP32-C5 support):
-
-```sh
-pio run -e nm-cyd-c5         -t upload   # the CYD (display + collector)
-pio run -e nm-c5-node        -t upload   # a headless scanning node
-pio run -e nm-c5-coordinator -t upload   # a coordinator
-```
-
-Some C5 boards (WCH-bridge, newer silicon revisions) need `upload_speed = 115200`
-and `--no-stub`; details in [docs/design-notes.md](docs/design-notes.md).
-
-### Troubleshooting
-
-The CYD keeps a plain-text diagnostic log at **`/diag.log`** on the card: every
-boot records the firmware build and the **reset reason** (so a crash, watchdog or
-brownout leaves a fingerprint), plus a line on any SD-write failure or low-heap
-event, a session AUTO LOG started (`log: auto-started on GPS fix`) and a log deleted
-from the FILES screen (`files: deleted /WD-....csv (N bytes) from the screen`). It caps at ~128 KB and rotates once. If something misbehaves, pull the card
-and send `diag.log`, or print it over USB serial with the `DIAG` command (115200
-baud).
-
-For performance, **`/perf.csv`** gets one row every 10 seconds: frames per second,
-average and worst draw/blit time, the longest stall between loops, free heap and
-its low-water mark, capture and mesh rates, and the cost of the SD writes
-themselves (written in batches of three rows, so one ~20 ms write per 30 s). It
-rotates at 1 MiB. Print it with the `PERF` command, or summarise a file from the
-card and see what is worth tuning:
-
-```sh
-python3 -I tools/perf_report.py perf.0.csv perf.csv     # oldest first
-```
-
-### The USB console
-
-At 115200 baud the CYD answers `TEST`, `WIGLE`, `SDLS [dir]`, `SDCAT <file>`,
-`DIAG`, `PERF`, `GPS`, `GPSFIX`, `ENROLL`, `NETRESET` and `NETSET <id>`, and, to
-install theme packs without removing the card, `SDPUT`, `SDDEL <path>`,
-`SDRMDIR <folder>` and `REBOOT`. Use `tools/sdput.py` for those rather than typing
-them (see [Installing over USB](docs/theme-packs.md#installing-over-usb-without-removing-the-card)).
-They work on the wired console only, can write nothing but pack files and delete
-nothing but pack files and old session logs, and are not yet verified on hardware.
-Session logs can also be deleted on the unit itself from the FILES screen, under the
-same rule (never the file being logged to).
-
-## Project layout
-
-```
-ui/            UI + pure logic — compiles for BOTH the PC and the device
-  screen_*.cpp   the nine screens (scan, codex, detail, mesh, settings…)
-  palette.*      the theme table: colours, dial radii, offered sweeps
-  sweep.*        the eleven dial searches   muffinseal.* the muffin centrepiece
-  art/           source art the asset generators read
-  signatures.*   device-signature matching (host-tested, no hardware)
-  gnss.*         NMEA parser (host-tested)
-  model.h        State: everything a screen may know
-device/        board only — radios, mesh, capture, storage
-  main.cpp       CYD firmware: owns the panel, the blit, the collector
-  node_main.cpp  headless scanning node          [env:nm-c5-node]
-  coord_main.cpp coordinator tier                [env:nm-c5-coordinator]
-  capture.*      WiFi sniffing   blescan.* BLE    gpstrack.* GPS
-  meshcore.* mesh.h chanplan.h balance.h phase.h rehome.h   the mesh
-  sdlog.* elog.* wigle.h csv.h   SD, diagnostics + WiGLE CSV export
-sim/           PC only — simulator + host test suite (make test / regress)
-docs/          screenshots, detection list, design notes, acceptance runbook
-tools/         web-flasher builder, sigil + muffin generators
-platformio.ini
-```
-
-## Status
-
-Working on real hardware: dual-band capture, BLE, GPS, SD/WiGLE logging, touch
-navigation, all three themes, the signature alerts, over-the-air mesh enrollment, and
-the mesh in its 0-, 1- and 2-coordinator forms — validated end-to-end
-(node → coordinator → CYD → geolocated WiGLE export). The 12-node scale path is
-validated in host tests pending a physical fleet; see the
-[acceptance runbook](docs/hardware-acceptance-multi-coordinator.md).
+Designer tests require the Emscripten version pinned in `tools/emsdk-version.txt`.
+See [flashing tools](docs/FLASHING-TOOLS.md) for the validated CLI version and
+setup. See `platformio.ini` for board-specific build environments. Choose the native
+engine target for your board; legacy build targets remain in the source tree.
 
 ## License & credit
 

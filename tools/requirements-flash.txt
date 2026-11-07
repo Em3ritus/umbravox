@@ -1,0 +1,2 @@
+# Validated on XIAO ESP32-C5 and Waveshare ESP32-C5-Touch-LCD-3.5.
+esptool==5.6.0

@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "name": "PHOSPHOR",
+  "author": "slickrick773",
+  "header": "UMBRAVOX",
+  "dial": "compact",
+  "centrepiece": "radar",
+  "sweeps": [
+    "radar"
+  ],
+  "sweep": "radar",
+  "alert": "lockon",
+  "colors": {
+    "void": "#080E0B",
+    "panel": "#101C16",
+    "grid": "#1A3024",
+    "edge": "#31533E",
+    "edgeLit": "#4D8863",
+    "dim": "#A0B7A6",
+    "text": "#D2E4D5",
+    "bright": "#EFF9EE",
+    "witch": "#69D58A",
+    "witchHi": "#A0F5B6",
+    "bone": "#C7D8BD",
+    "sweep": "#58B875",
+    "sweepHi": "#A0F5B6",
+    "live": "#69D58A",
+    "liveHi": "#C3F7CC",
+    "magenta": "#73DD91",
+    "ice": "#9FCBE0",
+    "green": "#DCC98B",
+    "amber": "#F0BE62",
+    "red": "#FF7479"
+  }
+}

@@ -1,5 +1,6 @@
 #include "muffinseal.h"
 #include "muffin.h"
+#include "muffin_packed.inc"
 #include "motif.h"
 
 namespace ui {
@@ -20,7 +21,8 @@ const themepack::Emblem& muffinEmblem() {
         m.h = (uint8_t)MUFFIN_H;
         m.ncol = (uint8_t)MUFFIN_NCOL;
         for (int i = 0; i < MUFFIN_NCOL; i++) m.pal[i] = MUFFIN_PAL[i];
-        m.px = MUFFIN_PX;
+        m.px = MUFFIN_PACKED;
+        m.packed4 = true;
         return m;
     }();
     return e;

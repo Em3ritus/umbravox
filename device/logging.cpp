@@ -1,6 +1,7 @@
 // See logging.h. Pure: the card is reached only through sdlog.h, so this
 // compiles and tests on the host with no Arduino.
 #include "logging.h"
+#include "storage_paths.h"
 #include "sdlog.h"
 #include "csv.h"
 #include "wigle.h"
@@ -13,6 +14,8 @@ namespace {
 State    st = IDLE;
 Hooks    hk;
 bool     want = false;
+bool     saving_ = false;
+uint32_t stopAt = 0, stopLoss = 0;
 uint32_t startedMs = 0;
 uint32_t nextFlushMs = 0;
 uint32_t rows = 0, skipped = 0;
@@ -22,8 +25,7 @@ uint32_t nRolls = 0;
 // existing WD-NNNN.CSV/.csv, any case) to advance PAST them -- so a reboot before a GPS fix
 // cannot overwrite an earlier dateless session (spec s7).
 uint32_t counter = 0;
-char     name[32] = "";
-char     prevName[32] = "";  // the last session's file, never reused
+char     name[64] = "";
 // Latched when a flush fails with the card STILL present (full / I/O error, as
 // opposed to a card that was simply removed). main reads+clears it and writes
 // one diagnostic line, so this file keeps no dependency on elog.
@@ -78,23 +80,26 @@ struct HeaderSink : ui_wigle::Sink {
 // Absolute path -- SD.open requires the leading '/'. A name already on the
 // card is never used: appending to it would mix two sessions (and applog
 // refuses it anyway), so fall through to the next free dateless number.
+int reserveName(const char* legacy){
+    char path[64],dir[64];
+    if(sdlog::exists(legacy))return false;
+    if(!storagepaths::session(path,sizeof path,legacy))return -1;
+    snprintf(dir,sizeof dir,"%s",path);*strrchr(dir,'/')=0;
+    if(sdlog::exists(dir))return false; // an existing session is never reused
+    if(!sdlog::makeDir(dir))return -1;
+    snprintf(name,sizeof name,"%s",path);return 1;
+}
 void makeName(uint32_t nowEpoch) {
-    if (nowEpoch >= EPOCH_KNOWN) {
-        char ts[24];
-        csv::stampUtc(ts, nowEpoch);              // "YYYY-MM-DD HH:MM:SS"
-        snprintf(name, sizeof name, "/WD-%.4s%.2s%.2s-%.2s%.2s%.2s.csv",
-                 ts, ts + 5, ts + 8, ts + 11, ts + 14, ts + 17);
-        // Two sessions in the same second would share a name.
-        if (strcmp(name, prevName) != 0 && !sdlog::exists(name)) {
-            strcpy(prevName, name);
-            return;
-        }
+    name[0]=0;
+    if(!(sdlog::isDir(storagepaths::ROOT)||sdlog::makeDir(storagepaths::ROOT)) ||
+       !(sdlog::isDir(storagepaths::SESSIONS)||sdlog::makeDir(storagepaths::SESSIONS))){writeErr=true;return;}
+    char legacy[32];
+    if(nowEpoch>=EPOCH_KNOWN){char ts[24];csv::stampUtc(ts,nowEpoch);
+        snprintf(legacy,sizeof legacy,"/WD-%.4s%.2s%.2s-%.2s%.2s%.2s.csv",ts,ts+5,ts+8,ts+11,ts+14,ts+17);
+        const int result=reserveName(legacy);if(result){if(result<0)writeErr=true;return;}
     }
-    for (int tries = 0; tries < 100; tries++) {
-        snprintf(name, sizeof name, "/WD-%04u.csv", (unsigned)(++counter % 10000));
-        if (!sdlog::exists(name)) break;
-    }
-    strcpy(prevName, name);
+    for(int i=0;i<100;i++){snprintf(legacy,sizeof legacy,"/WD-%04u.csv",unsigned(++counter%10000));const int result=reserveName(legacy);if(result){if(result<0)writeErr=true;return;}}
+    writeErr=true; // no safe name: the append fails rather than reusing an old session
 }
 
 void resetCursors() {
@@ -113,9 +118,11 @@ void newFile(uint32_t nowEpoch) {
 // with the card still there is retried at the next interval.
 // `final` releases rows held for a better position (applog::holdVerdict):
 // STOP, RESET and a due rollover pass it, so nothing held is cleared unwritten.
-applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch, bool final = false) {
+applog::Result flushOnce(uint32_t nowMs, uint32_t nowEpoch, bool final = false, uint32_t limit = applog::BATCH_ROWS) {
+    if(!name[0])makeName(nowEpoch);
+    if(!name[0]){applog::Result r{};r.ok=false;nextFlushMs=nowMs+FLUSH_MS;writeErr=sdlog::present();if(!sdlog::present())st=NO_CARD;return r;}
     applog::Result r = applog::appendBatch(name, fst, sink, header, srcs, curs, nSrc,
-                                           applog::BATCH_ROWS, pend, nowMs, final || rollWaiting);
+                                           limit, pend, nowMs, final || rollWaiting);
     if (r.ok) {
         rows += r.rows;
         skipped = r.waiting;
@@ -215,12 +222,29 @@ void checkRoll(uint32_t nowMs, uint32_t nowEpoch, Flushed f) {
         forceRoll(nowMs, nowEpoch);
 }
 
+void finishStop(bool wasActive, uint32_t lost) {
+    if (wasActive) stopLoss = lost;
+    const bool hadReset = resetClear != nullptr;
+    want = false;
+    saving_ = false;
+    st = IDLE;
+    name[0] = 0;
+    rollWaiting = false;
+    if (resetClear) {                     // a RESET was still draining: apply it
+        resetClear();
+        resetClear = nullptr;
+        resetCursors();
+    }
+    if (wasActive && lost && hk.onStopLoss) hk.onStopLoss(lost, hadReset);
+}
+
 } // namespace
 
 void start(uint32_t nowMs, uint32_t nowEpoch) {
     noteEpoch(nowMs, nowEpoch);
     if (st != IDLE) return;
     want = true;
+    stopLoss = 0;
     newFile(nowEpoch);
     startedMs = nowMs;
     nextFlushMs = nowMs + FLUSH_MS;
@@ -228,6 +252,16 @@ void start(uint32_t nowMs, uint32_t nowEpoch) {
     if (sdlog::present()) flushOnce(nowMs, nowEpoch);   // creates the file; may demote
     else st = NO_CARD;
 }
+
+void requestStop(uint32_t nowMs) {
+    if (saving_) return;
+    want = false;
+    if (st != ACTIVE) { finishStop(false, 0); return; }
+    saving_ = true;
+    stopAt = nowMs;
+}
+bool saving() { return saving_; }
+uint32_t lastStopLoss() { return stopLoss; }
 
 void stop(uint32_t nowMs) {
     uint32_t lost = 0;
@@ -246,20 +280,11 @@ void stop(uint32_t nowMs) {
         }
         lost = applog::pendingRows(srcs, curs, nSrc, nowMs, true);
     }
-    const bool hadReset = resetClear != nullptr;
-    want = false;
-    st = IDLE;
-    name[0] = 0;
-    rollWaiting = false;
-    if (resetClear) {                     // a RESET was still draining: apply it
-        resetClear();
-        resetClear = nullptr;
-        resetCursors();
-    }
-    if (wasActive && lost && hk.onStopLoss) hk.onStopLoss(lost, hadReset);
+    finishStop(wasActive, lost);
 }
 
 void toggle(uint32_t nowMs, uint32_t nowEpoch) {
+    if (saving_) return;
     if (st == IDLE) start(nowMs, nowEpoch);
     else stop(nowMs);
 }
@@ -273,9 +298,10 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
     HeaderSink hs;
     ui_wigle::header(hs);
     st = IDLE;
+    saving_ = false;
+    stopLoss = 0;
     want = false;
     name[0] = 0;
-    prevName[0] = 0;
     rollWaiting = false;
     resetClear = nullptr;
     knownEpoch = knownEpochMs = 0;
@@ -283,12 +309,26 @@ void begin(bool wasActive, const Hooks& h, uint32_t nowMs, uint32_t nowEpoch) {
     resetCursors();
     // Advance the dateless counter past any WD-NNNN.csv (or .CSV from older firmware) already on the card, so
     // a reboot before a GPS fix cannot overwrite an earlier dateless session.
-    counter = sdlog::maxIndex("/WD-", ".csv");
+    counter = sdlog::maxIndex("/umbravox/sessions/WD-", "");
+    const auto legacyMax=sdlog::maxIndex("/WD-", ".csv");if(legacyMax>counter)counter=legacyMax;
     if (wasActive) start(nowMs, nowEpoch);   // a fresh file, never the old one
 }
 
 void tick(uint32_t nowMs, uint32_t nowEpoch) {
     noteEpoch(nowMs, nowEpoch);
+    if (saving_) {
+        // Keep the acknowledgement visible briefly before the first SD batch.
+        const uint32_t age = nowMs - stopAt;
+        if (age < 250) return;
+        if (age >= STOP_DRAIN_MAX_MS) {
+            finishStop(true, applog::pendingRows(srcs, curs, nSrc, nowMs, true));
+            return;
+        }
+        const auto r = flushOnce(nowMs, nowEpoch, true, STOP_BATCH_ROWS);
+        if ((r.ok && !r.more) || (!r.ok && !r.clash && !r.shrunk) || st != ACTIVE)
+            finishStop(true, applog::pendingRows(srcs, curs, nSrc, nowMs, true));
+        return; // no rollover/second batch in the same pass
+    }
     // Notice a due roll before this tick's flush, so that flush is already
     // final (releases held rows) and can count as the drain.
     if (st == ACTIVE && thresholdDue()) armRoll(nowMs);
@@ -306,6 +346,7 @@ void tick(uint32_t nowMs, uint32_t nowEpoch) {
 
 void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
     noteEpoch(nowMs, nowEpoch);
+    if (saving_) { resetClear = clear; return; }
     if (st != ACTIVE) {
         if (clear) clear();
         resetCursors();
@@ -321,7 +362,7 @@ void resetTables(void (*clear)(), uint32_t nowMs, uint32_t nowEpoch) {
 
 State       state()                 { return st; }
 bool        wantsActive()           { return want; }
-bool        transitioning()         { return rollWaiting || resetClear != nullptr; }
+bool        transitioning()         { return saving_ || rollWaiting || resetClear != nullptr; }
 const char* fileName()              { return name; }
 uint32_t    lastRows()              { return rows; }
 uint32_t    lastSkipped()           { return skipped; }

@@ -11,6 +11,19 @@ builds a pack in the browser, with a live preview drawn by the device's own `ui/
 code compiled to WebAssembly. This page is the reference for the format, the limits
 and everything a pack cannot do.
 
+## Bundled palettes and header names
+
+Fourteen themes are available without an SD card. The general palettes are
+UMBRAVOX, EMBER, PHOSPHOR, GLACIER, OBSIDIAN, CYBER, ULTRAVIOLET, and DUNE.
+The six additions use the clean radar and require no bitmap artwork. General
+palettes keep **UMBRAVOX** as the header; Appearance still shows each palette's
+name. Crew themes retain their individual mastheads.
+
+Existing built-in IDs 0–7 are unchanged; the six new palettes occupy IDs 8–13.
+The eight-slot SD pack/override limit is separate from the built-in count and
+has not increased. All bundled palettes remain available even when that SD
+limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
+
 ## What a pack cannot do
 
 - No scripting and no custom animation. The format is data only and stays that way
@@ -379,3 +392,17 @@ rule is applied to the last path component and `.` is not a valid folder name.
 | The device resets repeatedly after you select a pack | Take the SD card out and boot. Choose another theme (the selection is saved by name), then remove or fix the pack. |
 | Folder not found after copy | The card is not FAT32, or `themes` is not at the card root. |
 | The designer page will not load | The browser is older than the minimums in limitation 10. |
+
+## Native radar and header badge extension
+
+The native renderer accepts `"centrepiece": "radar"` for a seal-free field:
+three rings, centre cross and the native fading radar sweep. Use `"sweeps":
+["radar"]` for this style; other native clean-field sweep variants are not yet
+implemented. Existing heptagram/emblem packs and their defaults are unchanged.
+The legacy canvas omits the centrepiece and retains its existing search animation.
+
+Optional `"badge": "diamond"` draws an outlined diamond before the native header
+wordmark. Default is `"none"`; unknown values and duplicate keys are rejected.
+These options apply by pack data, not by theme name. The current browser designer
+has no controls for these extensions yet; author them in JSON. Older firmware
+rejects the unknown `radar` centrepiece rather than drawing the wrong artwork.
