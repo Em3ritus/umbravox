@@ -25,8 +25,7 @@ demonstration data. These are not hardware photographs.
 </table>
 
 Waveshare 3.5-inch SCAN screen, rendered by the same shared drawing code the firmware uses, with synthetic
-demonstration data (not hardware photographs). COSMIC MUFFIN plays its clip as built in. The CVLT clip is a theme pack's
-`radar.vid` loaded from the SD card, not part of the built-in theme.
+demonstration data (not hardware photographs). COSMIC MUFFIN and CVLT OF BAPH0MAU5 play their clips as built in.
 
 ## Boards and validation
 
