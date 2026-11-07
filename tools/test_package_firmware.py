@@ -13,7 +13,7 @@ def load(name):
 
 packager = load('package-firmware')
 assembler = load('assemble-native-installer')
-KEYS = ['nm-cyd-c5-engine', 'ws-c5-35-engine', 'ws-c5-28-engine', 'xiao-c5-node']
+KEYS = ['nm-cyd-c5', 'ws-c5-35-engine', 'ws-c5-28-engine', 'xiao-c5-node']
 COMMIT = 'c' * 40
 
 class Packaging(unittest.TestCase):
@@ -63,11 +63,14 @@ class Packaging(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); out = root / 'o'; out.mkdir(); boot = self.boot_app0(root)
             with self.assertRaises(ValueError):                                   # not a releasable board
-                packager.package('nm-cyd-c5', self.build_dir(root, 'a'), boot, out, COMMIT)
+                packager.package('nm-cyd-c5-engine', self.build_dir(root, 'a'), boot, out, COMMIT)
             with self.assertRaises(ValueError):                                   # not a 40-hex commit
                 packager.package('xiao-c5-node', self.build_dir(root, 'b'), boot, out, 'main')
             with self.assertRaises(ValueError):                                   # bigger than the node's 3 MiB app slot
                 packager.package('xiao-c5-node', self.build_dir(root, 'c', b'\x00' * (0x300000 + 4)), boot, out, COMMIT)
+            with self.assertRaises(ValueError):                                   # the CYD's original-UI build has a 3 MiB app slot
+                packager.package('nm-cyd-c5', self.build_dir(root, 'f', b'\x00' * (0x300000 + 4)), boot, out, COMMIT)
+            packager.package('ws-c5-35-engine', self.build_dir(root, 'g', b'\x00' * (0x300000 + 4)), boot, out, COMMIT)   # the engine boards have 6 MiB
             with self.assertRaises(ValueError):                                   # not a multiple of 4
                 packager.package('ws-c5-35-engine', self.build_dir(root, 'd', b'\x00' * 6), boot, out, COMMIT)
             missing = self.build_dir(root, 'e'); (missing / 'partitions.bin').unlink()

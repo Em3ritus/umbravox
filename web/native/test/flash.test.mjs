@@ -68,3 +68,9 @@ test('XIAO configures detected 8MB geometry and uses the four verified writes',a
  l.flashMd5sum=async()=>{verified++;return n.parts[0].md5;};
  await install(l,n,await loadParts(n,'https://example.test/',fetcher,webcrypto),()=>{});assert.equal(verified,4);
 });
+test('the CYD ships its original UI: a 3 MiB application slot, and no engine build',()=>{
+ const c={...structuredClone(m),boardKey:'nm-cyd-c5'};validateManifest(c);
+ const big=structuredClone(c);big.parts[3].bytes=0x300004;assert.throws(()=>validateManifest(big),/region/);
+ const eng=structuredClone(m);eng.parts[3].bytes=0x300004;validateManifest(eng);
+ assert.throws(()=>validateManifest({...structuredClone(m),boardKey:'nm-cyd-c5-engine'}),/Unsupported/);
+});

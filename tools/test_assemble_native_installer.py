@@ -13,7 +13,7 @@ spec.loader.exec_module(assembler)
 class Packages(unittest.TestCase):
     def make_packages(self, root, bad_capacity=False, corrupt=False):
         packages = []
-        for key in ['nm-cyd-c5-engine', 'ws-c5-35-engine', 'ws-c5-28-engine', 'xiao-c5-node']:
+        for key in ['nm-cyd-c5', 'ws-c5-35-engine', 'ws-c5-28-engine', 'xiao-c5-node']:
             node = key == 'xiao-c5-node'
             prefix = '' if node else key + '/'
             files = []
@@ -26,7 +26,7 @@ class Packages(unittest.TestCase):
             if node:
                 manifest.update(chip='ESP32-C5', flash_size=0x1000000 if bad_capacity else 0x800000)
             else:
-                manifest.update(minimum_flash_bytes=0x1000000, app_slot_bytes=0x600000)
+                manifest.update(minimum_flash_bytes=0x1000000, app_slot_bytes=0x300000 if key == 'nm-cyd-c5' else 0x600000)
             content['manifest.json'] = json.dumps(manifest).encode()
             content['SHA256SUMS.txt'] = ''.join(hashlib.sha256(data).hexdigest()+'  '+name+'\n' for name,data in content.items()).encode()
             if node and corrupt:
@@ -48,6 +48,19 @@ class Packages(unittest.TestCase):
             for line in (out/'SITE-SHA256SUMS.txt').read_text().splitlines():
                 digest,name=line.split('  ',1)
                 self.assertEqual(hashlib.sha256((out/name).read_bytes()).hexdigest(),digest)
+
+    def test_cyd_original_ui_keeps_its_3_mib_slot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); packages=self.make_packages(root); out=root/'site'
+            assembler.assemble(out,packages)
+            self.assertEqual(json.loads((out/'firmware'/'nm-cyd-c5'/'manifest.json').read_text())['boardKey'],'nm-cyd-c5')
+            bad=root/'bad'; bad.mkdir(); packages=self.make_packages(bad)
+            with zipfile.ZipFile(packages[0]) as z: parts={n:z.read(n) for n in z.namelist()}
+            m=json.loads(parts['nm-cyd-c5/manifest.json']); m['app_slot_bytes']=0x600000
+            parts['nm-cyd-c5/manifest.json']=json.dumps(m).encode()
+            with zipfile.ZipFile(packages[0],'w') as z:
+                for n,d in parts.items(): z.writestr(n,d)
+            with self.assertRaises(ValueError):assembler.assemble(bad/'site',packages)
 
     def test_reject_missing_node_bad_capacity_and_corrupt_image(self):
         for case in ['missing','capacity','checksum']:

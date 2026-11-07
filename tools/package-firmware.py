@@ -21,7 +21,7 @@ from pathlib import Path
 
 # board key -> (is a headless node, flash capacity, app slot) -- the same limits assemble-native-installer.py enforces.
 BOARDS = {
-    'nm-cyd-c5-engine': (False, 0x1000000, 0x600000),
+    'nm-cyd-c5':        (False, 0x1000000, 0x300000),   # the CYD keeps its original UI and the 3 MiB huge_app slot
     'ws-c5-35-engine':  (False, 0x1000000, 0x600000),
     'ws-c5-28-engine':  (False, 0x1000000, 0x600000),
     'xiao-c5-node':     (True,  0x800000,  0x300000),

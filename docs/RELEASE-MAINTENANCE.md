@@ -9,7 +9,7 @@ The public installer is https://em3ritus.github.io/umbravox/, deployed to GitHub
 Run it from `main` on a commit you have tested on hardware: Actions > Release > Run workflow, and enter the tag
 (for example `v1.1.0`). **Dry run** is ticked by default: it builds, packages and assembles but releases and deploys
 nothing, so do one first, then run it again with the box unticked. It runs the host and installer tests, builds the four installable boards
-(`nm-cyd-c5-engine`, `ws-c5-35-engine`, `ws-c5-28-engine`, `xiao-c5-node`), packages each with
+(`nm-cyd-c5`, `ws-c5-35-engine`, `ws-c5-28-engine`, `xiao-c5-node`), packages each with
 `tools/package-firmware.py` (images, `manifest.json`, `SHA256SUMS.txt`, source snapshot), assembles the installer site
 from those ZIPs with `tools/assemble-native-installer.py` (which re-verifies every checksum and size limit), creates the
 GitHub release holding the four ZIPs (named `umbravox-<board>.zip`, so `releases/latest/download/...` links never

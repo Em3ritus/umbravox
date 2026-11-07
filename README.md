@@ -20,14 +20,13 @@ demonstration data. These are not hardware photographs.
 | --- | --- | --- |
 | Waveshare ESP32-C5-Touch-LCD-3.5 | 480×320 | Browser installation, all four image hashes, and boot confirmed |
 | Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed |
-| NerdMinder NM-CYD-C5 | 320×240 shared engine | Earlier firmware flashing and operation confirmed; latest build compile-checked |
+| NerdMinder NM-CYD-C5 | 320×240, the original UI | Current source flashed with PlatformIO, 12 of 12 clean boots; the browser install of this image is not yet run |
 
 Each release's firmware packages carry the commit they were built from and a source snapshot
 (`manifest.json`, `SHA256SUMS.txt`); the release notes say which commit that is. The evidence in the table above is
 from the earlier prerelease published by slickrick773. Hardware testing of the current source so far: the
 Waveshare 3.5-inch handheld with a XIAO ESP32-C5 node and a Waveshare ESP32-C5 dev-kit coordinator (flashed with esptool;
-the browser installer has not yet been run on the current build), and the NM-CYD-C5 boot check. The 2.8-inch and
-NM engine images are compile-checked only.
+the browser installer has not yet been run on the current build), and the NM-CYD-C5 (original UI, flashed with PlatformIO). The 2.8-inch image is compile-checked only.
 See [node validation](docs/XIAO-NODE-VALIDATION.md) and
 [GPS recovery](docs/FLASHING-TOOLS.md#external-gps-after-flashing) for boundaries.
 

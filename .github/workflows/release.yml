@@ -56,7 +56,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        environment: [nm-cyd-c5-engine, ws-c5-35-engine, ws-c5-28-engine, xiao-c5-node]
+        environment: [nm-cyd-c5, ws-c5-35-engine, ws-c5-28-engine, xiao-c5-node]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +100,7 @@ jobs:
       - name: Assemble (this verifies every package's checksums and limits)
         run: |
           python3 tools/assemble-native-installer.py site \
-            dist/umbravox-nm-cyd-c5-engine.zip dist/umbravox-ws-c5-35-engine.zip \
+            dist/umbravox-nm-cyd-c5.zip dist/umbravox-ws-c5-35-engine.zip \
             dist/umbravox-ws-c5-28-engine.zip dist/umbravox-xiao-c5-node.zip
       - name: Check the site inventory
         run: |

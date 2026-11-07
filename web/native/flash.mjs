@@ -2,11 +2,11 @@
 export function validateManifest(m) {
   const expected = [['bootloader.bin',0x2000],['partitions.bin',0x8000],['boot_app0.bin',0xe000],['firmware.bin',0x10000]];
   const node = m.boardKey === 'xiao-c5-node';
-  const handheld = ['nm-cyd-c5-engine','ws-c5-35-engine','ws-c5-28-engine'].includes(m.boardKey);
+  const handheld = ['nm-cyd-c5','ws-c5-35-engine','ws-c5-28-engine'].includes(m.boardKey);
   if ((!node && !handheld) || m.chip !== 'ESP32-C5' || m.flashBytes !== (node ? 8388608 : 16777216) || m.parts?.length !== 4) throw Error('Unsupported manifest');
   m.parts.forEach((p,i)=> {
     if(p.path !== expected[i][0] || p.offset !== expected[i][1] || !Number.isInteger(p.bytes) || p.bytes <= 0 || p.bytes % 4 || !/^[a-f0-9]{64}$/.test(p.sha256) || !/^[a-f0-9]{32}$/.test(p.md5)) throw Error('Invalid firmware part');
-    if(p.bytes > [0x6000,0x1000,0x2000,node ? 0x300000 : 0x600000][i]) throw Error('Firmware part exceeds its region');
+    if(p.bytes > [0x6000,0x1000,0x2000,(node || m.boardKey === 'nm-cyd-c5') ? 0x300000 : 0x600000][i]) throw Error('Firmware part exceeds its region');
   });
   return m;
 }
