@@ -35,6 +35,9 @@ jobs:
           actions-cache-folder: emsdk-cache
       - name: Build the WebAssembly preview
         run: bash tools/build-designer-wasm.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # after emscripten: its setup puts its own python first on PATH, where pip's packages are invisible to python3 -I
       - name: Install Pillow (the gif2radar selftest needs it)
         run: python3 -m pip install pillow
       - name: Run the designer tests
