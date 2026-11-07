@@ -31,6 +31,7 @@
 #include "palette.h"
 #include "themepack.h"
 #include "packmedia.h"
+#include "board.h"
 #include "sound.h"
 
 namespace themeload {
@@ -245,7 +246,7 @@ bool beginLoad(const PackMedia& m, int slot) {
     const bool set = guardSet(KV, cur, rec);
     nvs.end();
     if (!set) { elog::event(elog::WARN, "theme", "%s: media not loaded, could not set the guard", safe); return false; }
-    uint32_t cs = m.clipSz, ss = m.sndSz;
+    uint32_t cs = packmedia::clipBytes(m.clipSz, board::PANEL_W), ss = m.sndSz;   // a narrow panel never draws the clip: do not read it
     if (cs > MAX_CLIP)  { elog::event(elog::WARN, "theme", "%s: radar clip not used: radar.vid over %u bytes", safe, (unsigned)MAX_CLIP); cs = 0; }
     if (ss > MAX_SOUND) { elog::event(elog::WARN, "theme", "%s: alert sounds not used: alert.snd over %u bytes", safe, (unsigned)MAX_SOUND); ss = 0; }
     if (cs && !clipBuf) clipBuf = (uint8_t*)heap_caps_malloc(MAX_CLIP, MALLOC_CAP_SPIRAM);

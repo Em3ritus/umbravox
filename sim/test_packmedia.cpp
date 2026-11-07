@@ -120,6 +120,13 @@ int main() {
       while (!p.done()) { auto s = p.next(256); total += s.len; n++; p.advance(s.len); }
       check("slices add up to the file, none over the slice size", total == 1000 && n == 4); }
 
+    // Only a panel at least WIDE_PANEL_W wide draws a pack's radar clip, so a narrower one never reads it from the card.
+    check("the 480 px Waveshare reads the clip", packmedia::clipWanted(480));
+    check("the 400 px threshold itself is wide", packmedia::clipWanted(400));
+    check("the 320 px CYD and 2.8 inch panels skip the clip", !packmedia::clipWanted(320) && !packmedia::clipWanted(399));
+    check("a clip of N bytes is read as N on a wide panel", packmedia::clipBytes(650262, 480) == 650262);
+    check("and as 0 on a narrow one", packmedia::clipBytes(650262, 320) == 0);
+
     printf(fails ? "FAILED %d\n" : "packmedia: decisions passed\n", fails);
     return fails ? 1 : 0;
 }

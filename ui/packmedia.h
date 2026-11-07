@@ -18,6 +18,12 @@ constexpr int NONE = -1;                    // "no pack": a built-in theme, or n
 // few hundred ms at most, and a pack's media is up to 1.4 MB: only the theme the list stops on is loaded.
 constexpr uint32_t SETTLE_MS = 400;
 
+// A pack's radar clip is drawn only on a panel this wide or wider (ui/scan_render.h: the radar disc of the wide layout), so a
+// narrower panel (the CYD, the 2.8 inch Waveshare) never reads it: a clip is up to 780 KB, about 3 of the 3.6 s a pack switch takes.
+constexpr int WIDE_PANEL_W = 400;
+constexpr bool clipWanted(int panelW) { return panelW >= WIDE_PANEL_W; }
+constexpr uint32_t clipBytes(uint32_t clipSz, int panelW) { return clipWanted(panelW) ? clipSz : 0; }
+
 struct Step {
     enum Kind : uint8_t { NOTHING, UNLOAD, LOAD };
     Kind kind = NOTHING;
