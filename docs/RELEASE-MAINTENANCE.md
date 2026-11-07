@@ -2,7 +2,9 @@
 
 `main` is the development and default branch.
 The public installer is https://em3ritus.github.io/umbravox/, deployed to GitHub Pages by the **Release** workflow
-(`.github/workflows/release.yml`); there is no `gh-pages` branch. Source lives in `web/native/`.
+(`.github/workflows/release.yml`); there is no `gh-pages` branch. Source lives in `web/native/`. The same site also serves the
+theme builder at `/designer/` (source in `web/designer/`): the workflow builds its WebAssembly preview, runs `npm test`,
+copies it in with `tools/assemble-designer.sh`, and lists every file of the site in `SITE-SHA256SUMS.txt`.
 
 ## Making a release
 
@@ -15,7 +17,8 @@ from those ZIPs with `tools/assemble-native-installer.py` (which re-verifies eve
 GitHub release holding the four ZIPs (named `umbravox-<board>.zip`, so `releases/latest/download/...` links never
 change), then deploys the site. A successful run is not hardware acceptance. By hand, the same steps work locally:
 `pio run -e <board>`, `package-firmware.py`, then `assemble-native-installer.py OUTPUT NM_ZIP WS35_ZIP WS28_ZIP XIAO_ZIP`
-into a fresh empty directory, and check `SITE-SHA256SUMS.txt`.
+into a fresh empty directory, then `tools/build-designer-wasm.sh && tools/assemble-designer.sh OUTPUT`, and check
+`SITE-SHA256SUMS.txt` (the workflow regenerates it after the designer is added, with `find`/`sha256sum`).
 
 ## Flashing tool versions
 
