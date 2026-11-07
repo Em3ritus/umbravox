@@ -1,11 +1,15 @@
 {
-  "MAX_PACKS": 8,
+  "MAX_PACKS": 12,
   "MAX_NAME": 20,
   "MAX_HEADER": 18,
   "MAX_AUTHOR": 24,
   "MAX_JSON": 4096,
   "MAX_EMBLEM": 9728,
   "MAX_PACK": 65536,
+  "MAX_CLIP": 780312,
+  "MAX_CLIPS": 2,
+  "MAX_SOUND": 576020,
+  "MAX_SOUNDS": 2,
   "MAX_EMBLEM_DIM": 96,
   "MAX_EMBLEM_COLORS": 16,
   "MAX_FOLDERS_EXAMINED": 32,
@@ -15,7 +19,7 @@
     "pattern": "^[A-Za-z0-9_-]{1,31}$",
     "text": "A folder name is 1-31 letters, digits, - or _. Anything else is skipped."
   },
-  "foldersExaminedNote": "Only the first 32 folders under /themes (by name) are examined at all; of those, at most 8 packs load.",
+  "foldersExaminedNote": "Only the first 32 folders under /themes (by name) are examined at all; of those, at most 12 packs load.",
   "nameChars": "A-Z 0-9 space - .",
   "sweepNames": ["radar", "pulse", "star", "candle", "galaxy", "orbit", "starfall", "pulsar", "comet", "aurora"],
   "alertNames": ["ward", "supernova", "vortex", "comet", "lockon"],
@@ -29,7 +33,7 @@
     },
     "packs": {
       "id": "packs",
-      "text": "At most 8 packs load, chosen as the first 8 by folder name, and only the first 32 folders (by name) are examined at all. Folder names are letters, digits, - and _ only. A theme name must be unique and cannot be UMBRAVOX, BAPH0MAU5, CVLT OF BAPH0MAU5 or COSMIC MUFFIN; otherwise that pack is skipped.",
+      "text": "At most 12 packs load, chosen as the first 12 by folder name, and only the first 32 folders (by name) are examined at all. Folder names are letters, digits, - and _ only. A theme name must be unique and cannot be UMBRAVOX, BAPH0MAU5, CVLT OF BAPH0MAU5 or COSMIC MUFFIN; otherwise that pack is skipped.",
       "where": ["install", "docs"]
     },
     "centrepiece": {

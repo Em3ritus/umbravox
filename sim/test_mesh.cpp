@@ -31,6 +31,20 @@ int main() {
     check("truncated CBatch rejected",
           !mesh::valid((const uint8_t*)&b, (int)sizeof(mesh::Hdr), mesh::MSG_CBATCH, (int)sizeof b));
 
+    printf("a batch carries the coordinator's own node count; a frame from an older coordinator (one byte shorter) is still accepted:\n");
+    {
+        mesh::ClusterBatch nb = b; nb.nodes = 3;
+        check("the node count is the one trailing byte", sizeof(mesh::ClusterBatch) == (size_t)mesh::CBATCH_MIN_LEN + 1);
+        check("a new frame is valid and reports its nodes",
+              mesh::valid((const uint8_t*)&nb, sizeof nb, mesh::MSG_CBATCH, mesh::CBATCH_MIN_LEN) && mesh::batchNodes(&nb, sizeof nb) == 3);
+        check("an older coordinator's frame (without the byte) is valid",
+              mesh::valid((const uint8_t*)&nb, mesh::CBATCH_MIN_LEN, mesh::MSG_CBATCH, mesh::CBATCH_MIN_LEN));
+        check("and says the count is unknown (-1), not 0",
+              mesh::batchNodes(&nb, mesh::CBATCH_MIN_LEN) == -1);
+        check("a frame shorter than the old minimum is still rejected",
+              !mesh::valid((const uint8_t*)&nb, mesh::CBATCH_MIN_LEN - 1, mesh::MSG_CBATCH, mesh::CBATCH_MIN_LEN));
+    }
+
     printf("a frame from another network id is rejected:\n");
     mesh::ClusterBatch other = b;
     other.h.netId = (uint8_t)(mesh::netId + 1);   // someone else's mesh in the room

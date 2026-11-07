@@ -12,3 +12,4 @@ esp_err_t esp_wifi_scan_start(const wifi_scan_config_t*,bool);
 esp_err_t esp_wifi_scan_get_ap_num(uint16_t*);
 esp_err_t esp_wifi_scan_get_ap_records(uint16_t*,wifi_ap_record_t*);
 esp_err_t esp_wifi_clear_ap_list();
+esp_err_t esp_wifi_scan_stop();

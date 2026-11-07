@@ -8,6 +8,46 @@ static bool overlap(uieng::Rect a,uieng::Rect b){return a.x<b.x+b.w&&b.x<a.x+a.w
 static std::vector<uint16_t> render(int w,int h,const atnr::AttuneScene& sc){std::vector<uint16_t> p(w*h);for(int y=0;y<h;y+=16){scanr::S s{p.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(s,w,h,sc);}return p;}
 int main(int argc,char**argv){
  pal::setTheme(0);const char* names[]={"scanning","recording","bridge","nodes"};
+ { // PAIRED PHONES card (bridge tab, 4th card): count, armed confirm, and a tap target.
+  Data d;d.settings.bleBridge=1;char b[32];
+  assert(!strcmp(title(11),"PAIRED PHONES"));
+  d.phones=-1;value(d,11,b,sizeof b);assert(!strcmp(b,"UNKNOWN"));
+  d.phones=0;value(d,11,b,sizeof b);assert(!strcmp(b,"NONE"));
+  d.phones=1;value(d,11,b,sizeof b);assert(!strcmp(b,"1 PHONE"));
+  d.phones=3;value(d,11,b,sizeof b);assert(!strcmp(b,"3 PHONES"));
+  d.forgetArmed=true;value(d,11,b,sizeof b);assert(!strcmp(b,"TAP AGAIN"));      // armed beats the count
+  for(int w:{320,480}){State v{2,-1};auto hs=hits(w,w==320?240:320,v);int found=0;
+   for(int i=0;i<hs.count;i++)if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload==FORGET_PHONES){found++;assert(hs.items[i].rect.w>=44&&hs.items[i].rect.h>=44);}
+   assert(found==1);                                                           // exactly one forget target, on the bridge tab
+   for(int tab:{0,1,3}){State o{tab,-1};auto oh=hits(w,w==320?240:320,o);for(int i=0;i<oh.count;i++)assert(!(oh.items[i].payload==FORGET_PHONES&&oh.items[i].action==uieng::Action::SettingsControl));}}
+  // Two-tap confirm: the first tap arms, a second inside ARM_MS forgets; a late second tap only re-arms.
+  ForgetArm a;assert(!a.armed(1000));
+  assert(!a.tap(1000)&&a.armed(1000)&&a.armed(1000+ARM_MS-1)&&!a.armed(1000+ARM_MS));
+  assert(a.tap(1000+ARM_MS-1)&&!a.armed(1000+ARM_MS-1));                         // confirmed, disarmed
+  assert(!a.tap(9000)&&!a.tap(9000+ARM_MS)&&a.armed(9000+ARM_MS));               // too late: re-armed, nothing forgotten
+  ForgetArm w2;w2.tap(0xFFFFFFF0u);assert(w2.tap(0x00000010u));                  // across the 32-bit wrap
+ }
+ { // LINK STATUS row: the pairing code outranks the connection state, and only while the bridge is on.
+  Data d;d.settings.bleBridge=1;char b[32];
+  value(d,10,b,sizeof b);assert(!strcmp(b,"NO PHONE"));
+  d.connected=true;value(d,10,b,sizeof b);assert(!strcmp(b,"CONNECTED"));
+  d.pin=4217;value(d,10,b,sizeof b);assert(!strcmp(b,"PIN 004217"));
+  d.pin=0;value(d,10,b,sizeof b);assert(!strcmp(b,"PIN 000000"));
+  d.pin=-1;d.streaming=true;value(d,10,b,sizeof b);assert(!strcmp(b,"STREAMING"));
+  d.pin=123456;d.settings.bleBridge=0;value(d,10,b,sizeof b);assert(!strcmp(b,"OFF"));
+ }
+ { // ALERT SOUND (recording tab, 4th card): volume 0 OFF .. 3 LOUD, default NORMAL, stepped like every other editor.
+  Data d;char b[32];
+  assert(validEditor(7)&&knob(7)==14&&!strcmp(title(7),"ALERT SOUND"));
+  const char* want[]={"OFF","QUIET","NORMAL","LOUD"};
+  for(int k=0;k<4;k++){d.settings.sound=(uint16_t)k;value(d,7,b,sizeof b);assert(!strcmp(b,want[k]));}
+  ui::Settings s;assert(s.sound==2);
+  ui::applyKnobStep(s,14,1);assert(s.sound==3);ui::applyKnobStep(s,14,1);assert(s.sound==3);   // stops at LOUD
+  ui::applyKnobStep(s,14,-1);ui::applyKnobStep(s,14,-1);ui::applyKnobStep(s,14,-1);assert(s.sound==0);ui::applyKnobStep(s,14,-1);assert(s.sound==0);   // and at OFF
+  State v;v.editor=7;s.sound=0;apply(v,s,32);assert(s.sound==2);                                // the card's own default
+  s.sound=9;ui::clampSettings(s);assert(s.sound==2);                                            // junk from flash
+  State t{1,-1};auto hs=hits(480,320,t);int found=0;for(int i=0;i<hs.count;i++)found+=hs.items[i].payload==17&&hs.items[i].action==uieng::Action::SettingsControl;assert(found==1);   // the card opens its editor
+ }
  for(int w:{320,480}){int h=w==320?240:320;
   for(int tab=0;tab<4;tab++)for(int ed=-1;ed<16;ed++){
    if(ed>=0&&!validEditor(ed))continue;
@@ -17,7 +57,7 @@ int main(int argc,char**argv){
     assert(hs.items[i].action!=uieng::Action::SettingReset);
     if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload>=10&&hs.items[i].payload<=25)cards++;
    }
-   if(ed<0)assert(cards==(tab==0?4:tab==1?3:2));
+   if(ed<0)assert(cards==(tab==0?4:tab==1?4:2));
    Data d;d.view=v;d.settings.activeDiscovery=1;d.settings.dwellMs=150;d.settings.bleBridge=1;strcpy(d.name,"Umbravox-C55C");
    atnpres::AttuneStore store;store.begin(0,0);store.header(true,true,false);store.gps({true,3,12,300});store.storage(ui::StorageState::Ready);store.controls(d);auto a=store.scene();auto b=a;b.control.view.editor=ed<0?0:-1;b.control.connected=true;
    bool status=false,body=false;atnpres::sceneDirty(a,b,status,body);assert(body&&!status);

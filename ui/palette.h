@@ -11,7 +11,7 @@
 #pragma once
 #include <stdint.h>
 
-namespace themepack { struct Pack; struct Emblem; }
+namespace themepack { struct Pack; struct Emblem; struct Clip; struct Sound; }
 
 namespace pal {
 
@@ -61,7 +61,7 @@ extern uint16_t RED;
 // The BUILT-IN themes. TH_COUNT is the number of built-ins, not of themes:
 // new SD themes follow them; matching approved packs override their stable IDs, and
 // themeCount() is the total.
-enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_SLICK, TH_BAPH_LOGO, TH_EM3RITUS, TH_EMBER, TH_SKULD, TH_PHOSPHOR, TH_GLACIER, TH_OBSIDIAN, TH_CYBER, TH_ULTRAVIOLET, TH_DUNE, TH_COUNT };
+enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_SLICK, TH_EMBER, TH_SKULD, TH_GLACIER, TH_OBSIDIAN, TH_CYBER, TH_ULTRAVIOLET, TH_COUNT };
 
 // Point the palette at a theme. An out-of-range id (>= themeCount()) falls
 // back to UMBRAVOX rather than reading off the end of the table -- this is
@@ -84,7 +84,7 @@ int themeCount();
 // go away) and its status colours sanitised on the copy. The emblem is stored
 // by POINTER, not copied: the caller keeps its buffer alive (null = none).
 // Not thread-safe: call before anything draws (boot, or the sim's setup).
-int addPack(const themepack::Pack& p, const themepack::Emblem* e);
+int addPack(const themepack::Pack& p, const themepack::Emblem* e, const themepack::Clip* c = nullptr, const themepack::Sound* snd = nullptr);
 
 // Forget every loaded pack: the count goes back to TH_COUNT, the storage is
 // zeroed, old pack ids fall back to UMBRAVOX and the next addPack is slot 0.
@@ -112,6 +112,17 @@ uint8_t artScale(uint8_t id);
 // The emblem art for this theme: the baked muffin for COSMIC MUFFIN, the
 // pack's for a pack (may be null), null for the heptagram / seal built-ins.
 const themepack::Emblem* emblem(uint8_t id);
+
+// The radar clip a pack carries (radar.vid), or null: built-ins never have one. Stored by pointer like the emblem.
+const themepack::Clip* clip(uint8_t id);
+// The alert sounds a pack carries (alert.snd), or null: built-ins never have them. Stored by pointer like the clip.
+const themepack::Sound* sound(uint8_t id);
+// Attach (or, with nulls, detach) a registered pack's clip and sounds after addPack: the device reads them from the card when
+// the pack's theme is selected, not at boot (ui/packmedia.h). False for an id that is not a pack. The pointers are stored, not
+// copied, so what they point at must stay valid until detached. Same threading rule as addPack: the loop task only.
+bool setPackMedia(uint8_t id, const themepack::Clip* c, const themepack::Sound* snd);
+// The pack slot (0.. in the order packs were added) of a theme id, or -1 for a built-in or an unknown id.
+int packSlot(uint8_t id);
 
 // The masthead text on the scan screen.
 const char* header(uint8_t id);

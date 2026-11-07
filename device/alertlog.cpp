@@ -73,6 +73,10 @@ void push(const ui::AlertRec& a, uint32_t nowMs, uint32_t epoch,
     if (total < 0xFFFF) total++;
 }
 
+static bool liveTestRequested = false;
+void requestLiveTest() { liveTestRequested = true; }
+bool takeLiveTestRequest() { const bool r = liveTestRequested; liveTestRequested = false; return r; }
+
 void pushTest(uint32_t nowMs) {
     // One synthetic history entry, no radio match, location or external export.
     for(int k=1;k<=DEPTH;k++){

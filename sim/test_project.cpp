@@ -134,6 +134,11 @@ int main(){
     }
     { menpres::MenuStore st; menu(st, s, c); expect(st.scene().plain, "menu: plain label mode from Settings"); }
 
+    { ui::State b=s; b.nNodes=0; b.meshCoords=1; b.meshCoordNodes=3;       // a live coordinator carries 3 nodes the handheld cannot list
+      { scanpres::SceneStore st; scan(st, b, c);
+        expect(st.scene().nodes==3, "scan chrome: the node count includes the nodes behind a coordinator"); }
+      { mshpres::MeshStore st; mesh(st, b, c); const auto& o=st.scene();
+        expect(o.nodes==3 && o.coordNodes==3 && o.meshCoords==1 && o.nRows==0, "mesh: chrome count and the coordinator figure reach the scene"); } }
     { mshpres::MeshStore st; mesh(st, s, c); const auto& o=st.scene();
       expect(o.nRows==2 && o.rows[0].id[1]==0xA0 && o.netId==2 && o.coreChan==6, "mesh: nodes + header"); }
 

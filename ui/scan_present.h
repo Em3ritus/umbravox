@@ -62,6 +62,11 @@ public:
     }
     void bridge(bool on) { sc_.bridgeOn=on; }
     void animate(bool enabled) { sc_.animateSweep = enabled; }
+    void sweep(uint8_t style) { sc_.sweep = style; }
+    void video(const scanr::RadarVideo* v) { sc_.video = v; }   // a clip in the radar disc (wide panels)
+    void fx(bool on) { sc_.fx.on = on; }                   // side-panel texture and motion (wide panels)
+    scanr::Fx& fxState() { return sc_.fx; }                // the engine fills the history in just before a commit
+    void alert(const scanr::AlertScene& a) { sc_.alert = a; }
     void gps(const GnssFix& f)                    { sc_.gps = f; }
     void storage(ui::StorageState sd){sc_.sd=sd;}
     void header(bool bridge, bool pmu, bool charging) { sc_.bridgeOn=bridge; sc_.pmuOk=pmu; sc_.charging=charging; }
@@ -105,6 +110,57 @@ inline int fieldRadius(int W, int H) {
     return (scanr::radarBounds(W,H).w - 5) / 2;
 }
 
+// --- side-panel history: peak hold and the per-second sample -------------------------------------------------
+// The engine owns the only copy that moves. Each commit it advances by the animation ticks that have passed since
+// the last one (the peaks fall, a sample is taken every kSparkTicks) and copies the result into the snapshot, so a
+// scene is stable for its whole sliced redraw. Pure, host-tested (sim/test_scan_fx.cpp).
+class FxTracker {
+public:
+    static constexpr int kDecay = 6;                              // peak fall per tick: 100 -> 0 in ~8 s
+    void reset() { init_ = false; }
+    void advance(const ScanScene& sc, scanr::Fx& out) {
+        const long c[3] = { sc.wifi, sc.g5, sc.ble };
+        int ch[scanr::kChannels];
+        for (int i = 0; i < scanr::kChannels; i++) ch[i] = sc.channels && sc.nChannels == scanr::kChannels ? sc.channels[i] : 0;
+        advance(sc.now, c, ch, out);
+    }
+    void advance(uint32_t now, const long* counts, const int* load, scanr::Fx& out) {
+        const uint32_t tick = now / scanr::kFxMs;
+        const int32_t d = init_ ? (int32_t)(tick - tick_) : 0;
+        if (!init_ || d < 0 || d > scanr::kSparkTicks * scanr::kSpark) {   // first sample, or the clock jumped (sleep, resync): start over
+            init_ = true; tick_ = tick; n_ = tick;
+            for (int k = 0; k < 3; k++) { last_[k] = counts[k]; for (int j = 0; j < scanr::kSpark; j++) spark_[k][j] = 0; }
+            for (int i = 0; i < scanr::kChannels; i++) peak_[i] = clamp_(load[i]);
+        } else {
+            for (int s = 0; s < d; s++) {
+                n_++;
+                for (int i = 0; i < scanr::kChannels; i++) {
+                    const int cur = clamp_(load[i]), fall = peak_[i] > kDecay ? peak_[i] - kDecay : 0;
+                    peak_[i] = (uint8_t)(cur > fall ? cur : fall);
+                }
+                if (n_ % scanr::kSparkTicks == 0) {
+                    for (int k = 0; k < 3; k++) {
+                        long dv = counts[k] - last_[k]; last_[k] = counts[k];
+                        if (dv < 0) dv = 0; if (dv > 255) dv = 255;
+                        for (int j = 0; j + 1 < scanr::kSpark; j++) spark_[k][j] = spark_[k][j + 1];
+                        spark_[k][scanr::kSpark - 1] = (uint8_t)dv;
+                    }
+                }
+            }
+            tick_ = tick;
+            for (int i = 0; i < scanr::kChannels; i++) { const int cur = clamp_(load[i]); if (cur > peak_[i]) peak_[i] = (uint8_t)cur; }   // a rise shows at once
+        }
+        out.on = true;
+        for (int k = 0; k < 3; k++) for (int j = 0; j < scanr::kSpark; j++) out.spark[k][j] = spark_[k][j];
+        for (int i = 0; i < scanr::kChannels; i++) out.peak[i] = peak_[i];
+    }
+private:
+    static int clamp_(int v) { return v < 0 ? 0 : (v > 100 ? 100 : v); }
+    bool init_ = false; uint32_t tick_ = 0, n_ = 0;
+    long last_[3] = {0, 0, 0};
+    uint8_t spark_[3][scanr::kSpark] = {}, peak_[scanr::kChannels] = {};
+};
+
 // --- scene diff: which display bands changed ---------------------------------
 // Compares two stable scenes by what the panel would SHOW. `status` is the top
 // chrome (GPS/mesh/batt/log); `body` is the count tiles + hero + spectrum; the
@@ -112,23 +168,25 @@ inline int fieldRadius(int W, int H) {
 // state (markers projected with each scene's own clock), so a contact that
 // fades or expires over time repaints even with no new packets, while a clock
 // tick that changes nothing visible does not. Pure.
-inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
-                       bool& status, bool& body, bool* fieldOnly = nullptr) {
+// Which parts of the scene changed (what the panel would SHOW): the header chrome, each count tile, the
+// channel readout, the spectrum, the contacts, and the sweep. Pure.
+struct ScanParts { bool status = false, count[3] = {false, false, false}, ch = false, chan = false, marks = false, sweep = false, alert = false;
+                   bool fxCard[3] = {false, false, false}, fxSpec = false; };   // side-panel texture and motion moved
+inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b) {
+    ScanParts p;
     char la[16], lb[16];
     const bool gpsSame = scanr::gpsLabel(a.gps, la, 16) == scanr::gpsLabel(b.gps, lb, 16)
                          && !__builtin_strcmp(la, lb);
     char ra[16], rb[16];
     const bool recSame = scanr::recLabel(a, ra, 16) == scanr::recLabel(b, rb, 16)
                          && !__builtin_strcmp(ra, rb);
-    status = !gpsSame || !recSame || a.nodes != b.nodes
+    p.status = !gpsSame || !recSame || a.nodes != b.nodes
              || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
-
-    const bool countSame = a.wifi == b.wifi && a.g5 == b.g5 && a.ble == b.ble;   // count tiles
-    const bool chSame = !__builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "")
-                        && !__builtin_strcmp(a.chBand ? a.chBand : "", b.chBand ? b.chBand : "");
+    p.count[0] = a.wifi != b.wifi; p.count[1] = a.g5 != b.g5; p.count[2] = a.ble != b.ble;
+    p.ch = __builtin_strcmp(a.ch ? a.ch : "", b.ch ? b.ch : "") || __builtin_strcmp(a.chBand ? a.chBand : "", b.chBand ? b.chBand : "");
     bool chanSame = a.nChannels == b.nChannels;
     for (int i = 0; chanSame && i < a.nChannels; i++) chanSame = a.channels[i] == b.channels[i];
-
+    p.chan = !chanSame;
     const int fr = fieldRadius(W, H);
     bool markSame = a.nBlips == b.nBlips;
     for (int i = 0; markSame && i < a.nBlips; i++) {
@@ -140,10 +198,34 @@ inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
                    && (!ma.shown || (ma.dx == mb.dx && ma.dy == mb.dy
                                      && ma.sizePx == mb.sizePx && ma.band == mb.band));
     }
-    const bool sweepSame = a.animateSweep == b.animateSweep &&
-        (!b.animateSweep || scanr::sweepPhase(a.now) == scanr::sweepPhase(b.now));
-    body = !countSame || !chSame || !chanSame || !markSame || !sweepSame;
-    if (fieldOnly) *fieldOnly = body && countSame && chSame && chanSame;
+    const bool vidSame = a.video == b.video && (!b.video || scanr::videoFrame(*a.video, a.now) == scanr::videoFrame(*b.video, b.now));
+    p.marks = !markSame || (W >= 400 && !vidSame);      // a new clip frame changes the whole disc, not just a wedge
+    if (W >= 400 && a.fx.on && b.fx.on) {                              // wide panels: the tick, the sparklines and the peaks
+        const bool tick = a.now / scanr::kFxMs != b.now / scanr::kFxMs;
+        for (int k = 0; k < 3; k++) p.fxCard[k] = tick || __builtin_memcmp(a.fx.spark[k], b.fx.spark[k], sizeof a.fx.spark[k]) != 0;
+        p.fxSpec = tick || __builtin_memcmp(a.fx.peak, b.fx.peak, sizeof a.fx.peak) != 0;
+    } else if (W >= 400 && a.fx.on != b.fx.on) { for (int k = 0; k < 3; k++) p.fxCard[k] = true; p.fxSpec = true; }
+    p.alert = W >= 400 && (a.alert.active != b.alert.active
+              || (b.alert.active && (a.alert.age != b.alert.age || a.alert.conf != b.alert.conf || a.alert.threat != b.alert.threat || a.alert.style != b.alert.style
+                                     || __builtin_strcmp(a.alert.label, b.alert.label) || __builtin_strcmp(a.alert.name, b.alert.name) || __builtin_strcmp(a.alert.why, b.alert.why))));
+    const uint8_t sa = a.animateSweep ? scanr::liveStyle(a.sweep, W) : uint8_t(ui::SW_RADAR), sb = b.animateSweep ? scanr::liveStyle(b.sweep, W) : uint8_t(ui::SW_RADAR);
+    p.sweep = !(a.animateSweep == b.animateSweep && sa == sb &&
+        (!b.animateSweep || (sb == ui::SW_RADAR ? scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now) : a.now == b.now)));
+    return p;
+}
+// The same alert (same threat, level, rite and text), only its age differs.
+inline bool sameAlert(const scanr::AlertScene& a, const scanr::AlertScene& b) {
+    return a.active && b.active && a.threat == b.threat && a.conf == b.conf && a.style == b.style
+        && !__builtin_strcmp(a.label, b.label) && !__builtin_strcmp(a.name, b.name) && !__builtin_strcmp(a.why, b.why);
+}
+inline void sceneDirty(int W, int H, const ScanScene& a, const ScanScene& b,
+                       bool& status, bool& body, bool* fieldOnly = nullptr, bool* sweepOnly = nullptr) {
+    const ScanParts p = sceneParts(W, H, a, b);
+    status = p.status;
+    const bool counts = p.count[0] || p.count[1] || p.count[2];
+    body = counts || p.ch || p.chan || p.marks || p.sweep || p.alert;
+    if (fieldOnly) *fieldOnly = body && !counts && !p.ch && !p.chan && !p.alert;      // an alert covers the hero, not just the radar columns
+    if (sweepOnly) *sweepOnly = body && !counts && !p.ch && !p.chan && !p.marks && !p.alert;   // nothing but the sweep moved
 }
 
 // --- resumable, bounded strip scheduler --------------------------------------
@@ -315,10 +397,24 @@ public:
     // are stale) and force a full repaint; the commit that follows paints the
     // CURRENT scene. leave() likewise drops the pending frame so a stale one can
     // never resume on re-entry.
-    void enter()        { trans_.enter(); forceFull_ = true; sched_.reset(H_); }
-    void wake()         { trans_.enter(); forceFull_ = true; sched_.reset(H_); }
-    void themeChanged() { trans_.enter(); forceFull_ = true; sched_.reset(H_); }
-    void leave()        { trans_.leave(); sched_.reset(H_); }
+    void enter()        { fx_.reset(); trans_.enter(); forceFull_ = true; win_ = false; nreg_ = 0; sched_.reset(H_); }
+    void wake()         { fx_.reset(); trans_.enter(); forceFull_ = true; win_ = false; nreg_ = 0; sched_.reset(H_); }
+    void themeChanged() { fx_.reset(); trans_.enter(); forceFull_ = true; win_ = false; nreg_ = 0; sched_.reset(H_); }
+    void leave()        { fx_.reset(); trans_.leave(); win_ = false; nreg_ = 0; sched_.reset(H_); }
+
+    // True when the pending frame changed ONLY the radar (a sweep step): the caller may compose and stage
+    // just the columns [lo,hi) of the returned rows instead of the full width.
+    bool window(int& lo, int& hi) const { lo = wlo_; hi = whi_; return win_; }
+
+    // Wide panels: the pending frame's dirty REGIONS (count tiles, channel readout, spectrum, radar or its
+    // wedge, header and nav bands). Returns 0 when the frame is a plain full-width one (entry, theme change,
+    // compact panels, or a commit while a frame was still pending); then rows come from the scheduler alone.
+    static constexpr int kMaxRegions = 12;
+    int regions(uieng::Rect* out, int cap) const {
+        const int n = nreg_ < cap ? nreg_ : cap;
+        for (int i = 0; i < n; i++) out[i] = reg_[i];
+        return n;
+    }
 
     bool acceptsTouch() const { return trans_.acceptsTouch(); }
     bool pending()      const { return sched_.pending(); }
@@ -333,17 +429,75 @@ public:
     // snapshot is populated -- so a slice is never served against a stale scene.
     void commit() {
         const ScanScene& nw = store_[cur_ ^ 1].scene();
+        if (W_ >= 400 && nw.fx.on) fx_.advance(nw, store_[cur_ ^ 1].fxState());   // history first: the diff below compares it
+        const bool wasPending = sched_.pending(), wasWin = win_;
+        win_ = false; nreg_ = 0;
+        const int lvOld = W_ >= 400 ? scanr::alertLevel(store_[cur_].scene().alert) : 0, lvNew = W_ >= 400 ? scanr::alertLevel(nw.alert) : 0;
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
+        } else if (lvOld == 2 || lvNew == 2) {
+            const ScanScene& pa = store_[cur_].scene();
+            if (lvOld == 2 && lvNew == 2 && !wasPending && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
+                uieng::Rect rg[8]; const int n = scanr::alertRegions({0, 0, W_, H_}, nw.alert, nw.theme, rg, 8);      // settled: only the rite square and border move
+                for (int i = 0; i < n; i++) { reg_[nreg_++] = rg[i]; sched_.invalidate(rg[i].y, rg[i].y + rg[i].h); }
+            } else sched_.invalidateAll();             // a HIGH alert owns the whole screen, header and nav included: repaint it all
+        } else if (W_ >= 400 && !wasPending) {
+            // Wide panel: dirty REGIONS. Each changed part of the scene repaints only its own rectangle.
+            const ScanScene& pv = store_[cur_].scene();
+            const ScanParts p = sceneParts(W_, H_, pv, nw);
+            const uieng::ScanLayout L = uieng::scan(W_, H_);
+            const int statusBottom = L.statusCells[0].y + L.statusCells[0].h, navTop = L.navCells[0].y;
+            auto add = [&](const uieng::Rect& r) {
+                if (r.w <= 0 || r.h <= 0) return;
+                if (nreg_ < kMaxRegions) reg_[nreg_++] = r;
+                else {                                                       // out of slots: grow the last region over it (never drop a repaint)
+                    uieng::Rect& l = reg_[nreg_ - 1];
+                    const int x0 = std::min(l.x, r.x), y0 = std::min(l.y, r.y), x1 = std::max(l.x + l.w, r.x + r.w), y1 = std::max(l.y + l.h, r.y + r.h);
+                    l = { x0, y0, x1 - x0, y1 - y0 }; sched_.invalidate(y0, y1);
+                }
+                sched_.invalidate(r.y, r.y + r.h);
+            };
+            if (p.alert) {                             // a LOW/MED alert on, off or animating: the hero area, or once settled only what still moves
+                if (lvOld == 1 && lvNew == 1 && sameAlert(pv.alert, nw.alert) && scanr::alertSettled(pv.alert) && scanr::alertSettled(nw.alert)) {
+                    uieng::Rect rg[8]; const int n = scanr::alertRegions(L.hero, nw.alert, nw.theme, rg, 8);
+                    for (int i = 0; i < n; i++) add(rg[i]);
+                } else add(L.hero);
+            }
+            if (p.status) add({0, 0, W_, statusBottom});
+            for (int i = 0; i < 3; i++) if (p.count[i] || p.fxCard[i]) add(L.tiles[i]);
+            const bool covered = lvOld == 1 && lvNew == 1;           // a LOW/MED alert hides the hero, so its radar, channel readout and spectrum need no repaint
+            if (p.ch && !covered)   add(scanr::chRect(W_, H_));
+            if ((p.chan || p.fxSpec) && !covered) add(scanr::specRect(W_, H_));
+            if ((p.marks || p.sweep) && !covered) {
+                const auto radar = scanr::radarBounds(W_, H_);
+                uieng::Rect boxes[6]; int nb = 0;
+                if (!p.marks && pv.animateSweep && nw.animateSweep) {      // sweep only: just what moved (old and new wedge, arc, ring band...)
+                    const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
+                    if (sv == sn) nb = scanr::sweepRects(sn, radar, pv.now, nw.now, boxes, 6);
+                }
+                if (!nb) { boxes[0] = radar; nb = 1; }
+                for (int i = 0; i < nb; i++) add(boxes[i]);
+            }
+            char ra[16], rb[16];
+            scanr::recLabel(pv, ra, 16); scanr::recLabel(nw, rb, 16);
+            if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, navTop, W_, H_ - navTop});   // REC/STOP and POI live on the nav
         } else {
-            bool st = false, bd = false, fieldOnly = false;
-            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly);
+            bool st = false, bd = false, fieldOnly = false, sweepOnly = false;
+            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly, &sweepOnly);
+            // Sweep and nothing else: redraw only where the old and new wedge are, not the whole radar.
+            const auto radar = scanr::radarBounds(W_, H_);
+            uieng::Rect box = radar;
+            const ScanScene& pv = store_[cur_].scene();
+            if (sweepOnly && !wasPending && pv.animateSweep && nw.animateSweep) {
+                const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
+                box = sv == sn ? scanr::sweepBox(sn, radar, pv.now, nw.now) : radar;
+            }
             const uieng::ScanLayout L = uieng::scan(W_, H_);
             const int statusBottom = L.statusCells[0].y + L.statusCells[0].h;
             const int navTop       = L.navCells[0].y;
             if (st) sched_.invalidate(0, statusBottom);
             if (bd) {
-                if (fieldOnly) { const auto r=scanr::radarBounds(W_,H_); sched_.invalidate(r.y,r.y+r.h); }
+                if (fieldOnly) sched_.invalidate(box.y, box.y + box.h);
                 else sched_.invalidate(statusBottom, navTop);
             }
             // design #1 SCAN carries the REC/STOP control on the NAV bar, which
@@ -352,7 +506,11 @@ public:
             char ra[16], rb[16];
             scanr::recLabel(store_[cur_].scene(), ra, 16);
             scanr::recLabel(nw, rb, 16);
-            if (__builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi) sched_.invalidate(navTop, H_);
+            const bool navDirty = __builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi;
+            if (navDirty) sched_.invalidate(navTop, H_);
+            if (!st && bd && fieldOnly && !navDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
+                win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;
+            }
         }
         cur_ ^= 1; haveFront_ = true; forceFull_ = false;
     }
@@ -374,10 +532,13 @@ public:
 
 private:
     SceneStore       store_[2];
+    FxTracker        fx_;
     StripScheduler   sched_;
     Transition       trans_;
     PresentMetrics   metrics_;
     int  W_ = 0, H_ = 0, cur_ = 0;
+    bool win_ = false; int wlo_ = 0, whi_ = 0;
+    uieng::Rect reg_[kMaxRegions]; int nreg_ = 0;
     bool haveFront_ = false, forceFull_ = true;
 };
 

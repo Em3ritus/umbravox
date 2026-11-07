@@ -1,4 +1,5 @@
 #include "../device/ble_bridge_protocol.h"
+#include "../device/ble_bridge_auth.h"
 #include "../device/ble_bridge_init.h"
 #include "../ui/nav.h"
 #include "../ui/project.h"
@@ -13,6 +14,59 @@ struct FakeScanner {
     bool start(int,decltype(nullptr),bool){++starts;active=startOk;return startOk;}
 };
 int main(){
+    // Pairing code window: shown only while a phone is pairing, then it expires.
+    {bridgeauth::PinWindow w;uint32_t p=7;
+     assert(!w.get(1000,p));                                              // nothing pairing: no code
+     w.set(4217,1000);assert(w.get(1000,p)&&p==4217);
+     assert(w.get(1000+bridgeauth::PIN_MS-1,p)&&!w.get(1000+bridgeauth::PIN_MS,p));   // expires
+     w.set(0,5000);assert(w.get(5000,p)&&p==0);                           // 000000 is a valid code
+     w.set(999999,5000);w.clear();assert(!w.get(5001,p));                 // cleared once paired
+     w.set(123,2000);assert(w.get(1990,p)&&p==123);                       // stamped a few ms after `now` was read
+     // One code per pairing window: a phone that reconnects mid-pairing must see the
+     // same code, so the one the owner is typing stays right. The window ends PIN_MS
+     // after it started, not after the last retry, and only then may a new code start.
+     {bridgeauth::PinWindow v;
+      assert(v.offer(111,1000));assert(v.get(1500,p)&&p==111);
+      assert(!v.offer(222,2000));assert(v.get(2000,p)&&p==111);              // retry: same window, same code
+      assert(v.get(1000+bridgeauth::PIN_MS-1,p)&&p==111);
+      assert(!v.get(1000+bridgeauth::PIN_MS,p));                             // expires from the first offer
+      assert(v.offer(333,1000+bridgeauth::PIN_MS)&&v.get(1000+bridgeauth::PIN_MS,p)&&p==333);   // then a new window
+      v.clear();assert(v.offer(444,1000+bridgeauth::PIN_MS+5)&&v.get(1000+bridgeauth::PIN_MS+5,p)&&p==444);}   // pairing done: next phone gets a new code
+     w.set(55,0xFFFFFF00u);assert(w.get(0x00000040u,p)&&p==55);           // across the 32-bit wrap
+     assert(!w.get(0xFFFFFF00u+bridgeauth::PIN_MS,p));}
+    // A link may carry data only when it is encrypted AND authenticated (the MITM
+    // passkey), never merely encrypted ("Just Works" lets anyone in range pair).
+    assert(bridgeauth::mayServe(true,true,true));
+    assert(!bridgeauth::mayServe(true,true,false) && !bridgeauth::mayServe(true,false,false) && !bridgeauth::mayServe(true,false,true));
+    assert(bridgeauth::mayServe(false,false,false));                      // auth switched off at build time
+    // Brute-force limit: MAX_FAILS failed pairings end the window and block new ones
+    // for a back-off that doubles up to BACKOFF_MAX_MS; a successful pairing resets it.
+    {bridgeauth::PairLimiter L;const uint32_t B=bridgeauth::BACKOFF_BASE_MS;
+     assert(!L.blocked(0));
+     for(int i=0;i<bridgeauth::MAX_FAILS-1;i++)assert(!L.noteFailure(1000+i));    // a typo or two is allowed
+     assert(!L.blocked(1100));
+     assert(L.noteFailure(1200));assert(L.blocked(1200)&&L.blocked(1200+B-1)&&!L.blocked(1200+B));   // cap reached: blocked
+     uint32_t t=1200+B;
+     for(int i=0;i<bridgeauth::MAX_FAILS;i++)L.noteFailure(t+i);                   // fails again after the back-off
+     uint32_t until=t+bridgeauth::MAX_FAILS-1;                                      // the capping failure; back-off doubled: 2*B
+     assert(L.blocked(until+2*B-1)&&!L.blocked(until+2*B));
+     for(int lvl=0;lvl<10;lvl++){t=until+bridgeauth::BACKOFF_MAX_MS+10;for(int i=0;i<bridgeauth::MAX_FAILS;i++)L.noteFailure(t+i);until=t+bridgeauth::MAX_FAILS-1;}
+     assert(L.blocked(until+bridgeauth::BACKOFF_MAX_MS-1)&&!L.blocked(until+bridgeauth::BACKOFF_MAX_MS));   // capped
+     L.noteSuccess();assert(!L.blocked(until+1));
+     t=until+100000;for(int i=0;i<bridgeauth::MAX_FAILS;i++)L.noteFailure(t+i);
+     assert(L.blocked(t+bridgeauth::MAX_FAILS-1+B-1)&&!L.blocked(t+bridgeauth::MAX_FAILS-1+B));              // back to the base back-off
+     }
+    // A connection that never pairs is dropped, so a stranger cannot hold the only
+    // connection slot and lock the owner's phone out.
+    assert(!bridgeauth::pairingExpired(1000+bridgeauth::PAIR_TIMEOUT_MS-1,1000) && bridgeauth::pairingExpired(1000+bridgeauth::PAIR_TIMEOUT_MS,1000));
+    assert(!bridgeauth::pairingExpired(1000,1003));                       // connectedAt stamped just after `now`
+    assert(bridgeauth::pairingExpired(bridgeauth::PAIR_TIMEOUT_MS-1,0xFFFFFFFFu) && !bridgeauth::pairingExpired(0x00000100u,0xFFFFFFFFu));  // across the wrap
+    // Freshness is a signed difference: the Wi-Fi task stamps lastMs after the loop
+    // sampled `now`, so a slightly-future stamp must read as fresh, and a counter
+    // wrap must not turn a recent AP stale.
+    assert(!stale(1000,1000) && !stale(1000,1003));
+    assert(!stale(60000,0) && stale(60001,0));
+    assert(!stale(5,0xFFFFFFF0u) && stale(60100u,0xFFFFFFF0u));
 #if defined(NM_CYD_C5)
     const char* expectedModel="Umbravox NM CYD C5";
     assert(strstr(WD_CAPS,"board_name=Umbravox_NM_CYD_C5"));

@@ -20,6 +20,10 @@ HDR = $(wildcard ../ui/*.h) png_writer.h
 $(BIN): $(SRC) $(HDR) packload.h
 	$(CXX) $(CXXFLAGS) -o $@ $(SRC) -lm
 
+# Host reference for the designer's Waveshare (480x320 engine) preview; web/designer/test/wasm-parity.test.mjs builds and compares it.
+ws_preview_png: ws_preview_png.cpp $(SRC_NOMAIN) $(HDR) packload.h
+	$(CXX) $(CXXFLAGS) -o $@ ws_preview_png.cpp $(SRC_NOMAIN) -lm
+
 run: $(BIN)
 	./$(BIN) umbravox.png
 
@@ -27,7 +31,7 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) $(TESTS) sdcmd_console bench_draw *.png
+	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console snd_check bench_draw *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
@@ -76,6 +80,9 @@ test_ble_ad: test_ble_ad.cpp ../device/ble_ad.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_ble_ad.cpp -lm
 
 # theme.json is read off an SD card anyone can write to: sanitizers, as above.
+test_radarclip: test_radarclip.cpp packload.h $(ENGINE_HDR) ../ui/radar_clip.h ../ui/themepack.cpp ../ui/themepack.h ../ui/palette.cpp ../ui/palette.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_radarclip.cpp $(PAL_DEPS) -lm
+
 test_themepack: test_themepack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/model.h ../ui/palette.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
 
@@ -189,6 +196,9 @@ test_sdcmd: test_sdcmd.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/
 
 # The same Console on stdin/stdout, over the same fake card: the designer's
 # Web Serial client (web/designer/test/usbinstall.test.mjs) is run against it.
+snd_check: snd_check.cpp ../ui/themepack.cpp ../ui/themepack.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ snd_check.cpp ../ui/themepack.cpp -lm
+
 sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp ../ui/themepack.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -I../ui -o $@ sdcmd_console.cpp ../ui/themepack.cpp -lm
 
@@ -198,7 +208,7 @@ sdcmd_console: sdcmd_console.cpp fakesd.h ../device/sdcmd.h ../ui/themepack.cpp 
 # in each test's header; wiring them here puts the engine lane under `make test`.
 # The oracle test is header-only; the render/present/engine tests need the theme
 # model + font (PAL_DEPS), same as the other draw tests.
-ENGINE_HDR = ../ui/crew_art.h ../ui/domain_range.h ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_present.h \
+ENGINE_HDR = ../ui/muffin.h ../ui/muffin_packed.inc ../ui/crew_art.h ../ui/domain_range.h ../ui/radar_geometry.h ../ui/layout_engine.h ../ui/scan_render.h ../ui/scan_alert.h ../ui/scan_present.h \
              ../ui/domain_render.h ../ui/domain_present.h \
              ../ui/codex_render.h ../ui/codex_present.h \
              ../ui/menu_render.h ../ui/menu_present.h \
@@ -341,7 +351,7 @@ test_bundled_themes: test_bundled_themes.cpp $(HDR) $(PAL_DEPS)
 test_node_queue: test_node_queue.cpp ../device/node_queue.h ../device/mesh.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_node_queue.cpp
 
-TESTS = test_node_queue test_bundled_themes test_ws28_touch test_clean_radar test_oui_registry test_alert_history test_storage_paths test_settings_controls test_display_controls test_evidence_csv test_probe_ui test_probe_evidence test_client_ui test_clients test_gpx test_mesh_telemetry test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
+TESTS = test_cosmic_clip test_packmedia test_soundpack test_alert_tone test_radarclip test_radar_video test_scan_fx test_alert_takeover test_alert_gate test_sweep_styles test_theme_art test_scan_layout test_radar_window test_sweep_tail test_mesh_timing_queue test_node_queue test_bundled_themes test_ws28_touch test_clean_radar test_oui_registry test_alert_history test_storage_paths test_settings_controls test_display_controls test_evidence_csv test_probe_ui test_probe_evidence test_client_ui test_clients test_gpx test_mesh_telemetry test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -445,6 +455,9 @@ test_clients: test_clients.cpp ../device/clients.h
 test_client_ui: test_client_ui.cpp $(HDR) $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_client_ui.cpp $(PAL_DEPS) ../ui/oui.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp -lm
 
+test_mesh_timing_queue: test_mesh_timing_queue.cpp ../device/mesh_timing_queue.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_mesh_timing_queue.cpp
+
 test_probe_evidence: test_probe_evidence.cpp ../device/probe_evidence.h ../device/clients.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_probe_evidence.cpp
 
@@ -480,8 +493,47 @@ test_alert_history: test_alert_history.cpp ../device/alertlog.cpp ../device/aler
 test_oui_registry: test_oui_registry.cpp ../ui/oui.cpp ../ui/oui_data.inc
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_oui_registry.cpp ../ui/oui.cpp
 
+test_scan_layout: test_scan_layout.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_scan_layout.cpp $(PAL_DEPS) -lm
+
+test_radar_window: test_radar_window.cpp $(ENGINE_HDR) ../ui/frame_present.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_radar_window.cpp $(PAL_DEPS) -lm
+
+test_sweep_tail: test_sweep_tail.cpp $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_sweep_tail.cpp $(PAL_DEPS) -lm
+
 test_clean_radar: test_clean_radar.cpp $(wildcard ../packs/*/theme.json) $(wildcard ../packs/*/emblem.bin) $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_clean_radar.cpp $(PAL_DEPS) -lm
 
 test_ws28_touch: test_ws28_touch.cpp ../device/cst3530_sample.h ../ui/display_controls.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_ws28_touch.cpp
+
+test_theme_art: test_theme_art.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_theme_art.cpp $(PAL_DEPS) -lm
+
+test_soundpack: test_soundpack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/palette.cpp ../ui/palette.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_soundpack.cpp $(PAL_DEPS) -lm
+
+test_cosmic_clip: test_cosmic_clip.cpp ../device/cosmic_muffin_clip.h ../ui/themepack.cpp ../ui/themepack.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_cosmic_clip.cpp ../ui/themepack.cpp
+
+test_packmedia: test_packmedia.cpp ../ui/packmedia.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_packmedia.cpp
+
+test_alert_tone: test_alert_tone.cpp ../ui/alert_tone.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_alert_tone.cpp -lm
+
+test_radar_video: test_radar_video.cpp scan_fixture.h $(ENGINE_HDR) ../ui/frame_present.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_radar_video.cpp $(PAL_DEPS) -lm
+
+test_scan_fx: test_scan_fx.cpp scan_fixture.h $(ENGINE_HDR) ../ui/frame_present.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_scan_fx.cpp $(PAL_DEPS) -lm
+
+test_sweep_styles: test_sweep_styles.cpp scan_fixture.h $(ENGINE_HDR) ../ui/frame_present.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_sweep_styles.cpp $(PAL_DEPS) -lm
+
+test_alert_gate: test_alert_gate.cpp ../ui/alert_gate.h
+	$(CXX) $(CXXFLAGS) -o $@ test_alert_gate.cpp -lm
+
+test_alert_takeover: test_alert_takeover.cpp scan_fixture.h $(ENGINE_HDR) ../ui/frame_present.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_alert_takeover.cpp $(PAL_DEPS) -lm

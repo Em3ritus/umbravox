@@ -66,7 +66,7 @@ int main() {
     // byte, as model.h asked the next setting to. No padding was added and
     // none removed; the next setting after orient widens the struct.
     // Bridge state and remembered app keep the struct padding-free at 18 bytes.
-    static_assert(sizeof(Settings) == 26,
+    static_assert(sizeof(Settings) == 28,
                   "Settings changed size -- see the padding note above, and "
                   "confirm every field has a default member initializer");
 
@@ -108,6 +108,7 @@ int main() {
             base.bridgeApp = 2;
             base.pcapEnabled=1;base.activeDiscovery=1; base.meshProfile=1; base.nodeDwellMs=150;
             base.bleBridge = 1; // high-byte corruption clamps to OFF, a detectable change
+            base.sound = 1;     // likewise: a corrupt high byte clamps to NORMAL (2), which differs from 1
             clampSettings(base);
             for (size_t off = 0; off < sizeof(Settings); off++) {
                 if (z[off] != f[off]) continue;     // padding, not a field

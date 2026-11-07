@@ -15,12 +15,17 @@ import { limitsFor, placeLimitations, renderLimitList, DESIGN_PLACES } from './l
 import { installGate } from './gate.js';
 import { planInstall, retargetFiles } from './plan.js';
 import { installToCard, fsAccessSupported, readCardThemes, inspectCard } from './install.js';
-import { installOverSerial, wrapWebSerial, usbSupported, CH340, BAUD } from './usbinstall.js';
-import { loadWasm, W, H } from './preview.js';
+import { installOverSerial, wrapWebSerial, usbSupported, BAUD } from './usbinstall.js';
+import { loadWasm, W, H, BOARDS } from './preview.js';
+import { grabFrames, grabGifFrames, isGifFile, buildClip, quantizeColour, greyFrames, MAX_COLOUR_FRAMES } from './radarvideo.js';
+import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSeconds, LEVELS } from './alertsound.js';
+import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { theme: null, emblem: null, tab: 'scan', view: 'start', card: null, lastPack: null };
+const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
 let preview = null;       // null until the wasm loads (or if it cannot)
+// The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
+function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
 
 function el(tag, props = {}, ...kids) {
   const e = document.createElement(tag);
@@ -35,7 +40,7 @@ const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
 // ---------------------------------------------------------------- views
 function installBlock() {
   if (!state.theme) return 'Choose a template first.';
-  const g = installGate(currentTheme(), state.emblem);
+  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds);
   return g.ok ? null : g.reason;
 }
 function show(view) {
@@ -59,8 +64,10 @@ function show(view) {
 for (const b of document.querySelectorAll('.step')) b.addEventListener('click', () => show(b.dataset.view));
 
 // ---------------------------------------------------------------- canvas painting
-function paint(canvas, rgba) {
-  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), W, H), 0, 0);
+function paint(canvas, rgba, board = 'cyd') {
+  const { w, h } = BOARDS[board];
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), w, h), 0, 0);
 }
 function paintEmblem(canvas, e) {
   const ctx = canvas.getContext('2d');
@@ -92,9 +99,12 @@ function buildStart() {
 }
 $('btn-blank').addEventListener('click', () => begin(blankTheme(), null));
 
-function begin(theme, emblem) {
-  state.theme = theme; state.emblem = emblem; state.card = null;
+function begin(theme, emblem, clip = null, sounds = null) {
+  state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
   $('open-msg').textContent = '';
+  for (const k of LEVELS) sndSrc[k] = null;
+  vidSrc = null; vidFile = null;
+  paintVideoBar(); paintSoundBar();
   syncForm(); changed(); show('design');
 }
 
@@ -126,7 +136,7 @@ async function openThese(descs) {
     for (const d of sel.picked) read.push({ name: d.name, data: new Uint8Array(await d.file.arrayBuffer()) });
     const r = openPackFiles(read);
     if (!r.ok) { msg.className = 'msg err'; msg.textContent = r.error; return; }
-    begin(r.theme, r.emblem);
+    begin(r.theme, r.emblem, r.clip, r.sounds);
     if (r.warnings.length) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'Opened with changes: ' + r.warnings.join(' '); }
   } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not read those files: ' + e.message; }
 }
@@ -280,7 +290,7 @@ function changed() {
 function currentTheme() { return themeFromState(state); }
 function refreshChecks() {
   const t = currentTheme();
-  checksNow = runChecks(t, state.emblem);
+  checksNow = runChecks(t, state.emblem, state.clip, state.sounds);
   const ul = $('checks'); clear(ul);
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
@@ -292,13 +302,148 @@ function refreshChecks() {
 }
 function refresh() {
   if (!preview || !state.theme) return;
-  const r = preview.loadDraft(currentTheme(), state.emblem);
+  const r = preview.loadDraft(currentTheme(), state.emblem, state.clip);
   const m = $('preview-msg');
   if (r.ok) { m.className = 'msg'; m.textContent = ''; }
   else { m.className = 'msg warn'; m.textContent = 'The preview shows the last version the device would accept. This one is rejected: ' + r.error; }
 }
 for (const b of $('tabs').children) b.addEventListener('click', () => { state.tab = b.dataset.v; syncTabs(); t0 = performance.now(); });
-function syncTabs() { for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.v === state.tab)); }
+// The board being previewed (remembered per browser; the CYD until the person picks another).
+const BOARD_KEY = 'uvx.designer.board';
+function rememberBoard() { try { localStorage.setItem(BOARD_KEY, state.board); } catch (e) { /* private window: not remembered */ } }
+function recallBoard() { try { const b = localStorage.getItem(BOARD_KEY); if (b && preview && preview.boards().includes(b)) state.board = b; } catch (e) { /* not remembered */ } }
+for (const b of document.querySelectorAll('[data-b]')) b.addEventListener('click', () => { state.board = b.dataset.b; rememberBoard(); syncTabs(); t0 = performance.now(); if (state.view === 'install') paintInstall(); });
+for (const b of $('confs').children) b.addEventListener('click', () => { state.conf = b.dataset.c; syncTabs(); t0 = performance.now(); });
+function syncTabs() {
+  const screens = BOARDS[state.board].screens;
+  if (!screens.includes(state.tab)) state.tab = 'scan';
+  for (const b of $('tabs').children) {
+    b.hidden = !screens.includes(b.dataset.v);
+    b.setAttribute('aria-selected', String(b.dataset.v === state.tab));
+  }
+  for (const b of document.querySelectorAll('[data-b]')) b.setAttribute('aria-selected', String(b.dataset.b === state.board));
+  for (const b of $('confs').children) b.setAttribute('aria-selected', String(b.dataset.c === state.conf));
+  $('dial-note').hidden = BOARD_INFO[state.board].dialPreset;
+  const words = boardWords(state.board);
+  for (const n of document.querySelectorAll('[data-bt]')) n.textContent = words[n.dataset.bt];
+  $('boardbar').hidden = !preview || preview.boards().length < 2;
+  $('confs').hidden = !(state.board === 'waveshare' && state.tab === 'alert');   // only the engine UI has LOW/MED/HIGH takeovers
+  $('vidbar').hidden = !(preview && previewBoard() === 'waveshare');   // the clip plays in the Waveshare's scan radar
+  $('soundbar').hidden = !(preview && previewBoard() === 'waveshare'); // only the Waveshare has a speaker
+}
+
+// Alert sounds for the Waveshare's speaker: one optional sound per level. The browser decodes any audio file, and
+// js/alertsound.js turns it into the board's format (16 kHz mono, at most 6 s). They become part of the theme (alert.snd).
+const SND_NAMES = { low: 'LOW', med: 'MED', high: 'HIGH' };
+let sndBuilt = false;
+const sndSrc = { low: null, med: null, high: null };   // the decoded recording behind each sound ({f, start}), so Start at can re-cut it
+const clock = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
+function buildSoundBar() {
+  if (sndBuilt) return; sndBuilt = true;
+  const bar = $('soundbar');
+  for (const k of LEVELS) {
+    const row = document.createElement('div'); row.className = 'vidrow';
+    row.innerHTML = '<label class="small" for="snd-' + k + '">' + SND_NAMES[k] + ' alert</label>' +
+      '<input type="file" id="snd-' + k + '" accept="audio/*">' +
+      '<button type="button" class="btn" id="snd-' + k + '-play" hidden>Play</button>' +
+      '<button type="button" class="btn" id="snd-' + k + '-clear" hidden>Remove</button>' +
+      '<span class="small muted" id="snd-' + k + '-info"></span>' +
+      '<label class="small" id="snd-' + k + '-startlab" for="snd-' + k + '-start" hidden>Start at <span id="snd-' + k + '-startval">0:00.0</span></label>' +
+      '<input type="range" id="snd-' + k + '-start" min="0" max="0" value="0" step="1" hidden aria-label="Where in the recording the ' + SND_NAMES[k] + ' sound starts">';
+    bar.insertBefore(row, $('snd-msg'));
+    $('snd-' + k).addEventListener('change', (e) => loadSound(k, e.target.files[0] || null));
+    $('snd-' + k + '-play').addEventListener('click', () => playPcm(state.sounds[k]));
+    $('snd-' + k + '-clear').addEventListener('click', () => { state.sounds[k] = null; sndSrc[k] = null; $('snd-' + k).value = ''; paintSoundBar(); changed(); });
+    $('snd-' + k + '-start').addEventListener('input', (e) => { $('snd-' + k + '-startval').textContent = clock(Number(e.target.value) / 10); });
+    $('snd-' + k + '-start').addEventListener('change', (e) => {
+      if (!sndSrc[k]) return;
+      sndSrc[k].start = Number(e.target.value) / 10;
+      const pcm = cutSound(sndSrc[k].f, sndSrc[k].start);
+      if (pcm) { state.sounds[k] = pcm; $('snd-msg').textContent = ''; paintSoundBar(); changed(); }
+    });
+  }
+}
+function paintSoundBar() {
+  buildSoundBar();
+  for (const k of LEVELS) {
+    const pcm = state.sounds[k];
+    $('snd-' + k + '-play').hidden = !pcm; $('snd-' + k + '-clear').hidden = !pcm;
+    $('snd-' + k + '-info').textContent = pcm ? soundSeconds(pcm).toFixed(1) + ' s' : 'built-in beep';
+    const src = sndSrc[k], dur = src ? src.f.length / 16000 : 0;
+    const pick = !!pcm && dur > 6.5;                                   // only a recording longer than a sound has a choice of where to start
+    $('snd-' + k + '-start').hidden = !pick; $('snd-' + k + '-startlab').hidden = !pick;
+    if (pick) { const r = $('snd-' + k + '-start'); r.max = String(Math.max(0, Math.floor((dur - 0.5) * 10))); r.value = String(Math.round(src.start * 10)); $('snd-' + k + '-startval').textContent = clock(src.start); }
+  }
+}
+async function loadSound(k, file) {
+  const msg = $('snd-msg');
+  if (!file) return;
+  try {
+    msg.className = 'msg'; msg.textContent = 'Reading ' + file.name + '...';
+    const f = await decodeToMono16k(file);
+    const pcm = cutSound(f, 0);
+    if (!pcm) throw new Error('there is nothing audible in it');
+    state.sounds[k] = pcm; sndSrc[k] = { f, start: 0 };
+    msg.textContent = f.length / 16000 > 6.5 ? 'Used the first 6 seconds of it; move Start at to use another part.' : '';
+    changed();
+  } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this file: ' + ((e && e.message) || e); }
+  finally { paintSoundBar(); }
+}
+
+// A video in the Waveshare radar. The browser decodes it; js/radarvideo.js turns it into the board's format, and it
+// becomes part of the theme (radar.vid): previewed, checked, downloaded and installed with it.
+let vidFile = null, vidBusy = false;
+let vidSrc = null;                                   // the RGBA frames captured from the last file, so Keep colours can flip without decoding it again
+function paintVideoBar() {
+  const msg = $('vid-msg');
+  $('vid-clear').hidden = !state.clip;
+  const box = $('vid-colour');
+  box.disabled = !vidSrc && !state.clip;                                                  // an opened pack has no source to convert again
+  if (!vidSrc && state.clip) box.checked = !!state.clip.palette;
+  if (state.clip) { msg.className = 'msg'; msg.textContent = `${state.clip.frames} frames, ${(state.clip.frames / state.clip.fps).toFixed(1)} s, looping, ${state.clip.palette ? 'in its own colours' : "in the theme's colours"}.`; }
+  else if (!vidBusy) { msg.className = 'msg'; msg.textContent = ''; }
+}
+// RGBA frames -> the clip, in colour (one 16-colour palette for the whole video) or as greys.
+function convertVideo() {
+  if (!vidSrc) return;
+  if ($('vid-colour').checked) { const q = quantizeColour(vidSrc.slice(0, MAX_COLOUR_FRAMES)); state.clip = buildClip(q.frames, q.palette); }
+  else state.clip = buildClip(greyFrames(vidSrc));
+}
+async function loadVideo() {
+  if (!vidFile || vidBusy || !preview) return;
+  vidBusy = true;
+  const msg = $('vid-msg'), url = URL.createObjectURL(vidFile);
+  const onProgress = (d, n) => { msg.textContent = `Converting ${d} / ${n} frames...`; };
+  const vpos = Number($('vid-pos').value) / 100;
+  try {
+    msg.className = 'msg'; msg.textContent = 'Reading the file...';
+    if (isGifFile(vidFile)) vidSrc = await grabGifFrames(vidFile, { vpos, onProgress });
+    else {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+      await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('the browser cannot read this video')); });
+      vidSrc = await grabFrames(v, { vpos, onProgress });
+    }
+    msg.textContent = 'Choosing colours...'; await new Promise((r) => setTimeout(r, 20));
+    convertVideo();
+    t0 = performance.now();
+    changed();
+  } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not use this file: ' + ((e && e.message) || e); }
+  finally { URL.revokeObjectURL(url); vidBusy = false; paintVideoBar(); }
+}
+$('vid-file').addEventListener('change', (e) => { vidFile = e.target.files[0] || null; loadVideo(); });
+$('vid-pos').addEventListener('change', () => { if (vidFile && state.clip) loadVideo(); });
+$('vid-colour').addEventListener('change', async () => {
+  if (!vidSrc || vidBusy) return;
+  vidBusy = true; const msg = $('vid-msg'); msg.className = 'msg'; msg.textContent = 'Choosing colours...';
+  await new Promise((r) => setTimeout(r, 20));
+  try { convertVideo(); t0 = performance.now(); changed(); } catch (e) { msg.className = 'msg warn'; msg.textContent = 'Could not convert: ' + e.message; }
+  finally { vidBusy = false; paintVideoBar(); }
+});
+$('vid-clear').addEventListener('click', () => {
+  state.clip = null; vidFile = null; vidSrc = null; $('vid-file').value = '';
+  paintVideoBar(); changed();
+});
 
 let t0 = performance.now(), lastDraw = 0;
 function tick(now) {
@@ -307,11 +452,11 @@ function tick(now) {
   lastDraw = now;
   const ms = now - t0;
   const frame = state.tab === 'alert' ? Math.floor((ms % 2500) / 20) : Math.floor(ms / 20);
-  paint($('preview'), preview.renderDraft(state.tab, frame));
+  paint($('preview'), preview.renderDraft(state.tab, frame, { board: previewBoard(), alertConf: state.conf }), previewBoard());
 }
 
 // ---------------------------------------------------------------- build + download
-function currentPack() { return buildPack(currentTheme(), state.emblem); }
+function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip, state.sounds); }
 function download() {
   try {
     const pack = currentPack();
@@ -333,6 +478,9 @@ $('btn-install').addEventListener('click', () => show('install'));
 
 // ---------------------------------------------------------------- install
 function logLine(text, cls = '') { $('log').append(el('li', { class: cls, text })); }
+function paintInstall() {
+  if (preview && preview.hasDraft()) paint($('install-preview'), preview.renderDraft('scan', 24, { board: previewBoard() }), previewBoard());
+}
 function enterInstall() {
   let pack;
   try { pack = currentPack(); } catch (e) {
@@ -340,7 +488,7 @@ function enterInstall() {
     state.view = 'design'; show('design'); return;
   }
   state.lastPack = pack;
-  if (preview && preview.hasDraft()) paint($('install-preview'), preview.renderDraft('scan', 24));
+  paintInstall();
   const folder = pack.files[0].path.split('/')[0];
   $('install-info').textContent = '/themes/' + folder + '/   ' + pack.files.length + ' file' + (pack.files.length > 1 ? 's' : '') + '   ' + (pack.bytes / 1024).toFixed(1) + ' KB';
   clear($('log')); $('collide').hidden = true; $('btn-write').disabled = !state.card;
@@ -355,6 +503,11 @@ function enterInstall() {
   }
   if (state.card) logLine('card chosen: ' + state.card.name);
   fillLimits('install', USB_PLACES);
+  const un2 = $('usb-clip-note');
+  un2.hidden = false;
+  un2.textContent = (state.clip || hasSounds(state.sounds))
+    ? 'This theme carries ' + [state.clip && 'a video (about ' + Math.round((state.clip.data.length + 12) / 1024) + ' KB)', hasSounds(state.sounds) && 'alert sounds'].filter(Boolean).join(' and ') + '. Over USB a video takes a few minutes and sounds under a minute; a card reader is instant.'
+    : 'If you took a video or sounds OUT of a theme you installed before, the USB route cannot delete the old radar.vid or alert.snd from the card (it only ever writes): the board would keep playing it. Delete it with tools/sdput.py, or use the card-reader route, which removes it.';
   enterUsb();
 }
 $('btn-pick').addEventListener('click', async () => {
@@ -425,7 +578,7 @@ $('btn-write').addEventListener('click', async () => {
       return;
     }
     const done = $('done'); clear(done); $('done-head').className = 'num ok';
-    done.append(el('p', { text: 'Eject the card, put it in the CYD and reboot.' }),
+    done.append(el('p', { text: 'Eject the card, put it in ' + boardWords(state.board).name + ' and reboot.' }),
       el('p', { text: 'Menu -> ASPECT -> THEME, then step to  ' + theme.name + '.' }),
       el('p', { class: 'tiny muted', text: 'A theme that fails to load is skipped and the reason goes in /diag.log.' }));
     $('btn-write').disabled = false;
@@ -472,7 +625,7 @@ $('btn-usb-connect').addEventListener('click', async () => {
   if (!usbSupported() || usb.link) return;
   let port;
   try {
-    port = await navigator.serial.requestPort($('usb-all').checked ? {} : { filters: [CH340] });
+    port = await navigator.serial.requestPort(usbFilters(state.board, $('usb-all').checked) ? { filters: usbFilters(state.board, false) } : {});
   } catch (e) {
     if (e && e.name === 'NotFoundError') return;          // the chooser was closed
     usbLog('could not choose a port: ' + ((e && e.message) || e), 'err'); return;
@@ -495,7 +648,7 @@ $('btn-usb-connect').addEventListener('click', async () => {
 $('btn-usb-disconnect').addEventListener('click', () => { if (!usb.busy) usbDisconnect('disconnected; the port is free for other programs'); });
 if (usbSupported()) {
   navigator.serial.addEventListener('disconnect', (e) => {
-    if (usb.port && e.target === usb.port) { if (usb.ac) usb.ac.abort(); usbDisconnect('the CYD was unplugged'); }
+    if (usb.port && e.target === usb.port) { if (usb.ac) usb.ac.abort(); usbDisconnect(boardWords(state.board).name + ' was unplugged'); }
   });
 }
 $('btn-usb-cancel').addEventListener('click', () => { if (usb.ac) usb.ac.abort(); $('usb-collide').hidden = true; });
@@ -527,7 +680,7 @@ $('btn-usb-send').addEventListener('click', async () => {
     }
     const done = $('usb-done'); clear(done); $('usb-done-head').className = 'num ok';
     done.append(el('p', { text: 'The pack is on the card in /themes/' + res.folder + '/. It loads at the next boot.' }),
-      el('p', { text: 'Restart the CYD yourself: press its reset (RST) button, or unplug the USB cable and plug it back in. This page does not restart the board.' }),
+      el('p', { text: boardWords(state.board).restart }),
       el('p', { text: 'Then Menu -> ASPECT -> THEME, and step to  ' + theme.name + '.' }),
       el('p', { class: 'tiny muted', text: 'A theme that fails to load is skipped and the reason goes in /diag.log.' }));
   } catch (e) {
@@ -544,6 +697,7 @@ async function boot() {
   fillLimits('design', DESIGN_PLACES);
   try { preview = await loadWasm(new URL('../wasm/uv_preview.js', import.meta.url).href); }
   catch (e) { preview = null; $('open-msg').textContent = ''; console.warn('preview unavailable', e); }
+  recallBoard(); syncTabs();
   buildStart();
   if (preview && state.theme) refresh();
   if (!preview) {

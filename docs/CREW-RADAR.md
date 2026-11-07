@@ -64,3 +64,6 @@ new framebuffer. Missing or invalid logo binaries cause the pack to be skipped.
 No new built-in IDs were inserted. Saved SD-pack selections resolve by name.
 The new SLICK replaces the old SLICK identity; its former design remains available
 as EMBER. No display orientation, capture timing or bridge behavior changes.
+
+> Update: the BAPH0MAU5 and EM3RITUS themes above are no longer built into the firmware. Their folders in `packs/`
+> remain as optional SD packs (and as test fixtures).

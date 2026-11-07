@@ -32,6 +32,7 @@ void write(const ui::Settings& s) {
     nvs.putUChar("meshprofile",s.meshProfile);
     nvs.putUChar("bands",   s.bands);
     nvs.putUChar("alertmin", s.alertMin);
+    nvs.putUChar("sound",   (uint8_t)s.sound);
     nvs.putUChar("idle",    s.idleIdx);
     nvs.putUChar("idlemode", s.idleMode);
     nvs.putUChar("autolog", s.autoLog);
@@ -82,6 +83,7 @@ bool load(ui::Settings& s) {
     in.bridgeApp = nvs.getUChar("bridgeapp", in.bleBridge ? in.bleBridge : 1);
     in.bands   = nvs.getUChar("bands",   s.bands);
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
+    in.sound    = nvs.getUChar("sound",    (uint8_t)s.sound);   // absent on older stores -> NORMAL
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
     in.idleMode = nvs.getUChar("idlemode", s.idleMode);   // absent on older stores -> DIM
     in.autoLog  = nvs.getUChar("autolog",  s.autoLog);    // absent on older stores -> OFF

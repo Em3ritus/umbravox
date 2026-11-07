@@ -659,16 +659,24 @@ int main() {
         State st; st.fileCard = true; st.fileTotal = 64; st.fileFound = 80;
         char b[24];
         filesCountText(st, b);
-        check("count: 64/80 LOGS", !strcmp(b, "64/80 FILES"));
+        check("count: 64/80 LOGS", !strcmp(b, "64/80 LOGS"));
         st.filePartial = true;
         filesCountText(st, b);
         check("count: a bounded walk reads LIST INCOMPLETE", !strcmp(b, "LIST INCOMPLETE"));
         st.filePartial = false; st.fileTotal = 1; st.fileFound = 1;
         filesCountText(st, b);
-        check("count: 1 LOG", !strcmp(b, "1 FILE"));
+        check("count: 1 LOG", !strcmp(b, "1 LOG"));
         st.fileTotal = 0; st.fileFound = 0;
         filesCountText(st, b);
-        check("count: 0 LOGS", !strcmp(b, "0 FILES"));
+        check("count: 0 LOGS", !strcmp(b, "0 LOGS"));
+    }
+    // Label vocabulary: NODES in both modes; OMENS is the brand name and ALERTS
+    // the plain one; the SD session list is "logs" in the count line.
+    {
+        check("MESH screen is NODES in brand mode", !strcmp(screenName(SCR_MESH, false), "NODES"));
+        check("MESH screen is NODES in plain mode", !strcmp(screenName(SCR_MESH, true), "NODES"));
+        check("OMENS screen is OMENS in brand mode", !strcmp(screenName(SCR_OMENS, false), "OMENS"));
+        check("OMENS screen is ALERTS in plain mode", !strcmp(screenName(SCR_OMENS, true), "ALERTS"));
     }
     // The confirm names the log to the second; row labels never reach REC.
     {

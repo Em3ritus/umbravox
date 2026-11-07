@@ -2,6 +2,8 @@
 import limits from './limits.json' with { type: 'json' };
 import { ROLES, isHex, describe } from './palette.js';
 import { emblemToBin } from './emblem.js';
+import { clipFile } from './radarvideo.js';
+import { soundFile, hasSounds } from './alertsound.js';
 
 // Strings are never escaped: the device rejects escapes, so refuse instead.
 function plain(s, what) {
@@ -38,12 +40,16 @@ export function folderName(name) {
   return f || 'pack';
 }
 
-export function buildPack(theme, emblem) {
+// clip: an optional radar clip (js/radarvideo.js buildClip), written as radar.vid. sounds: optional alert sounds
+// ({low, med, high}, js/alertsound.js), written as alert.snd.
+export function buildPack(theme, emblem, clip = null, sounds = null) {
   const dir = folderName(theme.name);
   const files = [{ path: dir + '/theme.json', data: new TextEncoder().encode(themeJson(theme)) }];
   if (theme.centrepiece === 'emblem') {
     if (!emblem) throw new Error('the emblem centrepiece needs a picture');
     files.push({ path: dir + '/emblem.bin', data: emblemToBin(emblem) });
   }
+  if (clip) files.push({ path: dir + '/radar.vid', data: clipFile(clip) });
+  if (hasSounds(sounds)) files.push({ path: dir + '/alert.snd', data: soundFile(sounds) });
   return { files, bytes: files.reduce((n, f) => n + f.data.length, 0) };
 }

@@ -41,6 +41,7 @@ struct MeshScene {
     Rec      rec = Rec::Off;
     // header
     int      meshCoords = 0;                    // live coordinators (0 = Core runs the nodes)
+    int      coordNodes = 0;                    // nodes those coordinators carry (not listed: only counted)
     bool     coreCamping = false; int coreChan = 0;
     int      meshLossPct = 0;
     ui::LocalDiagnostics local;
@@ -71,6 +72,15 @@ inline void channelLabel(const ui::NodeDiagnostics& d,char* out,size_t size){
 inline uint16_t lossInk(int pct) { return pct >= 20 ? pal::RED : pct >= 5 ? pal::AMBER : pal::GREEN; }
 inline uint16_t ageMark(uint32_t s) { return s < 10 ? pal::GREEN : s < 20 ? pal::AMBER : pal::RED; }
 
+// The subtitle of the THIS HANDHELD page. With a coordinator live and no nodes of its own the handheld lists nothing, so it
+// says what it does know (how many coordinators, how many nodes they carry); otherwise the device pager text.
+inline void handheldHint(const MeshScene& sc, char* out, size_t n) {
+    if (sc.meshCoords > 0 && sc.nRows == 0) {
+        if (sc.coordNodes > 0) snprintf(out, n, "%d COORD - %d NODE%s VIA COORD", sc.meshCoords, sc.coordNodes, sc.coordNodes == 1 ? "" : "S");
+        else                   snprintf(out, n, "%d COORD - NO NODES COUNTED", sc.meshCoords);
+    } else snprintf(out, n, "DEVICE 1/%d - LOCAL STATUS", sc.nRows + 1);
+}
+
 inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     using scanr::box; using scanr::txt; using scanr::frame; using scanr::centered; using scanr::fitScale;
     const uieng::MeshLayout L = uieng::mesh(W, H);
@@ -87,7 +97,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     button(L.previous,"<");button(L.pager,">");
     char name[48],hint[48];
     if(network){snprintf(name,sizeof name,"NETWORK");if(sc.netId)snprintf(hint,sizeof hint,"NET %d",sc.netId);else snprintf(hint,sizeof hint,"NET OPEN");}
-    else if(selected==0){snprintf(name,sizeof name,"THIS HANDHELD");snprintf(hint,sizeof hint,"DEVICE 1/%d - LOCAL STATUS",sc.nRows+1);}
+    else if(selected==0){snprintf(name,sizeof name,"THIS HANDHELD");handheldHint(sc,hint,sizeof hint);}
     else{const auto& n=sc.rows[(selected-1)/2];snprintf(name,sizeof name,"NODE %02X:%02X:%02X",n.id[0],n.id[1],n.id[2]);snprintf(hint,sizeof hint,"DEVICE %d/%d - %s",(selected+1)/2+1,sc.nRows+1,selected%2?"SCANNING":"CONNECTION");}
     centered(s,L.title.x+L.title.w/2,L.title.y+5,name,fitScale(name,L.title.w,2),pal::BRIGHT);
     centered(s,L.title.x+L.title.w/2,L.title.y+28,hint,1,pal::DIM);

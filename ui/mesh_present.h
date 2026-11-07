@@ -38,6 +38,7 @@ public:
         sc_.meshCoords = coords; sc_.coreCamping = camping; sc_.coreChan = chan;
         sc_.meshLossPct = lossPct; sc_.netId = netId; sc_.enrollSecs = enrollSecs;
     }
+    void coordNodes(int n){sc_.coordNodes=n;}
     void local(const ui::LocalDiagnostics& d){sc_.local=d;}
     void page(int p){sc_.page=p;}
     void target(uint16_t dwell,uint8_t profile,bool active){sc_.targetDwell=dwell;sc_.targetProfile=profile;sc_.targetActive=active;}
@@ -63,7 +64,7 @@ inline void sceneDirty(const MeshScene& a, const MeshScene& b, bool& status, boo
     const bool recSame = scanr::recLabel(sa, ra, 16) == scanr::recLabel(sb, rb, 16) && !__builtin_strcmp(ra, rb);
     status = !gpsSame || !recSame || a.nodes != b.nodes || a.hasCell != b.hasCell || a.battPct != b.battPct || a.bridgeOn != b.bridgeOn || a.pmuOk != b.pmuOk || a.charging != b.charging || a.sd != b.sd;
 
-    bool same = a.targetDwell==b.targetDwell && a.targetProfile==b.targetProfile && a.targetActive==b.targetActive && a.local==b.local && a.page==b.page && a.meshCoords == b.meshCoords && a.coreCamping == b.coreCamping && a.coreChan == b.coreChan
+    bool same = a.targetDwell==b.targetDwell && a.targetProfile==b.targetProfile && a.targetActive==b.targetActive && a.local==b.local && a.page==b.page && a.meshCoords == b.meshCoords && a.coordNodes == b.coordNodes && a.coreCamping == b.coreCamping && a.coreChan == b.coreChan
                 && a.meshLossPct == b.meshLossPct && a.netId == b.netId && a.enrollSecs == b.enrollSecs
                 && a.nRows == b.nRows;
     for (int i = 0; same && i < a.nRows; i++)

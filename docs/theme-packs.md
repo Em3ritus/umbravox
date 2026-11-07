@@ -3,7 +3,7 @@
 A **theme pack** is a small folder on the SD card that changes how UMBRAVOX looks:
 its colours, the centrepiece picture on the scan screen, which sweeps it offers and
 which alert rite it uses. The device reads packs at boot. A pack is **data only**:
-two files, no code. Nothing in a pack can touch the radios, the SD card or any
+two files (a third, optional radar video on the Waveshare), no code. Nothing in a pack can touch the radios, the SD card or any
 network, so UMBRAVOX stays passive however a pack is written.
 
 You do not need a toolchain. The [theme designer](https://em3ritus.github.io/umbravox/designer/)
@@ -13,14 +13,14 @@ and everything a pack cannot do.
 
 ## Bundled palettes and header names
 
-Fourteen themes are available without an SD card. The general palettes are
-UMBRAVOX, EMBER, PHOSPHOR, GLACIER, OBSIDIAN, CYBER, ULTRAVIOLET, and DUNE.
-The six additions use the clean radar and require no bitmap artwork. General
+Ten themes are available without an SD card. The general palettes are
+UMBRAVOX, EMBER, GLACIER, OBSIDIAN, CYBER, and ULTRAVIOLET.
+The additions use the clean radar and require no bitmap artwork. General
 palettes keep **UMBRAVOX** as the header; Appearance still shows each palette's
 name. Crew themes retain their individual mastheads.
 
 Existing built-in IDs 0–7 are unchanged; the six new palettes occupy IDs 8–13.
-The eight-slot SD pack/override limit is separate from the built-in count and
+The twelve-slot SD pack/override limit is separate from the built-in count and
 has not increased. All bundled palettes remain available even when that SD
 limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
 
@@ -40,9 +40,11 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
   midnight-ember/         one folder per pack
     theme.json            required
     emblem.bin            required only when "centrepiece" is "emblem"
+    radar.vid             optional: a looping video for the Waveshare's radar
+    alert.snd             optional: your own alert sounds for the Waveshare's speaker (LOW, MED, HIGH)
 ```
 
-The designer writes exactly these two files. Any other file in a pack folder
+The designer writes only these. Any other file in a pack folder
 (a `preview.png`, a readme) is ignored by the device.
 
 ## theme.json
@@ -110,6 +112,60 @@ Width and height are at most 96, `ncol` is 2 to 16, and the file is at most 9.5 
 rejected), and every pixel index must be lower than `ncol`. The designer makes this file from any PNG: it crops, shrinks and
 reduces the picture to 16 colours.
 
+## alert.snd
+
+Optional. Replaces the built-in alert beeps on the Waveshare (the only board with a speaker; the CYD ignores it). One
+sound per alert level, any of them may be missing, and a level without one keeps the built-in beep:
+
+```
+bytes 0-3   'U' 'V' 'S' 'N'
+byte  4     version, 1
+byte  5     reserved, 0
+bytes 6-7   sample rate, 16000 (u16 little-endian)
+bytes 8-19  sample counts for LOW, MED, HIGH (three u32 little-endian, each 0 to 96000; not all zero)
+then        the 16-bit little-endian mono samples of LOW, MED, HIGH, back to back
+```
+
+The length must match the counts exactly. A file that fails any check is not used: the pack still loads, without its
+sounds, and `/diag.log` says why when its theme is selected ("alert sounds not used: ..."); `sim/umbravox --check-pack`
+reports the same problem up front. The sounds are read from the card when the pack's theme is selected, not at boot, so
+any number of packs may carry them; the file's size counts in the boot-loop guard's total. The ALERT SOUND setting (Settings,
+recording tab: OFF, QUIET, NORMAL, LOUD) scales a pack's sounds as it scales the built-in beeps; NORMAL plays the
+samples as stored, so the designer normalizes each sound to 70% of full scale.
+
+The designer makes the file: on the Waveshare board a card under the preview takes any audio file per level
+(wav, mp3, ogg, m4a: whatever the browser decodes), resamples it to 16 kHz mono, trims silence at both ends, cuts it at
+6 seconds and plays it back for you. A recording longer than that gets a **Start at** slider (tenths of a second) to
+pick which part is used. It travels with the theme like the video (card reader, USB, zip). Over USB the
+file is under 600 KB, so under a minute. `tools/sdput.py PORT put <folder>` sends an `alert.snd` too.
+
+## radar.vid
+
+An optional looping clip that the Waveshare 3.5" plays inside its radar, under the contacts and the sweep. The CYD
+ignores it. It is a little-endian binary like `emblem.bin`:
+
+| bytes | content |
+|---|---|
+| 4 | `U` `V` `R` `V` |
+| 1 each | the number 1 or 2 (version), width 102, height 102, fps (1 to 30) |
+| 2 | frame count, little-endian (1 to 150) |
+| 2 | reserved, both 0 |
+| version 2 only: 32 | a palette: 16 colours as RGB565, little-endian |
+| frames x 5,202 | 4-bit pixels, two per byte (high nibble first), row by row. Version 1: grey levels, 0 black to 15 white, painted in the theme's colours. Version 2: an index into the palette, so the clip keeps its own colours |
+
+The file must be exactly the length its header declares (at most 780,312 bytes, so a version 2 clip holds at most 149 frames). The board draws each frame 2x
+inside the radar disc, so 102 pixels fill it. The designer makes this file from any video the browser can play
+(`tools/video2radar.py` does the same on a command line): it crops a square, shrinks it, keeps 12 frames a second
+and drops the audio. With **Keep colours** on (the default) it picks the best 16 colours for the whole video (median cut,
+with light ordered dithering that does not shimmer between frames) and writes version 2; off, it writes 16 greys as
+version 1. `tools/video2radar.py` writes version 1 only.
+
+A `radar.vid` that fails any check skips the **whole pack**, never half of it (the reason is in `/diag.log`, like a
+bad emblem). The board keeps at most **2** clips in memory (each is up to 780 KB of PSRAM); a third pack with a clip
+is skipped with "no room for another clip". The clip counts in the pack's size for the boot-loop guard, so editing
+it gives a pack that crashed another try. While a clip plays the radar repaints in full 12 times a second: measured
+on a Waveshare the scan screen ran at about 14 frames a second instead of about 25.
+
 ## Limits
 
 These numbers are the same ones the device and the designer use
@@ -117,7 +173,7 @@ These numbers are the same ones the device and the designer use
 
 | what | limit |
 |---|---|
-| packs the device loads | 8 (the first 8 by folder name) |
+| packs the device loads | 12 (the first 12 by folder name) |
 | folders examined under `/themes` | 32 (the first 32 by name); further folders are not read, but are logged to `/diag.log` and counted as skipped. Folders with invalid names are also logged and counted. |
 | folder name | 1-31 letters, digits, `-` or `_`; anything else is skipped |
 | `name` | 20 characters, unique, not one of the four reserved names. The settings screen shows only the first 12, so two long names that start the same look identical there (the designer warns). |
@@ -125,6 +181,8 @@ These numbers are the same ones the device and the designer use
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
+| `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
+| `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; read from the card when the pack's theme is selected (one set in memory at a time) |
 | whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
 
@@ -142,9 +200,45 @@ These numbers are the same ones the device and the designer use
    helper), the centrepiece (drop a PNG, or choose the heptagram) and the motion
    (sweeps, starting sweep, alert). The preview shows Scan, Mesh, Alert and Menu with
    colours after RGB565 clamping. The checks explain anything that is wrong.
+   Pick the board to preview above the screen: **CYD 2.8"** or **Waveshare 3.5"**
+   (see *Designing for the Waveshare 3.5"* below).
 4. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**. The
    Install page has two routes: write to the card in a card reader, or send the pack
-   over the CYD's USB cable with the card left in the CYD.
+   over the board's USB cable with the card left in the board.
+
+### Designing for the Waveshare 3.5"
+
+A pack is the same two files for every board, and the Waveshare reads it with the
+same loader as the CYD, so one pack can serve both. What changes is how the board draws it,
+and the designer previews that with the board's own drawing code:
+
+- **Board switch.** The preview card has a **CYD 2.8"** / **Waveshare 3.5"** switch. The Waveshare
+  preview is the full 480x320 engine screen (not a scaled-up CYD picture). It adds an **Aspect**
+  tab, and on the Alert tab a **Low / Medium / High** switch: Low and Medium take over the radar
+  area, High takes the whole screen. The choice is remembered in the browser.
+- **Same code as the board.** The preview is `ui/preview_ws.h` compiled to WebAssembly, the same
+  projection and compositor the firmware runs. `web/designer/test/wasm-parity.test.mjs` holds it to
+  the host render byte for byte (built-ins, both sample packs, every sweep, every alert style and
+  all three alert levels).
+- **Radar video.** On the Waveshare, **Radar video** takes a video file and plays it in the radar as the board
+  would draw it: cropped to a square (the Crop slider picks which part of a tall video), 102x102, 12 frames a
+  second, 16 grey levels, looping, at most 12 seconds, audio dropped. A GIF works too (uneven frame delays are
+  resampled to 12 fps); it needs a browser with `ImageDecoder` (Chrome, Edge, Safari), and `tools/video2radar.py`
+  reads a GIF through ffmpeg the same way. The clip is part of the theme: it is
+  saved as `radar.vid` beside `theme.json`, checked, downloaded in the zip and installed with the pack, and
+  an opened pack brings its `radar.vid` back. Remove the video and the next install has none. Over USB a clip takes
+  minutes to send (about 650 KB; the page allows the time); a card reader is instant. The USB route cannot delete,
+  so a video taken out of a pack you installed before stays on the card until you delete it with
+  `tools/sdput.py PORT del /themes/<folder>/radar.vid` or use the card route, which removes it.
+  The Scan tab never shows the demo alert (that is the Alert tab's job).
+- **Dial size does nothing there.** *Compact* and *Large* are CYD layout presets; the Waveshare
+  lays its radar out itself. The page says so when the Waveshare is selected.
+- **Gaze and Summon** stay unavailable to packs (they belong to the Baphomet seal), as on the CYD.
+- **Install over USB** filters the browser's port list to the Waveshare's native USB (an Espressif
+  "USB JTAG/serial debug unit", USB ID 303a:1001). The Waveshare's console is the chip's own USB
+  port, so the port disappears and comes back whenever the board restarts. That is normal.
+  **Not yet run against a real Waveshare with a card in it:** the protocol was checked only as far
+  as the board answering `SDLS` (it replied `sdlog: no card`), because no card was inserted.
 
 ### Install in the browser
 
@@ -178,7 +272,7 @@ Safari do not have it; the page says so and points to the card route or the zip.
    route: overwrite, install under another folder name (`<name>-2`...), or cancel.
    Over USB only folder names are read, so the page cannot tell which theme an
    existing folder holds; it never overwrites without asking.
-4. It sends `emblem.bin` (if any) and then `theme.json`, each chunk acknowledged, with
+4. It sends `radar.vid` (if any), `emblem.bin` (if any) and then `theme.json`, each chunk acknowledged, with
    a progress bar. Success is claimed only when the device has answered `DONE` with
    the size and CRC-32 the page computed, for every file. The failure table under
    *Installing over USB without removing the card* says what the card holds if it
@@ -225,10 +319,10 @@ tested on a real unit.
 ~/.platformio/penv/bin/python tools/sdput.py /dev/ttyUSB0 rmdir midnight-ember   # only when empty
 ```
 
-`put` uploads `emblem.bin` (if the folder has one) and then `theme.json` into
+`put` uploads `radar.vid` and `emblem.bin` (if the folder has them) and then `theme.json` into
 `/themes/<name>/`, where `<name>` is the folder's name made safe the way the
 designer makes it (lower case, runs of other characters become `-`). The tool reads
-only regular files that really sit in that folder: a `theme.json` or `emblem.bin`
+only regular files that really sit in that folder: a `theme.json`, `emblem.bin` or `radar.vid`
 that is a symlink (even to another file in the pack), a hard link (a file with
 more than one link, which could be a second name for a file elsewhere), a FIFO, a
 device or a directory is refused, so a booby-trapped pack zip cannot make it upload some other
@@ -245,7 +339,7 @@ What is left on the card when something goes wrong:
 
 - **The host stops, sends bad data, or Ctrl-C is pressed** (the tool sends `ABORT`),
   or no accepted chunk arrives for **10 s**, or the upload is still running **120 s**
-  after it began: the temp is removed and the old file is untouched. If the upload
+  after it began (a `radar.vid` over 9.5 KB gets 300 ms more per KiB, about 350 s for the biggest): the temp is removed and the old file is untouched. If the upload
   had created the pack folder and it is still empty, the folder is removed too.
 - **The power is cut during the upload**: the old file is untouched, and a
   `<file>.tmp` is left behind. The loader ignores it; the next upload of that file
@@ -255,16 +349,16 @@ What is left on the card when something goes wrong:
   `<file>`, so that pack is skipped at boot (or shown without its emblem). The next
   `put` of that pack renames `.old` back before it starts, so the old file returns
   even if that upload fails too; you can also `del` the leftover.
-- **Replacing a pack** sends `emblem.bin` before `theme.json`. If the second file
-  fails, the card has the new emblem with the old `theme.json`. That is cosmetic
+- **Replacing a pack** sends `radar.vid` and `emblem.bin` before `theme.json`. If the last file
+  fails, the card has the new files with the old `theme.json`. That is cosmetic
   (the old theme with the new picture); run `put` again.
 
 What the serial commands may touch, and nothing else:
 
 - write: `/themes/<folder>/theme.json` (at most 4,096 bytes) and
-  `/themes/<folder>/emblem.bin` (at most 9,728 bytes); `<folder>` follows the
+  `/themes/<folder>/emblem.bin` (at most 9,728 bytes) and `/themes/<folder>/radar.vid` (at most 780,312 bytes); `<folder>` follows the
   folder-name rule above and cannot be a DOS device name (`CON`, `NUL`, `COM1`...).
-- delete: those two files (and a `.tmp` or `.old` an interrupted upload left), an
+- delete: those three files (and a `.tmp` or `.old` an interrupted upload left), an
   empty pack folder, and old session logs `/WD-*.csv`, **never the one being
   logged now**. Never `diag.log`, `perf.csv` or anything else.
 
@@ -286,14 +380,22 @@ can delete or reboot.
 - Packs are read once, at **boot**, after the card mounts. After adding, changing or
   removing a pack, reboot.
 - Folders are read in sorted name order. The first 32 folders are examined; of those,
-  the first 8 valid packs load. A pack that fails any rule is skipped whole, never
+  the first 12 valid packs load. A pack that fails any rule is skipped whole, never
   partly applied.
 - Packs appear in the THEME picker on ASPECT after the built-ins. The choice is saved
   by name, so adding or removing other packs does not change what is selected.
 - If the non-volatile storage (NVS) is unavailable, no packs load, because the boot-loop guard cannot be kept; this is logged.
 - If the saved pack is missing or invalid at boot, the device falls back to UMBRAVOX.
-- Every admitted emblem is held in memory for the session (at most 8 packs, 76 KB of
-  emblem data), so switching themes does not read the card.
+- Every admitted emblem is held in memory for the session (at most 12 packs, 114 KB of
+  emblem data). A pack's radar clip and alert sounds are NOT: they are read from the card when its theme is selected
+  (see "Clip and sounds load on select" below).
+- **Clip and sounds load on select.** At boot the device reads only each pack's `theme.json` and emblem. When a pack's
+  theme has stayed selected for 0.4 s (so stepping through the theme list loads nothing), its `radar.vid` and `alert.snd`
+  are read into memory and the previous pack's are dropped; the saved theme's are read at boot. Only one pack's clip and
+  sounds are in memory at a time, so the number of packs with a clip is limited only by the 12-pack cap. Reading takes
+  about 2 seconds for a large pack (roughly 460 KB/s) and the screen waits for it; until then the theme shows without video
+  and with the built-in beeps. If an alert sound is playing, the switch waits for it to finish. A clip or sound that cannot
+  be used is logged and left out; the pack still works without it.
 - Skipped packs are logged to `/diag.log` with the reason. ASPECT shows the count: the
   words `N SKIPPED` to the left of the dial preview and `DIAG LOG` to the right of it.
 - **Boot-loop guard.** Before loading a pack the device records its folder and size in
@@ -302,7 +404,8 @@ can delete or reboot.
   boot, and the failure is logged. Editing the pack so its size changes gives it another
   try. Removing the folder does too, but only after the device has completed one boot
   with the folder absent: a same-size pack put straight back stays on the list. The guard
-  covers loading only. A pack that crashes the loader is skipped on the next boot; a pack
+  covers loading only: at boot, and again when a pack's clip and sounds are read on selecting its theme. A pack that
+  crashes the loader is skipped on the next boot; a pack
   that loads fine but faults later, when drawn, is not covered (see Troubleshooting).
 - The Baphomet seal's own sweeps and rite are not in packs; alerts always show.
 
@@ -314,7 +417,7 @@ there but is folded into item 4 here, and the USB route entries appear in both.
 
 1. **Reboot.** A new or changed pack needs a reboot to appear. The device reads the SD
    card at boot only.
-2. **Eight packs.** At most 8 packs load, chosen as the first 8 by folder name, and only
+2. **Twelve packs.** At most 12 packs load, chosen as the first 12 by folder name, and only
    the first 32 folders (by name) are examined at all. Folder names are letters,
    digits, `-` and `_` only. A theme name must be unique and cannot be UMBRAVOX,
    BAPH0MAU5, CVLT OF BAPH0MAU5 or COSMIC MUFFIN; otherwise that pack is skipped.
@@ -360,9 +463,17 @@ there but is folded into item 4 here, and the USB route entries appear in both.
 What is tested and what is not. The pure rules are host-tested: the theme.json and
 emblem.bin parsers, pack admission, the boot-loop guard's decisions, the ASPECT drawing
 and the contrast rule. The SD card scan (`device/themeload.cpp`) and its NVS plumbing are
-only build-checked: they compile for the device, but they have not been run on a real
-card, and the hardware pass is still pending. Treat card-side behaviour as unverified
-until that pass is recorded.
+build-checked for every board, and have been run on one real card: the Waveshare 3.5".
+There, packs loaded at boot, the boot-loop guard skipped a pack that was mid-load at a
+reset and kept skipping it across reboots, and removing the folders for one full boot
+cleared it. The same board took a pack over its native USB port (the designer's own
+installer, driven from Node: size and CRC read back, then `loaded ... as theme 15` after a
+reboot). Not run: the install from a real browser over Web Serial, the card-reader route
+on the Waveshare, and any of it on the CYD. Treat those as unverified until recorded.
+
+One trap found in that test: opening the serial port resets the board. If that happens
+while it is loading packs, the guard counts it as a crash and puts the pack on the bad
+list. After a boot with packs on the card, wait about 15 seconds before opening the port.
 
 ## Check a pack on your computer
 
@@ -380,11 +491,12 @@ rule is applied to the last path component and `.` is not a valid folder name.
 
 | symptom | likely cause |
 |---|---|
-| The pack is not in the THEME picker | You did not reboot; the folder is not directly under `/themes`; it is beyond the first 8 packs or first 32 folders by name; or it was skipped (check ASPECT for `N SKIPPED` and `/diag.log`). |
+| The pack is not in the THEME picker | You did not reboot; the folder is not directly under `/themes`; it is beyond the first 12 packs or first 32 folders by name; or it was skipped (check ASPECT for `N SKIPPED` and `/diag.log`). |
 | `N SKIPPED` shows on ASPECT | Read `/diag.log` for the reason. Run `sim/umbravox --check-pack <folder>` for the same message. |
 | Skipped: duplicate or reserved name | The `name` is already used by an earlier pack or is one of the four reserved names. |
 | Skipped: name, header or author | A double quote, a backslash, or a character outside the allowed set. |
 | Skipped: emblem | `centrepiece` is `emblem` but `emblem.bin` is missing, too big, over 96x96 or over 16 colours. |
+| Skipped: radar.vid | `radar.vid` is over 780,312 bytes. (A clip that is malformed, not 102x102 or the wrong length does not skip the pack: it loads without video, and `/diag.log` says "radar clip not used: ..." when its theme is selected.) |
 | Skipped: missing sweeps or colors | `sweeps` or one of the 20 colours is missing or malformed. |
 | Colours look different from the design | RGB565 rounding, or a status or alert-edge colour was replaced for contrast. |
 | The device went back to UMBRAVOX | The saved pack was renamed, removed or skipped. Select it again. |

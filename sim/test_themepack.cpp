@@ -280,10 +280,13 @@ static void admissionTests() {
         check("NULL taken array with n>0 does not crash", admit("a", named("ONE"), nullptr, 3) == ADMIT_OK);
     }
     {
-        const char* t[MAX_PACKS + 1] = {"P0","P1","P2","P3","P4","P5","P6","P7","P8"};
-        check("8th pack admitted (7 taken)", admit("a", named("NEW"), t, MAX_PACKS - 1) == ADMIT_OK);
-        check("9th pack full (8 taken)", admit("a", named("NEW"), t, MAX_PACKS) == ADMIT_FULL);
-        check("full beyond 8 too", admit("a", named("NEW"), t, MAX_PACKS + 1) == ADMIT_FULL);
+        static char nm[MAX_PACKS + 1][8];
+        const char* t[MAX_PACKS + 1];
+        for (int i = 0; i <= MAX_PACKS; i++) { snprintf(nm[i], sizeof nm[i], "P%d", i); t[i] = nm[i]; }
+        check("the device holds 12 packs (internal RAM: about 290 bytes a slot; 16 would take the Waveshare under its floor)", MAX_PACKS == 12);
+        check("the last pack is admitted (MAX_PACKS-1 taken)", admit("a", named("NEW"), t, MAX_PACKS - 1) == ADMIT_OK);
+        check("one more is full (MAX_PACKS taken)", admit("a", named("NEW"), t, MAX_PACKS) == ADMIT_FULL);
+        check("full beyond that too", admit("a", named("NEW"), t, MAX_PACKS + 1) == ADMIT_FULL);
         check("bad folder wins over full", admit("a/b", named("NEW"), t, MAX_PACKS) == ADMIT_BAD_FOLDER);
     }
 

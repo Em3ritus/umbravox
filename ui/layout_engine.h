@@ -10,6 +10,7 @@
 // geometry.json EXACTLY for every state at both approved sizes (480x320,
 // 320x240) -- the host oracle test asserts the complete set. No Arduino deps.
 #pragma once
+#include <cstdint>
 #include <algorithm>
 #include <cmath>
 
@@ -74,8 +75,9 @@ inline ScanLayout scan(int W, int H) {
     s.wordmark = c.wordmark; s.stop = c.stop;
 
     if (wide) {
-        for (int i = 0; i < 3; i++) s.tiles[i] = {16, 52 + i * 70, 132, 62};
-        s.hero = {156, 52, W - 156 - M, H - 104};
+        // Layout A: a slim count column so the radar can take the middle of the screen.
+        for (int i = 0; i < 3; i++) s.tiles[i] = {16, 52 + i * 72, 100, 68};
+        s.hero = {124, 52, W - 124 - M, H - 104};
     } else {
         const int th = (H - 104) / 3;
         for (int i = 0; i < 3; i++) s.tiles[i] = {8, 52 + i * th, 88, (i < 2) ? th : (H - 104 - 2 * th)};
@@ -120,7 +122,7 @@ enum class Action : int { OpenGps, OpenMesh, PowerDetail, ToggleLogging,
                           ToggleLabels, MeshEnroll, MeshResetNet,
                           SettingStep, SettingPage, SettingReset,
                           ThemeStep, OrientToggle, Back, CodexPage,
-                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl, SettingsControl, FilePage, FileRefresh, AlertTest, AlertPage, AlertOpen, AlertClose };
+                          FileSelect, FileDelete, FileConfirmYes, FileConfirmNo, MarkPoi, DetailPage, MeshPage, ClientPage, EchoPage, DisplayControl, SettingsControl, FilePage, FileRefresh, AlertTest, AlertPage, AlertOpen, AlertClose, AlertDismiss };
 // Stable Nav payloads; MENU is in the header and Files is an explicit launcher.
 // Scan=0,
 // Domain=1, Codex=2, Menu=3 are fixed (the oracle asserts those nav payloads).
@@ -155,6 +157,7 @@ struct HitCtx {
     bool               hasFix   = false;    // GPS fix; DOMAIN maps rows only with a fix
     const char* const* rowKeys  = nullptr;  // located-device keys, by original row order
     int                nRowKeys = 0;        // a row is emitted ONLY for a valid supplied key
+    uint8_t            alertTakeover = 0;   // SCAN only: 1 = an alert covers the hero, 2 = it covers the whole screen (a tap dismisses it)
 };
 
 static const char* const kThreatDesc =
@@ -184,6 +187,10 @@ inline void addChromeHits(HitList& h, int W, int H) {
 inline HitList scanHits(int W, int H, const HitCtx& ctx) {
     const ScanLayout s = scan(W, H);
     HitList h;
+    if (ctx.alertTakeover == 2) {          // the alert owns the whole screen: one target, a tap anywhere clears it
+        h.add("alert", {0, 0, W, H}, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
+        return h;
+    }
     addChromeHits(h, W, H);              // shared design-1 header + nav + STOP
     // count tiles
     static const char* const tslot[3] = {"WIFI","5 GHZ","BLE"};
@@ -191,7 +198,9 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
                                          "Open Codex filtered to 5 GHZ",
                                          "Open Codex filtered to BLE"};
     for (int i = 0; i < 3; i++) h.add(tslot[i], s.tiles[i], Action::CodexFilter, i, nullptr, tdesc[i]);
-    if (validKey(ctx.matchKey))   // threat target only for a real matched device
+    if (ctx.alertTakeover == 1)    // the alert covers the hero: a tap on it clears it
+        h.add("alert", s.hero, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
+    else if (validKey(ctx.matchKey))   // threat target only for a real matched device
         h.add("threat", {s.hero.x, s.hero.y, s.hero.w, 44},
               Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
     return h;

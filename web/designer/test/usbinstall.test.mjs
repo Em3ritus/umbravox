@@ -12,7 +12,7 @@ import { ROOT, read } from './_util.mjs';
 import { FakeDevice } from './_fakedevice.mjs';
 import {
   buildPutLines, putSteps, parseReply, parseLs, isAllowedCommand, checkFiles, folderOk,
-  installOverSerial, LineReader, wrapWebSerial, usbSupported, crc32hex, CHUNK, READ_LINE_CAP,
+  installOverSerial, chunkLen, LineReader, wrapWebSerial, usbSupported, crc32hex, CHUNK, READ_LINE_CAP,
 } from '../js/usbinstall.js';
 
 const enc = (s) => new TextEncoder().encode(s);
@@ -608,4 +608,103 @@ test('REAL: replacing an existing pack (overwrite) swaps both files', async () =
     { decide: async () => 'overwrite' });
   assert.equal(r.ok, true, r.error);
   assert.deepEqual(card('themes/cosmic-clone/theme.json'), files[1].data);
+});
+
+// ------------------------------------------------------------- radar.vid, the optional third file
+import { clipFile, buildClip, CLIP_SIZE } from '../js/radarvideo.js';
+const smallClip = (n) => clipFile(buildClip(Array.from({ length: n }, (_, f) => Uint8Array.from({ length: CLIP_SIZE * CLIP_SIZE }, (_, i) => (i * 3 + f) % 16))));
+const WITH_CLIP = (n = 3) => [...PACK, { path: 'my-pack/radar.vid', data: smallClip(n) }];
+
+test('checkFiles takes radar.vid, and sends it first, then the emblem, theme.json last', () => {
+  const chk = checkFiles(WITH_CLIP());
+  assert.equal(chk.ok, true, chk.error);
+  assert.deepEqual(chk.ordered.map((f) => f.name), ['radar.vid', 'emblem.bin', 'theme.json']);
+  assert.equal(chk.ordered[0].devicePath, '/themes/my-pack/radar.vid');
+});
+
+test('checkFiles holds radar.vid to 780312 bytes, and still refuses anything else', () => {
+  const big = (n) => [{ path: 'x/theme.json', data: enc('{}') }, { path: 'x/radar.vid', data: new Uint8Array(n) }];
+  assert.equal(checkFiles(big(780312)).ok, true);
+  const r = checkFiles(big(780313));
+  assert.equal(r.ok, false); assert.match(r.error, /780312/);
+  assert.equal(checkFiles([{ path: 'x/theme.json', data: enc('{}') }, { path: 'x/radar.mp4', data: enc('x') }]).ok, false);
+});
+
+test('the command allow-list admits SDPUT of radar.vid and nothing like it', () => {
+  assert.ok(isAllowedCommand('SDPUT /themes/my-pack/radar.vid 5202 00000000'));
+  assert.ok(!isAllowedCommand('SDPUT /themes/my-pack/radar.vid.tmp 5202 00000000'));
+  assert.ok(!isAllowedCommand('SDPUT /themes/my-pack/radar.mp4 5202 00000000'));
+  assert.ok(!isAllowedCommand('SDDEL /themes/my-pack/radar.vid'));
+});
+
+test('a pack with a clip installs in order on a fake device, byte for byte', async () => {
+  const dev = new FakeDevice();
+  const files = WITH_CLIP(4);
+  const r = await installOverSerial(dev.port(), files, { timeouts: FAST });
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(r.wrote, ['/themes/my-pack/radar.vid', '/themes/my-pack/emblem.bin', '/themes/my-pack/theme.json']);
+  assert.deepEqual([...dev.get('/themes/my-pack/radar.vid')], [...files[2].data]);
+});
+
+test('theme.json failing after the clip landed is reported as mixed, naming what to do', async () => {
+  const dev = new FakeDevice({ corrupt: (target, off, d) => (target.endsWith('theme.json') ? d.map((b, i) => (i ? b : b ^ 1)) : d) });
+  const r = await installOverSerial(dev.port(), WITH_CLIP(2), { timeouts: { ...FAST, chunk: 100 } });
+  assert.equal(r.ok, false);
+  assert.equal(r.folderState, 'mixed');
+  assert.deepEqual(r.wrote, ['/themes/my-pack/radar.vid', '/themes/my-pack/emblem.bin']);
+  assert.match(r.message, /radar\.vid|emblem\.bin/);
+});
+
+test('the page allows a big clip as long as the device does (its time scales with the file)', async () => {
+  const { uploadBudgetMs } = await import('../js/usbinstall.js');
+  assert.equal(uploadBudgetMs([{ data: new Uint8Array(700) }, { data: new Uint8Array(9000) }]), 110000, 'a plain pack keeps 110 s');
+  const clip = { data: new Uint8Array(780312) };
+  assert.ok(uploadBudgetMs([clip]) > 300000 && uploadBudgetMs([clip]) < 400000, String(uploadBudgetMs([clip])));
+});
+
+test('REAL device/sdcmd.h: a full-size clip (780312 bytes) lands byte for byte through the real state machine', async () => {
+  const frames = 150;
+  const clipBytes = clipFile(buildClip(Array.from({ length: frames }, (_, f) => Uint8Array.from({ length: CLIP_SIZE * CLIP_SIZE }, (_, i) => (i * 7 + f * 13) % 16))));
+  assert.equal(clipBytes.length, 780312);
+  const files = [{ path: 'big-clip/theme.json', data: enc('{"format": 1}\n') }, { path: 'big-clip/radar.vid', data: clipBytes }];
+  const { r, card, received } = await onRealConsole(['--banner', '--status-ms', '20'], files, { timeouts: { ...FAST, total: 600000, chunk: 2000, end: 20000 } });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.folderState, 'complete');
+  assert.deepEqual(card('themes/big-clip/radar.vid'), clipBytes);
+  assert.deepEqual(card('themes/big-clip/theme.json'), files[0].data);
+  for (const l of received) assert.ok(isAllowedCommand(l), l);
+});
+
+test('big files: every D line fits the device cap, chunks tile the file, 95 bytes from offset 100000', () => {
+  const big = bytes(780312, 5);
+  const steps = putSteps('/themes/x/radar.vid', big);
+  assert.ok(steps.every((s) => s.line.length <= 200), 'a line is over 200 characters');
+  const d = steps.filter((s) => s.offset !== undefined);
+  assert.equal(d[0].n, 96);
+  assert.equal(chunkLen(99999), 96); assert.equal(chunkLen(100000), 95);
+  let at = 0; for (const s of d) { assert.equal(s.offset, at); at += s.n; }
+  assert.equal(at, 780312);
+  const back = new Uint8Array(780312); let o = 0;
+  for (const s of d) { const h = s.line.split(' ')[2]; for (let i = 0; i < h.length; i += 2) back[o++] = parseInt(h.slice(i, i + 2), 16); }
+  assert.deepEqual(back, big);
+});
+
+// ------------------------------------------------------------- alert.snd, the optional fourth file
+test('checkFiles takes alert.snd: big files first, then the emblem, theme.json last', () => {
+  const snd = { path: 'my-pack/alert.snd', data: new Uint8Array(20 + 2 * 50) };
+  const chk = checkFiles([...WITH_CLIP(), snd]);
+  assert.equal(chk.ok, true, chk.error);
+  assert.deepEqual(chk.ordered.map((f) => f.name), ['radar.vid', 'alert.snd', 'emblem.bin', 'theme.json']);
+  assert.equal(chk.ordered[1].devicePath, '/themes/my-pack/alert.snd');
+  const big = (n) => [{ path: 'x/theme.json', data: enc('{}') }, { path: 'x/alert.snd', data: new Uint8Array(n) }];
+  assert.equal(checkFiles(big(576020)).ok, true);
+  const r = checkFiles(big(576021));
+  assert.equal(r.ok, false); assert.match(r.error, /576020/);
+});
+
+test('the command allow-list admits SDPUT of alert.snd and nothing like it', () => {
+  assert.ok(isAllowedCommand('SDPUT /themes/my-pack/alert.snd 4000 00000000'));
+  assert.ok(!isAllowedCommand('SDPUT /themes/my-pack/alert.snd.tmp 4000 00000000'));
+  assert.ok(!isAllowedCommand('SDPUT /themes/my-pack/alert.wav 4000 00000000'));
+  assert.ok(!isAllowedCommand('SDDEL /themes/my-pack/alert.snd'));
 });

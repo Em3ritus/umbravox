@@ -43,6 +43,7 @@ static unsigned consoleDwell=220;
 #include "engine_adapter.h"   // Shared native UI engine, all screens
 #endif
 #include "alertlog.h"
+#include "sound.h"
 #include "meshcore.h"
 #include "mesh.h"
 #include "chanplan.h"
@@ -351,6 +352,7 @@ struct Coord {
     uint8_t  clusterId;
     uint16_t nodes;        // nodes balanced onto this coordinator
     uint8_t  lossPct;      // its cluster's report loss, from its last batch
+    int16_t  carried;      // nodes the coordinator itself reports in its batches; -1 = it never said (older firmware)
 };
 // At most two slices exist (chanplan::partition never makes a third), so at
 // most two coordinators ever get one -- ruling: a slice-less coordinator is
@@ -412,7 +414,7 @@ void reassignAll(int only = -1) {
         for (int k = 0; k < a.nChan; k++) a.chans[k] = sl[i].chans[k];
 #if !UMBRAVOX_PASSIVE_ONLY
         esp_now_send(bcast, (const uint8_t*)&a, sizeof a);
-        meshcore::sendTiming(coords_[i].mac);
+        meshcore::queueTiming(coords_[i].mac);
 #endif
     }
 }
@@ -445,6 +447,7 @@ void handleReg(const uint8_t* mac, uint8_t wants5, uint32_t now) {
     coords_[idx].lastMs = now;
     coords_[idx].clusterId = (uint8_t)idx;
     coords_[idx].nodes = 0;
+    coords_[idx].carried = -1;
     coords_[idx].lossPct = 0;
     Serial.printf("collector: coordinator %02X:%02X:%02X -> cluster %d (%d live)\n",
                   mac[3], mac[4], mac[5], idx, nCoord_);
@@ -537,6 +540,17 @@ bool active() { return nCoord_ > 0; }
 
 // Live coordinators, and the worst report loss among them. Both read the
 // coordinator table the receive callback also writes, so take the same lock.
+// Nodes the live coordinators carry: each coordinator's own count from its batches, or this handheld's tally for one that
+// does not send it (older firmware).
+int carriedNodes() {
+    int n = 0;
+    portENTER_CRITICAL(&mux);
+    for (int i = 0; i < nCoord_; i++)
+        if (coords_[i].live) n += coords_[i].carried >= 0 ? coords_[i].carried : coords_[i].nodes;   // its own count if it sends one
+    portEXIT_CRITICAL(&mux);
+    return n;
+}
+
 int count() {
     portENTER_CRITICAL(&mux);
     const int n = nCoord_;
@@ -566,7 +580,7 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
         pushEv(EV_REG, c->h.mac, c->wants5);
         return true;
     }
-    if (mesh::valid(data, len, mesh::MSG_CBATCH, (int)sizeof(mesh::ClusterBatch))) {
+    if (mesh::valid(data, len, mesh::MSG_CBATCH, mesh::CBATCH_MIN_LEN)) {
         const mesh::ClusterBatch* b = (const mesh::ClusterBatch*)data;
         // Only a coordinator we have registered may deliver. A batch never
         // creates a coordinator entry (only a CoordReg does), so a stray or
@@ -578,6 +592,7 @@ bool onFrame(const uint8_t* src, const uint8_t* data, int len) {
             if (coords_[i].live && macEq(coords_[i].mac, b->h.mac)) {
                 coords_[i].lastMs = millis();
                 coords_[i].lossPct = b->lossPct;
+                coords_[i].carried = (int16_t)mesh::batchNodes(b, len);
                 known = true;
             }
         portEXIT_CRITICAL(&mux);
@@ -669,8 +684,17 @@ void tick(uint32_t now) {
     }
 }
 
+uint32_t batches() { return batchesRx; }   // MESHSTAT: batches / records taken from live coordinators
+uint32_t records() { return recsRx; }
 } // namespace collector
 
+// The Arduino default (8 KB) is not enough on the CYD: the SD console's END path (loop -> pollConsole -> Console::finish ->
+// note -> elog -> sdlog::append -> FatFs) peaks near 8.3 KB since the capture-file protection was added, and overflowed the
+// stack ("Stack protection fault" on the first sdput END). 12 KB leaves about 4 KB of headroom for about 4 KB of internal RAM.
+// Not on the Waveshare: its internal RAM already sits at the 55 KB floor (the [mem] line below), so it keeps the 8 KB default.
+#if !(defined(WS_C5_35) || defined(WS_C5_28))
+SET_LOOP_TASK_STACK_SIZE(12*1024);
+#endif
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -726,7 +750,7 @@ void setup() {
         Serial.println("gfx->begin() FAILED");
         for (;;) delay(1000);
     }
-    gfx->fillScreen(RGB565_BLACK);
+    gfx->fillScreen(pal::VOID);
 
 #if defined(UMBRAVOX_SCAN_ENGINE)
     // The native engine composes the whole board-sized panel in bounded
@@ -1023,12 +1047,20 @@ static capturepaths::ActiveFiles activeCaptureFiles(){
  return a;
 }
 
+// THEME <n>: a development aid (like TEST and PERF): ask for theme n as if it had been picked in Settings. The draw path
+// applies it (it owns the settings); not saved. Lets a pack's load-on-select be exercised from the host.
+static volatile int consoleTheme = -1;
+
 // Returns true when REBOOT was received (loop() restarts the board).
 bool pollConsole() {
     static sdcmd::LineBuf lb;
     char reply[sdcmd::REPLY_CAP];
     if (sdio::console.tick(millis(), reply, sizeof reply)) Serial.println(reply);
+    const uint32_t sliceStart = millis();
+    uint32_t lastByte = sliceStart;
+    for (;;) {                                    // one pass; during an upload it repeats while chunks keep coming (sdcmd::pollAgain)
     while (Serial.available()) {
+        lastByte = millis();
         const sdcmd::LineBuf::Kind k = lb.feed((char)Serial.read());
         if (k == sdcmd::LineBuf::NONE) continue;
         if (k == sdcmd::LineBuf::OVERLONG) {
@@ -1081,6 +1113,10 @@ bool pollConsole() {
                 Serial.printf("discovery: busy=%u started=%lu completed=%lu failed=%lu omitted=%lu\n",(unsigned)discovery::busy(),(unsigned long)m.started,(unsigned long)m.completed,(unsigned long)m.failed,(unsigned long)m.omitted);
             } else if (!strcmp(line,"BRIDGE")) {
                 Serial.printf("bridge: %s\n",blebridge::status());
+            } else if (!strncmp(line, "THEME", 5)) {
+                const int n = atoi(line + 5);
+                if (n >= 0 && n < pal::themeCount()) { consoleTheme = n; Serial.printf("theme %d requested (%s)\n", n, pal::themeName((uint8_t)n)); }
+                else Serial.printf("THEME 0..%d\n", pal::themeCount() - 1);
             } else if (!strncmp(line, "TEST", 4)) {
                 testStep = 0;
                 testAt   = millis();
@@ -1093,6 +1129,8 @@ bool pollConsole() {
                      (unsigned long)tot, (unsigned long)mg, (unsigned long)vr,
                      (unsigned long)ln, (unsigned long)ns,
                      (unsigned long)meshcore::reportsRx());
+                logf("meshstat: coordinator batches=%lu records=%lu nodes carried=%d\n",
+                     (unsigned long)collector::batches(), (unsigned long)collector::records(), collector::carriedNodes());
             } else if (!strncmp(line, "WIGLE", 5)) {
                 // One file, two sources. Main owns the markers; the header
                 // lives in wigle.h so Serial and the SD file cannot disagree.
@@ -1187,6 +1225,9 @@ bool pollConsole() {
                               "SDPUT, SDDEL <path>, SDRMDIR <folder>, REBOOT)\n", line);
             }
         }
+    }
+    if (!sdcmd::pollAgain(sdio::console.uploading(), sliceStart, lastByte, millis())) break;
+    delay(1);                                     // let the other tasks run; the host's next chunk is on its way
     }
     return false;
 }
@@ -1563,6 +1604,7 @@ void loop() {
         const uint8_t own = meshcore::lossPct(), cl = collector::maxLossPct();
         s.meshLossPct = own > cl ? own : cl;
         s.meshCoords  = (uint8_t)collector::count();
+        s.meshCoordNodes = (uint16_t)collector::carriedNodes();
         s.netId       = mesh::netId;
         s.enrollSecs  = (uint8_t)enroll::secsLeft(millis());
     }
@@ -1580,10 +1622,12 @@ void loop() {
         // the first navTouch runs before the draw-time apply below. Same
         // task, before any draw, so this is safe.
         pal::setTheme(set.theme);
+        themeload::tick(set.theme, millis(), true);   // the saved theme's clip and sounds, before the first frame
         mesh::netId = prefs::netId(mesh::netId);   // NVS overrides the build default
         Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::netId,
                       mesh::netId == 0 ? " (open -- ENROLL to make a private net)" : "");
     }
+    if (consoleTheme >= 0) { set.theme = (uint8_t)consoleTheme; consoleTheme = -1; }   // THEME <n> from the console
 
     // tp was read at the TOP of the loop (before GPS/render); consumed here.
 
@@ -1830,6 +1874,7 @@ void loop() {
     constexpr uint32_t ALERT_MS = 6000;
     ui::AlertRec historyAlert;bool haveHistoryAlert=false;
     s.alertActive = false;
+    if (alertlog::takeLiveTestRequest()) { testStep = 0; testAt = millis(); }   // the OMENS test button: same sequence as the console TEST
     if (testAlert(s, millis())) {
         // a test alert is up; leave it alone
     } else if (set.alertMin != ui::CONF_OFF) {
@@ -1872,6 +1917,7 @@ void loop() {
                 // every few seconds would otherwise hold the screen on for
                 // as long as you were parked beside it.
                 wakeScreen = true;
+                sound::alertFor(set.theme, s.alertConf, set.sound);              // one beep pattern per level; a no-op off the Waveshare
             }
             const uint32_t a = millis() - startedAt;
             s.alertAge = (uint16_t)(a > 60000 ? 60000 : a);
@@ -2052,6 +2098,9 @@ void loop() {
         // decision itself runs every pass, above.)
         if (animOn) {
             if (animStep.enter) {
+                // The canvas is smaller than the panel on the Waveshare (320x240 doubled, in a 480x320 panel):
+                // blank the whole glass, or the border keeps the last UI frame around the animation.
+                gfx->fillScreen(pal::VOID);
                 canvas.clear(pal::VOID);
                 const ui::Rect all{0, 0, canvas.w, canvas.h};
                 blitRect(canvas.px, all);
@@ -2095,6 +2144,7 @@ void loop() {
     // edits `set`; the change takes effect here, at the top of the next draw.
     static uint8_t lastTheme = 0xFF;
     bool themeChanged = false;
+    themeload::tick(s.set.theme, millis());       // a pack's clip and sounds are read once its theme has stayed selected
     if (lastTheme != s.set.theme) {
         pal::setTheme(s.set.theme);
         lastTheme = s.set.theme;

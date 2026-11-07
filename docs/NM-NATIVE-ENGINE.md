@@ -4,7 +4,9 @@ Build target: `nm-cyd-c5-engine`. This target runs the same adaptive UI engine
 as the Waveshare targets at native 320x240 in landscape, including SCAN,
 DOMAIN, CODEX/details, Menu, settings, Files, Alerts and bundled themes.
 It enables the native bridge and capture/export paths. The existing
-`nm-cyd-c5` target retains the legacy 160x120 canvas at 2x.
+`nm-cyd-c5` target retains the legacy 160x120 canvas at 2x: that is the original UI, and it is what releases and the
+browser installer ship for the CYD. The engine target is opt-in (build it yourself); it costs about 9 KB of boot heap
+against the original UI.
 
 ## Board adapter
 

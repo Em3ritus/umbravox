@@ -1,4 +1,5 @@
 sim/umbravox
+sim/ws_preview_png
 sim/*.png
 # The simulator's default output name, if run from the repo root.
 /umbravox.png
@@ -154,6 +155,7 @@ sim/bridge_png
 /sim/test_storage_paths
 
 /sim/test_alert_history
+/sim/test_alert_gate
 
 /sim/test_oui_registry
 
@@ -169,3 +171,19 @@ __pycache__/
 
 # Standalone flashing-tool virtual environment
 .venv-flash/
+sim/test_scan_fx
+sim/test_radar_video
+sim/test_radarclip
+sim/test_alert_tone
+sim/test_soundpack
+sim/snd_check
+/sim/test_alert_takeover
+/sim/test_cosmic_clip
+/sim/test_mesh_timing_queue
+/sim/test_node_queue
+/sim/test_packmedia
+/sim/test_radar_window
+/sim/test_scan_layout
+/sim/test_sweep_styles
+/sim/test_sweep_tail
+/sim/test_theme_art

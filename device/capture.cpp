@@ -212,6 +212,9 @@ uint8_t rssiToDist(int8_t rssi) {
 // Runs on the WiFi task. Keep it short: no printf, no allocation, no blocking.
 void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     const wifi_promiscuous_pkt_t* p = (const wifi_promiscuous_pkt_t*)buf;
+    // rx_ctrl.channel is 4 bits wide and cannot hold a 5 GHz channel, so the parsers
+    // get the channel from our own hop state, as the beacon path below does.
+    const uint8_t rxChan = (uint8_t)chanAt(hop);
 #if defined(UMBRAVOX_SCAN_ENGINE)
     if(pcap::active() && type!=WIFI_PKT_MISC && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=14)
         pcap::receive(p->payload,p->rx_ctrl.sig_len-4,esp_timer_get_time());
@@ -219,7 +222,7 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
 #if defined(UMBRAVOX_SCAN_ENGINE)
     if(clientStore && (type==WIFI_PKT_MGMT || type==WIFI_PKT_DATA) && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=28){
         clients::Event e;
-        if(clients::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,p->rx_ctrl.channel,millis(),e)){
+        if(clients::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,rxChan,millis(),e)){
             portENTER_CRITICAL(&mux);clientStore->queue.push(e);portEXIT_CRITICAL(&mux);
         }
     }
@@ -227,8 +230,8 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
 #if defined(UMBRAVOX_SCAN_ENGINE)
     evidence::Event parsedEvidence;
     const bool haveEvidence=type==WIFI_PKT_MGMT && p->rx_ctrl.rx_state==0 && p->rx_ctrl.sig_len>=28 &&
-        evidence::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,p->rx_ctrl.channel,millis(),parsedEvidence);
-    if(haveEvidence && evidenceStore){
+        evidence::parse(p->payload,p->rx_ctrl.sig_len-4,(int8_t)p->rx_ctrl.rssi,rxChan,millis(),parsedEvidence);
+    if(haveEvidence && evidenceStore && evidence::wanted(parsedEvidence)){
         portENTER_CRITICAL(&mux);evidenceStore->queue.push(parsedEvidence);portEXIT_CRITICAL(&mux);
     }
 #endif
@@ -887,7 +890,7 @@ int bridgeNext(uint32_t& cursor, uint32_t& generation, bridgewire::Ap& out, uint
         portENTER_CRITICAL(&mux);
         if(cursor>=nOrder){portEXIT_CRITICAL(&mux);return -1;}
         const Node& nd=table_[order_[cursor++]];
-        if(uint32_t(now-nd.lastMs)>bridgewire::AP_FRESH_MS){++staleVisits;portEXIT_CRITICAL(&mux);continue;}
+        if(bridgewire::stale(now,nd.lastMs)){++staleVisits;portEXIT_CRITICAL(&mux);continue;}
         memcpy(out.mac,nd.mac,6);memcpy(out.ssid,nd.ssid,32);out.ssid[32]=0;
         out.rssi=nd.rssi;out.channel=nd.chan;out.auth=nd.auth;out.at=nd.lastMs;
         portEXIT_CRITICAL(&mux);return 1;

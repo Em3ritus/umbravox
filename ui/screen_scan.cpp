@@ -103,7 +103,7 @@ const char* screenName(uint8_t screen, bool plain) {
         case SCR_DETAIL:   return plain ? "DETAIL"   : "SIGHTING";
         case SCR_DOMAIN:   return plain ? "MAP"      : "DOMAIN";
         case SCR_MESH:     return "NODES";
-        case SCR_OMENS:    return plain ? "ALERTS"   : "ALERTS";
+        case SCR_OMENS:    return plain ? "ALERTS"   : "OMENS";
         case SCR_ECHOES:   return plain ? "PROBES"   : "ECHOES";
         case SCR_GRIMOIRE: return plain ? "MENU"     : "GRIMOIRE";
         case SCR_ATTUNE:   return plain ? "SETTINGS" : "ATTUNE";

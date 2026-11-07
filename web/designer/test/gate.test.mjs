@@ -31,3 +31,14 @@ test('when buildPack throws the gate blocks with its message', () => {
   const g2 = installGate(bad, null);
   assert.equal(g2.ok, false); assert.match(g2.reason, /void|colour/);
 });
+
+import { buildClip as _bc, CLIP_SIZE as _CS } from '../js/radarvideo.js';
+import { makeTemplate as _mt } from '../js/model.js';
+test('the gate passes a good clip and blocks a damaged one', () => {
+  const t = _mt('umbravox').theme;
+  const good = _bc([new Uint8Array(_CS * _CS).fill(3), new Uint8Array(_CS * _CS).fill(9)]);
+  assert.equal(installGate(t, null, good).ok, true);
+  const r = installGate(t, null, { ...good, w: 64 });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /102/);
+});

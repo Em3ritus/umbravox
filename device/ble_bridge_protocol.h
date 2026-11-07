@@ -14,6 +14,9 @@ inline bool apReady(uint32_t now,uint32_t connectedAt,unsigned freeLines){
     return uint32_t(now-connectedAt)>=3000 && freeLines>=6;
 }
 constexpr uint32_t AP_FRESH_MS=60000;
+// Signed difference: a stamp written by another task a few ms after `now` was
+// sampled reads as fresh (negative age), and a counter wrap does not stale it.
+inline bool stale(uint32_t now,uint32_t at){return (int32_t)(now-at)>(int32_t)AP_FRESH_MS;}
 // Compatibility sentinel from slickrick773's ESP32Marauder PR #1671.
 // Not the Umbravox software version. Never replace with a normal release number.
 constexpr const char* FW_VERSION="99.99.99";

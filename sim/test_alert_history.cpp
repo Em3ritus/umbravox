@@ -6,6 +6,11 @@
 #include <string>
 int main(int argc,char**argv){
  alertlog::clear();ui::State s;assert(alertlog::count()==0);
+ // The OMENS test button also asks the device to raise a live (never logged) test alert: one request, taken once.
+ assert(!alertlog::takeLiveTestRequest());
+ alertlog::pushTest(500);assert(!alertlog::takeLiveTestRequest());          // a history entry alone raises nothing
+ alertlog::requestLiveTest();assert(alertlog::takeLiveTestRequest());assert(!alertlog::takeLiveTestRequest());
+ alertlog::clear();
  alertlog::pushTest(1000);alertlog::fill(s,0,2000);
  assert(s.nOmens==1 && s.omens[0].test && s.omens[0].threat==ui::TH_NONE);
  assert(!s.omens[0].located && s.omens[0].epoch==0 && s.omens[0].agoS==1);

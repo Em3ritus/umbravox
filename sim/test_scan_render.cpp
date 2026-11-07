@@ -80,10 +80,18 @@ int main(){
         const HeroSub hs = heroSub(hr);
         snprintf(m,sizeof m,"%dx%d field clears the channel header (no border/text collision)",W,H);
         expect(hs.field.y >= hr.y+(W>=400?27:12), m);
+        if (W>=400) {   // layout A: the spectrum lives in the right-hand column, clear of the radar square
+            const auto rb=radarBounds(W,H);
+            snprintf(m,sizeof m,"%dx%d spectrum sits in the right column (no overlap with the radar)",W,H);
+            expect(hs.spectrum.x >= rb.x+rb.w && hs.spectrum.x+hs.spectrum.w <= hr.x+hr.w, m);
+            snprintf(m,sizeof m,"%dx%d tallest spectrum bar stays inside the hero",W,H);
+            expect(hs.barBase - hs.barMax >= hr.y, m);
+        } else {
         snprintf(m,sizeof m,"%dx%d spectrum sits below the field (no overlap)",W,H);
         expect(hs.spectrum.y >= hs.field.y+hs.field.h, m);
         snprintf(m,sizeof m,"%dx%d tallest spectrum bar stays below the field (no intrusion)",W,H);
         expect(hs.barBase - hs.barMax >= hs.field.y+hs.field.h, m);
+        }
 
         // rendered coverage: the compositor paints one bar per channel (21)
         snprintf(m,sizeof m,"%dx%d spectrum renders all %d bars (one per channel)",W,H,kChannels);

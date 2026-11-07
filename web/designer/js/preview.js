@@ -4,12 +4,18 @@
 import { buildPack } from './pack.js';
 import { sweepId, startSweep } from './model.js';
 
-export const W = 160, H = 120;
-export const SCREENS = { scan: 0, mesh: 1, alert: 2, menu: 3 };
+// The boards the preview can draw. cyd: the 320x240 screen at half scale (the legacy canvas path). waveshare: the 3.5"
+// 480x320 engine UI at full size (ui/preview_ws.h through uv_render_ws).
+export const BOARDS = {
+  cyd: { id: 'cyd', name: 'CYD 2.8" (320x240)', w: 160, h: 120, screens: ['scan', 'mesh', 'alert', 'menu'] },
+  waveshare: { id: 'waveshare', name: 'Waveshare 3.5" (480x320)', w: 480, h: 320, screens: ['scan', 'mesh', 'alert', 'menu', 'aspect'] },
+};
+export const W = BOARDS.cyd.w, H = BOARDS.cyd.h;     // the original exports: the CYD
+export const SCREENS = { scan: 0, mesh: 1, alert: 2, menu: 3, aspect: 4 };
+export const ALERT_CONFS = { low: 0, med: 1, high: 2 };
 
 // M is the instantiated emscripten module (the default export's factory, awaited).
 export function createPreview(M) {
-  const n = W * H * 4;
   let draft = null;          // {id, sweep} of the last pack the device code accepted
 
   const withBytes = (bytes, fn) => {
@@ -19,24 +25,38 @@ export function createPreview(M) {
     try { return fn(ptr, len); } finally { if (len) M._free(ptr); }
   };
 
-  function paint(theme, screen, frame, sweep) {
-    const ptr = M._malloc(n);
+  const hasWs = typeof M._uv_render_ws === 'function';
+
+  // opts: {board: 'cyd' (default) | 'waveshare', alertConf: 'low' | 'med' | 'high' (Waveshare only; default high)}.
+  function paint(theme, screen, frame, sweep, opts = {}) {
+    const board = opts.board ?? 'cyd';
+    const b = BOARDS[board];
+    if (!b || (board === 'waveshare' && !hasWs)) throw new Error('unknown board ' + board);
+    if (!b.screens.includes(screen)) throw new Error(`the ${board} preview has no ${screen} screen`);
+    const conf = ALERT_CONFS[opts.alertConf ?? 'high'];
+    if (conf === undefined) throw new Error('unknown alertConf ' + opts.alertConf);
+    const bytes = b.w * b.h * 4;
+    const ptr = M._malloc(bytes);
     try {
       // Alert style is left to the theme: a pack plays the one rite its theme.json names.
-      M._uv_render(theme, SCREENS[screen] ?? 0, frame, sweep, -1, ptr);
-      return M.HEAPU8.slice(ptr, ptr + n);
+      if (board === 'waveshare') M._uv_render_ws(theme, SCREENS[screen], frame, sweep, -1, conf, ptr);
+      else M._uv_render(theme, SCREENS[screen], frame, sweep, -1, ptr);
+      return M.HEAPU8.slice(ptr, ptr + bytes);
     } finally { M._free(ptr); }
   }
 
   return {
     // Try a draft. {ok:true, id} on success; {ok:false, error} otherwise, and the
     // previous good draft stays on screen.
-    loadDraft(theme, emblem) {
+    // clip: an optional radar clip (js/radarvideo.js buildClip), loaded with the pack exactly as the board reads radar.vid.
+    loadDraft(theme, emblem, clip = null) {
       let pack;
-      try { pack = buildPack(theme, emblem); } catch (e) { return { ok: false, error: e.message }; }
-      const json = pack.files[0].data;
-      const emb = pack.files.length > 1 ? pack.files[1].data : null;
-      const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => M._uv_load_pack(jp, jl, ep, el)));
+      try { pack = buildPack(theme, emblem, clip); } catch (e) { return { ok: false, error: e.message }; }
+      const named = (n) => pack.files.find((f) => f.path.endsWith('/' + n));
+      const json = named('theme.json').data;
+      const emb = named('emblem.bin') ? named('emblem.bin').data : null;
+      const vid = named('radar.vid') ? named('radar.vid').data : null;
+      const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => withBytes(vid, (cp, cl) => M._uv_load_pack(jp, jl, ep, el, cp, cl))));
       if (id < 0) return { ok: false, error: M.UTF8ToString(M._uv_error()) };
       // Only ever a sweep the pack offers.
       const name = startSweep(theme);
@@ -44,13 +64,15 @@ export function createPreview(M) {
       return { ok: true, id };
     },
     hasDraft: () => draft !== null,
-    // One frame of the current draft as 160x120 RGBA.
-    renderDraft(screen, frame) {
+    // The boards this build of the wasm can draw ('waveshare' needs uv_render_ws).
+    boards: () => (hasWs ? ['cyd', 'waveshare'] : ['cyd']),
+    // One frame of the current draft as RGBA: 160x120 for the CYD, 480x320 for the Waveshare.
+    renderDraft(screen, frame, opts) {
       if (!draft) throw new Error('no draft loaded');
-      return paint(draft.id, screen, frame, draft.sweep);
+      return paint(draft.id, screen, frame, draft.sweep, opts);
     },
     // One frame of a built-in (0 UMBRAVOX, 1 BAPH0MAU5, 2 COSMIC MUFFIN).
-    renderBuiltin(id, screen, frame) { return paint(id, screen, frame, -1); },
+    renderBuiltin(id, screen, frame, opts) { return paint(id, screen, frame, -1, opts); },
   };
 }
 

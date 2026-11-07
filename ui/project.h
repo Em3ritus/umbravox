@@ -12,6 +12,7 @@
 #include "oui.h"
 #include "model.h"
 #include "scan_present.h"
+#include "radar_clip.h"
 #include "domain_present.h"
 #include "codex_present.h"
 #include "menu_present.h"
@@ -55,10 +56,12 @@ inline void contactKey(char* o, int n, uint8_t band, const uint8_t* m) {
 }
 
 // --- SCAN --------------------------------------------------------------------
-inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) {
+// showAlert=false hides a dismissed alert (ui/alert_gate.h): the device still counts it as active.
+inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c, bool showAlert = true) {
     st.begin(s.set.theme, c.now);
+    st.video(radarclip::videoFor(s.set.theme));        // the theme pack's radar.vid, if it has one (wide panels draw it)
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     st.bridge(s.set.bleBridge!=0);
     st.counts(s.nets24, s.nets5, s.ble);
     char ch[16]; snprintf(ch, sizeof ch, "CH %02u", (unsigned)s.chan);
@@ -68,6 +71,12 @@ inline void scan(scanpres::SceneStore& st, const ui::State& s, const Chrome& c) 
     for (int i = 0; i < s.nContacts; i++) {
         const ui::Contact& k = s.contacts[i];
         st.addBlip(k.angle, k.dist, k.band, c.now - (uint32_t)k.age * 240u);
+    }
+    if (showAlert && s.alertActive && s.alertThreat != ui::TH_NONE) {
+        scanr::AlertScene a; a.active = true; a.threat = s.alertThreat; a.conf = s.alertConf; a.style = s.set.alertStyle; a.age = s.alertAge;
+        snprintf(a.label, sizeof a.label, "%s", ui::threatName(s.alertThreat));
+        snprintf(a.name, sizeof a.name, "%s", s.alertName); snprintf(a.why, sizeof a.why, "%s", s.alertWhy);
+        st.alert(a);
     }
 }
 
@@ -85,7 +94,7 @@ inline bool decodeContactKey(const char* key, bool& ble, uint8_t* mac) {
     ble=key[0]=='b';return true;
 }
 inline void domain(dompres::DomainStore& st, const ui::State& s, const Chrome& c, int W=480, int H=320) {
-    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(ui::nodesLive(s),c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     const auto layout=uieng::domain(W,H);
     const int radius=domr::radarGeom(layout.map).r;
     auto scale=[&](int x){if(!s.plotRadius || s.plotRadius==radius)return x;
@@ -104,7 +113,7 @@ inline void domain(dompres::DomainStore& st, const ui::State& s, const Chrome& c
     st.page(n?1:0,n,s.totalSights);
 }
 inline void codex(codpres::CodexStore& st, const ui::State& s, const Chrome& c, int W=480, int H=320) {
-    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(s.nNodes,c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));st.filter(s.filter);
+    st.begin(s.set.theme,c.now);st.gps(c.gps);st.status(ui::nodesLive(s),c.hasCell,c.batt,c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));st.filter(s.filter);
     const int n=std::min((int)s.nSights,uieng::codex(W,H).nRows);
     for(int i=0;i<n;++i){const auto& row=s.sights[i];char key[20];contactKey(key,sizeof key,row.band,row.mac);
         st.addRow(key,row.ssid,row.band,row.rssi,row.chan,false);}
@@ -115,7 +124,7 @@ inline void codex(codpres::CodexStore& st, const ui::State& s, const Chrome& c, 
 inline void menu(menpres::MenuStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     st.labels(s.set.labels != 0);
 }
 
@@ -123,8 +132,8 @@ inline void menu(menpres::MenuStore& st, const ui::State& s, const Chrome& c) {
 inline void mesh(mshpres::MeshStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
-    st.header(s.meshCoords, s.coreCamping, s.coreChan, s.meshLossPct, s.netId, s.enrollSecs);
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.header(s.meshCoords, s.coreCamping, s.coreChan, s.meshLossPct, s.netId, s.enrollSecs); st.coordNodes(s.meshCoordNodes);
     for (int i = 0; i < s.nNodes && i < ui::MAX_NODE_ROWS; i++)
         st.addNode(s.nodes[i].id, s.nodes[i].ageS, s.nodes[i].lossPct, s.nodes[i].live,s.nodes[i].diag);
     st.page(s.meshPage);st.local(s.localDiag);
@@ -135,7 +144,7 @@ inline void mesh(mshpres::MeshStore& st, const ui::State& s, const Chrome& c) {
 inline void omens(omnpres::OmenStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     st.total(s.omenTotal);st.level(s.set.alertMin);
     for (int i = 0; i < s.nOmens; i++)
         st.addRow(s.omens[i].test?"TEST ALERT":ui::threatName(s.omens[i].threat), s.omens[i].name, s.omens[i].conf, s.omens[i].agoS, s.omens[i].located,s.omens[i].test,s.omens[i].id);
@@ -145,7 +154,7 @@ inline void omens(omnpres::OmenStore& st, const ui::State& s, const Chrome& c) {
 inline void echoes(echpres::EchoStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     st.totals(s.echoTotal, s.echoClients);st.page(s.scroll,s.echoDrops,s.echoEvicted,s.echoAvailable);
     for (int i = 0; i < s.nEchoes; i++) {
         const auto& e=s.echoes[i];char who[18],link[40]="";macStr(who,e.mac);
@@ -184,7 +193,7 @@ inline void attuneKnob(const ui::Settings& st, int knob, char* lbl, int ln, char
 inline void attune(atnpres::AttuneStore& st, const ui::State& s, const Chrome& c, int page, int rowsPerPage) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     if (rowsPerPage < 1) rowsPerPage = 1;
     const int pages = (uieng::kAttuneKnobs + rowsPerPage - 1) / rowsPerPage;
     if (page < 0) page = 0; else if (page >= pages) page = pages - 1;
@@ -217,7 +226,7 @@ inline void aspect(asppres::AspectStore& st, const ui::State& s, const Chrome& c
     st.begin(s.set.theme, c.now);
     st.labels(s.set.labels!=0);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     const bool live = (s.set.theme == pal::TH_COSMICMUFFIN);
     st.appearance(pal::themeName(s.set.theme), sweepName(s.set.sweep),
                   alertStyleName(s.set.theme, s.set.alertStyle), live, s.packsSkipped);
@@ -227,7 +236,7 @@ inline void aspect(asppres::AspectStore& st, const ui::State& s, const Chrome& c
 inline void detail(detpres::DetailStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     const ui::Detail& v = s.detail;
     if (!v.valid) { st.device(false, "", "", "", 0, 0, "", false, "", 0, "", "", ""); return; }
     char mac[18]; macStr(mac, v.mac);
@@ -278,7 +287,7 @@ inline void fmtBytes(char* o, int n, uint32_t b) {
 inline void files(flspres::FilesStore& st, const ui::State& s, const Chrome& c) {
     st.begin(s.set.theme, c.now);
     st.gps(c.gps);
-    st.status(s.nNodes, c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
+    st.status(ui::nodesLive(s), c.hasCell, c.batt, c.rec); st.header(s.set.bleBridge!=0,c.pmuOk,c.charging); st.poi(c.poi);st.storage(ui::storageState(s.sdOk,s.sdWriteError));
     const int visSel = (s.fileSel >= s.fileScroll && s.fileSel < s.fileScroll + s.nFileRows) ? (s.fileSel - s.fileScroll) : -1;
     const bool deletable = (s.fileSel >= 0 && s.fileSel != s.fileActive);
     st.list(s.fileCard, s.fileTotal, s.fileScroll, visSel, deletable);

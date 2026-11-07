@@ -3,8 +3,14 @@
 // Everything a pack decides goes through ui/themepack (host-tested): this file
 // lists, measures and reads files, backs the boot-loop guard's GuardKv with
 // Preferences, and hands parsed packs to pal::addPack. Every buffer is fixed:
-// the folder list, the theme.json buffer, and at most MAX_PACKS emblem buffers
-// of MAX_EMBLEM bytes each in PSRAM. Nothing is sized from a file.
+// the folder list, the theme.json buffer, at most MAX_PACKS emblem buffers of MAX_EMBLEM bytes each in PSRAM, and ONE
+// radar clip buffer (MAX_CLIP) and ONE alert sound buffer (MAX_SOUND) in PSRAM. Nothing else is sized from a file.
+//
+// A pack's radar.vid and alert.snd are NOT read at boot: scan() registers the pack (theme.json, emblem) and remembers
+// where its clip and sounds are. tick() reads them from the card when the pack's theme is selected, into the two fixed
+// buffers, and drops them when another theme is selected (the decisions are packmedia::Controller, host-tested). So the
+// card can hold more packs than PSRAM could hold clips. That read is bracketed by the same boot-loop guard record as a
+// boot-time load: a reset during it skips the pack on the next boot.
 //
 // Buffer capacities are never passed by hand: every helper that fills a
 // buffer takes it as an array reference (char (&)[N]) and derives N itself,
@@ -24,6 +30,9 @@
 #include "elog.h"
 #include "palette.h"
 #include "themepack.h"
+#include "packmedia.h"
+#include "board.h"
+#include "sound.h"
 
 namespace themeload {
 namespace {
@@ -51,7 +60,7 @@ uint16_t nSeen = 0;                          // valid-named folders listed
 // what Wi-Fi and BLE run out of.
 struct Scratch {
     char     names[MAX_FOLDERS][32];
-    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS];
+    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS], sndSz[MAX_FOLDERS];
     union {
         uint8_t      json[MAX_JSON];
         GuardScratch guard;
@@ -67,6 +76,18 @@ Scratch* S = nullptr;
 // it, so at most MAX_PACKS buffers are ever allocated.
 Emblem      emblems[MAX_PACKS];
 uint8_t*    spare = nullptr;
+
+// Where each registered pack's clip and sounds are, by pack slot (pal::packSlot). PSRAM, allocated by scan(): they are
+// read only when a theme is selected.
+struct PackMedia { char folder[32]; uint32_t clipSz, sndSz, total; uint8_t id; };
+PackMedia* media = nullptr;
+packmedia::Controller<MAX_PACKS> ctl;        // which pack's media is resident, and when to swap (host-tested)
+// The one resident pack's media. pal keeps the Clip/Sound POINTERS, and px / pcm point into these buffers, which are
+// allocated at the first load and then reused (never freed: no PSRAM fragmentation), each at its format's maximum size.
+uint8_t*    clipBuf = nullptr;
+uint8_t*    sndBuf = nullptr;
+Clip        clipNow;
+Sound       sndNow;
 
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
@@ -135,11 +156,13 @@ void measure() {
     for (int i = 0; i < nNames; i++) {
         S->jsonSz[i] = pathOf(path, S->names[i], "theme.json") ? sdlog::sizeOf(path) : 0;
         S->embSz[i]  = pathOf(path, S->names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
+        S->clipSz[i] = pathOf(path, S->names[i], "radar.vid")  ? sdlog::sizeOf(path) : 0;
+        S->sndSz[i]  = pathOf(path, S->names[i], "alert.snd")  ? sdlog::sizeOf(path) : 0;
     }
 }
 
 uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot wrap it
-    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i];
+    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i] + S->sndSz[i];   // an edited clip gives the pack another try
     return t > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)t;
 }
 
@@ -185,7 +208,78 @@ const Emblem* loadEmblem(const char* folder, uint32_t size, char (&why)[WHY_CAP]
     return &e;
 }
 
-bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]) {
+// A pack's media is read in slices, one per pass of the main loop, so the screen keeps updating during the ~2 s a switch
+// takes (the SD shares the display's SPI bus, so a slice is also a pause in drawing: keep it short).
+constexpr uint32_t SLICE = 16384;                 // ~35 ms at the card's ~460 KB/s
+
+struct Load {
+    bool active = false;
+    int  slot = packmedia::NONE;
+    packmedia::Progress prog;
+    bool clipOk = false, sndOk = false;           // file read in full and still wanted
+    uint32_t t0 = 0;
+} job;
+
+// Parse a file once it has been read in full; logs why a file is left out.
+void finishFile(const PackMedia& m, int file) {
+    char safe[32], why[WHY_CAP] = "";
+    logSafe(safe, m.folder);
+    if (file == 0) {
+        char cwhy[48];
+        if (parseClip(clipBuf, m.clipSz, clipNow, cwhy, capOf(cwhy))) job.clipOk = true;
+        else { setWhy(why, "%s", cwhy); elog::event(elog::WARN, "theme", "%s: radar clip not used: %s", safe, why); }
+    } else {
+        char swhy[48];
+        if (parseSound(sndBuf, m.sndSz, sndNow, swhy, capOf(swhy))) job.sndOk = true;
+        else { setWhy(why, "%s", swhy); elog::event(elog::WARN, "theme", "%s: alert sounds not used: %s", safe, why); }
+    }
+}
+
+// Open the load: set the guard record (what a reset during the read leaves behind for the next boot), size the buffers.
+// False: nothing can be loaded (logged), no record left.
+bool beginLoad(const PackMedia& m, int slot) {
+    char safe[32];
+    logSafe(safe, m.folder);
+    char rec[BAD_REC];
+    formatLoading(rec, capOf(rec), m.folder, m.total);
+    if (!nvs.begin(NS, /*readOnly=*/false)) { elog::event(elog::WARN, "theme", "%s: media not loaded, NVS unavailable", safe); return false; }
+    const bool set = guardSet(KV, cur, rec);
+    nvs.end();
+    if (!set) { elog::event(elog::WARN, "theme", "%s: media not loaded, could not set the guard", safe); return false; }
+    uint32_t cs = packmedia::clipBytes(m.clipSz, board::PANEL_W), ss = m.sndSz;   // a narrow panel never draws the clip: do not read it
+    if (cs > MAX_CLIP)  { elog::event(elog::WARN, "theme", "%s: radar clip not used: radar.vid over %u bytes", safe, (unsigned)MAX_CLIP); cs = 0; }
+    if (ss > MAX_SOUND) { elog::event(elog::WARN, "theme", "%s: alert sounds not used: alert.snd over %u bytes", safe, (unsigned)MAX_SOUND); ss = 0; }
+    if (cs && !clipBuf) clipBuf = (uint8_t*)heap_caps_malloc(MAX_CLIP, MALLOC_CAP_SPIRAM);
+    if (ss && !sndBuf)  sndBuf  = (uint8_t*)heap_caps_malloc(MAX_SOUND, MALLOC_CAP_SPIRAM);
+    if (cs && !clipBuf) { elog::event(elog::WARN, "theme", "%s: radar clip not used: no PSRAM", safe); cs = 0; }
+    if (ss && !sndBuf)  { elog::event(elog::WARN, "theme", "%s: alert sounds not used: no PSRAM", safe); ss = 0; }
+    job.prog.start(cs, ss);
+    job.active = true; job.slot = slot; job.clipOk = job.sndOk = false; job.t0 = millis();
+    return true;
+}
+
+// One slice. True when the load has ended (every file read, or given up on).
+bool stepLoad(const PackMedia& m) {
+    if (job.prog.done()) return true;
+    const packmedia::Progress::Slice sl = job.prog.next(SLICE);
+    char path[PATH_CAP];
+    uint8_t* dst = sl.file == 0 ? clipBuf : sndBuf;
+    const uint32_t total = sl.file == 0 ? m.clipSz : m.sndSz;
+    const bool ok = pathOf(path, m.folder, sl.file == 0 ? "radar.vid" : "alert.snd")
+                 && sdlog::readAt(path, sl.off, dst + sl.off, sl.len) == sl.len;
+    if (!ok) {
+        char safe[32];
+        logSafe(safe, m.folder);
+        elog::event(elog::WARN, "theme", "%s: %s could not be read", safe, sl.file == 0 ? "radar.vid" : "alert.snd");
+        job.prog.skipFile();
+        return job.prog.done();
+    }
+    job.prog.advance(sl.len);
+    if (sl.off + sl.len == total) finishFile(m, sl.file);
+    return job.prog.done();
+}
+
+bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, uint32_t packTotal, char (&why)[WHY_CAP]) {
     static_assert(std::extent<std::remove_reference_t<decltype(std::declval<Scratch&>().buf.json)>>::value
                   == MAX_JSON, "theme.json buffer");
     char path[PATH_CAP];
@@ -208,11 +302,18 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, char (&why)[WHY_CAP]
     Pack probe = p;                          // addPack sanitises its own copy
     if (sanitizeStatus(probe))
         elog::event(elog::WARN, "theme", "%s: status colours too faint, replaced", folder);
-    const int id = pal::addPack(p, em);
+    const int id = pal::addPack(p, em);      // no clip or sounds yet: tick() attaches them when this theme is selected
     if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); return false; }
+    const int slot = pal::packSlot((uint8_t)id);
+    if (media && slot >= 0 && (cs > 0 || ss > 0)) {
+        PackMedia& m = media[slot];
+        snprintf(m.folder, sizeof m.folder, "%s", folder);
+        m.clipSz = cs; m.sndSz = ss; m.total = packTotal; m.id = (uint8_t)id;
+        ctl.setHasMedia(slot, true);
+    }
     taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
-    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d", folder, p.name, id);
+    elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s%s", folder, p.name, id, cs ? " with a radar clip" : "", ss ? " with alert sounds" : "");
     return true;
 }
 
@@ -226,12 +327,14 @@ void visit(int i) {
     if (nTaken >= MAX_PACKS) { skip(folder, admitWhy(ADMIT_FULL)); return; }
     if (S->jsonSz[i] == 0) { skip(folder, "no theme.json"); return; }
     if (S->jsonSz[i] > MAX_JSON) { skip(folder, "theme.json over 4096 bytes"); return; }
+    if (S->clipSz[i] > MAX_CLIP) { skip(folder, "radar.vid over 780312 bytes"); return; }
+    if (S->sndSz[i] > MAX_SOUND) { skip(folder, "alert.snd over 576020 bytes"); return; }
 
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), folder, total);
     if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
     char why[WHY_CAP] = "unknown";
-    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], why);
+    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], total, why);
     guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }
@@ -250,6 +353,10 @@ void scan() {
         return;
     }
     S = new (p) Scratch();
+    if (!media) {                             // PSRAM, one entry per pack slot; without it packs load but carry no clip or sounds
+        media = (PackMedia*)heap_caps_calloc(MAX_PACKS, sizeof(PackMedia), MALLOC_CAP_SPIRAM);
+        if (!media) elog::event(elog::WARN, "theme", "no PSRAM for the pack media table: clips and sounds disabled");
+    }
     scanWith();
     S->~Scratch();
     heap_caps_free(p);
@@ -286,5 +393,42 @@ void scanWith() {
 }
 
 uint8_t skipped() { return nSkipped; }
+
+void tick(uint8_t themeId, uint32_t nowMs, bool immediate) {
+    if (!media) return;
+    ctl.want(pal::packSlot(themeId), nowMs, immediate);
+    if (job.active) {                                // a load in progress: one more slice (all of them at boot)
+        const PackMedia& m = media[job.slot];
+        bool end = stepLoad(m);
+        while (immediate && !end) end = stepLoad(m);
+        if (!end) return;
+        if (nvs.begin(NS, /*readOnly=*/false)) { guardClear(KV, cur); nvs.end(); }   // read (or cleanly refused): nothing in flight
+        job.active = false;
+        const bool ok = job.clipOk || job.sndOk;
+        if (ok) {
+            pal::setPackMedia(m.id, job.clipOk ? &clipNow : nullptr, job.sndOk ? &sndNow : nullptr);
+            char safe[32];
+            logSafe(safe, m.folder);
+            elog::event(elog::INFO, "theme", "%s: media loaded in %u ms (clip %u B, sounds %u B)", safe,
+                        (unsigned)(millis() - job.t0), (unsigned)(job.clipOk ? m.clipSz : 0), (unsigned)(job.sndOk ? m.sndSz : 0));
+        }
+        ctl.done(packmedia::Step{packmedia::Step::LOAD, job.slot}, ok);
+        return;
+    }
+    for (int step = 0; step < 2; step++) {           // a switch is an UNLOAD then the start of a LOAD
+        const packmedia::Step st = ctl.next(nowMs);
+        if (st.kind == packmedia::Step::NOTHING) return;
+        if (sound::playing()) return;                // its samples are in the buffer about to be replaced: next frame
+        const PackMedia& m = media[st.slot];
+        if (st.kind == packmedia::Step::UNLOAD) {
+            pal::setPackMedia(m.id, nullptr, nullptr);
+            ctl.done(st, true);
+            continue;
+        }
+        if (!beginLoad(m, st.slot)) { ctl.done(st, false); return; }
+        if (immediate) tick(themeId, nowMs, true);   // boot: run the whole load now
+        return;
+    }
+}
 
 } // namespace themeload

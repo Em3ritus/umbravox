@@ -35,6 +35,55 @@ public:
         }
         std::memcpy(back_+y0*w_,pixels,w_*count*sizeof(uint16_t));
     }
+    // Stage ONLY the columns [x0,x0+bw) of rows [y0,y0+count): `pixels` holds just those columns, packed.
+    // The rest of the back frame keeps what it had, so this is valid only after a presented frame.
+    void stageWindow(int y0, const uint16_t* pixels, int count, int x0, int bw) {
+        for (int y=y0; y<y0+count; ++y) {
+            const uint16_t* src=pixels+(y-y0)*bw;
+            const uint16_t* old=front_+y*w_+x0;
+            int lo=0,hi=bw;
+            if (valid_) {
+                if (std::memcmp(old,src,bw*sizeof(uint16_t))==0) hi=0;
+                else {
+                    while(lo<hi && old[lo]==src[lo]) ++lo;
+                    while(hi>lo && old[hi-1]==src[hi-1]) --hi;
+                }
+            }
+            if (h_ <= MaxRows) { left_[y]=x0+lo; right_[y]=hi?x0+hi:0; }
+            std::memcpy(back_+y*w_+x0,src,bw*sizeof(uint16_t));
+        }
+        if (h_ <= MaxRows) staged_=true;
+    }
+    // Stage one dirty REGION (columns [x0,x0+bw) of rows [y0,y0+count), packed in `pixels`). Unlike
+    // stageWindow, each region keeps its own changed bounding box, so a frame that touches a count tile, the
+    // radar and the spectrum sends three small rectangles instead of one that spans them. Valid only after
+    // a presented frame. The rest of the back frame keeps what it had.
+    // `id` names the region (its index in the engine's list). Without it, regions sharing a left edge and width are
+    // merged, so two bands at the top and bottom of the screen would grow into one full-height rectangle.
+    void stageRegion(int y0, const uint16_t* pixels, int count, int x0, int bw, int id = -1) {
+        Reg* r = nullptr;
+        for (auto& q : regs_) if (q.used && q.x0 == x0 && q.bw == bw && q.id == id) { r = &q; break; }
+        if (!r) for (auto& q : regs_) if (!q.used) { q = Reg{}; q.used = true; q.id = id; q.x0 = x0; q.bw = bw; q.lo = x0 + bw; q.hi = x0; q.top = h_; q.bottom = 0; r = &q; break; }
+        if (!r) r = &regs_[MaxReg - 1];                       // more regions than slots cannot happen (the engine caps at 12)
+        for (int y = y0; y < y0 + count; ++y) {
+            const uint16_t* src = pixels + (y - y0) * bw;
+            const uint16_t* old = front_ + y * w_ + x0;
+            int lo = 0, hi = bw;
+            if (valid_) {
+                if (std::memcmp(old, src, bw * sizeof(uint16_t)) == 0) hi = 0;
+                else { while (lo < hi && old[lo] == src[lo]) ++lo; while (hi > lo && old[hi-1] == src[hi-1]) --hi; }
+            }
+            if (hi > lo) {
+                if (x0 + lo < r->lo) r->lo = x0 + lo;
+                if (x0 + hi > r->hi) r->hi = x0 + hi;
+                if (y < r->top) r->top = y;
+                if (y + 1 > r->bottom) r->bottom = y + 1;
+            }
+            std::memcpy(back_ + y * w_ + x0, src, bw * sizeof(uint16_t));
+        }
+        staged_ = true;
+    }
+    bool valid() const { return valid_; }
     uieng::Rect changed(uieng::Rect r) const {
         if (!valid_) return r;
         int x0 = r.x+r.w, y0 = r.y+r.h, x1 = r.x, y1 = r.y;
@@ -61,6 +110,15 @@ public:
             }
         } else emit({0,44,w_,h_-88},send);
         emit({0,h_-44,w_,44},send);
+        for (auto& q : regs_) {                                   // staged regions: one rectangle each
+            if (!q.used) continue;
+            if (q.hi > q.lo && q.bottom > q.top) {
+                const uieng::Rect r{q.lo, q.top, q.hi - q.lo, q.bottom - q.top};
+                send(r, back_, w_);
+                for (int y = r.y; y < r.y + r.h; ++y) std::memcpy(front_ + y*w_ + r.x, back_ + y*w_ + r.x, r.w * sizeof(uint16_t));
+            }
+            q.used = false;
+        }
         valid_=true;
         clearStaged();
     }
@@ -89,8 +147,12 @@ private:
     static constexpr int MaxRows=320;
     uint16_t left_[MaxRows]{},right_[MaxRows]{};
     bool staged_=false;
+    struct Reg { int x0=0, bw=0, lo=0, hi=0, top=0, bottom=0, id=-1; bool used=false; };
+    static constexpr int MaxReg = 12;
+    Reg regs_[MaxReg];
     void clearStaged() {
         staged_=false;
+        for (auto& q : regs_) q.used = false;
         for(int y=0;y<std::min(h_,MaxRows);++y){left_[y]=w_;right_[y]=0;}
     }
     int compareY0_=0,compareY1_=0;

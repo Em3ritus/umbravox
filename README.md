@@ -6,8 +6,8 @@ Discover Wi-Fi and Bluetooth LE devices, inspect networks, map observations,
 and save captures for analysis. Run standalone, connect to a phone app, or
 expand coverage with coordinated scanning nodes.
 
-[Install in your browser](https://slickrick773.github.io/umbravox/) ·
-[Published prerelease and downloads](https://github.com/slickrick773/umbravox/releases/tag/f963f3a)
+[Install in your browser](https://em3ritus.github.io/umbravox/) ·
+[Latest release and downloads](https://github.com/Em3ritus/umbravox/releases/latest)
 
 ![Native UMBRAVOX SCAN and CODEX, side by side](docs/native-ui-preview.png)
 
@@ -18,27 +18,26 @@ demonstration data. These are not hardware photographs.
 
 | Board | Native UI | Current hardware evidence |
 | --- | --- | --- |
-| Waveshare ESP32-C5-Touch-LCD-3.5 | 480×320 | Browser installation, all four image hashes, and boot confirmed |
-| Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed |
-| NerdMinder NM-CYD-C5 | 320×240 shared engine | Earlier firmware flashing and operation confirmed; latest build compile-checked |
+| Waveshare ESP32-C5-Touch-LCD-3.5 (reference board) | 480×320 | Browser installation, all four image hashes, and boot confirmed; the current source is also tested on this board |
+| Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed on the earlier prerelease; the current source is compile-checked only |
+| NerdMinder NM-CYD-C5 | 320×240, the original UI | Current source flashed with PlatformIO, 12 of 12 clean boots; the browser install of this image is not yet run |
 
-Current firmware packages use source `a66bd3b` and include matching source snapshots.
-The retained prerelease tag `f963f3a` identifies the original release source;
-the release notes identify current firmware and installer revisions separately.
-Latest hardware follow-up covers the Waveshare 3.5-inch WDGO fixes, ten XIAO nodes,
-and a fifteen-minute stationary mesh/bridge observation. Latest Waveshare 2.8-inch
-and NM images are compile-checked; earlier images have the hardware evidence above.
+Each release's firmware packages carry the commit they were built from and a source snapshot
+(`manifest.json`, `SHA256SUMS.txt`); the release notes say which commit that is. The evidence in the table above is
+from the earlier prerelease published by slickrick773. Hardware testing of the current source so far: the
+Waveshare 3.5-inch handheld with a XIAO ESP32-C5 node and a Waveshare ESP32-C5 dev-kit coordinator (flashed with esptool;
+the browser installer has not yet been run on the current build), and the NM-CYD-C5 (original UI, flashed with PlatformIO). The 2.8-inch image is compile-checked only.
 See [node validation](docs/XIAO-NODE-VALIDATION.md) and
 [GPS recovery](docs/FLASHING-TOOLS.md#external-gps-after-flashing) for boundaries.
 
 ## Installation
 
-Use desktop Chrome or Edge, a USB data cable, and the [browser installer](https://slickrick773.github.io/umbravox/).
-Select your exact board: Waveshare 3.5″, Waveshare 2.8″, or NM-CYD-C5.
+Use desktop Chrome or Edge, a USB data cable, and the [browser installer](https://em3ritus.github.io/umbravox/).
+Select your exact board: Waveshare 3.5″, Waveshare 2.8″, or NM-CYD-C5 (which keeps the original UI).
 After all four images verify, press RESET without holding BOOT.
 
-First native-UI installation replaces the partition table with two 6 MiB app
-slots, including migration from NM's old 3 MiB slot. Back up needed internal
+First native-UI installation on a Waveshare board replaces the partition table with two 6 MiB app
+slots. The NM-CYD-C5 keeps its single 3 MiB slot. Back up needed internal
 flash data first; existing internal filesystem data may become inaccessible.
 External SD is not written. No full-chip erase is performed. OTA is not implemented.
 
@@ -92,7 +91,7 @@ Local GPS-dependent recordings need a valid board GPS fix. Phone GPS supplies
 the phone app's records and is not assumed to feed back into the board.
 Native portrait mode and direct WiGLE / WDG Wars / Wardrift API uploads are not
 included. The XIAO ESP32-C5 node is available as a separate download on the
-[handheld prerelease](https://github.com/slickrick773/umbravox/releases/tag/f963f3a).
+[latest release](https://github.com/Em3ritus/umbravox/releases/latest).
 See [XIAO node installation](docs/XIAO-NODE.md) for flashing and enrollment.
 
 ## Development
@@ -119,3 +118,5 @@ GPL-3.0-or-later — see [LICENSE](LICENSE).
 The device-signature tables and their confidence grading are derived from
 [SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD) (GPL-3.0); see
 [NOTICE](NOTICE) for details and credit.
+
+Porting the project to the Waveshare C5 display was done by [slickrick773](https://github.com/slickrick773).

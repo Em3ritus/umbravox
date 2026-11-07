@@ -44,7 +44,7 @@ function run(cmd, args) {
 before(async () => {
   // Fresh simulator (make is incremental): a stale binary would compare the
   // wasm against code that no longer exists.
-  run('make', ['-s', '-C', path.join(ROOT, 'sim'), 'umbravox']);
+  run('make', ['-s', '-C', path.join(ROOT, 'sim'), 'umbravox', 'ws_preview_png']);
   run('bash', [BUILD]);
   assert.ok(fs.existsSync(WASM_JS) && fs.existsSync(WASM_BIN),
     'the build script ran but did not produce uv_preview.js / uv_preview.wasm');
@@ -120,7 +120,7 @@ function withBytes(bytes, fn) {
 }
 
 function loadPack(json, emblem) {
-  return withBytes(json, (jp, jl) => withBytes(emblem, (ep, el) => M._uv_load_pack(jp, jl, ep, el)));
+  return withBytes(json, (jp, jl) => withBytes(emblem, (ep, el) => M._uv_load_pack(jp, jl, ep, el, 0, 0)));
 }
 
 function loadFixture(dir) {
@@ -229,8 +229,8 @@ test('uv_load_pack rejects hostile input cleanly and keeps the current draft', (
   const reserved = JSON.parse(good); reserved.name = 'UMBRAVOX';
   const hostile = {
     'empty input': () => loadPack(null, null),
-    'null json with a length': () => M._uv_load_pack(0, 100, 0, 0),
-    'negative length': () => withBytes(enc(good), (p) => M._uv_load_pack(p, -5, 0, 0)),
+    'null json with a length': () => M._uv_load_pack(0, 100, 0, 0, 0, 0),
+    'negative length': () => withBytes(enc(good), (p) => M._uv_load_pack(p, -5, 0, 0, 0, 0)),
     'truncated JSON': () => loadPack(enc(good.slice(0, good.length >> 1)), null),
     'json over the size cap': () => loadPack(enc(good + ' '.repeat(4097)), null),
     'emblem centrepiece with no emblem': () => loadPack(enc(good), null),
@@ -247,4 +247,191 @@ test('uv_load_pack rejects hostile input cleanly and keeps the current draft', (
   // The failed loads must not have clobbered the live draft's emblem buffer.
   same('draft after hostile loads', wasmRender(3, 'scan', 24, -1, -1), before);
   assert.equal(loadFixture(PACKS[0]), BUILTIN_COUNT, 'a good pack still loads after failures');
+});
+
+// ---- the Waveshare 3.5" engine preview (480x320) ------------------------------
+// uv_render_ws draws ui/preview_ws.h; sim/ws_preview_png is the same call on the host.
+
+const WS_W = 480, WS_H = 320;
+const WS_SCREEN = { scan: 0, mesh: 1, alert: 2, menu: 3, aspect: 4 };
+const CONF = { low: 0, med: 1, high: 2 };
+const WS_SIM = path.join(ROOT, 'sim/ws_preview_png');
+
+function wsSim({ theme, pack, screen, frame, sweep, alert, conf }) {
+  const out = path.join(tmp, `w${simN++}.rgba`);
+  const args = [String(theme), String(WS_SCREEN[screen]), String(frame), String(sweep), String(alert), String(conf), out];
+  if (pack) args.push('--pack', path.join(ROOT, pack));
+  run(WS_SIM, args);
+  const b = fs.readFileSync(out);
+  assert.equal(b.length, WS_W * WS_H * 4);
+  return new Uint8Array(b);
+}
+
+function wsWasm(theme, screen, frame, sweep, alert, conf) {
+  const n = WS_W * WS_H * 4;
+  const ptr = M._malloc(n);
+  try {
+    M._uv_render_ws(theme, WS_SCREEN[screen], frame, sweep, alert, conf, ptr);
+    return M.HEAPU8.slice(ptr, ptr + n);
+  } finally { M._free(ptr); }
+}
+
+function wsSame(name, a, b) {
+  if (Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0) return;
+  let px = 0;
+  for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) px++;
+  assert.fail(`${name}: ${px} of ${WS_W * WS_H} pixels differ`);
+}
+
+function wsCases() {
+  const c = [];
+  for (const screen of ['scan', 'mesh', 'menu', 'aspect'])
+    for (const frame of [0, 24, 600]) c.push({ screen, frame, sweep: -1, alert: -1, conf: 2 });
+  for (const conf of ['low', 'med', 'high'])
+    for (const frame of [5, 45, 160]) c.push({ screen: 'alert', frame, sweep: -1, alert: -1, conf: CONF[conf] });
+  return c;
+}
+
+function wsCheckTheme(label, theme, pack) {
+  for (const k of wsCases())
+    wsSame(`WS ${label} ${k.screen} frame ${k.frame} conf ${k.conf}`, wsWasm(theme, k.screen, k.frame, k.sweep, k.alert, k.conf), wsSim({ theme, pack, ...k }));
+}
+
+test('the module reports the Waveshare canvas size', () => {
+  assert.equal(M._uv_ws_width(), WS_W);
+  assert.equal(M._uv_ws_height(), WS_H);
+});
+
+for (const [label, id] of Object.entries(BUILTINS)) {
+  test(`Waveshare built-in ${label}: wasm equals the host engine byte for byte`, () => {
+    M._uv_clear_packs();
+    wsCheckTheme(label, id, null);
+  });
+}
+
+for (const dir of PACKS) {
+  test(`Waveshare pack ${dir}: wasm equals the host engine`, () => {
+    const id = loadFixture(dir);
+    assert.equal(id, BUILTIN_COUNT, `uv_load_pack: ${id < 0 ? err() : ''}`);
+    wsCheckTheme(dir, id, dir);
+  });
+}
+
+test('Waveshare COSMIC MUFFIN: every sweep and every alert style match', () => {
+  M._uv_clear_packs();
+  const t = BUILTINS['COSMIC MUFFIN'];
+  for (let sw = 0; sw < SWEEP_COUNT; sw++)
+    wsSame(`WS COSMIC sweep ${sw}`, wsWasm(t, 'scan', 24, sw, -1, 2), wsSim({ theme: t, screen: 'scan', frame: 24, sweep: sw, alert: -1, conf: 2 }));
+  for (let al = 0; al < ALERT_STYLES; al++)
+    for (const conf of [0, 2])
+      wsSame(`WS COSMIC alert style ${al} conf ${conf}`, wsWasm(t, 'alert', 60, -1, al, conf), wsSim({ theme: t, screen: 'alert', frame: 60, sweep: -1, alert: al, conf }));
+});
+
+test('the Waveshare comparison is not vacuous: screens, themes and frames differ, and it is not the CYD image', () => {
+  M._uv_clear_packs();
+  const seen = new Set();
+  for (const t of Object.values(BUILTINS))
+    for (const [screen, frame] of [['scan', 0], ['scan', 24], ['mesh', 0], ['menu', 0], ['aspect', 0], ['alert', 60]])
+      seen.add(Buffer.from(wsWasm(t, screen, frame, -1, -1, 2)).toString('base64'));
+  assert.equal(seen.size, 18, 'every theme/screen/frame pair should render a distinct image');
+  const a = wsWasm(0, 'scan', 0, -1, -1, 2);
+  assert.ok(new Set(Array.from({ length: WS_W * WS_H }, (_, i) => a[4 * i] << 16 | a[4 * i + 1] << 8 | a[4 * i + 2])).size > 8);
+});
+
+// ---- the radar clip in a pack (radar.vid) ----------------------------------------
+// A pack carrying radar.vid, loaded through uv_load_pack, must draw exactly what the host loader draws for the same folder.
+import { buildClip, clipFile } from '../js/radarvideo.js';
+
+function syntheticClip(frames = 7) {
+  const fs_ = [];
+  for (let f = 0; f < frames; f++) {
+    const l = new Uint8Array(102 * 102);
+    for (let y = 0; y < 102; y++) for (let x = 0; x < 102; x++)
+      l[y * 102 + x] = (Math.abs(x - (10 + 12 * f)) < 3 || ((x + y + f * 5) % 23 === 0)) ? 15 : (f * 2 + (x >> 4)) % 9;
+    fs_.push(l);
+  }
+  return buildClip(fs_);
+}
+const PACK_SRC = 'sim/packs/umbravox-clone';
+function packWithClip(bytes) {
+  const dir = path.join(tmp, `clip-pack-${simN++}`, 'vidpack');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const f of fs.readdirSync(path.join(ROOT, PACK_SRC))) fs.copyFileSync(path.join(ROOT, PACK_SRC, f), path.join(dir, f));
+  if (bytes) fs.writeFileSync(path.join(dir, 'radar.vid'), bytes);
+  return dir;
+}
+function loadWithClip(dir, clip) {
+  const json = fs.readFileSync(path.join(dir, 'theme.json'));
+  const emb = fs.existsSync(path.join(dir, 'emblem.bin')) ? fs.readFileSync(path.join(dir, 'emblem.bin')) : null;
+  return withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => withBytes(clip, (cp, cl) => M._uv_load_pack(jp, jl, ep, el, cp, cl))));
+}
+function wsSimDir(dir, k) {
+  const out = path.join(tmp, `v${simN++}.rgba`);
+  run(WS_SIM, ['0', String(WS_SCREEN[k.screen]), String(k.frame), '-1', '-1', '2', out, '--pack', dir]);
+  return new Uint8Array(fs.readFileSync(out));
+}
+
+test('pack clip: wasm equals the host engine for several frames, scan and alert', () => {
+  M._uv_clear_packs();
+  const bytes = clipFile(syntheticClip());
+  const dir = packWithClip(bytes);
+  const id = loadWithClip(dir, bytes);
+  assert.ok(id >= BUILTIN_COUNT, `uv_load_pack: ${id < 0 ? err() : ''}`);
+  for (const frame of [0, 3, 7, 40, 133])
+    wsSame(`WS pack clip frame ${frame}`, wsWasm(id, 'scan', frame, -1, -1, 2), wsSimDir(dir, { screen: 'scan', frame }));
+  wsSame('WS pack clip under a HIGH alert', wsWasm(id, 'alert', 60, -1, 0, 2), wsSimDir(dir, { screen: 'alert', frame: 60 }));
+  M._uv_clear_packs();
+});
+
+test('pack clip: it shows, plays over time, and the same pack without it is different', () => {
+  M._uv_clear_packs();
+  const bytes = clipFile(syntheticClip());
+  const dir = packWithClip(bytes);
+  const withId = loadWithClip(dir, bytes);
+  const a = wsWasm(withId, 'scan', 7, -1, -1, 2), b = wsWasm(withId, 'scan', 12, -1, -1, 2);
+  assert.notEqual(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0, 'it advances with the frame counter');
+  const plainId = loadWithClip(packWithClip(null), null);
+  const none = wsWasm(plainId, 'scan', 7, -1, -1, 2);
+  assert.notEqual(Buffer.compare(Buffer.from(none), Buffer.from(a)), 0, 'the clip shows');
+  M._uv_clear_packs();
+});
+
+test('pack clip: the CYD preview never shows it, and a bad clip is refused with the draft intact', () => {
+  M._uv_clear_packs();
+  const cyd = (t) => { const n = W * H * 4, p = M._malloc(n); try { M._uv_render(t, 0, 7, -1, -1, p); return M.HEAPU8.slice(p, p + n); } finally { M._free(p); } };
+  const good = clipFile(syntheticClip(2));
+  const plainId = loadWithClip(packWithClip(null), null);
+  const cydPlain = cyd(plainId);
+  const id = loadWithClip(packWithClip(good), good);
+  assert.equal(Buffer.compare(Buffer.from(cyd(id)), Buffer.from(cydPlain)), 0, 'the CYD draws the pack the same with or without a clip');
+  const shown = wsWasm(id, 'scan', 5, -1, -1, 2);
+  const dir = packWithClip(good);
+  const flip = (i, v) => { const x = Uint8Array.from(good); x[i] = v; return x; };
+  for (const [why, bytes, word] of [['wrong magic', flip(0, 0), 'UVRV'], ['wrong size', flip(5, 64), '102'], ['fps 0', flip(7, 0), 'fps'], ['truncated', good.slice(0, good.length - 1), 'length'], ['over-size', new Uint8Array(780313), 'over']]) {
+    const rc = loadWithClip(dir, bytes);
+    assert.equal(rc, -6, why);
+    assert.match(err(), new RegExp(word), why);
+  }
+  wsSame('a refused clip leaves the last good draft on screen', wsWasm(id, 'scan', 5, -1, -1, 2), shown);
+  M._uv_clear_packs();
+});
+
+// ---- a colour clip (radar.vid version 2) ------------------------------------------------------------------------
+test('colour clip: wasm equals the host engine, shows its own colours, and differs from the grey version', () => {
+  M._uv_clear_packs();
+  const frames = [];
+  for (let f = 0; f < 5; f++) frames.push(Uint8Array.from({ length: 102 * 102 }, (_, i) => ((i % 102) + (Math.floor(i / 102) >> 3) + f) % 16));
+  const pal = Uint8Array.from({ length: 32 }, (_, i) => (i % 2 ? 0xF8 - i * 3 : (i * 37 + 5) & 255));          // 16 very different colours
+  const colour = clipFile(buildClip(frames, pal)), grey = clipFile(buildClip(frames));
+  const dir = packWithClip(colour);
+  const id = loadWithClip(dir, colour);
+  assert.ok(id >= BUILTIN_COUNT, `uv_load_pack: ${id < 0 ? err() : ''}`);
+  for (const frame of [0, 4, 9, 50])
+    wsSame(`WS colour clip frame ${frame}`, wsWasm(id, 'scan', frame, -1, -1, 2), wsSimDir(dir, { screen: 'scan', frame }));
+  const a = wsWasm(id, 'scan', 3, -1, -1, 2);
+  M._uv_clear_packs();
+  const id2 = loadWithClip(packWithClip(grey), grey);
+  const b = wsWasm(id2, 'scan', 3, -1, -1, 2);
+  assert.notEqual(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0, 'the palette changes the picture');
+  M._uv_clear_packs();
 });

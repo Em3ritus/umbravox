@@ -166,9 +166,16 @@ struct __attribute__((packed)) ClusterBatch {
     uint8_t lossPct;      // this cluster's current report loss
     uint8_t count;
     Rec     recs[MAX_BATCH];
+    uint8_t nodes;        // how many nodes this coordinator carries. Trailing and optional: see CBATCH_MIN_LEN
 };
 
 static_assert(sizeof(ClusterBatch) <= 250, "ESP-NOW frames cap at 250 bytes");
+
+// The byte above was added without a protocol bump. A coordinator built before it sends the frame one byte shorter; a
+// handheld must keep accepting that (validate against CBATCH_MIN_LEN, not sizeof) and an older handheld already accepts
+// the longer frame (valid() only demands "at least"). batchNodes() is -1 when the frame is the short form: unknown, not 0.
+constexpr int CBATCH_MIN_LEN = (int)sizeof(ClusterBatch) - 1;
+inline int batchNodes(const ClusterBatch* b, int len) { return len >= (int)sizeof(ClusterBatch) ? (int)b->nodes : -1; }
 
 // True if a received buffer is plausibly ours and the right length.
 inline bool valid(const uint8_t* d, int len, uint8_t kind, int expect) {

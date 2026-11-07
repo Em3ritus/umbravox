@@ -1,6 +1,6 @@
 import {Transport} from './vendor/esptool-js-0.7.0.js';
-import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs?v=20261104-1';
-import {C5Loader} from './c5-loader.mjs?v=20261104-1';
+import {inspectDevice,loadParts,install,validateManifest} from './flash.mjs?v=20261107-1';
+import {C5Loader} from './c5-loader.mjs?v=20261107-1';
 const $=id=>document.getElementById(id);
 let loader,transport,manifest,base,busy=false;
 function status(s){$('status').textContent=s;}
@@ -10,8 +10,8 @@ async function disconnect(){if(transport){try{await transport.disconnect();}catc
 $('board').onchange=async()=>{
  $('package').hidden=true;$('version').textContent='';
  const node=$('board').value==='xiao-c5-node';
- $('boardinfo').textContent=node?'XIAO ESP32-C5: headless scanning node, 8 MB flash. No display or GPS. Not for XIAO C3/C6/S3.':$('board').value==='nm-cyd-c5-engine'?'NM: native 320×240 UI, resistive touch and UART GPS. Flashing and operation confirmed.':'Choose the exact board size. Chip detection cannot distinguish these ESP32-C5 board models.';
- $('migration').textContent=node?'Installs the node partition table and 3 MiB application slot. Existing internal filesystem data may become inaccessible. No full-chip erase is performed.':'First installation replaces the partition table with two 6 MiB application slots. Existing internal filesystem data may become inaccessible. External SD files are not written. No full-chip erase is performed.';
+ $('boardinfo').textContent=node?'XIAO ESP32-C5: headless scanning node, 8 MB flash. No display or GPS. Not for XIAO C3/C6/S3.':$('board').value==='nm-cyd-c5'?'NM-CYD-C5: the original UMBRAVOX 320×240 UI, resistive touch and UART GPS.':'Choose the exact board size. Chip detection cannot distinguish these ESP32-C5 board models.';
+ $('migration').textContent=node?'Installs the node partition table and 3 MiB application slot. Existing internal filesystem data may become inaccessible. No full-chip erase is performed.':$('board').value==='nm-cyd-c5'?'Installs the standard 3 MiB application partition table. Existing internal filesystem data may become inaccessible. External SD files are not written. No full-chip erase is performed.':'First installation replaces the partition table with two 6 MiB application slots. Existing internal filesystem data may become inaccessible. External SD files are not written. No full-chip erase is performed.';
  controls();status('Ready to connect.');
  const key=$('board').value;if(!key)return;
  try{const r=await fetch(new URL(`firmware/${key}/manifest.json`,location.href));if(!r.ok)throw Error('Download unavailable');const m=validateManifest(await r.json());if(key!==$('board').value)return;if(m.boardKey!==key)throw Error('Board manifest mismatch');$('package').href=m.packageUrl;$('package').hidden=false;$('version').textContent=`Commit ${m.commit.slice(0,7)}`;}catch(e){status(e.message);}

@@ -19,7 +19,7 @@ def assemble(out, packages):
         raise SystemExit(f'Output directory {out} is not empty; use a fresh directory')
     out.mkdir(parents=True, exist_ok=True)
     shutil.copytree(root/'web/native', out, dirs_exist_ok=True, ignore=shutil.ignore_patterns('test'))
-    for key, path in zip(('nm-cyd-c5-engine', 'ws-c5-35-engine', 'ws-c5-28-engine', 'xiao-c5-node'), packages):
+    for key, path in zip(('nm-cyd-c5', 'ws-c5-35-engine', 'ws-c5-28-engine', 'xiao-c5-node'), packages):
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
             manifest_name = next(n for n in names if n == 'manifest.json' or n.endswith('/manifest.json'))
@@ -27,7 +27,7 @@ def assemble(out, packages):
             m = json.loads(archive.read(manifest_name))
             node = key == 'xiao-c5-node'
             capacity = 0x800000 if node else 0x1000000
-            app_limit = 0x300000 if node else 0x600000
+            app_limit = 0x300000 if node or key == 'nm-cyd-c5' else 0x600000
             if m['environment'] != key:
                 raise ValueError('Wrong board in package')
             if node:

@@ -43,6 +43,12 @@ inline bool parse(const uint8_t* f,size_t n,int8_t rssi,uint8_t ch,uint32_t now,
  }else return false;
  out=e;return true;
 }
+// Which parsed frames are worth a queue slot. A named beacon is a visible AP
+// (already in the main table) and observe() ignores it, so on a busy channel they
+// would crowd out the probe requests and association exchanges this feature is
+// for. Hidden-AP beacons, probe responses (which can reveal a hidden name), probe
+// requests and association frames are all kept.
+inline bool wanted(const Event& e){return !(e.kind==Advertisement&&e.sub==8&&e.len);}
 struct Ring {
  Event rows[QUEUE]{};uint16_t head=0,size=0;uint32_t dropped=0,probes=0;
  bool push(const Event& e){

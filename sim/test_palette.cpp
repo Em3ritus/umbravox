@@ -38,7 +38,7 @@ static themepack::Pack mkPack(const char* name, themepack::Dial dial, uint16_t s
 }
 
 int main() {
-    check("fourteen bundled themes", pal::TH_COUNT == 14);
+    check("ten bundled themes", pal::TH_COUNT == 10);
     {   // every name a built-in displays must be refused to a pack
         bool all = true;
         for (int i = 0; i < pal::TH_SLICK; i++) {
@@ -54,14 +54,14 @@ int main() {
     check("cosmic name", !strcmp(pal::themeName(pal::TH_COSMICMUFFIN), "COSMIC MUFFIN"));
 
     pal::setTheme(pal::TH_COSMICMUFFIN);
-    check("neon void applied", pal::VOID == pal::rgb(0x0A, 0x0A, 0x1E));
-    check("neon magenta applied", pal::MAGENTA == pal::rgb(0xFF, 0x5F, 0xD0));
+    check("neon void applied", pal::VOID == pal::rgb(0x09, 0x07, 0x1C));
+    check("neon magenta applied", pal::MAGENTA == pal::rgb(0xFF, 0x1F, 0xCC));
     // Every sweep but the gaze (0x7FD): the muffin has no eyes. The mask must
     // be wide enough to hold bit 10 -- an 8-bit mask would drop the top sweeps.
     check("cosmic offers every sweep but gaze", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD);
 
     pal::setTheme(99);   // out of range, from a corrupt/stale NVS value
-    check("bad theme id falls back to UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
+    check("bad theme id falls back to UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
 
     printf("built-in descriptors:\n");
     {
@@ -128,9 +128,9 @@ int main() {
             expect++;
             check("count tracks", pal::themeCount() == expect);
         }
-        check("eight packs -> eleven themes", pal::themeCount() == (pal::TH_COUNT+8));
-        check("ninth pack refused", pal::addPack(mkPack("NINE", themepack::DIAL_LARGE, 1, 0, 0), nullptr) == -1);
-        check("count unchanged after refusal", pal::themeCount() == (pal::TH_COUNT+8));
+        check("a full table -> built-ins plus MAX_PACKS themes", pal::themeCount() == (pal::TH_COUNT+themepack::MAX_PACKS));
+        check("one pack too many is refused", pal::addPack(mkPack("NINE", themepack::DIAL_LARGE, 1, 0, 0), nullptr) == -1);
+        check("count unchanged after refusal", pal::themeCount() == (pal::TH_COUNT+themepack::MAX_PACKS));
 
         check("findPack SANE", pal::findPack("SANE") == (pal::TH_COUNT+0));
         check("findPack LOUD", pal::findPack("LOUD") == (pal::TH_COUNT+1));
@@ -180,9 +180,9 @@ int main() {
         check("large pack has COSMIC geometry",
               ui::DIAL_H == cDialH && ui::SPEC_H == cSpecH && ui::R_STAR == cRStar);
 
-        pal::setTheme(pal::TH_COUNT+8);   // one past the last pack
-        check("id past the packs falls back to UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
-        check("themeName past the packs is UMBRAVOX", !strcmp(pal::themeName(pal::TH_COUNT+8), "UMBRAVOX"));
+        pal::setTheme(pal::TH_COUNT+themepack::MAX_PACKS);   // one past the last pack
+        check("id past the packs falls back to UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
+        check("themeName past the packs is UMBRAVOX", !strcmp(pal::themeName(pal::TH_COUNT+themepack::MAX_PACKS), "UMBRAVOX"));
         check("built-ins untouched by packs", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD);
     }
 
@@ -201,7 +201,7 @@ int main() {
     // the device never calls clearPacks.
     printf("clearPacks:\n");
     {
-        check("table full before clearing", pal::themeCount() == (pal::TH_COUNT+8));
+        check("table full before clearing", pal::themeCount() == (pal::TH_COUNT+themepack::MAX_PACKS));
         pal::clearPacks();
         check("cleared: only the built-ins", pal::themeCount() == pal::TH_COUNT);
         check("old pack id 3 is UMBRAVOX again", !strcmp(pal::themeName((pal::TH_COUNT+0)), "UMBRAVOX"));
@@ -210,7 +210,7 @@ int main() {
         check("old emblem pointer gone", pal::emblem((pal::TH_COUNT+1)) == nullptr);
         check("old centrepiece gone", pal::centrepiece((pal::TH_COUNT+1)) == pal::CP_HEPTAGRAM);
         pal::setTheme((pal::TH_COUNT+1));
-        check("old pack id draws UMBRAVOX", pal::VOID == pal::rgb(0x0B, 0x0C, 0x13));
+        check("old pack id draws UMBRAVOX", pal::VOID == pal::rgb(0x07, 0x04, 0x0E));
         check("built-ins survive clearing", pal::sweepMask(pal::TH_COSMICMUFFIN) == 0x07FD &&
                                             !strcmp(pal::themeName(pal::TH_BAPH0MAU5), "CVLT OF BAPH0MAU5"));
         themepack::Pack again = mkPack("AGAIN", themepack::DIAL_COMPACT, 0x0001, ui::SW_RADAR, 0x5000);

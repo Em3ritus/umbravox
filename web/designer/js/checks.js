@@ -3,6 +3,8 @@
 import limits from './limits.json' with { type: 'json' };
 import { ROLES, isHex, describe, toRgb565, contrastX10, contrastRatio, fmtRatio } from './palette.js';
 import { themeJson } from './pack.js';
+import { validateClip } from './radarvideo.js';
+import { validateSounds, hasSounds, soundSeconds, SND_HEADER } from './alertsound.js';
 
 const ok = (text) => ({ level: 'ok', text });
 const warn = (text) => ({ level: 'warn', text });
@@ -14,7 +16,7 @@ function checkString(label, s, max, minLen, out) {
   else if (s.length < minLen) out.push(error(label + ' must be at least ' + minLen + ' character' + (minLen > 1 ? 's' : '') + '.'));
 }
 
-export function runChecks(theme, emblem) {
+export function runChecks(theme, emblem, clip = null, sounds = null) {
   const out = [];
   const t = theme || {};
   const c = t.colors || {};
@@ -108,6 +110,25 @@ export function runChecks(theme, emblem) {
     else out.push(ok('Pack size ' + total + ' bytes of ' + limits.MAX_PACK + ' (64 KB).'));
   }
   if (emb > limits.MAX_EMBLEM) out.push(error('emblem.bin is ' + emb + ' bytes; the limit is ' + limits.MAX_EMBLEM + '.'));
+
+  if (clip) {
+    const bad = validateClip(clip);
+    if (bad) out.push(error('Radar video: ' + bad + '.'));
+    else {
+      out.push(ok('Radar video: ' + clip.frames + ' frames, ' + (clip.frames / clip.fps).toFixed(1) + ' s, ' + Math.round((12 + (clip.palette ? 32 : 0) + clip.data.length) / 1024) + ' KB, ' + (clip.palette ? 'in its own colours' : "in the theme's colours") + '. Only the Waveshare plays it; the CYD ignores it.'));
+      out.push(warn('Over USB a radar video takes minutes to send (a card reader is instant); the board reads a pack\'s clip from the card when you select its theme, which takes about two seconds.'));
+    }
+  }
+
+  if (hasSounds(sounds)) {
+    const bad = validateSounds(sounds);
+    if (bad) out.push(error('Alert sounds: ' + bad + '.'));
+    else {
+      const part = (k, pcm) => k + ' ' + (pcm && pcm.length ? soundSeconds(pcm).toFixed(1) + ' s' : 'built-in');
+      const bytes = SND_HEADER + 2 * ['low', 'med', 'high'].reduce((n, k) => n + (sounds[k] ? sounds[k].length : 0), 0);
+      out.push(ok('Alert sounds: ' + part('LOW', sounds.low) + ', ' + part('MED', sounds.med) + ', ' + part('HIGH', sounds.high) + ' (' + Math.round(bytes / 1024) + ' KB). Only the Waveshare has a speaker; the CYD ignores them. The board reads a pack\'s sounds from the card when you select its theme.'));
+    }
+  }
 
   out.push(ok('The device loads at most ' + limits.MAX_PACKS + ' packs (the first ' + limits.MAX_PACKS + ' by folder name).'));
   return out;

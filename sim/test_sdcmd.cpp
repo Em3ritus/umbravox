@@ -778,6 +778,93 @@ static void testGolden() {
                                       r.sd.get("/themes/cosmic-clone/emblem.bin") == e);
 }
 
+
+// --- radar.vid: the optional third file, up to 780312 bytes ------------------------------------
+static void testSoundFile() {
+    printf("alert.snd policy:\n");
+    sdcmd::Path p;
+    check("allowed, canonical lower case",
+          !sdcmd::putPolicy("/THEMES/x/Alert.SND", 4000, p) && !strcmp(p.canon, "/themes/x/alert.snd") && p.kind == sdcmd::K_SOUND);
+    check("exactly MAX_SOUND bytes is allowed", !sdcmd::putPolicy("/themes/x/alert.snd", (uint32_t)themepack::MAX_SOUND, p));
+    const char* why = sdcmd::putPolicy("/themes/x/alert.snd", (uint32_t)themepack::MAX_SOUND + 1, p);
+    check("one byte over is refused with the limit named", why && strstr(why, "alert.snd max 576020"));
+    check("empty is refused", sdcmd::putPolicy("/themes/x/alert.snd", 0, p) != nullptr);
+    check("not in the root", sdcmd::putPolicy("/alert.snd", 100, p) != nullptr);
+    check("other names still refused", sdcmd::putPolicy("/themes/x/alert.wav", 100, p) != nullptr && sdcmd::putPolicy("/themes/x/alert.snd2", 100, p) != nullptr);
+    check("capOf knows the sounds", sdcmd::capOf(sdcmd::K_SOUND) == (uint32_t)themepack::MAX_SOUND);
+    check("SDDEL: the file and its leftovers", !sdcmd::delPolicy("/themes/x/alert.snd", (const char*)nullptr, p) && !sdcmd::delPolicy("/themes/x/alert.snd.tmp", (const char*)nullptr, p)
+          && !sdcmd::delPolicy("/themes/x/ALERT.SND.OLD", (const char*)nullptr, p) && p.temp);
+    check("the time allowance covers the biggest file at the 1.3 KB/s the host tool can manage", sdcmd::totalMsFor((uint32_t)themepack::MAX_SOUND) >= 180000);
+    printf("alert.snd upload:\n");
+    {
+        Rig r;
+        const auto d = bytes(themepack::MAX_SOUND, 3);
+        check("the biggest sound file uploads", r.upload("/themes/snd/alert.snd", d) == doneFor(d));
+        check("and is intact, with no temp left", r.sd.get("/themes/snd/alert.snd") == d && !r.sd.has("/themes/snd/alert.snd.tmp"));
+        check("SDPUT one byte too many: ERR too large", r.send("SDPUT /themes/snd/alert.snd 576021 00000000").rfind("ERR too large", 0) == 0 && !r.con.uploading());
+    }
+}
+
+static void testClipFile() {
+    printf("radar.vid policy:\n");
+    sdcmd::Path p;
+    check("allowed, canonical lower case",
+          !sdcmd::putPolicy("/THEMES/x/Radar.Vid", 5202, p) && !strcmp(p.canon, "/themes/x/radar.vid") && p.kind == sdcmd::K_CLIP);
+    check("exactly MAX_CLIP bytes is allowed", !sdcmd::putPolicy("/themes/x/radar.vid", (uint32_t)themepack::MAX_CLIP, p));
+    const char* why = sdcmd::putPolicy("/themes/x/radar.vid", (uint32_t)themepack::MAX_CLIP + 1, p);
+    check("one byte over is refused with the limit named", why && strstr(why, "radar.vid max 780312"));
+    check("empty is refused", sdcmd::putPolicy("/themes/x/radar.vid", 0, p) != nullptr);
+    check("not in the root", sdcmd::putPolicy("/radar.vid", 100, p) != nullptr);
+    check("DOS device folder still refused", sdcmd::putPolicy("/themes/nul/radar.vid", 100, p) != nullptr);
+    check("other names still refused", sdcmd::putPolicy("/themes/x/radar.mp4", 100, p) != nullptr && sdcmd::putPolicy("/themes/x/radar.vid2", 100, p) != nullptr);
+    check("capOf knows the clip", sdcmd::capOf(sdcmd::K_CLIP) == (uint32_t)themepack::MAX_CLIP);
+    check("SDDEL: the file and its leftovers", !sdcmd::delPolicy("/themes/x/radar.vid", (const char*)nullptr, p) && !sdcmd::delPolicy("/themes/x/radar.vid.tmp", (const char*)nullptr, p)
+          && !sdcmd::delPolicy("/themes/x/RADAR.VID.OLD", (const char*)nullptr, p) && p.temp);
+
+    printf("radar.vid upload:\n");
+    {
+        Rig r;
+        const auto d = bytes(5202 * 3 + 12, 9);
+        check("a clip uploads like any other file", r.upload("/themes/vid/radar.vid", d) == doneFor(d));
+        check("the bytes are on the card", r.sd.get("/themes/vid/radar.vid") == d && !r.sd.has("/themes/vid/radar.vid.tmp"));
+    }
+    {
+        Rig r;
+        const auto d = bytes(themepack::MAX_CLIP, 5);
+        check("the biggest clip uploads", r.upload("/themes/vid/radar.vid", d) == doneFor(d));
+        check("the biggest clip is intact", r.sd.get("/themes/vid/radar.vid") == d);
+        check("SDPUT one byte too many: ERR too large", r.send("SDPUT /themes/vid/radar.vid 780313 00000000").rfind("ERR too large", 0) == 0 && !r.con.uploading());
+    }
+
+    printf("the console is serviced faster while an upload runs:\n");
+    check("idle: never keep polling", !sdcmd::pollAgain(false, 1000, 1000, 1001));
+    check("uploading, bytes just arrived: keep polling", sdcmd::pollAgain(true, 1000, 1010, 1011));
+    check("uploading, quiet longer than the host's turnaround: stop", !sdcmd::pollAgain(true, 1000, 1010, 1010 + sdcmd::POLL_QUIET_MS));
+    check("uploading but the slice is used up: stop, so the screen and touch still run", !sdcmd::pollAgain(true, 1000, 1000 + sdcmd::POLL_SLICE_MS - 1, 1000 + sdcmd::POLL_SLICE_MS));
+    check("a quiet host ends it early", sdcmd::pollAgain(true, 1000, 1000, 1000 + sdcmd::POLL_QUIET_MS - 1) && !sdcmd::pollAgain(true, 1000, 1000, 1000 + sdcmd::POLL_QUIET_MS));
+    check("the quiet window outlasts one 200-char line at 115200 baud (17.4 ms)", sdcmd::POLL_QUIET_MS >= 25);
+    check("the slice is bounded", sdcmd::POLL_SLICE_MS >= 40 && sdcmd::POLL_SLICE_MS <= 120);
+    check("millis() wrap is handled (signed differences)", sdcmd::pollAgain(true, 0xFFFFFFF0u, 0xFFFFFFFAu, 0xFFFFFFFEu) && !sdcmd::pollAgain(true, 0xFFFFFFF0u, 0xFFFFFFFAu, 0x00000100u));
+
+    printf("upload time allowed grows with the file:\n");
+    check("a small file keeps the 120 s cap", sdcmd::totalMsFor(9728) == sdcmd::TOTAL_MS && sdcmd::totalMsFor(758) == sdcmd::TOTAL_MS && sdcmd::TOTAL_MS == 120000);
+    check("a big clip gets more, in proportion", sdcmd::totalMsFor(780312) > sdcmd::TOTAL_MS + 180000 && sdcmd::totalMsFor(780312) <= 400000);
+    check("never less for a bigger file", sdcmd::totalMsFor(100000) >= sdcmd::totalMsFor(50000) && sdcmd::totalMsFor(50000) >= sdcmd::TOTAL_MS);
+    {
+        Rig r;
+        char rep[sdcmd::REPLY_CAP];
+        const auto d = bytes(300000, 2);
+        r.sdput("/themes/slow/radar.vid", d);
+        r.chunk(0, d, 0, 96);
+        const uint32_t t0 = r.now;
+        r.now = t0 + 130000;     // 130 s: past the old cap, with the idle clock fed
+        for (uint32_t t = 5000; t <= 130000; t += 5000) { r.now = t0 + t; r.chunk(0, d, 0, 96); }
+        check("130 s into a 300 KB clip it is still running", !r.con.tick(r.now, rep, sizeof rep) && r.con.uploading());
+        r.now = t0 + sdcmd::totalMsFor(300000);
+        check("and stops at its own cap", r.con.tick(r.now, rep, sizeof rep) && !r.con.uploading() && !strncmp(rep, "ERR", 3));
+    }
+}
+
 int main() {
     testPutPolicy();
     testDelPolicy();
@@ -786,6 +873,8 @@ int main() {
     testUpload();
     testDelete();
     testFixRound1();
+    testClipFile();
+    testSoundFile();
     testGolden();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;

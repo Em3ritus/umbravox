@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-FOLDERS = ['slick', 'z-baph0mau5', 'z-em3ritus', 'z-ember', 'z-skuld', 'phosphor', 'glacier', 'obsidian', 'cyber', 'ultraviolet', 'dune']
+FOLDERS = ['slick', 'z-ember', 'z-skuld', 'glacier', 'obsidian', 'cyber', 'ultraviolet']
 ROLES = 'void panel grid edge edgeLit dim text bright witch witchHi bone sweep sweepHi live liveHi magenta ice green amber red'.split()
 SWEEPS = 'radar gaze pulse star candle galaxy orbit starfall pulsar comet aurora'.split()
 RITES = 'ward supernova vortex comet lockon'.split()
@@ -17,7 +17,7 @@ def generate():
         d=json.loads((ROOT/'packs'/folder/'theme.json').read_text())
         c=[rgb(d['colors'][k]) for k in ROLES]
         geo='13,90,109,57,33,37,42,31,0,0' if d['dial']=='large' else '13,70,109,48,22,26,31,20,85,16'
-        centre={'radar-emblem':'CP_RADAR_EMBLEM','radar':'CP_RADAR'}[d['centrepiece']]
+        centre={'radar-emblem':'CP_RADAR_EMBLEM','radar':'CP_RADAR','emblem':'CP_EMBLEM'}[d['centrepiece']]
         mask=sum(1<<SWEEPS.index(v) for v in d['sweeps'])
         rows.append('{'+json.dumps(d['name'])+','+json.dumps(d['header'])+f',{centre},{mask},{geo},'+hexes(c[:15])+',{'+hexes([c[j] for j in [0,3,5,7]])+'},'+hexes(c[15:])+'},')
         file=ROOT/'packs'/folder/'emblem.bin'; emblem='nullptr'

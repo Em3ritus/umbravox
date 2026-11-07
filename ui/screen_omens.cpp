@@ -54,7 +54,7 @@ void drawOmens(Canvas& c, const State& s, Dirty* d) {
     c.fill(1, BODY_Y, 158, BODY_H, pal::PANEL);
     c.rect(1, BODY_Y, 158, BODY_H, pal::EDGE);
 
-    c.text(10, HEAD_Y, "TYPE", pal::EDGE_LIT);
+    c.text(10, HEAD_Y, s.set.labels ? "TYPE" : "OMEN", pal::EDGE_LIT);
     c.text(58, HEAD_Y, "SOURCE", pal::EDGE_LIT);
     c.textRight(155, HEAD_Y, "AGE", pal::EDGE_LIT);
     c.hline(5, RULE_Y, 148, pal::EDGE);

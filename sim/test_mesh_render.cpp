@@ -8,6 +8,7 @@
 #include "../ui/palette.h"
 #include "mesh_fixture.h"
 #include <cstdio>
+#include <cstring>
 #include <vector>
 using namespace mshr;
 
@@ -68,6 +69,14 @@ int main(){
         comp.renderRegion(W,H,stl,gcell,gr);
         bool gmatch=true; for(int i=0;i<W*H;i++) if(gr.fb[i]!=gf.fb[i]){ gmatch=false; break; }
         snprintf(m,sizeof m,"%dx%d GPS fresh->stale: GPS cell region == full",W,H); expect(gmatch,m);
+    }
+    {   // the THIS HANDHELD subtitle: with a coordinator live the handheld lists no nodes of its own, so it says what it knows
+        MeshScene h; char b[64];
+        handheldHint(h,b,sizeof b);                        expect(!strcmp(b,"DEVICE 1/1 - LOCAL STATUS"), "no coordinator: the device pager text, as before");
+        h.meshCoords=1; h.coordNodes=1; handheldHint(h,b,sizeof b);  expect(!strcmp(b,"1 COORD - 1 NODE VIA COORD"), "one coordinator, one node (singular)");
+        h.meshCoords=2; h.coordNodes=5; handheldHint(h,b,sizeof b);  expect(!strcmp(b,"2 COORD - 5 NODES VIA COORD"), "two coordinators, five nodes");
+        h.meshCoords=1; h.coordNodes=0; handheldHint(h,b,sizeof b);  expect(!strcmp(b,"1 COORD - NO NODES COUNTED"), "a coordinator with no node counted yet");
+        h.meshCoords=1; h.coordNodes=2; h.nRows=2; handheldHint(h,b,sizeof b); expect(!strcmp(b,"DEVICE 1/3 - LOCAL STATUS"), "direct nodes listed: the pager text wins");
     }
     printf("\n%s  %d/%d checks passed\n", fails?"FAILED":"PASSED", checks-fails, checks);
     return fails?1:0;

@@ -38,6 +38,11 @@ inline uint8_t* emblemBuf(int i) {
 }
 inline int& emblemsUsed() { static int n = 0; return n; }
 
+// Clip bytes live as long as the program too (pal::addPack keeps the pointer): at most MAX_CLIPS, as on the board.
+inline uint8_t* clipBuf(int i) { static uint8_t b[themepack::MAX_CLIPS][themepack::MAX_CLIP]; return b[i]; }
+inline themepack::Clip* clipSlot(int i) { static themepack::Clip c[themepack::MAX_CLIPS]; return &c[i]; }
+inline int& clipsUsed() { static int n = 0; return n; }
+
 inline void fail(char* why, size_t cap, const char* fmt, const char* a = "", unsigned b = 0) {
     if (cap) snprintf(why, cap, fmt, a, b);
 }
@@ -75,9 +80,10 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
     const char* folder = slash ? slash + 1 : dir;
     if (!folderNameOk(folder)) { detail::fail(why, whyCap, "%s", admitWhy(ADMIT_BAD_FOLDER)); return ERR; }
 
-    char jsonPath[460], emblemPath[460];
+    char jsonPath[460], emblemPath[460], clipPath[460];
     snprintf(jsonPath, sizeof jsonPath, "%s/theme.json", dir);
     snprintf(emblemPath, sizeof emblemPath, "%s/emblem.bin", dir);
+    snprintf(clipPath, sizeof clipPath, "%s/radar.vid", dir);
 
     const long long js = detail::fileSize(jsonPath);
     if (js <= 0) { detail::fail(why, whyCap, js == 0 ? "theme.json is empty" : "no theme.json"); return ERR; }
@@ -108,6 +114,20 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
         em = &e;
     }
 
+    // radar.vid is optional; a bad one skips the whole pack, as a bad emblem does.
+    const Clip* clip = nullptr;
+    const long long cs = detail::fileSize(clipPath);
+    if (cs >= 0) {
+        if ((unsigned long long)cs > MAX_CLIP) { if (whyCap) snprintf(why, whyCap, "radar.vid over %u bytes", (unsigned)MAX_CLIP); return ERR; }
+        if (detail::clipsUsed() >= MAX_CLIPS) { if (whyCap) snprintf(why, whyCap, "no room for another clip (%d at most)", MAX_CLIPS); return ERR; }
+        uint8_t* cb = detail::clipBuf(detail::clipsUsed());
+        if (!detail::readAll(clipPath, cb, (size_t)cs)) { detail::fail(why, whyCap, "radar.vid could not be read"); return ERR; }
+        Clip& c = *detail::clipSlot(detail::clipsUsed());
+        char cwhy[48];
+        if (!parseClip(cb, (size_t)cs, c, cwhy, sizeof cwhy)) { detail::fail(why, whyCap, "%s", cwhy); return ERR; }
+        clip = &c;
+    }
+
     // Names already registered (static storage in palette.cpp).
     const char* taken[MAX_PACKS];
     int nTaken = 0;
@@ -116,9 +136,10 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
     const Admit a = admit(folder, p, taken, nTaken);
     if (a != ADMIT_OK) { detail::fail(why, whyCap, "%s", admitWhy(a)); return ERR; }
 
-    const int id = pal::addPack(p, em);
+    const int id = pal::addPack(p, em, clip);
     if (id < 0) { detail::fail(why, whyCap, "%s", admitWhy(ADMIT_FULL)); return ERR; }
     if (em) detail::emblemsUsed()++;      // that buffer now belongs to the pack
+    if (clip) detail::clipsUsed()++;
     return id;
 }
 

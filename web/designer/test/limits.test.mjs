@@ -20,6 +20,13 @@ test('numeric limits equal the constexprs in ui/themepack.h', () => {
   assert.equal(limits.MIN_EDGE_CONTRAST_X10, Number(/MIN_EDGE_CONTRAST_X10\s*=\s*(\d+)/.exec(read('ui/contrast.h'))[1]));
 });
 
+test('the radar clip limits equal ui/themepack.h (MAX_CLIP is built from three constants)', () => {
+  const n = (k) => Number(new RegExp('constexpr\\s+(?:int|size_t)\\s+(?:\\w+\\s*=\\s*\\d+\\s*,\\s*)*' + k + '\\s*=\\s*(\\d+)').exec(header)[1]);
+  const hdr = n('CLIP_HDR'), frames = n('MAX_CLIP_FRAMES'), w = n('CLIP_W'), h = n('CLIP_H');
+  assert.equal(limits.MAX_CLIP, hdr + frames * Math.floor((w * h + 1) / 2));
+  assert.equal(limits.MAX_CLIPS, Number(/constexpr\s+int\s+MAX_CLIPS\s*=\s*(\d+)/.exec(header)[1]));
+});
+
 test('reserved names equal the list in admit()', () => {
   const m = /reserved\[\]\s*=\s*\{([^}]*)\}/.exec(cpp);
   assert.ok(m, 'reserved[] not found in ui/themepack.cpp');

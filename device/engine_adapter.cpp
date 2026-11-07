@@ -2,6 +2,7 @@
 //
 // Compiled always (device/*.cpp), but its body exists only under the opt-in so
 // legacy targets carry none of it.
+#include "sound.h"
 #include "engine_adapter.h"
 
 #if defined(UMBRAVOX_SCAN_ENGINE)
@@ -11,6 +12,7 @@
 #include "ble_bridge.h"
 #include "logging.h"
 #include "alertlog.h"
+#include "alert_gate.h"
 #include <esp_heap_caps.h>
 #include "touch.h"
 #include "../ui/pending_hit.h"
@@ -32,6 +34,21 @@
 #include "../ui/detail_present.h"
 #include "../ui/files_present.h"
 #include "../ui/files.h"
+// The COSMIC MUFFIN theme's animated radar clip: a colour radar.vid in flash (tools/gif2radar.py, from ui/art/cosmic-muffin.gif).
+// It is parsed once with the same themepack::parseClip a pack's radar.vid goes through; if that ever fails the theme keeps its
+// still picture (ui/muffin.h), which is also what compact panels and the legacy CYD canvas show.
+#include "cosmic_muffin_clip.h"
+#include "../ui/themepack.h"
+static const scanr::RadarVideo* cosmicVideo() {
+    static scanr::RadarVideo v;
+    static int state = 0;                                   // 0 not parsed yet, 1 ok, 2 refused
+    if (state == 0) {
+        themepack::Clip c{}; char why[64];
+        if (themepack::parseClip(COSMIC_CLIP, sizeof COSMIC_CLIP, c, why, sizeof why)) { v = scanr::RadarVideo{ c.w, c.h, c.frames, c.fps, c.px, c.pal }; state = 1; }
+        else { Serial.printf("theme: built-in COSMIC MUFFIN clip refused (%s)\n", why); state = 2; }
+    }
+    return state == 1 ? &v : nullptr;
+}
 
 namespace engineadapter {
 namespace {
@@ -44,6 +61,8 @@ uinav::Screen cur_ = uinav::Screen::Scan;  // the screen currently composed
 uinav::Router router_;                     // navigation authority (remembers DETAIL origin)
 scanr::Rec sceneRec_ = scanr::Rec::Off;
 inputevents::PendingHit pendingHit_;
+settingsctl::ForgetArm forgetArm_;   // two-tap confirm for PAIRED PHONES
+bool holdToBridge_ = false;   // a long press on the header bridge chip is waiting to navigate
 uint32_t inputEpoch_ = 0;
 framepresent::Frame frame_;
 bool buffered_ = false;
@@ -67,6 +86,8 @@ menpres::MenuEngine   eMenu_;
 mshpres::MeshEngine   eMesh_;
 omnpres::OmenEngine   eOmens_;
 ui::Omen alertDetail_;
+alertgate::Gate alertGate_;       // a tap dismisses the alert takeover; it stays hidden while the same alert is re-detected
+bool alertShown(const ui::State& s) { return alertGate_.shows(s.alertActive && s.alertThreat != ui::TH_NONE, s.alertThreat, s.alertName); }
 bool alertDetailOpen_=false;
 int alertDetailPage_=0;
 echpres::EchoEngine   eEchoes_;
@@ -123,21 +144,56 @@ uint8_t fromNav(uinav::Screen s) {
 
 // Compose one screen's dirty rows into the shared buffer and push them.
 template <class Scene>
-void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, int, const Scene&)) {
+void renderSliceT(const Scene& sc, int y0, int y1, void (*cs)(scanr::S&, int, int, const Scene&), int wlo = 0, int whi = -1) {
     if(y0<stagedY0_)stagedY0_=y0;
     if(y1>stagedY1_)stagedY1_=y1;
+    // A column window (sweep-only frame) composes and stages just those columns, but only against a valid
+    // panel mirror: with no mirror the whole frame must be repainted.
+    const bool win = whi > wlo && (!buffered_ || frame_.valid());
     for (int sy = y0; sy < y1; sy += 16) {
         const int sh = (sy + 16 > y1) ? (y1 - sy) : 16;
         // Compose hot drawing primitives in internal SRAM, then copy sequentially
         // to PSRAM. Never expose the partially composed frame to the panel.
-        scanr::S s{ buf_, W_, sy, sh };
+        scanr::S s = win ? scanr::S{ buf_, W_, sy, sh, wlo, whi } : scanr::S{ buf_, W_, sy, sh };
         cs(s, W_, H_, sc);
         if (buffered_) {
             const uint32_t t=micros();
-            frame_.stage(sy,buf_,sh);
+            if (win) frame_.stageWindow(sy,buf_,sh,wlo,whi-wlo);
+            else frame_.stage(sy,buf_,sh);
             sliceCompareUs_ += micros()-t;
         }
+        else if (win) sink_.strip(wlo, sy, whi-wlo, sh, buf_);
         else sink_.strip(0, sy, W_, sh, buf_);
+    }
+}
+
+// SCAN on a wide panel: compose and stage only the dirty REGIONS (count tiles, channel readout, spectrum,
+// radar or its wedge, header and nav bands) that touch each strip, instead of full-width rows. Needs a valid
+// panel mirror: with none, repaint the whole strip.
+void renderScanRegions(const scanr::ScanScene& sc, int y0, int y1, const uieng::Rect* rg, int nr) {
+    if(y0<stagedY0_)stagedY0_=y0;
+    if(y1>stagedY1_)stagedY1_=y1;
+    const bool ok = !buffered_ || frame_.valid();
+    for (int sy = y0; sy < y1; sy += 16) {
+        const int sh = (sy + 16 > y1) ? (y1 - sy) : 16;
+        if (!ok) {                                           // no mirror to diff against: full-width strip
+            scanr::S s{ buf_, W_, sy, sh };
+            scanr::composeStrip(s, W_, H_, sc);
+            if (buffered_) frame_.stage(sy, buf_, sh); else sink_.strip(0, sy, W_, sh, buf_);
+            continue;
+        }
+        for (int i = 0; i < nr; ++i) {
+            if (rg[i].y >= sy + sh || rg[i].y + rg[i].h <= sy) continue;
+            const int lo = rg[i].x < 0 ? 0 : rg[i].x, hi = rg[i].x + rg[i].w > W_ ? W_ : rg[i].x + rg[i].w;
+            if (hi <= lo) continue;
+            scanr::S s{ buf_, W_, sy, sh, lo, hi };          // buf_ holds just this region's columns, packed
+            scanr::composeStrip(s, W_, H_, sc);
+            if (buffered_) {
+                const uint32_t t=micros();
+                frame_.stageRegion(sy, buf_, sh, lo, hi-lo, i);
+                sliceCompareUs_ += micros()-t;
+            } else sink_.strip(lo, sy, hi-lo, sh, buf_);
+        }
     }
 }
 
@@ -162,6 +218,10 @@ void saveVisibleRows() {
 
 void begin(Arduino_TFT* gfx, int W, int H) {
     gfx_ = gfx; W_ = W; H_ = H; stagedY0_=H; stagedY1_=0;
+    {   // The header bridge chip: tap toggles the bridge, a hold jumps to its settings card.
+        const auto chip = uieng::chrome(W, H).bridge;
+        touch::setHoldTarget(chip.x, chip.y, chip.w, chip.h);
+    }
     auto* front = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
     auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
     buffered_ = front && back;
@@ -263,7 +323,10 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
     sceneRec_ = rec;
     uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now; c.pmuOk = pmuOk; c.charging = charging; c.poi = poi::status(now);
     switch (cur_) {
-        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c); eScan_.back().animate(true); eScan_.commit();   break;
+        case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c, alertShown(s)); eScan_.back().animate(true); eScan_.back().fx(true);
+            if (s.set.theme == pal::TH_COSMICMUFFIN && !pal::clip(s.set.theme)) { if (const scanr::RadarVideo* v = cosmicVideo()) eScan_.back().video(v); }   // the built-in muffin plays its compiled-in clip
+            eScan_.back().sweep(s.set.sweep); eScan_.commit();
+            break;
         case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c, W_, H_); eDomain_.commit(); break;
         case uinav::Screen::Codex:  uiproj::codex(eCodex_.back(), s, c, W_, H_);   eCodex_.commit();  break;
         case uinav::Screen::Menu:   uiproj::menu(eMenu_.back(), s, c);     eMenu_.commit();   break;
@@ -273,7 +336,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
         case uinav::Screen::Attune: {
             uiproj::attune(eAttune_.back(),s,c,0,1);
             settingsctl::Data d;d.view=settings_;d.settings=s.set;d.netId=s.netId;
-            const auto bs=blebridge::stats();d.connected=bs.connected;d.streaming=bs.streaming;
+            const auto bs=blebridge::stats();d.connected=bs.connected;d.streaming=bs.streaming;d.pin=bs.pin;d.phones=bs.bonds;d.forgetArmed=forgetArm_.armed(millis());
             snprintf(d.name,sizeof d.name,"%s",blebridge::deviceName());
             snprintf(d.pcap,sizeof d.pcap,"%s",s.pcapStatus);
             eAttune_.back().controls(d);eAttune_.commit();break;
@@ -297,7 +360,11 @@ bool service(int budgetStrips) {
     sliceTransferUs_ = sliceCompareUs_ = 0;
     bool done = false;
     switch (cur_) {
-        case uinav::Screen::Scan:   { auto sl = eScan_.nextSlice(budgetStrips);   if (sl.y1 > sl.y0) renderSliceT<scanr::ScanScene>(eScan_.scene(), sl.y0, sl.y1, &scanr::composeStrip); done = sl.done; break; }
+        case uinav::Screen::Scan:   { auto sl = eScan_.nextSlice(budgetStrips);
+            uieng::Rect rg[scanpres::Engine::kMaxRegions]; const int nr = eScan_.regions(rg, scanpres::Engine::kMaxRegions);
+            if (nr > 0) { if (sl.y1 > sl.y0) renderScanRegions(eScan_.scene(), sl.y0, sl.y1, rg, nr); }
+            else { int wl=0,wh=-1; if(!eScan_.window(wl,wh)){wl=0;wh=-1;} if (sl.y1 > sl.y0) renderSliceT<scanr::ScanScene>(eScan_.scene(), sl.y0, sl.y1, &scanr::composeStrip, wl, wh); }
+            done = sl.done; break; }
         case uinav::Screen::Domain: { auto sl = eDomain_.nextSlice(budgetStrips); if (sl.y1 > sl.y0) renderSliceT<domr::DomainScene>(eDomain_.scene(), sl.y0, sl.y1, &domr::composeStrip); done = sl.done; break; }
         case uinav::Screen::Codex:  { auto sl = eCodex_.nextSlice(budgetStrips);  if (sl.y1 > sl.y0) renderSliceT<codr::CodexScene>(eCodex_.scene(), sl.y0, sl.y1, &codr::composeStrip); done = sl.done; break; }
         case uinav::Screen::Menu:   { auto sl = eMenu_.nextSlice(budgetStrips);   if (sl.y1 > sl.y0) renderSliceT<menr::MenuScene>(eMenu_.scene(), sl.y0, sl.y1, &menr::composeStrip); done = sl.done; break; }
@@ -369,6 +436,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     switch (cur_) {
         case uinav::Screen::Scan:
             if (s.alertActive) ctx.matchKey = kAlert;
+            ctx.alertTakeover = (W_ >= 400 && alertShown(s)) ? (s.alertConf == ui::CONF_HIGH ? 2 : 1) : 0;   // an alert on screen: a tap clears it
             h = uieng::scanHits(W_, H_, ctx);
             break;
         case uinav::Screen::Domain:
@@ -398,12 +466,22 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     scanpres::recordingHits(h, sceneRec_);
     if (!pendingHit_.pending()) {
         inputevents::Press p;
-        if (touch::takePress(p) && p.epoch == inputEpoch_)
-            pendingHit_.observe(h, p.x, p.y, p.epoch);
+        if (touch::takePress(p) && p.epoch == inputEpoch_) {
+            if (p.hold) holdToBridge_ = true;   // long press on the header chip
+            else pendingHit_.observe(h, p.x, p.y, p.epoch);
+        }
     }
     const uint8_t before = nav.screen;
     uieng::Hit hit{};
-    if (pendingHit_.take(acceptsTouch(), inputEpoch_, h, hit)) {
+    bool haveHit = false;
+    if (holdToBridge_ && acceptsTouch()) {
+        holdToBridge_ = false;
+        hit.slot = "bridge-hold"; hit.action = uieng::Action::Nav; hit.payload = int(uieng::ScreenId::Attune);
+        haveHit = true;
+    } else {
+        haveHit = pendingHit_.take(acceptsTouch(), inputEpoch_, h, hit);
+    }
+    if (haveHit) {
         const uinav::Requests rq = router_.dispatch(hit);
 
         // screen first (covers Nav, filter->Codex, located, detail open, Back, OpenMesh)
@@ -414,6 +492,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 display_.editor=-1;display_.count=0;settings_.editor=-1;
                 if(nav.screen==ui::SCR_FILES)ui::filesEnter(nav);
                 if(hit.slot && !strcmp(hit.slot,"node-tune"))settings_.tab=3;
+                if(hit.slot && !strcmp(hit.slot,"bridge-hold"))settings_.tab=2;   // ATTUNE > BRIDGE
                 break;
             case uieng::Action::MeshPage: nav.meshPage=uieng::meshNavigate(nav.meshPage,s.nNodes,hit.payload);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
@@ -443,7 +522,13 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 break;
             }
             case uieng::Action::SettingsControl:
-                settingsctl::apply(settings_,set,hit.payload);cancelInput();break;
+                if(hit.payload==settingsctl::FORGET_PHONES){
+                    if(forgetArm_.tap(millis()))blebridge::forgetPhones();   // second tap within ARM_MS confirms
+                }else {
+                    settingsctl::apply(settings_,set,hit.payload);
+                    if(settings_.editor==7&&(hit.payload==30||hit.payload==31||hit.payload==32))sound::alertFor(set.theme,ui::CONF_MED,set.sound);   // hear the new volume
+                }
+                cancelInput();break;
             case uieng::Action::DisplayControl: {
                 const int p=hit.payload;display_.error=false;
                 if(p>=0&&p<3){display_.tab=p;display_.editor=-1;}
@@ -471,12 +556,17 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             }
             case uieng::Action::ToggleLabels:      set.labels = set.labels ? 0 : 1; break;
             case uieng::Action::SettingPage:       nav.setPage = (uint8_t)hit.payload; break;
-            case uieng::Action::AlertTest: alertlog::pushTest(millis());nav.scroll=0;cancelInput();break;
+            case uieng::Action::AlertTest:
+                alertlog::pushTest(millis());nav.scroll=0;
+                alertlog::requestLiveTest();                       // raise the live test alert...
+                router_.setScreen(uinav::Screen::Scan);nav.screen=ui::SCR_SCAN;   // ...and go where the takeover plays
+                cancelInput();break;
             case uieng::Action::AlertOpen: {
                 uint32_t id=0;if(hit.key)for(const char* p=hit.key;*p;p++){if(*p<'0'||*p>'9'){id=0;break;}id=id*10+uint32_t(*p-'0');}
                 alertDetailOpen_=alertlog::find(id,millis(),alertDetail_);alertDetailPage_=0;cancelInput();break;
             }
             case uieng::Action::AlertClose:alertDetailOpen_=false;cancelInput();break;
+            case uieng::Action::AlertDismiss:alertGate_.dismiss(s.alertThreat,s.alertName);cancelInput();break;
             case uieng::Action::AlertPage: {if(alertDetailOpen_){
                 int pages=omnr::detailPageCount(W_,H_,eOmens_.scene().detail);
                 alertDetailPage_+=hit.payload<0?-1:1;if(alertDetailPage_<0)alertDetailPage_=0;if(alertDetailPage_>=pages)alertDetailPage_=pages>0?pages-1:0;

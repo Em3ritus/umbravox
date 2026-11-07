@@ -3,14 +3,14 @@
 #include <Arduino.h>
 #include <esp_event.h>
 #include <atomic>
+#include <esp_heap_caps.h>
 namespace discovery {
 namespace {
 std::atomic<int> completion{0}; // 0 pending, 1 complete, 2 failed; dedicated mailbox
 Metrics counters;
-bool initialized=false, owned=false, warned=false;
+bool initialized=false, owned=false;
 uint32_t started=0;
 esp_event_handler_instance_t handler;
-wifi_ap_record_t records[32];
 void done(void*, esp_event_base_t, int32_t, void* data) {
     const auto* e=static_cast<const wifi_event_sta_scan_done_t*>(data);
     completion.store(e && e->status==0 ? 1 : 2, std::memory_order_release);
@@ -29,7 +29,7 @@ bool start(uint8_t channel,uint16_t dwell,uint32_t now){
     c.channel=channel;c.show_hidden=true;c.scan_type=WIFI_SCAN_TYPE_ACTIVE;
     c.scan_time.active.max=dwell? (dwell>1500?1500:dwell):120;
     completion.store(0,std::memory_order_release);
-    owned=true;started=now;warned=false;
+    owned=true;started=now;
     const esp_err_t err=esp_wifi_scan_start(&c,false);
     if(err!=ESP_OK){owned=false;Serial.printf("discovery: start rejected %d\n",(int)err);return false;}
     ++counters.started;
@@ -39,9 +39,16 @@ bool service(uint32_t now,Sink sink){
     if(!owned)return false;
     const int result=completion.exchange(0,std::memory_order_acq_rel);
     if(!result){
-        if(!warned && now-started>=5000){
-            warned=true;
-            Serial.println("discovery: completion missing; radio held, restart required if it does not recover");
+        // A scan whose completion event never arrives must not hold the radio
+        // forever: capture hopping, mesh and node loops all wait on busy(). After
+        // 5 s stop the scan, count it failed and hand the radio back.
+        if((int32_t)(now-started)>=5000){
+            Serial.println("discovery: completion missing after 5 s; stopping the scan and releasing the radio");
+            esp_wifi_scan_stop();
+            esp_wifi_clear_ap_list();
+            ++counters.completed;++counters.failed;
+            owned=false;
+            return false;
         }
         return true;
     }
@@ -49,11 +56,15 @@ bool service(uint32_t now,Sink sink){
     if(result!=1)++counters.failed;
     uint16_t total=0,n=32;
     if(result==1 && esp_wifi_scan_get_ap_num(&total)==ESP_OK && total){
-        if(esp_wifi_scan_get_ap_records(&n,records)==ESP_OK){
+        // 3 KB: held in PSRAM only while a finished scan is read out (it was a static in internal RAM, which is scarce).
+        auto* records=static_cast<wifi_ap_record_t*>(heap_caps_malloc(32*sizeof(wifi_ap_record_t),MALLOC_CAP_SPIRAM));
+        if(!records)records=static_cast<wifi_ap_record_t*>(heap_caps_malloc(32*sizeof(wifi_ap_record_t),MALLOC_CAP_8BIT));   // a board without PSRAM
+        if(records&&esp_wifi_scan_get_ap_records(&n,records)==ESP_OK){
             for(uint16_t i=0;i<n;++i)if(sink)sink(records[i]);
             if(total>n)counters.omitted+=total-n;
             if(total>n)Serial.printf("discovery: omitted %u AP records\n",(unsigned)(total-n));
         }else esp_wifi_clear_ap_list();
+        heap_caps_free(records);
     }else esp_wifi_clear_ap_list();
     owned=false;
     return false;

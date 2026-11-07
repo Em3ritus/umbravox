@@ -22,7 +22,7 @@ const GrimoireEntry GRIMOIRE[GRIMOIRE_N] = {
     {SCR_DOMAIN, 4,  "DOMAIN"},
     {SCR_ECHOES, 5,  "ECHOES"},
     {SCR_MESH,   6,  "NODES"},
-    {SCR_OMENS,  12, "ALERTS"},
+    {SCR_OMENS,  12, "OMENS"},
     {SCR_ATTUNE, 15, "ATTUNE"},
     {SCR_ASPECT, 11, "ASPECT"},
 };

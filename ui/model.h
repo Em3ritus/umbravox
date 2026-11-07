@@ -116,6 +116,8 @@ struct Settings {
     uint16_t meshProfile = 0;   // 0 Tracking (existing policy), 1 Discovery
     uint16_t bridgeApp = 1;   // remembered app: 1 WarDriveGo, 2 Biscuit
     uint16_t bleBridge = 0;   // 0 OFF, 1 WarDriveGo, 2 Biscuit; fills aligned extension
+    // Alert beep volume on a board with a speaker (Waveshare 3.5"): 0 OFF, 1 QUIET, 2 NORMAL, 3 LOUD. ATTUNE > recording > ALERT SOUND.
+    uint16_t sound = 2;
 };
 
 // Settings.orient. Unknown values clamp to LANDSCAPE.
@@ -394,6 +396,7 @@ struct State {
     uint32_t meshHits = 0;     // every sighting, local and relayed
     uint8_t  meshLossPct = 0;  // reports lost, across every live node
     uint8_t  meshCoords = 0;   // live coordinators (0 = the Core runs the nodes itself)
+    uint16_t meshCoordNodes = 0;  // nodes the live coordinators carry (the handheld cannot list them: the batches name none)
     // Mesh network id (device/mesh.h): 0 = the open network, else a private one.
     // enrollSecs counts down a pairing window opened from the MESH screen.
     uint8_t  netId = 0;
@@ -441,5 +444,8 @@ struct State {
     // /diag.log. Saturates at 255.
     uint8_t  packsSkipped = 0;
 };
+
+// Nodes reporting to this mesh, for the status strips: the ones this handheld lists plus the ones its coordinators carry.
+inline int nodesLive(const State& s) { return (int)s.nNodes + (int)s.meshCoordNodes; }
 
 } // namespace ui

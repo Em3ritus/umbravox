@@ -58,8 +58,10 @@ static void profile(int w,int h,int theme,uint64_t expected) {
     auto next=sc;next.now+=50;
     scanpres::sceneDirty(w,h,sc,next,status,body,&field);
     assert(!status && body && field);
-    auto same=sc;same.now+=1;
-    scanpres::sceneDirty(w,h,sc,same,status,body,&field);assert(!status && !body);
+    // A clock tick that changes nothing visible must not repaint. The animated sweep is continuous
+    // (1/1024 turn), so any tick may move it; the guarantee holds for a static radar.
+    auto still=sc;still.animateSweep=false;auto stillLater=still;stillLater.now+=1;
+    scanpres::sceneDirty(w,h,still,stillLater,status,body,&field);assert(!status && !body);
     const auto r=scanr::radarBounds(w,h);
     // Every sweep position, restoring the old ray from the same scene/artwork.
     for(int phase=0;phase<72;++phase) {
@@ -126,7 +128,12 @@ int main() {
     for(int i=0;i<hits.count;++i)assert(hits.items[i].action!=uieng::Action::ToggleLogging);
     for(bool menu:{false,true}){stagedPresentation(480,320,menu);stagedPresentation(320,240,menu);}
     // Body goldens: accepted per-size radar positions; CVLT has two rings and a quiet seal.
-    const uint64_t golden[2][3]={{3804890134860932238ull,13960939069491462959ull,2857356024564699678ull},{968414736510125997ull,14632419227772201257ull,1045063722206322167ull}};
+    // Re-pinned on integration: the three built-in themes keep their original (violet) colours.
+    // CVLT and the clean radars re-pinned again when the sweep got a continuous head, a 90-degree tail and a needle drawn over the artwork;
+    // the 480x320 hashes were re-pinned for layout A (slim count column, 102 px radar, runic ring, right-hand spectrum); 320x240 is unchanged.
+    // 480x320 CVLT and Cosmic Muffin re-pinned when their radars got the CYD artwork (the full BIG seal, the muffin picture and no muffin header badge); the compact hashes did not move.
+    // Cosmic Muffin (theme 2) re-pinned at both sizes when its picture became the owner's galaxy-cupcake art (ui/muffin.h); UMBRAVOX and CVLT did not move.
+    const uint64_t golden[2][3]={{7005059053505719851ull,528492652723590852ull,18357870074604577801ull},{12428363427845690611ull,17369461422928189184ull,15452663357996909095ull}};
     for(int theme=0;theme<3;++theme){profile(480,320,theme,golden[0][theme]);profile(320,240,theme,golden[1][theme]);}
     scanpres::PresentMetrics m;m.work(100,20,30);assert(m.composeUs==100 && m.diffUs==20 && m.transferUs==30);
     assert(m.renderUs==150 && m.maxSliceUs==150 && m.slices==1);m.entryMaxMs=5;m.clear();

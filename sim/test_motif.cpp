@@ -108,11 +108,17 @@ int main(int argc, char** argv) {
     printf("regression guard (built-in COSMIC MUFFIN and BAPH0MAU5):\n");
     {
         static const uint32_t WANT[16] = {
-            // Approved refreshed Cosmic artwork; legacy motif geometry unchanged.
-            0x5A1CB09Cu, 0x11E32DAEu, 0x57D1210Cu, 0xDFEE32FEu,
-            0xAE98A637u, 0x480ACD76u, 0xA50E4263u, 0x31CF93CFu,
-            0xE1BFB741u, 0x6B5BF093u, 0x49F3564Bu, 0xCCCB3B68u,
-            0x1BAAEB9Bu, 0x38343B82u, 0x4C315202u, 0x593E869Eu,
+            // Scan renders 0..3 re-pinned on integration for the field-fixes
+            // footer ("NO FIX" -> "NO GPS"): the only pixels that moved are
+            // the footer text (rows 108..114, cols 29..45). Re-pinned again
+            // for the footer's mesh node count (glyph + "0", DIM): the only
+            // pixels that moved are rows 108..114, cols 56..67.
+            // Re-pinned for the new COSMIC MUFFIN picture (tools/gif2radar.py --still, ui/muffin.h): scan 0,1 and the alert styles that
+            // draw the muffin changed; BAPH0MAU5 (scan 2,3) and the alert styles without the muffin did not.
+            0x263FA851u, 0xEBDE426Fu, 0x3E46EFE6u, 0xCB8FC0BAu,
+            0x2ADB5AA3u, 0x01C1A044u, 0x288CB121u, 0xA7A853D7u,
+            0x3462C731u, 0x5ED8CDD4u, 0x99D5C150u, 0xC65AC96Eu,
+            0x23B63315u, 0xD518259Cu, 0x48B65089u, 0xCD178FBBu,
         };
         uint32_t g[16]; computeGuard(g);
         for (int i = 0; i < 16; i++) {

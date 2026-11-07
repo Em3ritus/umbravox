@@ -59,6 +59,8 @@ int sensitivity(); // FT6336 threshold currently applied
 bool setSensitivity(int threshold); // bounded 8..30, locked write, saved only after ACK
 bool startSampling(); // after all setup-time Wire initialization
 bool takePress(inputevents::Press& p);
+// A touch that starts in this rectangle fires on release (tap) or after a hold, not on touch-down.
+void setHoldTarget(int x, int y, int w, int h);
 void newScreen();
 void cancelPresses();
 void samplingStats(uint32_t& maxGapMs, uint32_t& missed, uint32_t& dropped);
