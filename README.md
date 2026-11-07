@@ -14,6 +14,20 @@ expand coverage with coordinated scanning nodes.
 Stock UMBRAVOX theme, native 480×320 production-renderer previews using synthetic
 demonstration data. These are not hardware photographs.
 
+### Moving themes
+
+<table>
+<tr>
+<td align="center"><img src="docs/theme-cvlt.gif" alt="CVLT OF BAPH0MAU5 theme with its animated radar clip" width="320"><br><b>CVLT OF BAPH0MAU5</b><br>animated radar clip</td>
+<td align="center"><img src="docs/theme-cosmic-muffin.gif" alt="COSMIC MUFFIN theme with its animated radar clip" width="320"><br><b>COSMIC MUFFIN</b><br>animated radar clip</td>
+<td align="center"><img src="docs/theme-slick.gif" alt="SLICK theme with its live radar sweep" width="320"><br><b>SLICK</b><br>live radar sweep</td>
+</tr>
+</table>
+
+Waveshare 3.5-inch SCAN screen, rendered by the same shared drawing code the firmware uses, with synthetic
+demonstration data (not hardware photographs). COSMIC MUFFIN plays its clip as built in. The CVLT clip is a theme pack's
+`radar.vid` loaded from the SD card, not part of the built-in theme.
+
 ## Boards and validation
 
 | Board | Native UI | Current hardware evidence |
