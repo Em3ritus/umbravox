@@ -18,8 +18,8 @@ demonstration data. These are not hardware photographs.
 
 | Board | Native UI | Current hardware evidence |
 | --- | --- | --- |
-| Waveshare ESP32-C5-Touch-LCD-3.5 | 480×320 | Browser installation, all four image hashes, and boot confirmed |
-| Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed |
+| Waveshare ESP32-C5-Touch-LCD-3.5 (reference board) | 480×320 | Browser installation, all four image hashes, and boot confirmed; the current source is also tested on this board |
+| Waveshare ESP32-C5-Touch-LCD-2.8 | 320×240 | Browser installation, all four image hashes, and boot confirmed on the earlier prerelease; the current source is compile-checked only |
 | NerdMinder NM-CYD-C5 | 320×240, the original UI | Current source flashed with PlatformIO, 12 of 12 clean boots; the browser install of this image is not yet run |
 
 Each release's firmware packages carry the commit they were built from and a source snapshot
@@ -33,11 +33,11 @@ See [node validation](docs/XIAO-NODE-VALIDATION.md) and
 ## Installation
 
 Use desktop Chrome or Edge, a USB data cable, and the [browser installer](https://em3ritus.github.io/umbravox/).
-Select your exact board: Waveshare 3.5″, Waveshare 2.8″, or NM-CYD-C5.
+Select your exact board: Waveshare 3.5″, Waveshare 2.8″, or NM-CYD-C5 (which keeps the original UI).
 After all four images verify, press RESET without holding BOOT.
 
-First native-UI installation replaces the partition table with two 6 MiB app
-slots, including migration from NM's old 3 MiB slot. Back up needed internal
+First native-UI installation on a Waveshare board replaces the partition table with two 6 MiB app
+slots. The NM-CYD-C5 keeps its single 3 MiB slot. Back up needed internal
 flash data first; existing internal filesystem data may become inaccessible.
 External SD is not written. No full-chip erase is performed. OTA is not implemented.
 
