@@ -34,20 +34,26 @@
 #include "../ui/detail_present.h"
 #include "../ui/files_present.h"
 #include "../ui/files.h"
-// The COSMIC MUFFIN theme's animated radar clip: a colour radar.vid in flash (tools/gif2radar.py, from ui/art/cosmic-muffin.gif).
-// It is parsed once with the same themepack::parseClip a pack's radar.vid goes through; if that ever fails the theme keeps its
-// still picture (ui/muffin.h), which is also what compact panels and the legacy CYD canvas show.
+// The built-in themes that play an animated radar clip compiled into flash: COSMIC MUFFIN (a colour radar.vid, tools/gif2radar.py, from
+// ui/art/cosmic-muffin.gif) and CVLT OF BAPH0MAU5 (the owner's grey-level radar.vid, drawn in the theme's colours).
+// Each is parsed once with the same themepack::parseClip a pack's radar.vid goes through; if that ever fails the theme keeps its
+// still picture, which is also what compact panels and the legacy CYD canvas show.
 #include "cosmic_muffin_clip.h"
+#include "cvlt_clip.h"
 #include "../ui/themepack.h"
-static const scanr::RadarVideo* cosmicVideo() {
-    static scanr::RadarVideo v;
-    static int state = 0;                                   // 0 not parsed yet, 1 ok, 2 refused
-    if (state == 0) {
+static const scanr::RadarVideo* builtinVideo(uint8_t theme) {
+    struct Slot { scanr::RadarVideo v; int state; };        // state: 0 not parsed yet, 1 ok, 2 refused
+    static Slot muffin{}, cvlt{};
+    Slot* sl; const uint8_t* data; size_t len; const char* name;
+    if (theme == pal::TH_COSMICMUFFIN) { sl = &muffin; data = COSMIC_CLIP; len = sizeof COSMIC_CLIP; name = "COSMIC MUFFIN"; }
+    else if (theme == pal::TH_BAPH0MAU5) { sl = &cvlt; data = CVLT_CLIP; len = sizeof CVLT_CLIP; name = "CVLT OF BAPH0MAU5"; }
+    else return nullptr;
+    if (sl->state == 0) {
         themepack::Clip c{}; char why[64];
-        if (themepack::parseClip(COSMIC_CLIP, sizeof COSMIC_CLIP, c, why, sizeof why)) { v = scanr::RadarVideo{ c.w, c.h, c.frames, c.fps, c.px, c.pal }; state = 1; }
-        else { Serial.printf("theme: built-in COSMIC MUFFIN clip refused (%s)\n", why); state = 2; }
+        if (themepack::parseClip(data, len, c, why, sizeof why)) { sl->v = scanr::RadarVideo{ c.w, c.h, c.frames, c.fps, c.px, c.pal }; sl->state = 1; }
+        else { Serial.printf("theme: built-in %s clip refused (%s)\n", name, why); sl->state = 2; }
     }
-    return state == 1 ? &v : nullptr;
+    return sl->state == 1 ? &sl->v : nullptr;
 }
 
 namespace engineadapter {
@@ -324,7 +330,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
     uiproj::Chrome c; c.gps = gps; c.rec = rec; c.hasCell = hasCell; c.batt = batt; c.now = now; c.pmuOk = pmuOk; c.charging = charging; c.poi = poi::status(now);
     switch (cur_) {
         case uinav::Screen::Scan:   uiproj::scan(eScan_.back(), s, c, alertShown(s)); eScan_.back().animate(true); eScan_.back().fx(true);
-            if (s.set.theme == pal::TH_COSMICMUFFIN && !pal::clip(s.set.theme)) { if (const scanr::RadarVideo* v = cosmicVideo()) eScan_.back().video(v); }   // the built-in muffin plays its compiled-in clip
+            if (!pal::clip(s.set.theme)) { if (const scanr::RadarVideo* v = builtinVideo(s.set.theme)) eScan_.back().video(v); }   // a built-in with a compiled-in clip (muffin, CVLT) plays it unless an SD pack overrides it
             eScan_.back().sweep(s.set.sweep); eScan_.commit();
             break;
         case uinav::Screen::Domain: uiproj::domain(eDomain_.back(), s, c, W_, H_); eDomain_.commit(); break;

@@ -8,6 +8,10 @@ Built-in themes are saved by ID, and the IDs after SLICK moved up when those wer
 may come up on a different built-in theme (or UMBRAVOX, if its old ID is now out of range) after updating, until it is re-selected.
 The native UI adapts to panel size; the legacy NM renderer retains its own layout.
 
+On wide panels (480 px and up) COSMIC MUFFIN and CVLT OF BAPH0MAU5 play an animated radar clip compiled into the firmware
+(`device/cosmic_muffin_clip.h`, `device/cvlt_clip.h`; the CVLT one is 650 KB of flash). An SD pack that carries the same crew
+name and its own `radar.vid` overrides it. Compact panels and the legacy CYD UI show the still picture.
+
 The original three theme IDs stay unchanged. The bundled themes after them take IDs 3–9 in the order listed above
 (the `FOLDERS` order in `tools/generate_bundled_themes.py`). Saved crew names resolve even
 when their SD pack is absent. New custom themes follow the bundled set.
