@@ -59,7 +59,7 @@ int main() {
     s.psramFree = 7000000; s.stackFree = 2100;
     s.wifiFrames = 500; s.bleAdverts = 90; s.reports = 4;
     s.wifiUniq = 4096; s.tableCap = 8192; s.nodes = 2; s.lossPct = 7;
-    s.camped = true; s.fix = true; s.theme = 2; s.sweep = 5;
+    s.camped = true; s.fix = true; s.theme = 2; s.sweep = 5; s.rec = 3;
     const int n = row(b, sizeof b, r, s, 10000);
     check("row ends with a newline",       n > 0 && b[n - 1] == '\n');
     check("row has one field per header column", fields(b) == fields(header()));
@@ -71,6 +71,8 @@ int main() {
     check("worst gap lands in its column",  !strcmp(f, "75"));
     field(b, col("wifi_fps"), f, sizeof f);
     check("500 frames / 10 s = 50 per s",   !strcmp(f, "50"));
+    field(b, col("rec"), f, sizeof f);
+    check("the recording state lands in its column (rec)", col("rec") >= 0 && !strcmp(f, "3"));
     field(b, col("tbl_pct"), f, sizeof f);
     check("dedup table 50% full",           !strcmp(f, "50"));
     field(b, col("heap_min"), f, sizeof f);

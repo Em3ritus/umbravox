@@ -17,8 +17,8 @@ def load(paths):
         with open(p, newline="") as fh:
             for r in csv.DictReader(fh):
                 try:
-                    rows.append({k: float(v) for k, v in r.items() if v not in (None, "")})
-                except ValueError:
+                    rows.append({k: float(v) for k, v in r.items() if k is not None and v not in (None, "")})   # k None: a row longer than its header (a newer build appended a column to an older file)
+                except (ValueError, TypeError):
                     pass                      # a torn last line after a power cut
     return rows
 

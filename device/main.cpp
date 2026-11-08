@@ -1430,7 +1430,7 @@ void loop() {
     evidencecsv::tick(logging::state()==logging::ACTIVE && logging::wantsActive()?logging::fileName():"",
                       millis(),ui::Gnss::utcEpoch(millis()),cap::evidenceCsvRow);
     bootStall("evidence csv",start); }
-    if(evidencecsv::takeError()){storageWriteError=true;elog::event(elog::WARN,"csv","client/probe export write failed; stopped for this session");}
+    if(evidencecsv::takeError()){storageWriteError=true;elog::event(elog::WARN,"csv","client/probe export stopped for this session: %s",evidencecsv::failReason());}
     poi::service(millis());
     {const uint32_t start=micros();pcap::service(millis());bootStall("pcap service",start);}
     cap::setRawCapture(pcap::active());
@@ -1622,7 +1622,8 @@ void loop() {
         // the first navTouch runs before the draw-time apply below. Same
         // task, before any draw, so this is safe.
         pal::setTheme(set.theme);
-        themeload::tick(set.theme, millis(), true);   // the saved theme's clip and sounds, before the first frame
+        // The saved theme's clip and sounds are NOT read here any more: a pack with a big clip held boot for 2.5 to 3.6 s before the first
+        // frame (field logs). The ordinary tick in the main loop reads them in slices once the screen is up.
         mesh::netId = prefs::netId(mesh::netId);   // NVS overrides the build default
         Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::netId,
                       mesh::netId == 0 ? " (open -- ENROLL to make a private net)" : "");
@@ -2131,6 +2132,14 @@ void loop() {
 
     // Publish the logging session for the footer, after any toggle above.
     s.logState = (uint8_t)logging::state();
+    {   // a line in the diag log whenever wardrive logging starts, stops or loses its card, so a long run can be read afterwards
+        static int8_t prevLog = -1;
+        if (prevLog != (int8_t)s.logState) {
+            static const char* const nm[] = { "idle (not recording)", "recording", "no card" };
+            elog::event(elog::INFO, "rec", "wardrive logging: %s", s.logState < 3 ? nm[s.logState] : "?");
+            prevLog = (int8_t)s.logState;
+        }
+    }
     memset(s.logName, 0, sizeof s.logName);
     strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
 

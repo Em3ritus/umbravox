@@ -82,6 +82,7 @@ void tick(uint32_t now, const ui::State& s, bool dark) {
     sn.fix      = s.gpsFix;
     sn.theme    = s.set.theme;
     sn.sweep    = s.set.sweep;
+    sn.rec      = s.logState;                      // 0 idle, 1 recording, 2 no card: so a log can say when recording stopped
 
     acc.sd(sdlog::takeMaxStallMs());               // what the card cost this interval
     row(rows[nrows], sizeof rows[nrows], acc, sn, dt);
