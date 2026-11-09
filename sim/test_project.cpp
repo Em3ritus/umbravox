@@ -156,6 +156,11 @@ int main(){
     { atnpres::AttuneStore st; attune(st, s, c, /*page*/2, /*rowsPerPage*/3); const auto& o=st.scene();
       expect(o.nRows==3 && !strcmp(o.rows[0].label,"NODE PROFILE") && !strcmp(o.rows[1].label,"NODE DWELL") && !strcmp(o.rows[2].label,"DISCOVERY TX"), "attune: page 2 maps original setting IDs after display controls move"); }
 
+    { auto rec=s;rec.set.activeDiscovery=1;rec.discoveryPaused=false;
+      { atnpres::AttuneStore st; attune(st, rec, c, 2, 3); expect(!strcmp(st.scene().rows[2].value,"ACTIVE"), "attune: DISCOVERY TX shows ACTIVE when idle"); }
+      rec.discoveryPaused=true;
+      { atnpres::AttuneStore st; attune(st, rec, c, 2, 3); expect(!strcmp(st.scene().rows[2].value,"PAUSED REC"), "attune: DISCOVERY TX shows PAUSED REC while recording"); } }
+
     { auto value=s;value.detailPage=1;value.detail.info.valid=true;value.detail.info.width=80;value.detail.info.phy=3;value.detail.observations=123;
       detpres::DetailStore one,two;detail(one,value,c);value.detail.observations=124;detail(two,value,c);
       expect(one.scene().page==1 && !strcmp(one.scene().facts[1],"OBSERVATIONS 123") && strstr(one.scene().facts[3],"80 MHz"),"AP info page projects observed metadata");

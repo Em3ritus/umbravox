@@ -30,6 +30,7 @@ static unsigned consoleDwell=220;
 #include "touch.h"
 #include "prefs.h"
 #include "logging.h"
+#include "discoverypolicy.h"
 #include "sdlog.h"
 #include "elog.h"
 #include "themeload.h"
@@ -1775,8 +1776,12 @@ void loop() {
     }
     set.pcapEnabled=pcap::active()?1:0;
 #endif
-    if(set.activeDiscovery!=applied.activeDiscovery){cap::setActive(set.activeDiscovery);blescan::setActive(set.activeDiscovery);}
-    meshcore::setTiming(set.meshProfile,set.nodeDwellMs,set.activeDiscovery);
+    // Active discovery is held off while a session records (discoverypolicy.h);
+    // the saved setting is left alone and applies again after STOP.
+    static uint8_t appliedDiscovery = 0;
+    const uint8_t discoveryNow = discoverypolicy::effective((uint8_t)(set.activeDiscovery ? 1 : 0), logging::wantsActive());
+    if(discoveryNow!=appliedDiscovery){cap::setActive(discoveryNow);blescan::setActive(discoveryNow);appliedDiscovery=discoveryNow;}
+    meshcore::setTiming(set.meshProfile,set.nodeDwellMs,discoveryNow);
     if (set.dwellMs != applied.dwellMs) cap::setDwell(set.dwellMs);
     if (set.bands   != applied.bands)   cap::setBands(set.bands);
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
@@ -2132,6 +2137,7 @@ void loop() {
 
     // Publish the logging session for the footer, after any toggle above.
     s.logState = (uint8_t)logging::state();
+    s.discoveryPaused = s.set.activeDiscovery && !discoverypolicy::effective(1, logging::wantsActive());
     {   // a line in the diag log whenever wardrive logging starts, stops or loses its card, so a long run can be read afterwards
         static int8_t prevLog = -1;
         if (prevLog != (int8_t)s.logState) {

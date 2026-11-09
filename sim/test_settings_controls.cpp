@@ -8,6 +8,11 @@ static bool overlap(uieng::Rect a,uieng::Rect b){return a.x<b.x+b.w&&b.x<a.x+a.w
 static std::vector<uint16_t> render(int w,int h,const atnr::AttuneScene& sc){std::vector<uint16_t> p(w*h);for(int y=0;y<h;y+=16){scanr::S s{p.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(s,w,h,sc);}return p;}
 int main(int argc,char**argv){
  pal::setTheme(0);const char* names[]={"scanning","recording","bridge","nodes"};
+ { // DISCOVERY card: a saved ACTIVE setting reads PAUSED REC while a session records.
+  Data d;char b[32];d.settings.activeDiscovery=1;value(d,0,b,sizeof b);assert(!strcmp(b,"ACTIVE"));
+  d.paused=true;value(d,0,b,sizeof b);assert(!strcmp(b,"PAUSED REC"));
+  d.settings.activeDiscovery=0;value(d,0,b,sizeof b);assert(!strcmp(b,"PASSIVE"));   // never "paused" when it was off
+ }
  { // PAIRED PHONES card (bridge tab, 4th card): count, armed confirm, and a tap target.
   Data d;d.settings.bleBridge=1;char b[32];
   assert(!strcmp(title(11),"PAIRED PHONES"));
