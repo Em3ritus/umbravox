@@ -340,6 +340,7 @@ struct State {
     bool     sdWriteError = false; // latched capture/export failure until reboot
     char     logName[64] = {0};   // absolute recording path
     uint8_t  logState = 0;        // 0 idle, 1 active, 2 no-card
+    bool     discoveryPaused = false; // DISCOVERY TX is saved ON but held off while recording
 
     // chrome
     uint32_t uptimeS = 0;

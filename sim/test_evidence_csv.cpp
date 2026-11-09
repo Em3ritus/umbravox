@@ -41,7 +41,7 @@ int main(){
  run("/WD-0001.csv",13000);assert(evidencecsv::rows()==4);evidencecsv::stop();
  assert(files["/WD-0001-probes.csv"].find("2026-")!=std::string::npos);
  // Existing files aren't overwritten, including restart with same stem.
- old=files;run("/WD-0001.csv",15000);assert(evidencecsv::takeError()&&files==old);evidencecsv::stop();
+ old=files;run("/WD-0001.csv",15000);assert(evidencecsv::takeError()&&files==old);assert(evidencecsv::failReason()[0]);evidencecsv::stop();
  // Failure rolls partial append back and latches; no repeated writes.
  run("/WD-0002.csv",20000);auto good=files["/WD-0002-clients.csv"];shortWrite=true;run("/WD-0002.csv",32000);assert(evidencecsv::takeError());assert(files["/WD-0002-clients.csv"]==good);opened=opens;run("/WD-0002.csv",45000);assert(opens==opened);evidencecsv::stop();
  run("/WD-0003.csv",50000);good=files["/WD-0003-clients.csv"];closeFail=true;run("/WD-0003.csv",62000);assert(evidencecsv::takeError()&&files["/WD-0003-clients.csv"]==good);evidencecsv::stop();

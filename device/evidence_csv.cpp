@@ -16,7 +16,8 @@ unsigned cursor=0;uint32_t nextAt=0,committed=0;bool running=false,failed=false,
 char timeText[24],apText[20],staText[20],rssiText[12],ageText[16],nameText[34],quoted[72],hex[65];
 void stamp(uint32_t epoch){timeText[0]=0;if(epoch>=1577836800u)csv::stampUtc(timeText,epoch);}
 size_t length(int n,size_t cap){return n>=0&&size_t(n)<cap?size_t(n):0;}
-void fail(){failed=true;error=true;}
+const char* why="";
+void fail(const char* w="write to the card failed"){failed=true;error=true;why=w;}
 bool flush(File& f){
  if(!f.used||failed)return !failed;
  if(!sdlog::present() || (!f.bytes&&sdlog::exists(f.path)) || (f.bytes&&sdlog::sizeOf(f.path)!=f.bytes)){fail();return false;}
@@ -59,7 +60,7 @@ void tick(const char* name,uint32_t now,uint32_t epoch,Source source){
  }
  if(!*name)return;
  if(!running){
-  failed=false;committed=0;cursor=0;sweeping=true;running=true;
+  failed=false;why="";committed=0;cursor=0;sweeping=true;running=true;
   const size_t n=strlen(name);
   if(n>=sizeof session||n<4||strcmp(name+n-4,".csv")){fail();running=false;return;}
   memcpy(session,name,n+1);
@@ -75,11 +76,12 @@ void tick(const char* name,uint32_t now,uint32_t epoch,Source source){
  const size_t n=source?source(cursor,row,sizeof row,now,epoch):0;
  if(n>=sizeof row){fail();return;}
  if(n&&f.used+n>sizeof f.batch){flush(f);return;} // retry this slot next pass
- if(f.bytes+f.used+n>16u*1024*1024){fail();return;}
+ if(f.bytes+f.used+n>16u*1024*1024){fail("reached the 16 MiB limit for one file");return;}
  if(n){memcpy(f.batch+f.used,row,n);f.used+=n;f.pending++;}
  cursor++;
 }
 bool takeError(){bool v=error;error=false;return v;}
+const char* failReason(){return why;}
 const char* status(){return failed?"WRITE ERROR":running?"RECORDING":"OFF";}
 uint32_t rows(){return committed;}
 const char* activeFile(unsigned index){return running&&index<2?files[index].path:"";}

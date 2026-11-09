@@ -12,6 +12,7 @@ size_t probe(char*,size_t,const evidence::ProbeRow&,uint32_t,uint32_t,uint32_t d
 void tick(const char* session,uint32_t now,uint32_t epoch,Source source);
 void stop(); // drains the two batches; shutdown only
 bool takeError();
+const char* failReason(); // why the export stopped (empty if it has not): a write error, or the 16 MiB file limit
 const char* status();
 const char* activeFile(unsigned index); // includes stop/rollover flush
 uint32_t rows(); // committed rows, not unique records
