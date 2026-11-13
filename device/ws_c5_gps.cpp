@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include "ws_c5_bus.h"
 #include "i2c_budget.h"
+#include "gps_presence.h"
 #include "board.h"
 
 // Waveshare LC76G_RPI_I2C (i2c_read.c / i2c_write.c), one read cycle:
@@ -42,12 +43,13 @@ constexpr uint16_t TIMEOUT_MS = 100;   // fail-fast: a healthy step answers in a
                                        // non-answering step fails fast instead of blocking 300ms
 constexpr uint32_t WAKE_AFTER = 4000 / PERIOD_MS;     // empty cycles in a row before a wake
 // With no module on the bus every cycle fails, and the core logs each failed
-// transfer. After this many failures in a row, drop to one quiet presence
-// check every ABSENT_MS until the module answers again.
+// write. The first check after boot decides absence; a module that has
+// answered must miss this many polls in a row. While absent, one quiet
+// presence check every ABSENT_MS until it answers. See gps_presence.h.
 constexpr uint32_t ABSENT_AFTER = 3000 / PERIOD_MS;
 constexpr uint32_t ABSENT_MS    = 10000;
 
-bool absent = false;
+gpspresence::Tracker presence;
 
 Stats st;
 #if defined(UMBRAVOX_SCAN_ENGINE)
@@ -105,6 +107,19 @@ uint8_t dummy(uint8_t addr) {   // 1-byte write; 0 = ACKed
     return endWrite(addr);
 }
 
+// Address-only probe: Wire sends no data byte, and the core does not log a
+// missing ACK for it the way it does for a failed write. Asked twice, so a
+// module that is there but busy for a moment is not taken for an empty bus.
+bool answers(uint8_t addr) {
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (attempt) delay(STEP_MS);
+        if (!transactionTime()) return false;
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) return true;
+    }
+    return false;
+}
+
 // The C5 bus quirk touch.cpp also works around: re-open once before a
 // transaction (never between its steps), with the long timeout the module's
 // clock stretching needs. Returns the timeout to put back afterwards.
@@ -129,10 +144,11 @@ int poll(void (*sink)(char, uint32_t), uint32_t now) {
     const uint16_t savedTo = openBus();
     do {
         delay(STEP_MS);
+        // Not known to be there: ask quietly, and leave it at that if not.
+        if (presence.quiet() && !answers(CR_ADDR)) { out = -2; break; }
         if (dummy(CR_ADDR) != 0) {
-            // Demo Recovery_I2C: nudge the read and write addresses. Not
-            // while absent -- with nothing there it only adds failures.
-            if (!absent && (dummy(RD_ADDR) == 0 || dummy(WR_ADDR) == 0)) st.recov++;
+            // Demo Recovery_I2C: nudge the read and write addresses.
+            if (dummy(RD_ADDR) == 0 || dummy(WR_ADDR) == 0) st.recov++;
             out = -2;
             break;
         }
@@ -184,27 +200,19 @@ void begin() {
 }
 
 void tick(void (*sink)(char, uint32_t), uint32_t now) {
-    static uint32_t lastAt = 0, emptyRun = 0, failRun = 0;
+    static uint32_t lastAt = 0, emptyRun = 0;
     static bool     heard = false;
-    if (lastAt && now - lastAt < (absent ? ABSENT_MS : PERIOD_MS)) return;
+    if (lastAt && now - lastAt < (presence.absent ? ABSENT_MS : PERIOD_MS)) return;
     lastAt = now ? now : 1;
 
     const int r = poll(sink, now);
     st.cycles++;
-    if (r == -2) {                         // nobody at 0x50
-        st.fails++;
-        if (!absent && ++failRun >= ABSENT_AFTER) {
-            absent = true;
-            Serial.printf("gps: LC76G not answering on I2C -- checking every %lu s\n",
-                          (unsigned long)(ABSENT_MS / 1000));
-        }
-        return;
-    }
-    failRun = 0;                           // it answered, whatever came next
-    if (absent) {
-        absent = false;
-        Serial.println("gps: LC76G answering on I2C");
-    }
+    const gpspresence::Event ev = presence.onPoll(r != -2, ABSENT_AFTER);
+    if (ev == gpspresence::WENT_ABSENT)
+        Serial.printf("gps: LC76G not answering on I2C -- checking every %lu s\n",
+                      (unsigned long)(ABSENT_MS / 1000));
+    if (ev == gpspresence::CAME_BACK) Serial.println("gps: LC76G answering on I2C");
+    if (r == -2) { st.fails++; return; }   // nobody at 0x50
     if (r < 0) { st.fails++; return; }     // answered, then a step failed
     if (r == 0) {
         st.empty++;
