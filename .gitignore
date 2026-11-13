@@ -15,6 +15,7 @@ private
 sim/test_chanplan
 sim/test_gnss
 sim/test_gpshint
+sim/test_gps_presence
 sim/test_signatures
 sim/test_wifi_auth
 sim/test_settings
