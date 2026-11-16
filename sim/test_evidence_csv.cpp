@@ -5,6 +5,7 @@
 #include <cassert>
 #include <iostream>
 #include <fstream>
+const unsigned MAXP=evidencecsv::MAX_PARTS;
 size_t allocBytes=0;unsigned allocCalls=0;bool allocFail=false;
 void* testBuf=nullptr;
 void* testAlloc(size_t n){allocCalls++;allocBytes=n;free(testBuf);testBuf=allocFail?nullptr:calloc(1,n);return testBuf;}
@@ -94,6 +95,30 @@ int main(){
  run("",130002,1);assert(evidencecsv::activeFile(0)[0]&&evidencecsv::activeFile(1)[0]);
  run("",130003,1);assert(evidencecsv::activeFile(1)[0]);run("",130004,1);assert(!evidencecsv::activeFile(0)[0]&&!evidencecsv::activeFile(1)[0]);
  assert(files.count("/umbravox/sessions/WD-20261031-123456/clients.csv")&&files.count("/umbravox/sessions/WD-20261031-123456/probes.csv"));
+ // Rollover at the file limit: the export continues in -2, -3 ... instead of stopping, never splits a row, and every
+ // part starts with the header. The limit is lowered for the test (the device keeps 16 MiB).
+ {
+  auto sweep=[&](const char* nm,uint32_t at){c.frames++;c.last.at=at;p.count++;p.last.at=at;run(nm,at+500);};
+  auto dataRows=[&](const std::string& t){size_t n=0;for(char ch:t)n+=ch=='\n';return n-1;}; // minus the header line
+  evidencecsv::setFileCap(2000);evidencecsv::takeError();
+  for(unsigned k=0;k<30;k++)sweep("/WD-0030.csv",1000000+k*13000);
+  evidencecsv::stop();
+  assert(!evidencecsv::takeError());
+  assert(files.count("/WD-0030-probes.csv")&&files.count("/WD-0030-probes-2.csv")&&files.count("/WD-0030-clients-2.csv"));
+  size_t probeRows=0,clientRows=0;
+  for(unsigned part=1;part<=MAXP;part++){
+   std::string pn=part==1?"/WD-0030-probes.csv":"/WD-0030-probes-"+std::to_string(part)+".csv",cn=part==1?"/WD-0030-clients.csv":"/WD-0030-clients-"+std::to_string(part)+".csv";
+   if(files.count(pn)){assert(files[pn].size()<=2000&&files[pn].rfind("snapshot_ms,",0)==0);probeRows+=dataRows(files[pn]);}
+   if(files.count(cn)){assert(files[cn].size()<=2000&&files[cn].rfind("snapshot_ms,",0)==0);clientRows+=dataRows(files[cn]);}
+  }
+  assert(probeRows==30&&clientRows==30); // one row per sweep and kind, none lost or duplicated across parts
+  // With room for one row per part, the parts run out and the export stops with the limit message.
+  evidencecsv::setFileCap(400);
+  for(unsigned k=0;k<40&&!evidencecsv::takeError();k++)sweep("/WD-0031.csv",2000000+k*13000);
+  assert(std::string(evidencecsv::failReason()).find("16 MiB limit")!=std::string::npos);
+  assert(!files.count("/WD-0031-probes-9.csv"));
+  evidencecsv::stop();evidencecsv::setFileCap(16u*1024*1024);
+ }
  // The change signatures come from the injected allocator (PSRAM on the device): 768 slots x 4 bytes.
  // If it cannot allocate, the export still works and simply re-writes every record each sweep.
  c.used=true;c.last.at=499000;c.hasRssi=false;p.used=true;p.last.at=499000;
