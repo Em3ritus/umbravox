@@ -5,6 +5,9 @@
 #include <cassert>
 #include <iostream>
 #include <fstream>
+size_t allocBytes=0;unsigned allocCalls=0;bool allocFail=false;
+void* testBuf=nullptr;
+void* testAlloc(size_t n){allocCalls++;allocBytes=n;free(testBuf);testBuf=allocFail?nullptr:calloc(1,n);return testBuf;}
 std::map<std::string,std::string> files;std::string path;
 bool card=true,shortWrite=false,closeFail=false;unsigned opens=0,visits=0;
 namespace sdlog {
@@ -38,13 +41,14 @@ int main(){
  evidencecsv::probe(row,sizeof row,p,1000,0,5,6);assert(std::string(row).find("3D222C00FF")!=std::string::npos);assert(std::string(row).find("\"'=\"\",..\"")!=std::string::npos);
  run("/WD-0001.csv",1000);assert(evidencecsv::rows()==2);assert(files.size()==2);
  auto old=files;unsigned opened=opens;run("/WD-0001.csv",2000,10);assert(opens==opened);
- run("/WD-0001.csv",13000);assert(evidencecsv::rows()==4);evidencecsv::stop();
+ // An unchanged record is not written again: only new or changed evidence adds a row.
+ run("/WD-0001.csv",13000);assert(evidencecsv::rows()==2);evidencecsv::stop();
  assert(files["/WD-0001-probes.csv"].find("2026-")!=std::string::npos);
  // Existing files aren't overwritten, including restart with same stem.
  old=files;run("/WD-0001.csv",15000);assert(evidencecsv::takeError()&&files==old);assert(evidencecsv::failReason()[0]);evidencecsv::stop();
  // Failure rolls partial append back and latches; no repeated writes.
- run("/WD-0002.csv",20000);auto good=files["/WD-0002-clients.csv"];shortWrite=true;run("/WD-0002.csv",32000);assert(evidencecsv::takeError());assert(files["/WD-0002-clients.csv"]==good);opened=opens;run("/WD-0002.csv",45000);assert(opens==opened);evidencecsv::stop();
- run("/WD-0003.csv",50000);good=files["/WD-0003-clients.csv"];closeFail=true;run("/WD-0003.csv",62000);assert(evidencecsv::takeError()&&files["/WD-0003-clients.csv"]==good);evidencecsv::stop();
+ run("/WD-0002.csv",20000);auto good=files["/WD-0002-clients.csv"];c.frames++;shortWrite=true;run("/WD-0002.csv",32000);assert(evidencecsv::takeError());assert(files["/WD-0002-clients.csv"]==good);opened=opens;run("/WD-0002.csv",45000);assert(opens==opened);evidencecsv::stop();
+ run("/WD-0003.csv",50000);good=files["/WD-0003-clients.csv"];c.frames++;closeFail=true;run("/WD-0003.csv",62000);assert(evidencecsv::takeError()&&files["/WD-0003-clients.csv"]==good);evidencecsv::stop();
  // Stop midway drains accepted rows, never invents a full final snapshot.
  run("/WD-0004.csv",70000,2);run("",70002,4);assert(evidencecsv::rows()==1&&std::string(evidencecsv::status())=="OFF");
  // Rollover drains old batches before accepting a different filename.
@@ -61,12 +65,44 @@ int main(){
  // Slot reuse is serialized from current contents, never cached by slot number.
  c.last.sta[5]=0xab;c.first=120000;c.last.at=120000;
  run("/WD-0009.csv",120000);evidencecsv::stop();assert(files["/WD-0009-clients.csv"].find("02:00:00:00:00:AB")!=std::string::npos);
+ // Snapshot de-duplication. Time-only changes (snapshot_ms, rssi_age_ms, loss counters) never re-write a row.
+ c.last.sta[5]=0;c.first=100;c.last.at=1000;c.frames=9;c.hasRssi=true;c.stationRssi=-62;c.rssiAt=800;
+ p.last.len=5;p.last.sta[5]=0;p.first=50;p.last.at=900;p.count=8;
+ run("/WD-0010.csv",200000);assert(evidencecsv::rows()==2);
+ run("/WD-0010.csv",213000);assert(evidencecsv::rows()==2);
+ run("/WD-0010.csv",226000);assert(evidencecsv::rows()==2);
+ // New evidence on a retained record writes exactly one more row for it.
+ c.frames++;c.last.at=1500;
+ run("/WD-0010.csv",239000);assert(evidencecsv::rows()==3);
+ run("/WD-0010.csv",252000);assert(evidencecsv::rows()==3);
+ p.count++;p.last.at=1600;p.last.rssi=-70;
+ run("/WD-0010.csv",265000);assert(evidencecsv::rows()==4);
+ // A different record that reuses the slot is written even if its counters match the old one.
+ p.last.sta[5]=0x77;
+ run("/WD-0010.csv",278000);assert(evidencecsv::rows()==5);
+ run("/WD-0010.csv",291000);assert(evidencecsv::rows()==5);
+ evidencecsv::stop();
+ {auto& t=files["/WD-0010-probes.csv"];size_t lines=0;for(char ch:t)lines+=ch=='\n';assert(lines==1+3);} // header + 3 probe rows
+ // A record that expires and returns (same fields) is written again.
+ {c.last.at=299000;c.used=false;run("/WD-0013.csv",300000);assert(evidencecsv::rows()==1);c.used=true;run("/WD-0013.csv",313000);assert(evidencecsv::rows()==2);evidencecsv::stop();}
+ // A new session starts a fresh, complete file even though the records did not change.
+ run("/WD-0011.csv",400000);assert(evidencecsv::rows()==2);evidencecsv::stop();
+ {auto& t=files["/WD-0011-clients.csv"];assert(t.find("\r\n")!=std::string::npos);}
  const char* nested="/umbravox/sessions/WD-20261031-123456/wifi.csv";
  run(nested,130000,2);assert(!strcmp(evidencecsv::activeFile(0),"/umbravox/sessions/WD-20261031-123456/clients.csv"));
  assert(!strcmp(evidencecsv::activeFile(1),"/umbravox/sessions/WD-20261031-123456/probes.csv"));
  run("",130002,1);assert(evidencecsv::activeFile(0)[0]&&evidencecsv::activeFile(1)[0]);
  run("",130003,1);assert(evidencecsv::activeFile(1)[0]);run("",130004,1);assert(!evidencecsv::activeFile(0)[0]&&!evidencecsv::activeFile(1)[0]);
  assert(files.count("/umbravox/sessions/WD-20261031-123456/clients.csv")&&files.count("/umbravox/sessions/WD-20261031-123456/probes.csv"));
+ // The change signatures come from the injected allocator (PSRAM on the device): 768 slots x 4 bytes.
+ // If it cannot allocate, the export still works and simply re-writes every record each sweep.
+ c.used=true;c.last.at=499000;c.hasRssi=false;p.used=true;p.last.at=499000;
+ evidencecsv::setAllocator(testAlloc);allocFail=true;allocCalls=0;
+ run("/WD-0020.csv",500000);assert(evidencecsv::rows()==2);run("/WD-0020.csv",513000);assert(evidencecsv::rows()==4);evidencecsv::stop();
+ assert(allocCalls==1&&allocBytes==768*4);
+ evidencecsv::setAllocator(testAlloc);allocFail=false;allocCalls=0;
+ run("/WD-0021.csv",600000);run("/WD-0021.csv",613000);assert(evidencecsv::rows()==2&&allocCalls==1&&allocBytes==768*4);evidencecsv::stop();
+ evidencecsv::setAllocator(nullptr);free(testBuf);testBuf=nullptr; // drop the module's reference before freeing the test buffer
  std::ofstream("/tmp/umbravox-clients.csv")<<files["/WD-0001-clients.csv"];
  std::ofstream("/tmp/umbravox-probes.csv")<<files["/WD-0001-probes.csv"];
  std::cout<<"Evidence CSV formatting, lossless SSIDs, bounds, batching, stop, rollover and failure recovery PASS\n";

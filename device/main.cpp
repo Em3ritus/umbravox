@@ -759,6 +759,10 @@ void setup() {
     // legacy canvas renderer.
     engineadapter::begin(gfx, PANEL_W, PANEL_H);
 #endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // The CSV export's per-slot change signatures (3 KB) go in PSRAM: boot heap is tight.
+    evidencecsv::setAllocator([](size_t n) -> void* { return heap_caps_calloc(n, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); });
+#endif
 
     // Arduino core 3.x LEDC. The old ledcSetup()/ledcAttachPin() pair is gone,
     // and ledcWrite() now takes the pin rather than a channel -- this is the

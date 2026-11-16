@@ -4,6 +4,7 @@
 #include "sdlog.h"
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 namespace evidencecsv {
 namespace {
 const char* headers[]={
@@ -17,6 +18,14 @@ char timeText[24],apText[20],staText[20],rssiText[12],ageText[16],nameText[34],q
 void stamp(uint32_t epoch){timeText[0]=0;if(epoch>=1577836800u)csv::stampUtc(timeText,epoch);}
 size_t length(int n,size_t cap){return n>=0&&size_t(n)<cap?size_t(n):0;}
 const char* why="";
+// Change detection: one 32-bit signature per table slot (the identity and counters of the record in it, never
+// the snapshot time, rssi age or loss counters). A slot is written again only when its signature changes.
+constexpr unsigned SLOTS=clients::CAPACITY+evidence::PROBES;
+uint32_t* sigs=nullptr;bool sigsFromCalloc=false;void*(*zeroedAlloc)(size_t)=nullptr;uint32_t sig=0;
+void mix(uint32_t& h,const void* p,size_t n){auto* b=static_cast<const uint8_t*>(p);for(size_t i=0;i<n;i++){h^=b[i];h*=16777619u;}}
+void mix32(uint32_t& h,uint32_t v){mix(h,&v,sizeof v);}
+void finish(uint32_t h){sig=h?h:1;} // 0 is reserved for "never written"
+
 void fail(const char* w="write to the card failed"){failed=true;error=true;why=w;}
 bool flush(File& f){
  if(!f.used||failed)return !failed;
@@ -31,6 +40,8 @@ bool flush(File& f){
 }
 size_t client(char* out,size_t cap,const clients::Record& r,uint32_t now,uint32_t epoch,uint32_t drops,uint32_t evictions){
  if(!r.used||uint32_t(now-r.last.at)>=clients::RETAIN_MS)return 0;
+ {uint32_t h=2166136261u;mix(h,r.last.ap,6);mix(h,r.last.sta,6);mix32(h,r.last.channel);mix32(h,r.evidence);mix32(h,r.hasRssi);mix32(h,uint8_t(r.stationRssi));
+  mix32(h,r.first);mix32(h,r.last.at);mix32(h,r.frames);finish(h);}
  stamp(epoch);csv::mac(apText,r.last.ap);csv::mac(staText,r.last.sta);rssiText[0]=ageText[0]=0;
  if(r.hasRssi){snprintf(rssiText,sizeof rssiText,"%d",r.stationRssi);snprintf(ageText,sizeof ageText,"%lu",(unsigned long)(now-r.rssiAt));}
  return length(snprintf(out,cap,"%lu,%s,%s,%s,%u,%u,%s,%s,%s,%lu,%lu,%lu,%lu,%lu\r\n",
@@ -40,6 +51,8 @@ size_t client(char* out,size_t cap,const clients::Record& r,uint32_t now,uint32_
 }
 size_t probe(char* out,size_t cap,const evidence::ProbeRow& r,uint32_t now,uint32_t epoch,uint32_t drops,uint32_t evictions){
  if(!r.used||r.last.len>32)return 0;
+ {uint32_t h=2166136261u;mix(h,r.last.sta,6);mix32(h,r.last.channel);mix32(h,uint8_t(r.last.rssi));mix32(h,r.last.len);mix(h,r.last.name,r.last.len);
+  mix32(h,r.first);mix32(h,r.last.at);mix32(h,r.count);finish(h);}
  stamp(epoch);csv::mac(staText,r.last.sta);
  // Prefix display text with an apostrophe for spreadsheet safety. Hex is the
  // authoritative raw SSID, including NUL/non-ASCII bytes and original prefix.
@@ -50,6 +63,7 @@ size_t probe(char* out,size_t cap,const evidence::ProbeRow& r,uint32_t now,uint3
  (unsigned long)now,timeText,staText,!!(r.last.sta[0]&2),r.last.channel,r.last.rssi,r.last.len?"DIRECTED":"WILDCARD",quoted,hex,
  (unsigned long)r.first,(unsigned long)r.last.at,(unsigned long)r.count,(unsigned long)drops,(unsigned long)evictions),cap);
 }
+void setAllocator(void*(*zeroed)(size_t)){zeroedAlloc=zeroed;if(!running){if(sigsFromCalloc)free(sigs);sigs=nullptr;sigsFromCalloc=false;}} // boot-time call; a buffer from an earlier injected allocator is forgotten, not freed
 void stop(){if(running){flush(files[0]);flush(files[1]);}running=false;session[0]=0;}
 void tick(const char* name,uint32_t now,uint32_t epoch,Source source){
  if(!name)name="";
@@ -61,6 +75,8 @@ void tick(const char* name,uint32_t now,uint32_t epoch,Source source){
  if(!*name)return;
  if(!running){
   failed=false;why="";committed=0;cursor=0;sweeping=true;running=true;
+  if(!sigs){sigsFromCalloc=!zeroedAlloc;sigs=static_cast<uint32_t*>(zeroedAlloc?zeroedAlloc(SLOTS*sizeof *sigs):calloc(SLOTS,sizeof *sigs));}
+  else memset(sigs,0,SLOTS*sizeof *sigs); // a new file starts complete
   const size_t n=strlen(name);
   if(n>=sizeof session||n<4||strcmp(name+n-4,".csv")){fail();running=false;return;}
   memcpy(session,name,n+1);
@@ -73,11 +89,12 @@ void tick(const char* name,uint32_t now,uint32_t epoch,Source source){
   sweeping=false;nextAt=now+INTERVAL_MS;return;
  }
  auto& f=files[cursor>=clients::CAPACITY];
- const size_t n=source?source(cursor,row,sizeof row,now,epoch):0;
+ size_t n=source?source(cursor,row,sizeof row,now,epoch):0;
  if(n>=sizeof row){fail();return;}
+ if(sigs){if(!n)sigs[cursor]=0;else if(sigs[cursor]==sig)n=0;} // unchanged since its last row: skip it
  if(n&&f.used+n>sizeof f.batch){flush(f);return;} // retry this slot next pass
  if(f.bytes+f.used+n>16u*1024*1024){fail("reached the 16 MiB limit for one file");return;}
- if(n){memcpy(f.batch+f.used,row,n);f.used+=n;f.pending++;}
+ if(n){memcpy(f.batch+f.used,row,n);f.used+=n;f.pending++;if(sigs)sigs[cursor]=sig;}
  cursor++;
 }
 bool takeError(){bool v=error;error=false;return v;}
