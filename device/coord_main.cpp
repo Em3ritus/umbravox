@@ -294,7 +294,7 @@ void report() {
         // small transmit queue -- the same reason node_main does.
         const uint32_t waitFrom = txOk + txFail;
         const uint32_t until = millis() + 30;
-        while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
+        while ((txOk + txFail) == waitFrom && (int32_t)(millis() - until) < 0) delay(1);   // signed: safe across the millis() wrap
     }
 
     // The CYD only folds batches from coordinators it has registered, so one

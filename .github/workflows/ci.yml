@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [nm-cyd-c5, nm-c5-node, nm-c5-coordinator, ws-c5-35-engine, ws-c5-28-engine, nm-cyd-c5-engine]
+        environment: [nm-cyd-c5, nm-c5-node, nm-c5-coordinator, ws-c5-35-engine, ws-c5-28-engine, nm-cyd-c5-engine, xiao-c5-node]   # xiao-c5-node is a released package: build it on every change, not only at release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

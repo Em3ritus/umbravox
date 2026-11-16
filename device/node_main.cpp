@@ -298,7 +298,7 @@ void report() {
         // ESP-NOW has a small transmit queue; filling it faster than the
         // radio drains it is how frames vanish with ESP_OK returned.
         const uint32_t until = millis() + 30;
-        while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
+        while ((txOk + txFail) == waitFrom && (int32_t)(millis() - until) < 0) delay(1);   // signed: safe across the millis() wrap
     }
 
     // Separate status packet: existing sighting reports remain byte-identical.
