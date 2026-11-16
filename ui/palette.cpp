@@ -250,6 +250,8 @@ uint8_t resolveSaved(const char* name, uint8_t savedId) {
 
 const BundledMeta* bundled(uint8_t id){return id>=TH_SLICK && id<TH_COUNT?&BUNDLED_META[id-TH_SLICK]:nullptr;}
 uint8_t artOpacity(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artOpacity<=100?PACKS[s].artOpacity:(bundled(id)?bundled(id)->opacity:100);}
+bool showHeptagram(uint8_t id){const int s=slotOf(id);return s<0 || !PACKS[s].hideHeptagram;}
+bool showContacts(uint8_t id){const int s=slotOf(id);return s<0 || !PACKS[s].hideContacts;}
 uint8_t artScale(uint8_t id){const int s=slotOf(id);return s>=0 && PACKS[s].artScale>=25 && PACKS[s].artScale<=100?PACKS[s].artScale:(bundled(id)?bundled(id)->scale:82);}
 
 bool diamondBadge(uint8_t id){const int s=slotOf(id);return s>=0 ? PACKS[s].diamond : (bundled(id) && bundled(id)->diamond);}

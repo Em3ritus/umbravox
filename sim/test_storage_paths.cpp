@@ -29,6 +29,20 @@ int main(int argc,char**argv){
  assert(!storagepaths::session(b,8,"/WD-0001.csv"));assert(!storagepaths::companion(b,8,p,"track.gpx"));
  identity(valid[1],b,sizeof b);assert(!strcmp(b,"WD-0001"));identity(valid[5],b,sizeof b);assert(!strcmp(b,"WD-20261031-123456"));
  assert(filescan::newer(valid[5],"/WD-20261030-235959.csv"));
+ // Rolled-over evidence parts (-2 ... -8) are recognized, so the FILES screen and SDDEL can label and delete them;
+ // part numbers outside 2..8, other kinds, and the base names' existing meaning are unchanged.
+ {
+  const char* parts[]={"/WD-0001-clients-2.csv","/WD-0001-probes-8.csv","/umbravox/sessions/WD-20261031-123456/probes-2.csv","/umbravox/sessions/WD-20261031-123456/clients-7.csv"};
+  const Kind want[]={Clients,Probes,Probes,Clients};
+  for(int i=0;i<4;i++){assert(classify(parts[i])==want[i]);sdcmd::Path po;assert(sdcmd::sessionFile(parts[i],po));assert(!sdcmd::delPolicy(parts[i],"",po));}
+  for(const char* bad:{"/WD-0001-probes-1.csv","/WD-0001-probes-9.csv","/WD-0001-probes-0.csv","/WD-0001-probes-02.csv","/WD-0001-probes-2x.csv","/WD-0001-wifi-2.csv","/WD-0001-clients-.csv",
+                       "/umbravox/sessions/WD-1/wifi-2.csv","/umbravox/sessions/WD-1/track-2.gpx","/umbravox/sessions/WD-1/probes-1.csv","/umbravox/sessions/WD-1/probes-10.csv","/umbravox/sessions/WD-1/clients-2.csv.tmp"})
+   assert(classify(bad)==None);
+  assert(classify("/WD-0001-2.csv")==Wifi); // a session stem that happens to end in -2 is still a plain wifi log
+  identity(parts[0],b,sizeof b);assert(!strcmp(b,"WD-0001"));identity(parts[1],b,sizeof b);assert(!strcmp(b,"WD-0001"));
+  identity(parts[3],b,sizeof b);assert(!strcmp(b,"WD-20261031-123456"));
+  ActiveFiles act;act.set(3,parts[1]);sdcmd::Path po;assert(sdcmd::delPolicy(parts[1],act,po));assert(!sdcmd::delPolicy(parts[0],act,po)); // the part being written is protected
+ }
  ActiveFiles active;for(int i=0;i<5;i++)active.set(i,valid[i]);
  filescan::RemoveIo rm{exists,noDir,removeFile};
  for(const char* path:valid){sdcmd::Path out;const bool blocked=active.contains(path);assert(bool(sdcmd::delPolicy(path,active,out))==blocked);assert(bool(filescan::deleteCheck(path,active))==blocked);assert((filescan::removeLog(path,active,rm)==filescan::RM_REFUSED)==blocked);}

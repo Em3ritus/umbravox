@@ -48,6 +48,7 @@ struct Snap {
     uint8_t  nodes = 0, lossPct = 0;
     bool     camped = false, fix = false;
     uint8_t  theme = 0, sweep = 0;
+    uint8_t  rec = 0;                 // wardrive logging: 0 idle, 1 active, 2 no card (logging::State)
 };
 
 // The header row. It must name exactly the columns row() writes, in order; the
@@ -55,7 +56,7 @@ struct Snap {
 inline const char* header() {
     return "t_s,dark,fps,draw_avg,draw_max,blit_avg,blit_max,gap_max,sd_max,"
            "heap_free,heap_min,heap_blk,psram_free,stack_free,"
-           "wifi_fps,ble_aps,wifi_n,ble_n,tbl_pct,nodes,rep_s,loss_pct,camp,fix,theme,sweep\n";
+           "wifi_fps,ble_aps,wifi_n,ble_n,tbl_pct,nodes,rep_s,loss_pct,camp,fix,theme,sweep,rec\n";
 }
 
 // The step of a running counter since the last row, then re-based on `cur`.
@@ -85,7 +86,7 @@ inline int row(char* out, size_t n, const Acc& a, const Snap& s, uint32_t interv
     const unsigned long tbl = s.tableCap ? (unsigned long)((uint64_t)s.wifiUniq * 100u / s.tableCap) : 0;
 
     const int w = snprintf(out, n,
-        "%lu,%d,%lu.%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%d,%d,%lu,%lu\n",
+        "%lu,%d,%lu.%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%d,%d,%lu,%lu,%lu\n",
         (unsigned long)s.upS, s.dark ? 1 : 0,
         (unsigned long)(fps10 / 10), (unsigned long)(fps10 % 10),
         (unsigned long)(a.drawSum / fr), (unsigned long)a.drawMax,
@@ -97,7 +98,7 @@ inline int row(char* out, size_t n, const Acc& a, const Snap& s, uint32_t interv
         (unsigned long)s.wifiUniq, (unsigned long)s.bleUniq, tbl,
         (unsigned long)s.nodes, perSec(s.reports), (unsigned long)s.lossPct,
         s.camped ? 1 : 0, s.fix ? 1 : 0,
-        (unsigned long)s.theme, (unsigned long)s.sweep);
+        (unsigned long)s.theme, (unsigned long)s.sweep, (unsigned long)s.rec);
     if (w < 0) { out[0] = '\0'; return 0; }
     return (size_t)w >= n ? (int)(n - 1) : w;
 }

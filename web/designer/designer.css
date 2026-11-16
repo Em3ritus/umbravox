@@ -75,6 +75,7 @@ input[type=text]:focus,select:focus,.btn:focus-visible,.step:focus-visible{outli
 #emblem-canvas{width:160px; height:160px; image-rendering:pixelated}
 .info{color:var(--muted); font-size:12px}
 .sub{color:var(--muted); margin:10px 0 4px}
+.check{display:block; margin:4px 0}
 .sweeps{display:grid; grid-template-columns:1fr 1fr; gap:4px 16px; margin-bottom:8px}
 .sweeps label{display:flex; gap:8px; align-items:center; cursor:pointer}
 .tabs{display:flex; gap:6px; flex-wrap:wrap}

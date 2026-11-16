@@ -341,7 +341,7 @@ void snapshot(const ui::Nav& nav, const ui::State& s, const scanr::GnssFix& gps,
         case uinav::Screen::Echoes: uiproj::echoes(eEchoes_.back(), s, c); eEchoes_.commit(); break;
         case uinav::Screen::Attune: {
             uiproj::attune(eAttune_.back(),s,c,0,1);
-            settingsctl::Data d;d.view=settings_;d.settings=s.set;d.netId=s.netId;
+            settingsctl::Data d;d.view=settings_;d.settings=s.set;d.paused=s.discoveryPaused;d.netId=s.netId;
             const auto bs=blebridge::stats();d.connected=bs.connected;d.streaming=bs.streaming;d.pin=bs.pin;d.phones=bs.bonds;d.forgetArmed=forgetArm_.armed(millis());
             snprintf(d.name,sizeof d.name,"%s",blebridge::deviceName());
             snprintf(d.pcap,sizeof d.pcap,"%s",s.pcapStatus);

@@ -120,8 +120,9 @@ export function parseReply(line) {
 // Lines outside "=== SDLS <dir> ===" .. "=== SDLS END ===" and lines inside
 // that match no entry shape (the status line) are ignored. Names are data.
 const LS_HEAD = /^=== SDLS (\/[\x21-\x7e]*) ===$/;
-const LS_DIR = /^ {3}<dir> {2}([\x20-\x7e]+)\/$/;
-const LS_FILE = /^ {0,7}(0|[1-9][0-9]{0,9}) {2}([\x21-\x7e][\x20-\x7e]*)$/;
+// Both widths of the device's columns: 3 or 5 spaces before <dir> and a size right-aligned to 8 (older firmware) or 10.
+const LS_DIR = /^ {3,9}<dir> {2}([\x20-\x7e]+)\/$/;
+const LS_FILE = /^ {0,9}(0|[1-9][0-9]{0,9}) {2}([\x21-\x7e][\x20-\x7e]*)$/;
 const BUSY = 'The device is busy with another upload (perhaps another program or tab). Wait 10 seconds and try again.';
 export function parseLs(lines) {
   const out = { ok: false, dir: null, missing: false, dirs: [], files: [], error: null };

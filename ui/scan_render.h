@@ -750,7 +750,7 @@ inline void drawArtwork(S& s, uint8_t theme, int cx, int cy, int r) {
     if(pal::centrepiece(theme)==pal::CP_RADAR)return;
     const themepack::Emblem* e = pal::emblem(theme);
     if (e && pal::centrepiece(theme) == pal::CP_EMBLEM) emblemInto(s, *e, cx, cy, r);
-    else heptaInto(s, cx, cy, r, pal::GRID, pal::EDGE_LIT);
+    else if (pal::showHeptagram(theme)) heptaInto(s, cx, cy, r, pal::GRID, pal::EDGE_LIT);
 }
 
 // Hero sub-layout (framed field + spectrum band). Exposed so the header/field/
@@ -1132,7 +1132,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
         const themepack::Emblem* e = pal::emblem(sc.theme);
         if (e && pal::centrepiece(sc.theme) == pal::CP_EMBLEM && !orbit) {
             emblemInto(s, *e, fcx, fcy, fr*72/100);         // bitmap themes keep their emblem
-        } else if(!clean) {
+        } else if(!clean && pal::showHeptagram(sc.theme)) {   // theme.json "heptagram":"off"
             const int h7=fr*72/100; int vx[7], vy[7];       // delicate heptagram, verts from east
             const auto* star = h7==73 ? radargeometry::star73 : h7==61 ? radargeometry::star61 : h7==49 ? radargeometry::star49 : h7==19 ? radargeometry::star19 : nullptr;
             for (int i=0;i<7;i++) {
@@ -1181,7 +1181,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
         if((clean||sc.animateSweep)&&sty==ui::SW_RADAR)radarNeedle(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // over the artwork
         if(cvlt){box(s,fcx-2,fcy,5,1,pal::DIM);box(s,fcx,fcy-2,1,5,pal::DIM);}
         if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
-        for (int i=0;i<sc.nBlips;i++){                      // pre-projected contacts -> field markers
+        for (int i=0, nb=pal::showContacts(sc.theme)?sc.nBlips:0;i<nb;i++){   // theme.json "contacts":"off"; pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
             if (m.shown && m.band>=0 && m.band<3) {    // small SQUARE markers, not round dots

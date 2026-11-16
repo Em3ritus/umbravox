@@ -85,3 +85,15 @@ test('buildPack names the bad colour', () => {
   assert.throws(() => buildPack(t, null), /colour 'witch' is not #RRGGBB: zzz/);
   assert.throws(() => buildPack(theme({ colors: {} }), null), /colour 'void' is not #RRGGBB: undefined/);
 });
+
+test('art switches: written only when off, after centrepiece, and the real parser accepts them', () => {
+  const keys = (t) => Object.keys(JSON.parse(text(buildPack(t, null), '/theme.json')));
+  assert.deepEqual(keys(theme({ heptagram: 'on', contacts: 'on' })), ['format', 'name', 'author', 'header', 'dial', 'centrepiece',
+    'sweeps', 'sweep', 'alert', 'colors']);
+  const both = theme({ heptagram: 'off', contacts: 'off' });
+  assert.deepEqual(keys(both), ['format', 'name', 'author', 'header', 'dial', 'centrepiece', 'heptagram', 'contacts',
+    'sweeps', 'sweep', 'alert', 'colors']);
+  assert.equal(JSON.parse(text(buildPack(both, null), '/theme.json')).heptagram, 'off');
+  const r = checkPack(writePack(buildPack(both, null)));
+  assert.equal(r.status, 0, r.out);
+});

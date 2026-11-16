@@ -202,6 +202,7 @@ inline void attune(atnpres::AttuneStore& st, const ui::State& s, const Chrome& c
         if (knob >= uieng::kAttuneKnobs) break;
         const int id=uieng::attuneKnobIds[knob];
         char lbl[16], val[32]; attuneKnob(s.set, id, lbl, sizeof lbl, val, sizeof val);
+        if(id==11&&s.set.activeDiscovery&&s.discoveryPaused)snprintf(val,sizeof val,"PAUSED REC");
         if(id==12)snprintf(val,sizeof val,"%s D%lu",s.pcapStatus,(unsigned long)s.pcapDrops);
         st.addRow(lbl, val);
     }

@@ -20,19 +20,31 @@ char     rows[BATCH][200];
 int      nrows = 0;
 uint32_t lastRow = 0, prevLoop = 0;
 uint32_t lastWifi = 0, lastAdv = 0, lastReps = 0;     // totals at the last row
+uint32_t lostRows = 0;                                // rows that never reached the card this boot
+elog::Gate lostGate;
+
+// Rows used to vanish without a trace when the card refused a write (a field run lost 1.2 h of rows while
+// diag.log kept going). Count them and say so in the diag log, at most once a minute.
+void lose(int rows, const char* why) {
+    lostRows += (uint32_t)rows;
+    if (lostGate.allow(millis(), 60000))
+        elog::event(elog::WARN, "perf", "%s: %lu perf rows lost so far this boot", why, (unsigned long)lostRows);
+}
 
 // Write the buffered rows, with the header first when the file is new (a
 // fresh card, or just after a rotation).
 void writeRows() {
     if (nrows == 0) return;
-    if (!sdlog::present()) { nrows = 0; return; }     // no card: rows are dropped, not queued
+    if (!sdlog::present()) { lose(nrows, "no card"); nrows = 0; return; }     // no card: rows are dropped, not queued
 
     size_t total = 0;
     for (int i = 0; i < nrows; i++) total += strlen(rows[i]);
     if (elog::shouldRotate(sdlog::sizeOf(PATH), (uint32_t)total, CAP))
         sdlog::rotate(PATH, OLD);
-    if (sdlog::sizeOf(PATH) == 0)
-        sdlog::append(PATH, (const uint8_t*)header(), (uint32_t)strlen(header()));
+    if (sdlog::sizeOf(PATH) == 0 &&
+        !sdlog::append(PATH, (const uint8_t*)header(), (uint32_t)strlen(header()))) {
+        lose(nrows, "write of the /perf.csv header failed"); nrows = 0; return;
+    }
 
     // One buffer, one append: the open/close is the expensive part.
     static char blob[BATCH * 200];
@@ -42,7 +54,7 @@ void writeRows() {
         memcpy(blob + n, rows[i], l);
         n += l;
     }
-    sdlog::append(PATH, (const uint8_t*)blob, (uint32_t)n);
+    if (!sdlog::append(PATH, (const uint8_t*)blob, (uint32_t)n)) lose(nrows, "write to /perf.csv failed");
     nrows = 0;
 }
 
@@ -82,6 +94,7 @@ void tick(uint32_t now, const ui::State& s, bool dark) {
     sn.fix      = s.gpsFix;
     sn.theme    = s.set.theme;
     sn.sweep    = s.set.sweep;
+    sn.rec      = s.logState;                      // 0 idle, 1 recording, 2 no card: so a log can say when recording stopped
 
     acc.sd(sdlog::takeMaxStallMs());               // what the card cost this interval
     row(rows[nrows], sizeof rows[nrows], acc, sn, dt);

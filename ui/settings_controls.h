@@ -9,6 +9,7 @@ struct Data {
  State view; ui::Settings settings; bool connected=false,streaming=false;
  int32_t pin=-1; // pairing code to show (0..999999) while a phone is pairing; -1 = none
  int phones=-1;   // bonded phones, -1 = not known yet
+ bool paused=false;        // active discovery is saved ON but held off while recording
  bool forgetArmed=false;   // first tap of the two-tap "forget phones" confirm is waiting
  uint8_t netId=0; char name[24]="NOT STARTED", pcap[24]="OFF";
 };
@@ -65,7 +66,7 @@ inline const char* title(int id){static const char* t[]={"DISCOVERY","CHANNEL DW
 inline const char* hint(int id){static const char* t[]={"Active sends discovery probes","Time on each WiFi channel","Requested BLE scan window","Coordinator radio bands","Record after a stable GPS fix","Raw WiFi frames to SD","On-screen warning threshold","Beep volume (0 is silent)","Advertise to your phone","Changing app disconnects phone","Current phone connection","Tap twice to forget them","Coordinator node policy","Requested remote-node dwell","Status, enrollment, controls","Current node network ID"};return t[id];}
 inline void value(const Data& d,int id,char* b,int n){const auto& s=d.settings;
  switch(id){
- case 0:snprintf(b,n,"%s",s.activeDiscovery?"ACTIVE":"PASSIVE");break;
+ case 0:snprintf(b,n,"%s",s.activeDiscovery?(d.paused?"PAUSED REC":"ACTIVE"):"PASSIVE");break;
  case 1:snprintf(b,n,"%u MS",s.dwellMs);break;case 2:snprintf(b,n,"%u%%",s.bleDuty);break;
  case 3:snprintf(b,n,"%s",s.bands==1?"2.4 GHZ":s.bands==2?"5 GHZ":"2.4 + 5 GHZ");break;
  case 4:snprintf(b,n,"%s",s.autoLog?"ON":"OFF");break;case 5:snprintf(b,n,"%s",d.pcap);break;
@@ -80,7 +81,7 @@ inline void value(const Data& d,int id,char* b,int n){const auto& s=d.settings;
  }
 }
 inline bool sameSettings(const ui::Settings& a,const ui::Settings& b){return a.activeDiscovery==b.activeDiscovery&&a.dwellMs==b.dwellMs&&a.bleDuty==b.bleDuty&&a.bands==b.bands&&a.autoLog==b.autoLog&&a.pcapEnabled==b.pcapEnabled&&a.alertMin==b.alertMin&&a.sound==b.sound&&a.bleBridge==b.bleBridge&&a.bridgeApp==b.bridgeApp&&a.meshProfile==b.meshProfile&&a.nodeDwellMs==b.nodeDwellMs;}
-inline bool same(const Data& a,const Data& b){return a.view.tab==b.view.tab&&a.view.editor==b.view.editor&&sameSettings(a.settings,b.settings)&&a.connected==b.connected&&a.streaming==b.streaming&&a.pin==b.pin&&a.phones==b.phones&&a.forgetArmed==b.forgetArmed&&a.netId==b.netId&&!strcmp(a.name,b.name)&&!strcmp(a.pcap,b.pcap);}
+inline bool same(const Data& a,const Data& b){return a.view.tab==b.view.tab&&a.view.editor==b.view.editor&&sameSettings(a.settings,b.settings)&&a.connected==b.connected&&a.paused==b.paused&&a.streaming==b.streaming&&a.pin==b.pin&&a.phones==b.phones&&a.forgetArmed==b.forgetArmed&&a.netId==b.netId&&!strcmp(a.name,b.name)&&!strcmp(a.pcap,b.pcap);}
 inline void draw(scanr::S& s,int w,int h,const Data& d){
  using namespace scanr;const auto l=layout(w,h);const int ed=d.view.editor;
  if(validEditor(ed)){
@@ -95,7 +96,7 @@ inline void draw(scanr::S& s,int w,int h,const Data& d){
  for(int i=0;i<4;i++){auto r=tabRect(w,i);box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==tab?pal::BRIGHT:pal::DIM);if(i==tab)box(s,r.x+8,84,r.w-16,2,pal::WITCH_HI);}
  for(int i=0;i<4;i++){auto r=l.cards[i];int id=tab*4+i;bool live=validEditor(id)||id==7||id==11||id==14;char v[32];value(d,id,v,sizeof v);
   box(s,r.x,r.y,r.w,r.h,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);txt(s,r.x+8,r.y+7,title(id),1,pal::DIM);
-  txt(s,r.x+8,r.y+(r.h>=70?28:24),v,fitScale(v,r.w-16,2),(id==10&&d.settings.bleBridge&&d.pin>=0)||(id==11&&d.forgetArmed)?pal::AMBER:!live?pal::DIM:id==0&&d.settings.activeDiscovery?pal::AMBER:id==8&&d.settings.bleBridge?pal::GREEN:pal::BRIGHT);
+  txt(s,r.x+8,r.y+(r.h>=70?28:24),v,fitScale(v,r.w-16,2),(id==10&&d.settings.bleBridge&&d.pin>=0)||(id==11&&d.forgetArmed)?pal::AMBER:!live?pal::DIM:id==0&&d.settings.activeDiscovery&&!d.paused?pal::AMBER:id==8&&d.settings.bleBridge?pal::GREEN:pal::BRIGHT);
   if(r.h>=70){const char* hn=(id==8&&d.settings.bleBridge&&d.name[0])?d.name:hint(id);txt(s,r.x+8,r.y+r.h-21,hn,fitScale(hn,r.w-16,1),pal::DIM);}
   if(live)box(s,r.x+8,r.y+r.h-3,r.w-16,1,pal::WITCH_HI);
  }

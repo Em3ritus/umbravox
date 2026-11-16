@@ -951,6 +951,33 @@ int main() {
     { Base b; b.col[3] = "\"123456\""; rejects("missing # rejected", b.str()); }
     { Base b; b.col[3] = "\"#1234567\""; rejects("long hex rejected", b.str()); }
     { Base b; b.extra = ",\"dial\":\"compact\""; rejects("duplicate key rejected", b.str()); }
+    {   // art switches: heptagram / contacts, "on" (default) or "off"
+        auto parsed = [](const std::string& extra, Pack& p, char* why) {
+            Base b; b.extra = extra; return run(b.str(), p, why); };
+        Pack p; char why[64];
+        check("switches default on", parsed("", p, why) && !p.hideHeptagram && !p.hideContacts);
+        check("heptagram off", parsed(",\"heptagram\":\"off\"", p, why) && p.hideHeptagram && !p.hideContacts);
+        check("contacts off", parsed(",\"contacts\":\"off\"", p, why) && !p.hideHeptagram && p.hideContacts);
+        check("both off", parsed(",\"heptagram\":\"off\",\"contacts\":\"off\"", p, why) && p.hideHeptagram && p.hideContacts);
+        check("explicit on stays on", parsed(",\"heptagram\":\"on\",\"contacts\":\"on\"", p, why) && !p.hideHeptagram && !p.hideContacts);
+        const char* bad[] = {"\"false\"", "\"OFF\"", "\"\"", "true", "0"};
+        for (const char* v : bad) {
+            Base b1; b1.extra = std::string(",\"heptagram\":") + v; rejects("bad heptagram value rejected", b1.str());
+            Base b2; b2.extra = std::string(",\"contacts\":") + v; rejects("bad contacts value rejected", b2.str());
+        }
+        // A bare true / 0 / null names the key, not "expected string".
+        const char* nonStr[] = {"true", "false", "0", "1", "null", "[]"};
+        for (const char* v : nonStr) {
+            Base b1; b1.extra = std::string(",\"heptagram\":") + v;
+            Pack q; char w[64]; bool ok = run(b1.str(), q, w);
+            check("non-string heptagram reason names the key", !ok && strcmp(w, "heptagram must be on or off") == 0);
+            Base b2; b2.extra = std::string(",\"contacts\":") + v;
+            ok = run(b2.str(), q, w);
+            check("non-string contacts reason names the key", !ok && strcmp(w, "contacts must be on or off") == 0);
+        }
+        Base d1; d1.extra = ",\"heptagram\":\"off\",\"heptagram\":\"off\""; rejects("duplicate heptagram rejected", d1.str());
+        Base d2; d2.extra = ",\"contacts\":\"off\",\"contacts\":\"off\""; rejects("duplicate contacts rejected", d2.str());
+    }
     { Base b; std::string s = b.str(); s.insert(s.size() - 2, ",\"void\":\"#000000\"");
       rejects("duplicate colour rejected", s); }
     { Base b; b.name = "5"; rejects("number for string rejected", b.str()); }
@@ -982,11 +1009,12 @@ int main() {
 
     {   // Mutation fuzz: flip/insert/delete bytes; result is either a sane
         // pack or a rejection with a reason. Sanitizers catch the rest.
-        Base b; const std::string seed = b.str();
+        Base b; Base bs; bs.extra = ",\"heptagram\":\"off\",\"contacts\":\"on\"";   // second seed carries the art switches
+        const std::string seeds[2] = {b.str(), bs.str()};
         srand(0xC0FFEE);
         int accepted = 0, bad = 0;
         for (int it = 0; it < 20000; it++) {
-            std::string s = seed;
+            std::string s = seeds[it & 1];
             int muts = 1 + rand() % 4;
             for (int m = 0; m < muts && !s.empty(); m++) {
                 size_t pos = (size_t)rand() % s.size();

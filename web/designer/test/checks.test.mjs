@@ -152,3 +152,12 @@ test('a name longer than 12 characters warns that the settings screen cuts it', 
   t.name = 'ABCDEFGHIJKL';
   assert.equal(find(runChecks(t, null), 'warn', /first 12/).length, 0);
 });
+
+test('art switches: only on or off are accepted', () => {
+  const t = base(); t.heptagram = 'off'; t.contacts = 'on';
+  assert.deepEqual(errors(runChecks(t, null)), []);
+  t.heptagram = 'maybe';
+  assert.ok(find(runChecks(t, null), 'error', /Heptagram must be on or off/).length === 1);
+  t.heptagram = 'on'; t.contacts = 'nope';
+  assert.ok(find(runChecks(t, null), 'error', /Contacts must be on or off/).length === 1);
+});

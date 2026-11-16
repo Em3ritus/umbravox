@@ -222,3 +222,16 @@ import { clipFile as _clipFile, buildClip as _buildClip, CLIP_SIZE as _SZ } from
     assert.equal(big.ok, false); assert.match(big.error, /780312/);
   });
 }
+
+test('art switches: heptagram and contacts parse as on/off, default on, bad values warn', () => {
+  const base = JSON.parse(new TextDecoder().decode(buildPack(blankTheme(), null).files.find((f) => f.path.endsWith('/theme.json')).data));
+  const parse = (extra) => parseThemeJson(JSON.stringify({ ...base, ...extra }));
+  let r = parse({});
+  assert.equal(r.theme.heptagram, 'on'); assert.equal(r.theme.contacts, 'on');
+  r = parse({ heptagram: 'off', contacts: 'off' });
+  assert.equal(r.theme.heptagram, 'off'); assert.equal(r.theme.contacts, 'off');
+  r = parse({ heptagram: 'maybe', contacts: false });
+  assert.equal(r.theme.heptagram, 'on'); assert.equal(r.theme.contacts, 'on');
+  assert.ok(r.warnings.some((w) => /heptagram/.test(w)) && r.warnings.some((w) => /contacts/.test(w)));
+  assert.equal(blankTheme().heptagram, 'on'); assert.equal(blankTheme().contacts, 'on');
+});

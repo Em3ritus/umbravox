@@ -2,6 +2,8 @@
 """Summarise UMBRAVOX perf logs (/perf.csv from the SD card).
 
 Usage:  python3 -I tools/perf_report.py perf.0.csv perf.csv     (oldest first)
+A file saved from `SDCAT /perf.csv` works as it is (console noise and the SDCAT markers are skipped).
+With more than one boot it ends with a per-boot table: the pooled numbers alone can hide the one run you care about.
 
 Prints frame cost, stalls, memory trend, capture/mesh rates and the SD cost,
 then lists anything worth tuning. Standard library only.
@@ -12,15 +14,59 @@ import sys
 
 
 def load(paths):
+    """Rows as {column: float}. Tolerant of what `SDCAT /perf.csv` delivers over the console: banner and end
+    markers, boot chatter and diag lines in the middle, and a torn last line. A file's own header line names
+    its columns (an older file has fewer), and only lines that start with a number and a comma are data."""
     rows = []
     for p in paths:
-        with open(p, newline="") as fh:
-            for r in csv.DictReader(fh):
-                try:
-                    rows.append({k: float(v) for k, v in r.items() if v not in (None, "")})
-                except ValueError:
-                    pass                      # a torn last line after a power cut
+        header = None
+        with open(p, errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("t_s,"):
+                    header = line.split(",")
+                elif header and line[:1].isdigit() and line.split(",", 1)[0].isdigit():
+                    cells = line.split(",")
+                    if len(cells) < len(header):
+                        continue                  # a torn line after a power cut, or console text that began with digits
+                    try:
+                        rows.append({k: float(v) for k, v in zip(header, cells) if v != ""})   # extra cells: a newer build appended a column to an older file
+                    except ValueError:
+                        pass
     return rows
+
+
+def split_boots(rows):
+    """One list per boot: t_s restarts from a small number at each boot."""
+    boots = []
+    for r in rows:
+        if not boots or r["t_s"] < boots[-1][-1]["t_s"]:
+            boots.append([])
+        boots[-1].append(r)
+    return boots
+
+
+def boot_summary(b):
+    lit = [r for r in b if not r["dark"] and r.get("draw_avg", 0) > 0]
+    mean = lambda k: sum(r.get(k, 0) for r in b) / len(b)
+    return {
+        "rows": len(b), "t0": b[0]["t_s"], "t1": b[-1]["t_s"],
+        "dark_pct": 100 * sum(1 for r in b if r["dark"]) // len(b),
+        "wifi_mean": mean("wifi_fps"), "ble_mean": mean("ble_aps"),
+        "rec_rows": sum(1 for r in b if r.get("rec", 0) == 1),
+        "gap_max": max(r["gap_max"] for r in b), "heap_min_kb": min(r["heap_min"] for r in b) / 1024.0,
+        "draw_med": statistics.median([r["draw_avg"] for r in lit]) if lit else None,
+    }
+
+
+def print_boots(rows):
+    boots = [boot_summary(b) for b in split_boots(rows)]
+    print("\nper boot (a boot is one t_s run; rec is only meaningful on builds that set it)")
+    print("  #   t_s range         rows  dark %  wifi/s  ble/s  rec rows  worst gap  heap min  draw med")
+    for i, b in enumerate(boots):
+        print("%3d  %6.0f-%-8.0f %6d  %5d%%  %6.1f %6.2f  %8d  %7.0f ms  %5.0f KB  %s"
+              % (i, b["t0"], b["t1"], b["rows"], b["dark_pct"], b["wifi_mean"], b["ble_mean"], b["rec_rows"],
+                 b["gap_max"], b["heap_min_kb"], "%.0f ms" % b["draw_med"] if b["draw_med"] is not None else "-"))
 
 
 def pct(vals, q):
@@ -97,6 +143,9 @@ def main():
               % (max(col("nodes")), statistics.mean(loss), max(loss), statistics.median([r["rep_s"] for r in meshy])))
         if max(loss) > 15:
             notes.append("mesh loss reached %.0f%%: consider another coordinator" % max(loss))
+
+    if boots > 1:
+        print_boots(rows)
 
     print("\n" + ("worth a look:\n  - " + "\n  - ".join(notes) if notes else "nothing stands out."))
 

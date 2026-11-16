@@ -22,6 +22,8 @@ export function themeJson(t) {
   if (t.header) lines.push('  "header": ' + q(t.header, 'header'));
   lines.push('  "dial": ' + q(t.dial || 'compact', 'dial'));
   lines.push('  "centrepiece": ' + q(t.centrepiece || 'heptagram', 'centrepiece'));
+  if (t.heptagram === 'off') lines.push('  "heptagram": "off"');
+  if (t.contacts === 'off') lines.push('  "contacts": "off"');
   lines.push('  "sweeps": [' + sweeps.map((s) => q(s, 'sweep')).join(', ') + ']');
   if (sweep) lines.push('  "sweep": ' + q(sweep, 'sweep'));
   lines.push('  "alert": ' + q(t.alert || 'ward', 'alert'));

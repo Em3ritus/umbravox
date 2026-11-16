@@ -201,9 +201,9 @@ bool sweepList(P& p, Pack& out) {
 
 bool parseObject(P& p, Pack& out) {
     enum { K_FORMAT, K_NAME, K_AUTHOR, K_HEADER, K_DIAL, K_CENTRE, K_SWEEPS,
-           K_SWEEP, K_ALERT, K_COLORS, K_BADGE, K_ART_OPACITY, K_ART_SCALE, K_N };
+           K_SWEEP, K_ALERT, K_COLORS, K_BADGE, K_ART_OPACITY, K_ART_SCALE, K_HEPTAGRAM, K_CONTACTS, K_N };
     static const char* const keys[K_N] = {"format", "name", "author", "header", "dial",
-        "centrepiece", "sweeps", "sweep", "alert", "colors", "badge", "artOpacity", "artScale"};
+        "centrepiece", "sweeps", "sweep", "alert", "colors", "badge", "artOpacity", "artScale", "heptagram", "contacts"};
     bool seen[K_N] = {};
     char sweepName[12] = {};
     bool haveSweepName = false;
@@ -300,6 +300,19 @@ bool parseObject(P& p, Pack& out) {
                 long value; if(!integer(p,value))return false;
                 if(value<(key==K_ART_SCALE?25:0) || value>100)return fail(p,"art percentage out of range");
                 if(key==K_ART_SCALE)out.artScale=(uint8_t)value;else out.artOpacity=(uint8_t)value;
+                break;
+            }
+            case K_HEPTAGRAM:
+            case K_CONTACTS: {
+                const char* const bad = key == K_HEPTAGRAM ? "heptagram must be on or off" : "contacts must be on or off";
+                ws(p);
+                if (p.i >= p.n || p.s[p.i] != '"') return fail(p, bad);   // a bare true / 0 / null: name the key
+                if (!str(p, tmp, 31, &tl)) return false;
+                bool off;
+                if (tl <= 31 && strcmp(tmp, "off") == 0) off = true;
+                else if (tl <= 31 && strcmp(tmp, "on") == 0) off = false;
+                else return fail(p, bad);
+                if (key == K_HEPTAGRAM) out.hideHeptagram = off; else out.hideContacts = off;
                 break;
             }
             case K_BADGE:

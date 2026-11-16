@@ -173,6 +173,7 @@ __pycache__/
 .venv-flash/
 sim/test_scan_fx
 sim/test_radar_video
+sim/test_art_switches
 sim/test_radarclip
 sim/test_alert_tone
 sim/test_soundpack
@@ -188,3 +189,4 @@ sim/snd_check
 /sim/test_sweep_tail
 /sim/test_theme_art
 /sim/test_cvlt_clip
+sim/test_discoverypolicy

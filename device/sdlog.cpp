@@ -126,8 +126,8 @@ void list(Print& out, const char* dir) {
         return;
     }
     for (File f = root.openNextFile(); f; f = root.openNextFile()) {
-        if (f.isDirectory()) out.printf("   <dir>  %s/\n", f.name());
-        else out.printf("%8lu  %s\n", (unsigned long)f.size(), f.name());
+        if (f.isDirectory()) out.printf("     <dir>  %s/\n", f.name());
+        else out.printf("%10lu  %s\n", (unsigned long)f.size(), f.name());   // 10 wide: any 32-bit size keeps a leading space
         f.close();
     }
     root.close();

@@ -69,12 +69,13 @@ export function b64ToBytes(b64) {
 export function makeTemplate(id) {
   const t = TEMPLATES.find((x) => x.id === id);
   if (!t) throw new Error('unknown template ' + id);
-  const theme = { format: 1, author: '', ...t.base, sweeps: ALL_SWEEPS.slice(), sweep: 'radar', colors: { ...PALETTES[id] } };
+  const theme = { format: 1, author: '', heptagram: 'on', contacts: 'on', ...t.base, sweeps: ALL_SWEEPS.slice(), sweep: 'radar', colors: { ...PALETTES[id] } };
   return { theme, emblem: id === 'cosmic' ? emblemFromBin(b64ToBytes(COSMIC_EMBLEM_B64)) : null };
 }
 
 export function blankTheme() {
   return { format: 1, name: 'NEW THEME', author: '', header: '', dial: 'compact', centrepiece: 'heptagram',
+    heptagram: 'on', contacts: 'on',
     sweeps: ALL_SWEEPS.slice(), sweep: 'radar', alert: 'ward', colors: { ...PALETTES.blank } };
 }
 
@@ -142,6 +143,8 @@ export function parseThemeJson(text) {
     header: str(j.header, 'header'),
     dial: pick(j.dial, limits.dialNames, 'compact', 'dial'),
     centrepiece: pick(j.centrepiece, limits.centrepieceNames, 'heptagram', 'centrepiece'),
+    heptagram: pick(j.heptagram, limits.switchNames, 'on', 'heptagram'),
+    contacts: pick(j.contacts, limits.switchNames, 'on', 'contacts'),
     alert: pick(j.alert, limits.alertNames, 'ward', 'alert'),
   };
   let sweeps = limits.sweepNames.slice();

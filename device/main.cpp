@@ -30,6 +30,7 @@ static unsigned consoleDwell=220;
 #include "touch.h"
 #include "prefs.h"
 #include "logging.h"
+#include "discoverypolicy.h"
 #include "sdlog.h"
 #include "elog.h"
 #include "themeload.h"
@@ -56,6 +57,9 @@ static unsigned consoleDwell=220;
 #include "rehome.h"
 #include "phase.h"
 #include <esp_now.h>
+#if defined(UMBRAVOX_COEX_PREFER)
+#include <esp_coexist.h>
+#endif
 #include "signatures.h"
 #include "nav.h"
 #include "layout.h"
@@ -758,6 +762,10 @@ void setup() {
     // legacy canvas renderer.
     engineadapter::begin(gfx, PANEL_W, PANEL_H);
 #endif
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    // The CSV export's per-slot change signatures (3 KB) go in PSRAM: boot heap is tight.
+    evidencecsv::setAllocator([](size_t n) -> void* { return heap_caps_calloc(n, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); });
+#endif
 
     // Arduino core 3.x LEDC. The old ledcSetup()/ledcAttachPin() pair is gone,
     // and ledcWrite() now takes the pin rather than a channel -- this is the
@@ -782,6 +790,15 @@ void setup() {
 #endif
     cap::begin();
     blescan::begin();
+#if defined(UMBRAVOX_COEX_PREFER)
+    // Field A/B (BLE under-reporting while WiFi scans): which radio gets the airtime when both want it.
+    // 0 = WiFi, 1 = BLE, 2 = balanced; unset keeps the SDK default. Only the -coex* envs define it.
+    {
+        const esp_err_t ce = esp_coex_preference_set((esp_coex_prefer_t)UMBRAVOX_COEX_PREFER);
+        elog::event(ce == ESP_OK ? elog::INFO : elog::WARN, "coex", "preference %d (0 wifi, 1 ble, 2 balanced): %s",
+                    (int)UMBRAVOX_COEX_PREFER, esp_err_to_name(ce));
+    }
+#endif
     meshcore::begin();
     // The collector tier watches the same ESP-NOW receive path. Until a
     // coordinator registers it claims nothing, so the node mesh is unchanged.
@@ -1430,7 +1447,7 @@ void loop() {
     evidencecsv::tick(logging::state()==logging::ACTIVE && logging::wantsActive()?logging::fileName():"",
                       millis(),ui::Gnss::utcEpoch(millis()),cap::evidenceCsvRow);
     bootStall("evidence csv",start); }
-    if(evidencecsv::takeError()){storageWriteError=true;elog::event(elog::WARN,"csv","client/probe export write failed; stopped for this session");}
+    if(evidencecsv::takeError()){storageWriteError=true;elog::event(elog::WARN,"csv","client/probe export stopped for this session: %s",evidencecsv::failReason());}
     poi::service(millis());
     {const uint32_t start=micros();pcap::service(millis());bootStall("pcap service",start);}
     cap::setRawCapture(pcap::active());
@@ -1622,7 +1639,8 @@ void loop() {
         // the first navTouch runs before the draw-time apply below. Same
         // task, before any draw, so this is safe.
         pal::setTheme(set.theme);
-        themeload::tick(set.theme, millis(), true);   // the saved theme's clip and sounds, before the first frame
+        // The saved theme's clip and sounds are NOT read here any more: a pack with a big clip held boot for 2.5 to 3.6 s before the first
+        // frame (field logs). The ordinary tick in the main loop reads them in slices once the screen is up.
         mesh::netId = prefs::netId(mesh::netId);   // NVS overrides the build default
         Serial.printf("mesh: network id %u%s\n", (unsigned)mesh::netId,
                       mesh::netId == 0 ? " (open -- ENROLL to make a private net)" : "");
@@ -1774,8 +1792,12 @@ void loop() {
     }
     set.pcapEnabled=pcap::active()?1:0;
 #endif
-    if(set.activeDiscovery!=applied.activeDiscovery){cap::setActive(set.activeDiscovery);blescan::setActive(set.activeDiscovery);}
-    meshcore::setTiming(set.meshProfile,set.nodeDwellMs,set.activeDiscovery);
+    // Active discovery is held off while a session records (discoverypolicy.h);
+    // the saved setting is left alone and applies again after STOP.
+    static uint8_t appliedDiscovery = 0;
+    const uint8_t discoveryNow = discoverypolicy::effective((uint8_t)(set.activeDiscovery ? 1 : 0), logging::wantsActive());
+    if(discoveryNow!=appliedDiscovery){cap::setActive(discoveryNow);blescan::setActive(discoveryNow);appliedDiscovery=discoveryNow;}
+    meshcore::setTiming(set.meshProfile,set.nodeDwellMs,discoveryNow);
     if (set.dwellMs != applied.dwellMs) cap::setDwell(set.dwellMs);
     if (set.bands   != applied.bands)   cap::setBands(set.bands);
     if (set.bleDuty != applied.bleDuty) blescan::setDuty(set.bleDuty);
@@ -2061,6 +2083,9 @@ void loop() {
 
     // One CSV row per interval to /perf.csv -- here, before the dark-screen
     // branch below, so intervals spent with the screen off are logged as well.
+    // logState is rebuilt from zero every pass and normally set further down, after the REC toggle; the
+    // perf row needs it now, or its rec column reads 0 for the whole recording (field logs, Nov 2026).
+    s.logState = (uint8_t)logging::state();
     perflog::tick(millis(), s, screenOff);
 
     // Nothing to look at: skip draw and blit entirely and give the time to
@@ -2131,6 +2156,16 @@ void loop() {
 
     // Publish the logging session for the footer, after any toggle above.
     s.logState = (uint8_t)logging::state();
+    s.discoveryPaused = s.set.activeDiscovery && !discoverypolicy::effective(1, logging::wantsActive());
+    {   // a line in the diag log whenever wardrive logging starts, stops or loses its card, so a long run can be read afterwards
+        static int8_t prevLog = -1;
+        if (prevLog != (int8_t)s.logState) {
+            static const char* const nm[] = { "idle (not recording)", "recording", "no card" };
+            elog::event(elog::INFO, "rec", "wardrive logging: %s", s.logState < 3 ? nm[s.logState] : "?");
+            prevLog = (int8_t)s.logState;
+            perflog::flush();      // up to three rows wait in RAM; write them now so a stop followed by a reset loses none
+        }
+    }
     memset(s.logName, 0, sizeof s.logName);
     strncpy(s.logName, logging::fileName(), sizeof s.logName - 1);
 

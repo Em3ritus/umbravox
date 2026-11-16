@@ -49,6 +49,8 @@ int main(){
  Store stale;stale.observe(event(8,{},0));stale.observe(event(0,{'X'},HIDDEN_MS));assert(!stale.observe(event(1,{},HIDDEN_MS+1))&&!stale.find(ap)->len);
  // Request/response correlation is wrap-safe.
  Store wrap;wrap.observe(event(8,{},0xfffff000));wrap.observe(event(2,{'R'},0xfffffff0));assert(wrap.observe(event(3,{},20)));
+ // A busy stop (1,085 distinct stations in one 89-minute field recording) must fit without evicting anyone.
+ {Store big;for(int i=0;i<1000;i++){auto q=event(4,{},i);q.sta[4]=i>>8;q.sta[5]=i;big.observe(q);}assert(big.count==1000&&big.evicted==0);}
  Store bounded;for(int i=0;i<PROBES+1;i++){auto q=event(4,{},i);q.sta[4]=i>>8;q.sta[5]=i;bounded.observe(q);}assert(bounded.count==PROBES&&bounded.evicted==1);offset=999;assert(bounded.page(600,offset,6,ids,askers)==PROBES&&offset<PROBES);
  Ring ring;for(int i=0;i<QUEUE;i++)assert(ring.push(wild));assert(!ring.push(wild)&&ring.dropped==1&&ring.probes==QUEUE+1);for(int i=0;i<QUEUE;i++)assert(ring.pop(e));assert(!ring.pop(e));
  // Many malformed IE lengths/short frames under sanitizers.

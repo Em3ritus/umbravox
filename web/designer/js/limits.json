@@ -25,6 +25,7 @@
   "alertNames": ["ward", "supernova", "vortex", "comet", "lockon"],
   "dialNames": ["compact", "large"],
   "centrepieceNames": ["heptagram", "emblem"],
+  "switchNames": ["on", "off"],
   "limitations": {
     "reboot": {
       "id": "reboot",

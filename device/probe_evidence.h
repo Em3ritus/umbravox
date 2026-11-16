@@ -3,7 +3,7 @@
 #pragma once
 #include "clients.h"
 namespace evidence {
-constexpr int PROBES=512, APS=128, QUEUE=64, DRAIN=8;
+constexpr int PROBES=1024, APS=128, QUEUE=64, DRAIN=8;
 constexpr uint32_t EXCHANGE_MS=5000, HIDDEN_MS=300000;
 enum Kind:uint8_t { Probe, Advertisement, Request, Response };
 enum Source:uint8_t { Unknown, ApName, Association };

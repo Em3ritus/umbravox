@@ -45,7 +45,7 @@ constexpr uint32_t WAKE_AFTER = 4000 / PERIOD_MS;     // empty cycles in a row b
 // transfer. After this many failures in a row, drop to one quiet presence
 // check every ABSENT_MS until the module answers again.
 constexpr uint32_t ABSENT_AFTER = 3000 / PERIOD_MS;
-constexpr uint32_t ABSENT_MS    = 10000;
+constexpr uint32_t ABSENT_MS    = 60000;   // was 10 s: with no module fitted every probe makes the I2C driver print an error line (field log: one every 10 s)
 
 bool absent = false;
 

@@ -59,6 +59,8 @@ struct Pack {
     bool diamond;             // optional native-header badge
     uint8_t artOpacity;        // 0..100, parsed default 100
     uint8_t artScale;          // 25..100 percent of radar radius, default 82
+    bool hideHeptagram;        // theme.json "heptagram":"off"; stored inverted so a zeroed Pack shows everything
+    bool hideContacts;         // theme.json "contacts":"off"
     uint16_t color[N_COLORS];   // RGB565, indexed by Role
 };
 

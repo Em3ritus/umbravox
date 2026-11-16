@@ -824,7 +824,7 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
         // emblem theme with no art (a pack whose emblem failed) takes the
         // heptagram path rather than a null deref.
         drawEmblem(c, *emb, cx, cy, rField, s.frame, searchLift(s.set.sweep, s.frame));
-    } else {
+    } else if (pal::showHeptagram(s.set.theme)) {   // theme.json "heptagram":"off" leaves the dial to the pack
         latticeDisc(c, cx, cy, rField - 1);
 
         // The inscribed figure. A {7/3} heptagram: seven points, each joined to
@@ -863,7 +863,8 @@ void drawDialAt(Canvas& c, const State& s, int cx, int cy,
 
     // Contacts. Radius is RSSI. A blip the beam just crossed is drawn hot and
     // crossed; the rest decay so the field does not silt up.
-    for (int i = 0; i < s.nContacts; i++) {
+    const int nShown = pal::showContacts(s.set.theme) ? s.nContacts : 0;   // theme.json "contacts":"off"
+    for (int i = 0; i < nShown; i++) {
         const Contact& k = s.contacts[i];
         int x, y;
         polar(cx, cy, contactRadius(k.dist, rField), (float)k.angle, x, y);
