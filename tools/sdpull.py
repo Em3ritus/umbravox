@@ -12,7 +12,8 @@ recording first. Like sdput.py it holds DTR and RTS low and waits for the board 
 
 SDCAT streams the file through the same console as the device's own log lines, so a pull can contain chatter in the
 middle. A .csv/.CSV file is cleaned: only rows with the header's number of fields are kept, and the count of dropped
-lines is printed. Any other file is written as received (check the size against the listing).
+lines is printed. Any other text file (.log, .txt, .json, .gpx) is written line by line
+(line endings normalised). Binary files (.vid, .snd, .bin, .pcap) are refused: the console's line handling would corrupt them.
 """
 import csv
 import importlib.util
@@ -85,6 +86,14 @@ def csv_rows(lines):
     return header, rows, dropped
 
 
+_TEXT = (".csv", ".log", ".txt", ".json", ".gpx")
+
+
+def is_text_file(name):
+    """The console delivers lines, so only text files survive a pull byte for byte (apart from line endings)."""
+    return name.lower().endswith(_TEXT)
+
+
 def _link(port):
     here = Path(__file__).resolve().parent
     spec = importlib.util.spec_from_file_location("sdput_link", here / "sdput.py")
@@ -118,6 +127,9 @@ def cmd_get(link, path, out_dir):
     size = listed.get(leaf)
     if size is None:
         raise SystemExit("%s is not on the card" % path)
+    if not is_text_file(leaf):
+        raise SystemExit("%s is not a text file: SDCAT goes through the console's line handling, which would corrupt it. "
+                         "Take the card out, or use the designer/sdput for theme packs." % leaf)
     text = _collect(link, "SDCAT " + path, "=== SDCAT END", 60 + size / 8000.0)   # ~11 KB/s measured; allow for slower
     body = cat_body(text)
     os.makedirs(out_dir, exist_ok=True)
@@ -131,10 +143,10 @@ def cmd_get(link, path, out_dir):
             w.writerows(rows)
         print("%s: %d rows, %d console/torn lines dropped (card lists %d bytes)" % (dest, len(rows), dropped, size))
     else:
-        data = "\n".join(body).encode("latin-1", "replace")
+        data = ("\n".join(body) + "\n").encode("utf-8", "replace")
         with open(dest, "wb") as fh:
             fh.write(data)
-        print("%s: %d bytes received, card lists %d" % (dest, len(data), size))
+        print("%s: %d bytes received (line endings normalised), card lists %d" % (dest, len(data), size))
 
 
 def main(argv):

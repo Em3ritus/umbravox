@@ -69,5 +69,13 @@ class CatTests(unittest.TestCase):
         self.assertEqual(mod.cat_body("sdlog: no such file\n"), [])
 
 
+class TextOnlyTests(unittest.TestCase):
+    def test_text_files_are_allowed_binary_are_not(self):
+        for ok in ("perf.csv", "WD-0001.CSV", "diag.log", "theme.json", "track.gpx", "notes.txt"):
+            self.assertTrue(mod.is_text_file(ok), ok)
+        for bad in ("radar.vid", "alert.snd", "emblem.bin", "capture0001.pcap", "noextension"):
+            self.assertFalse(mod.is_text_file(bad), bad)
+
+
 if __name__ == "__main__":
     unittest.main()
