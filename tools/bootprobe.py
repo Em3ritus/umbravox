@@ -16,16 +16,32 @@ Exit status 0 = every reset booted clean, 1 = a panic or no boot was seen.
 """
 import argparse
 import re
+import statistics
 import sys
 import time
 
-try:
-    import serial
-except ImportError:
-    sys.exit("pyserial missing: run with ~/.platformio/penv/bin/python")
+_ENG = re.compile(r"\[eng\] fr (\d+) sl (\d+) compose (\d+)us xfer (\d+)us maxsl (\d+)us rpm (\d+) "
+                  r"diff (\d+)us entry (\d+)ms gap (\d+)ms wifi (\d+) ble (\d+)")
+
+
+def engine_stats(text):
+    """Summary of the native engine's [eng] lines (one per 10 s on a lit screen), or None if there are none.
+    rpm is the share of wall time spent rendering, per mille; maxslice_us is the longest single render slice."""
+    rows = [tuple(int(x) for x in m.groups()) for m in _ENG.finditer(text)]
+    if not rows:
+        return None
+    col = lambda i: [r[i] for r in rows]
+    return {"lines": len(rows), "frames_median": int(statistics.median(col(0))),
+            "compose_us_median": int(statistics.median(col(2))), "xfer_us_median": int(statistics.median(col(3))),
+            "maxslice_us": max(col(4)), "rpm_median": int(statistics.median(col(5))), "rpm_max": max(col(5)),
+            "gap_ms_max": max(col(8))}
 
 
 def open_port(path):
+    try:
+        import serial              # imported here so engine_stats() and the tests need no pyserial
+    except ImportError:
+        sys.exit("pyserial missing: run with ~/.platformio/penv/bin/python")
     s = serial.Serial()
     s.port, s.baudrate, s.timeout = path, 115200, 0.3
     s.dtr = False                      # keep DTR/RTS low; we pulse RTS ourselves
@@ -52,7 +68,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--port", default="/dev/ttyUSB0")
     ap.add_argument("--resets", type=int, default=12)
-    ap.add_argument("--frames", type=int, default=20, help="seconds of frame timing after the resets (0 = skip)")
+    ap.add_argument("--frames", type=int, default=25, help="seconds of frame timing after the resets (0 = skip)")
     ap.add_argument("--boot-wait", type=float, default=5.0, help="seconds to listen after each reset")
     a = ap.parse_args()
 
@@ -87,8 +103,17 @@ def main():
             print(f"scan frames {len(d)}: draw min/median/max {d[0]}/{d[len(d) // 2]}/{d[-1]} ms, "
                   f"blit {b[0]}/{b[len(b) // 2]}/{b[-1]} ms" + (f"  (theme {theme.group(2)})" if theme else ""))
             print("reference: about 12 ms median on the NM-CYD-C5 scan screen (landscape, pack with an emblem); investigate a rise past ~14 ms")
-        else:
-            print("no scan-screen frame lines seen (screen dark or not on the scan screen)")
+        eng = engine_stats(t)
+        if eng:
+            print(f"engine ({eng['lines']} x 10 s): {eng['frames_median']} frames per 10 s, render share median/max "
+                  f"{eng['rpm_median'] / 10:.1f}%/{eng['rpm_max'] / 10:.1f}% of wall time, compose {eng['compose_us_median'] / 1000:.0f} ms and "
+                  f"transfer {eng['xfer_us_median'] / 1000:.0f} ms per 10 s (medians), longest slice {eng['maxslice_us'] / 1000:.1f} ms, "
+                  f"worst loop gap {eng['gap_ms_max']} ms")
+        elif not fr:
+            print("no scan-screen or engine frame lines seen: the screen was dark (it blanks shortly after boot) or not on the scan screen")
+        if eng and eng["lines"] < 3:
+            print("note: fewer than 3 engine lines, so this is mostly the boot transient, not a steady-state frame time; "
+                  "keep the screen awake by touching it during the probe, or read draw_avg and fps from perf.csv")
     s.close()
     sys.exit(1 if bad else 0)
 
