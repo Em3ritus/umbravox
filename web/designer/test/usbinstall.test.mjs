@@ -102,6 +102,21 @@ test('parseLs reads the lines the real device printed on the bench', () => {
   assert.deepEqual(r.files, [{ name: 'emblem.bin', size: 9246 }, { name: 'diag.log', size: 12999 }]);
 });
 
+// Firmware since the 10-wide size column prints "     <dir>  name/" and "%10lu  name"; older firmware printed 3 spaces and
+// "%8lu". The designer talks to both, so both shapes must list the same folders and files (small sizes have 8 or 9 spaces).
+const BENCH_WIDE = ['=== SDLS /themes ===', '     <dir>  my-umbravox/', '     <dir>  B_2/', '      9246  emblem.bin',
+  '        99  tiny.txt', '         0  empty.bin', '4294967295  big.bin', '=== SDLS END ==='];
+test('parseLs reads the 10-wide listing: directories, small sizes and a 10-digit size', () => {
+  const r = parseLs(BENCH_WIDE);
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(r.dirs, ['my-umbravox', 'B_2']);
+  assert.deepEqual(r.files, [{ name: 'emblem.bin', size: 9246 }, { name: 'tiny.txt', size: 99 }, { name: 'empty.bin', size: 0 }, { name: 'big.bin', size: 4294967295 }]);
+});
+test('parseLs: the old 8-wide listing and the new 10-wide one name the same folders', () => {
+  assert.deepEqual(parseLs(BENCH).dirs, ['my-umbravox']);
+  assert.deepEqual(parseLs(BENCH_WIDE).dirs.slice(0, 1), ['my-umbravox']);
+});
+
 test('parseLs ignores status lines, banner text and CR, and lines outside the listing', () => {
   const r = parseLs(['UMBRAVOX bring-up', '   <dir>  outside/', '=== SDLS /themes ===\r',
     'f30    [scan ] draw 12 blit  3 ms | wifi   41/512', '   <dir>  a/', '   <dir>  B_2/\r', '=== SDLS END ===', '   <dir>  after/']);
