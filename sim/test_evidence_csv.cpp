@@ -1,3 +1,4 @@
+#include "../ui/capture_paths.h"
 #include "../device/evidence_csv.h"
 #include "../device/sdlog.h"
 #include <map>
@@ -108,6 +109,8 @@ int main(){
   size_t probeRows=0,clientRows=0;
   for(unsigned part=1;part<=MAXP;part++){
    std::string pn=part==1?"/WD-0030-probes.csv":"/WD-0030-probes-"+std::to_string(part)+".csv",cn=part==1?"/WD-0030-clients.csv":"/WD-0030-clients-"+std::to_string(part)+".csv";
+   if(files.count(pn))assert(capturepaths::classify(pn.c_str())==capturepaths::Probes); // the device can list and delete every part it writes
+   if(files.count(cn))assert(capturepaths::classify(cn.c_str())==capturepaths::Clients);
    if(files.count(pn)){assert(files[pn].size()<=2000&&files[pn].rfind("snapshot_ms,",0)==0);probeRows+=dataRows(files[pn]);}
    if(files.count(cn)){assert(files[cn].size()<=2000&&files[cn].rfind("snapshot_ms,",0)==0);clientRows+=dataRows(files[cn]);}
   }

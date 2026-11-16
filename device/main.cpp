@@ -2151,6 +2151,7 @@ void loop() {
             static const char* const nm[] = { "idle (not recording)", "recording", "no card" };
             elog::event(elog::INFO, "rec", "wardrive logging: %s", s.logState < 3 ? nm[s.logState] : "?");
             prevLog = (int8_t)s.logState;
+            perflog::flush();      // up to three rows wait in RAM; write them now so a stop followed by a reset loses none
         }
     }
     memset(s.logName, 0, sizeof s.logName);

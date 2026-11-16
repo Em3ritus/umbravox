@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+static_assert(evidencecsv::MAX_PARTS==capturepaths::MAX_EVIDENCE_PART,"keep the part limit in ui/capture_paths.h in step");
 namespace evidencecsv {
 namespace {
 const char* headers[]={
