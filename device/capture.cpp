@@ -344,7 +344,7 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     nameBuf[nb] = 0;
     const ui::Hit sig = ui::matchWifi(bssid, nameBuf);
     // The beacon body starts after the 24-byte MAC header.
-    const uint16_t auth = ui::parseAuth(f + 24, (int)p->rx_ctrl.sig_len - 24);
+    const uint16_t auth = ui::parseAuth(f + 24, ui::beaconBodyLen((int)p->rx_ctrl.sig_len));
 
     portENTER_CRITICAL(&mux);
     nLocal++;                       // heard on our own radio, not relayed

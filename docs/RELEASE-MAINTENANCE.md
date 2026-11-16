@@ -14,8 +14,8 @@ nothing, so do one first, then run it again with the box unticked. It runs the h
 (`nm-cyd-c5`, `ws-c5-35-engine`, `ws-c5-28-engine`, `xiao-c5-node`), packages each with
 `tools/package-firmware.py` (images, `manifest.json`, `SHA256SUMS.txt`, source snapshot), assembles the installer site
 from those ZIPs with `tools/assemble-native-installer.py` (which re-verifies every checksum and size limit), creates the
-GitHub release holding the four ZIPs (named `umbravox-<board>.zip`, so `releases/latest/download/...` links never
-change), then deploys the site. A successful run is not hardware acceptance. By hand, the same steps work locally:
+GitHub release holding the four ZIPs (named `umbravox-<board>.zip`), then deploys the site, which hosts the same ZIPs
+under those names. Link to the site copy, not to `releases/latest/download/...`: GitHub's "latest" skips pre-releases. A successful run is not hardware acceptance. By hand, the same steps work locally:
 `pio run -e <board>`, `package-firmware.py`, then `assemble-native-installer.py OUTPUT NM_ZIP WS35_ZIP WS28_ZIP XIAO_ZIP`
 into a fresh empty directory, then `tools/build-designer-wasm.sh && tools/assemble-designer.sh OUTPUT`, and check
 `SITE-SHA256SUMS.txt` (the workflow regenerates it after the designer is added, with `find`/`sha256sum`).

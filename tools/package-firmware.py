@@ -7,7 +7,7 @@ ENV is one of the four installable boards. BUILD_DIR is `.pio/build/ENV` (bootlo
 firmware.bin). The ZIP holds the four images the installer writes, manifest.json (board, commit, offsets,
 hashes), SHA256SUMS.txt for every other file, and a source snapshot of the commit (git archive), so a
 release can always be traced to the code that built it. The file is named umbravox-ENV.zip: a stable
-name, so release links such as .../releases/latest/download/umbravox-xiao-c5-node.zip never change.
+name, so the copy the installer site hosts (.../umbravox/umbravox-xiao-c5-node.zip) never moves.
 Nothing here compiles firmware, signs it or talks to the network.
 """
 import argparse

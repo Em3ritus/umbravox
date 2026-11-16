@@ -98,7 +98,7 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     r.band = is5(cur) ? 1 : 0;
     r.ssidLen = 0;
     r.ssid[0] = 0;
-    r.auth = ui::parseAuth(f + 24, (int)p->rx_ctrl.sig_len - 24);
+    r.auth = ui::parseAuth(f + 24, ui::beaconBodyLen((int)p->rx_ctrl.sig_len));
     if (p->rx_ctrl.sig_len >= 38 && f[36] == 0) {
         uint8_t n = f[37];
         if (n > 20) n = 20;

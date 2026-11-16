@@ -7,7 +7,7 @@ and save captures for analysis. Run standalone, connect to a phone app, or
 expand coverage with coordinated scanning nodes.
 
 [Install in your browser](https://em3ritus.github.io/umbravox/) ·
-[Latest release and downloads](https://github.com/Em3ritus/umbravox/releases/latest)
+[Releases and downloads](https://github.com/Em3ritus/umbravox/releases)
 
 ![Native UMBRAVOX SCAN and CODEX, side by side](docs/native-ui-preview.png)
 
@@ -107,8 +107,8 @@ state are separate controls.
 Local GPS-dependent recordings need a valid board GPS fix. Phone GPS supplies
 the phone app's records and is not assumed to feed back into the board.
 Native portrait mode and direct WiGLE / WDG Wars / Wardrift API uploads are not
-included. The XIAO ESP32-C5 node is available as a separate download on the
-[latest release](https://github.com/Em3ritus/umbravox/releases/latest).
+included. The XIAO ESP32-C5 node is a separate download from the
+[installer page](https://em3ritus.github.io/umbravox/) and the [releases](https://github.com/Em3ritus/umbravox/releases).
 See [XIAO node installation](docs/XIAO-NODE.md) for flashing and enrollment.
 
 ## Development
