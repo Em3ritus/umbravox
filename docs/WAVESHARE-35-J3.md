@@ -8,7 +8,7 @@ on the back panel. The header is 2 x 16. Odd pads are the top row of the strip (
 | 1 | VBUS | 5V | |
 | 2 | VBAT1 | BAT | |
 | 3, 4 | GND | G | |
-| 5 | SWDIO | SWD | the CH32 expander's debug line |
+| 5 | SWDIO | SWD | debug line; not used by the firmware |
 | 6, 8, 10, 12, 14, 16, 18, 20 | EXIO8 to EXIO15 | E8 to E15 | I/O expander, not ESP32 pins |
 | 7, 9 | NC | NC | |
 | 11, 13 | NC / GPIO22, NC / GPIO21 | NC | |
