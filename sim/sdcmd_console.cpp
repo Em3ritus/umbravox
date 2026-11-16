@@ -46,7 +46,7 @@ static void out(const char* s) {
     }
 }
 
-// device/sdlog.cpp list(): "   <dir>  name/" and "%8lu  name".
+// device/sdlog.cpp list(): "     <dir>  name/" and "%10lu  name".
 static void listing(FakeSd& sd, const char* dir) {
     char l[256];
     snprintf(l, sizeof l, "=== SDLS %s ===", dir);
@@ -56,10 +56,10 @@ static void listing(FakeSd& sd, const char* dir) {
     else if (!sd.dirs.count(k)) { snprintf(l, sizeof l, "sdlog: cannot open %s", dir); out(l); }
     else {
         for (const auto& d : sd.dirs)
-            if (d != k && parentOf(d) == k) { snprintf(l, sizeof l, "   <dir>  %s/", d.substr(d.rfind('/') + 1).c_str()); out(l); }
+            if (d != k && parentOf(d) == k) { snprintf(l, sizeof l, "     <dir>  %s/", d.substr(d.rfind('/') + 1).c_str()); out(l); }
         for (const auto& f : sd.files)
             if (parentOf(f.first) == k) {
-                snprintf(l, sizeof l, "%8lu  %s", (unsigned long)f.second.size(), f.first.substr(f.first.rfind('/') + 1).c_str());
+                snprintf(l, sizeof l, "%10lu  %s", (unsigned long)f.second.size(), f.first.substr(f.first.rfind('/') + 1).c_str());
                 out(l);
             }
     }
