@@ -374,10 +374,13 @@ sdput-check:
 ble-library-check:
 	@python3 -B -m unittest discover -s ../tools/tests -p test_ble_callback_library.py
 
+perf-report-check:
+	@python3 -B -m unittest discover -s ../tools/tests -p test_perf_report.py
+
 oui-generator-check:
 	@python3 -I ../tools/test_generate_oui.py
 
-test: oui-generator-check $(TESTS) sdcmd_console emblem-check sdput-check ble-library-check
+test: oui-generator-check $(TESTS) sdcmd_console emblem-check sdput-check ble-library-check perf-report-check
 	@rc=0; for t in $(TESTS); do \
 	   echo "== $$t"; ./$$t || rc=1; done; \
 	 exit $$rc

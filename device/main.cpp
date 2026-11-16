@@ -2071,6 +2071,9 @@ void loop() {
 
     // One CSV row per interval to /perf.csv -- here, before the dark-screen
     // branch below, so intervals spent with the screen off are logged as well.
+    // logState is rebuilt from zero every pass and normally set further down, after the REC toggle; the
+    // perf row needs it now, or its rec column reads 0 for the whole recording (field logs, Nov 2026).
+    s.logState = (uint8_t)logging::state();
     perflog::tick(millis(), s, screenOff);
 
     // Nothing to look at: skip draw and blit entirely and give the time to
