@@ -12,9 +12,9 @@ on the back panel. The header is 2 x 16. Odd pads are the top row of the strip (
 | 6, 8, 10, 12, 14, 16, 18, 20 | EXIO8 to EXIO15 | E8 to E15 | I/O expander, not ESP32 pins |
 | 7, 9 | NC | NC | |
 | 11, 13 | NC / GPIO22, NC / GPIO21 | NC | |
-| 15 | GPIO0_OUT | 0 | free (camera D0 on boards that fit a camera) |
-| 17 | GPIO1_OUT | 1 | free (camera D1) |
-| 19 | GPIO9_OUT | 9 | the SD card chip select: do not use |
+| 15 | GPIO0_OUT | 0 | **not connected to the chip** as shipped (camera D0 selector `R55`, see below) |
+| 17 | GPIO1_OUT | 1 | **not connected to the chip** as shipped (camera D1 selector `R58`, see below) |
+| 19 | GPIO9_OUT | 9 | the SD card chip select (`R57`): not connected to the chip as shipped, and do not use |
 | 21 | GPIO28_OUT | 28 | a C5 strapping pin: avoid |
 | 22 | CHIP_PU | RST | |
 | 23 | EXIO_ADC | ADC | expander |
@@ -26,13 +26,20 @@ on the back panel. The header is 2 x 16. Odd pads are the top row of the strip (
 | 29, 30 | GND | G | |
 | 31, 32 | VCC3V3 | 3V3 | |
 
-**TX and RX do nothing on boards as shipped.** `U0TXD` and `U0RXD` reach GPIO11 and GPIO12 only through the selector
-resistors `R56` and `R59`, which the schematic marks `0R_NC` (not populated). `device/board.h` has said this since the
-first units were checked; a UART receiver wired to pads 26 and 28 is never heard.
+**Pads 15, 17, 19, 26 and 28 do nothing on boards as shipped.** Each of GPIO0, 1, 9, 11 and 12 sits on a three-pad
+0-ohm selector: the chip, the on-board function (camera data, SD chip select, camera clock and sync) and the header. The
+0 ohm part is fitted on the on-board side and the header side is left open (`NC`; `R55`, `R58`, `R57`, `R56`, `R59`).
+So `U0TXD` and `U0RXD` (pads 26 and 28) reach GPIO11 and GPIO12 only through `R56` and `R59`, and a UART receiver wired to
+any of these pads is never heard. `device/board.h` has said this about pads 26 and 28 since the first units were
+checked. For the others the evidence is the BSP project's schematic reading and pin probe on two units
+([ESP32-C5-BSP, HARDWARE-FINDINGS](https://github.com/slickrick773/ESP32-C5-BSP/blob/main/docs/HARDWARE-FINDINGS.md): zero
+edges on GPIO0, 1, 11 and 12 with a good 3.25 V module) and our own bench test: an ATGM336H (powered, LED on) wired to
+pad 15 and then pad 17 delivered no valid NMEA sentence on either. We did not inspect the resistors on our unit.
 
-**A UART GPS (for example the ATGM336H, 9600 baud NMEA)** needs the module's TXD on a connected GPIO: pad 15 (GPIO0) or
-pad 17 (GPIO1), plus 3V3 and GND on pads 30 and 32. The module's RXD stays unconnected because the firmware only listens.
-The Waveshare build does not read a UART GPS yet: it polls an LC76G over I2C (SDA 27, SCL 26, addresses 0x50 and 0x54),
-so with no LC76G fitted `GPS` shows 0 bytes and `fix NO GPS`.
+**A UART GPS (for example the ATGM336H, 9600 baud NMEA) cannot be added by wiring alone on this board.** Moving the 0 ohm
+part on `R55` or `R58` from the on-board pad to the header pad would connect GPIO0 or GPIO1 to pad 15 or 17 (not tried;
+it costs the camera data pin). Without a rework the options are an I2C GPS or an I2C-to-UART bridge on SDA 27 and SCL 26.
+The Waveshare build does not read a UART GPS: it polls an LC76G over I2C (SDA 27, SCL 26, addresses 0x50 and 0x54), so
+with no LC76G fitted `GPS` shows 0 bytes and `fix NO GPS`.
 
 Pins the firmware already uses: SPI 6 (SCK), 7 (MOSI), 2 (MISO), 8 (LCD CS), 5 (DC), 9 (SD CS); I2C 26 and 27; audio I2S 23, 10 and 25.

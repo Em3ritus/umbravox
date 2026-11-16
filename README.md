@@ -27,6 +27,10 @@ demonstration data. These are not hardware photographs.
 Waveshare 3.5-inch SCAN screen, rendered by the same shared drawing code the firmware uses, with synthetic
 demonstration data (not hardware photographs). COSMIC MUFFIN and CVLT OF BAPH0MAU5 play their clips as built in.
 
+A theme pack can show its own image or radar clip clean: `theme.json` takes two optional keys, `heptagram` and `contacts`
+(`"on"` by default, or `"off"`), that hide the drawn heptagram and the coloured contact dots. The theme designer has a
+checkbox for each. Boards on older firmware ignore the keys until they are reflashed. See [theme packs](docs/theme-packs.md).
+
 ## Boards and validation
 
 | Board | Native UI | Current hardware evidence |
@@ -73,7 +77,7 @@ See [Waveshare partitions](docs/WAVESHARE-PARTITIONS.md),
 
 - WiGLE-compatible Wi-Fi CSV recordings.
 - GPX tracks from valid GPS fixes during recording.
-- Client and probe CSV companion files.
+- Client and probe CSV companion files. A record is written when it first appears and again only when it changes, so a long recording stays small; a file that reaches 16 MiB continues in numbered parts (`-2`, `-3`, ... up to 8) instead of stopping.
 - Raw 802.11 PCAP capture for inspection in Wireshark, controlled separately from normal recording.
 - A dedicated **POI** action for marking points of interest.
 - Organized session and capture folders on SD, with a Files browser, access to legacy recordings, and protection against deleting files that are still in use.
