@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 const unsigned MAXP=evidencecsv::MAX_PARTS;
+constexpr unsigned SLOTS=clients::CAPACITY+evidence::PROBES;
 size_t allocBytes=0;unsigned allocCalls=0;bool allocFail=false;
 void* testBuf=nullptr;
 void* testAlloc(size_t n){allocCalls++;allocBytes=n;free(testBuf);testBuf=allocFail?nullptr:calloc(1,n);return testBuf;}
@@ -22,15 +23,15 @@ bool truncateTo(const char* p,uint32_t n){if(!card)return false;files[p].resize(
 }
 clients::Record c; evidence::ProbeRow p;
 size_t source(unsigned slot,char* out,size_t cap,uint32_t now,uint32_t epoch){
- visits++;assert(slot<768);
+ visits++;assert(slot<SLOTS);
  if(slot==0)return evidencecsv::client(out,cap,c,now,epoch,3,4);
- if(slot==256)return evidencecsv::probe(out,cap,p,now,epoch,5,6);
+ if(slot==clients::CAPACITY)return evidencecsv::probe(out,cap,p,now,epoch,5,6);
  return 0;
 }
 size_t dense(unsigned slot,char* out,size_t cap,uint32_t now,uint32_t epoch){
- visits++;return slot<256?evidencecsv::client(out,cap,c,now,epoch,0,0):evidencecsv::probe(out,cap,p,now,epoch,0,0);
+ visits++;return slot<clients::CAPACITY?evidencecsv::client(out,cap,c,now,epoch,0,0):evidencecsv::probe(out,cap,p,now,epoch,0,0);
 }
-void run(const char* name,uint32_t at,unsigned ticks=800){for(unsigned i=0;i<ticks;i++){unsigned before=opens,v=visits;evidencecsv::tick(name,at+i,1793318400,source);assert(opens-before<=1&&visits-v<=1);}}
+void run(const char* name,uint32_t at,unsigned ticks=SLOTS+60){for(unsigned i=0;i<ticks;i++){unsigned before=opens,v=visits;evidencecsv::tick(name,at+i,1793318400,source);assert(opens-before<=1&&visits-v<=1);}}
 int main(){
  c.used=true;c.last.ap[0]=0x10;c.last.sta[0]=2;c.last.channel=6;c.last.at=1000;c.first=100;c.frames=9;c.evidence=3;
  p.used=true;p.last.sta[0]=2;p.last.channel=11;p.last.rssi=-73;p.last.at=900;p.first=50;p.count=8;
@@ -62,8 +63,8 @@ int main(){
  p.last.len=32;memset(p.last.name,'"',32);assert(evidencecsv::probe(row,sizeof row,p,1000,0,0,0)>0);
  // Full tables fill and flush multiple batches without skipping retry slots.
  c.last.at=100000;c.rssiAt=100000;
- for(unsigned i=0;i<1100;i++){unsigned before=opens,v=visits;evidencecsv::tick("/WD-0008.csv",100000+i,0,dense);assert(opens-before<=1&&visits-v<=1);}
- assert(evidencecsv::rows()==768);evidencecsv::stop();
+ for(unsigned i=0;i<SLOTS+400;i++){unsigned before=opens,v=visits;evidencecsv::tick("/WD-0008.csv",100000+i,0,dense);assert(opens-before<=1&&visits-v<=1);}
+ assert(evidencecsv::rows()==SLOTS);evidencecsv::stop();
  // Slot reuse is serialized from current contents, never cached by slot number.
  c.last.sta[5]=0xab;c.first=120000;c.last.at=120000;
  run("/WD-0009.csv",120000);evidencecsv::stop();assert(files["/WD-0009-clients.csv"].find("02:00:00:00:00:AB")!=std::string::npos);
@@ -122,14 +123,14 @@ int main(){
   assert(!files.count("/WD-0031-probes-9.csv"));
   evidencecsv::stop();evidencecsv::setFileCap(16u*1024*1024);
  }
- // The change signatures come from the injected allocator (PSRAM on the device): 768 slots x 4 bytes.
+ // The change signatures come from the injected allocator (PSRAM on the device): one 4-byte signature per table slot.
  // If it cannot allocate, the export still works and simply re-writes every record each sweep.
  c.used=true;c.last.at=499000;c.hasRssi=false;p.used=true;p.last.at=499000;
  evidencecsv::setAllocator(testAlloc);allocFail=true;allocCalls=0;
  run("/WD-0020.csv",500000);assert(evidencecsv::rows()==2);run("/WD-0020.csv",513000);assert(evidencecsv::rows()==4);evidencecsv::stop();
- assert(allocCalls==1&&allocBytes==768*4);
+ assert(allocCalls==1&&allocBytes==SLOTS*4);
  evidencecsv::setAllocator(testAlloc);allocFail=false;allocCalls=0;
- run("/WD-0021.csv",600000);run("/WD-0021.csv",613000);assert(evidencecsv::rows()==2&&allocCalls==1&&allocBytes==768*4);evidencecsv::stop();
+ run("/WD-0021.csv",600000);run("/WD-0021.csv",613000);assert(evidencecsv::rows()==2&&allocCalls==1&&allocBytes==SLOTS*4);evidencecsv::stop();
  evidencecsv::setAllocator(nullptr);free(testBuf);testBuf=nullptr; // drop the module's reference before freeing the test buffer
  std::ofstream("/tmp/umbravox-clients.csv")<<files["/WD-0001-clients.csv"];
  std::ofstream("/tmp/umbravox-probes.csv")<<files["/WD-0001-probes.csv"];
