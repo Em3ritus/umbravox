@@ -98,6 +98,8 @@ export function runChecks(theme, emblem, clip = null, sounds = null) {
   if (t.dial && !limits.dialNames.includes(t.dial)) out.push(error('Dial must be compact or large.'));
   if (t.alert && !limits.alertNames.includes(t.alert)) out.push(error('Unknown alert "' + t.alert + '".'));
   if (t.centrepiece && !limits.centrepieceNames.includes(t.centrepiece)) out.push(error('Centrepiece must be heptagram or emblem.'));
+  if (t.heptagram !== undefined && !limits.switchNames.includes(t.heptagram)) out.push(error('Heptagram must be on or off.'));
+  if (t.contacts !== undefined && !limits.switchNames.includes(t.contacts)) out.push(error('Contacts must be on or off.'));
 
   // sizes
   let json = null;

@@ -208,6 +208,7 @@ function syncForm() {
   for (const b of $('seg-dial').children) b.setAttribute('aria-pressed', String(b.dataset.v === t.dial));
   for (const cb of $('sweeps').querySelectorAll('input')) cb.checked = t.sweeps.includes(cb.dataset.sweep);
   $('f-alert').value = t.alert;
+  $('f-heptagram').checked = t.heptagram !== 'off'; $('f-contacts').checked = t.contacts !== 'off';
   syncSweepSelect(); syncEmblemBox();
 }
 function syncSweepSelect() {
@@ -255,6 +256,8 @@ $('in-accent').addEventListener('change', (e) => {
 for (const b of $('seg-centre').children) b.addEventListener('click', () => {
   state.theme.centrepiece = b.dataset.v; syncForm(); changed();
 });
+$('f-heptagram').addEventListener('change', (e) => { state.theme.heptagram = e.target.checked ? 'on' : 'off'; changed(); });
+$('f-contacts').addEventListener('change', (e) => { state.theme.contacts = e.target.checked ? 'on' : 'off'; changed(); });
 for (const b of $('seg-dial').children) b.addEventListener('click', () => { state.theme.dial = b.dataset.v; syncForm(); changed(); });
 function onSweeps() {
   state.theme.sweeps = limits.sweepNames.filter((s) => $('sweeps').querySelector('[data-sweep="' + s + '"]').checked);
