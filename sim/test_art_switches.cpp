@@ -97,6 +97,27 @@ int main() {
         check("contacts off == no contacts", con == defNoB);
     }
 
+    puts("== emblem centrepiece is not affected by the heptagram switch");
+    {
+        static uint8_t epx[16 * 16]; for (int i = 0; i < 16 * 16; i++) epx[i] = (uint8_t)((i / 16 + i % 16) % 4);
+        static themepack::Emblem em; memset(&em, 0, sizeof em);
+        em.w = 16; em.h = 16; em.ncol = 4; em.px = epx;
+        em.pal[0] = 0x0000; em.pal[1] = 0xF800; em.pal[2] = 0x07E0; em.pal[3] = 0x001F;
+        themepack::Pack on = mkPack("ART EMB ON", false, false, themepack::DIAL_COMPACT);
+        themepack::Pack off = mkPack("ART EMB OFF", true, false, themepack::DIAL_COMPACT);
+        on.centre = off.centre = themepack::CENTRE_EMBLEM;
+        const int idOn = pal::addPack(on, &em), idOff = pal::addPack(off, &em);
+        check("emblem packs registered", idOn >= 0 && idOff >= 0);
+        check("emblem is the centrepiece", pal::centrepiece((uint8_t)idOn) == pal::CP_EMBLEM);
+        const auto cOn = cyd(idOn, 5), cOff = cyd(idOff, 5);
+        check("CYD: emblem pixels identical with the heptagram off", cOn == cOff);
+        check("CYD: the emblem is what is drawn, not the heptagram", cOn != cyd(idDef, 5));
+        const RadarVideo v = flatVideo();
+        check("compact radar: identical with the heptagram off", wide(320, 240, idOn, 6, nullptr) == wide(320, 240, idOff, 6, nullptr));
+        check("wide radar: identical with the heptagram off", wide(480, 320, idOn, 6, nullptr) == wide(480, 320, idOff, 6, nullptr));
+        check("wide radar + clip: identical with the heptagram off", wide(480, 320, idOn, 6, &v) == wide(480, 320, idOff, 6, &v));
+    }
+
     pal::clearPacks();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;

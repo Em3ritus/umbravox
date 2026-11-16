@@ -304,11 +304,14 @@ bool parseObject(P& p, Pack& out) {
             }
             case K_HEPTAGRAM:
             case K_CONTACTS: {
+                const char* const bad = key == K_HEPTAGRAM ? "heptagram must be on or off" : "contacts must be on or off";
+                ws(p);
+                if (p.i >= p.n || p.s[p.i] != '"') return fail(p, bad);   // a bare true / 0 / null: name the key
                 if (!str(p, tmp, 31, &tl)) return false;
                 bool off;
                 if (tl <= 31 && strcmp(tmp, "off") == 0) off = true;
                 else if (tl <= 31 && strcmp(tmp, "on") == 0) off = false;
-                else return fail(p, key == K_HEPTAGRAM ? "heptagram must be on or off" : "contacts must be on or off");
+                else return fail(p, bad);
                 if (key == K_HEPTAGRAM) out.hideHeptagram = off; else out.hideContacts = off;
                 break;
             }
