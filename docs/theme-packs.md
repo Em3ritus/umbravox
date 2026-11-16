@@ -72,6 +72,8 @@ The designer writes only these. Any other file in a pack folder
 | `header` | no | 1-18 characters in the font (ASCII 32..95: capitals, digits, space, common punctuation); lowercase is shown as capitals. Shown in the scan-screen header. | the name, truncated to 18 characters |
 | `dial` | no | `compact` (UMBRAVOX geometry, with the spectrum strip) or `large` (BAPH0MAU5 / COSMIC geometry, no strip). | `compact` |
 | `centrepiece` | no | `heptagram` (UMBRAVOX's drawn figure, lattice, range rings and rune ring) or `emblem` (a picture from `emblem.bin` filling the dial, as COSMIC MUFFIN does). | `heptagram` |
+| `heptagram` | no | `on` or `off`. `off` stops the drawn heptagram figure being painted: on the UMBRAVOX-style dial that is the lattice, range rings, rune ring and figure, so only your own art (an emblem or a `radar.vid`) shows; on the Waveshare wide radar it is the heptagram that would otherwise sit over a clip. The alert takeover is not affected. Firmware from before this key ignores it. | `on` |
+| `contacts` | no | `on` or `off`. `off` stops the coloured contact dots being drawn on the radar. Contacts are still collected and logged; the sweep and needle still draw. Older firmware ignores it. | `on` |
 | `sweeps` | yes | a non-empty list from `radar pulse star candle galaxy orbit starfall pulsar comet aurora`. | none (a pack with no `sweeps` is skipped) |
 | `sweep` | no | the starting sweep; must be one of `sweeps`. | the lowest-numbered sweep offered, in the order listed above |
 | `alert` | no | `ward`, `supernova`, `vortex`, `comet` or `lockon`. Any alert works with either centrepiece. | `ward` |
@@ -197,7 +199,8 @@ These numbers are the same ones the device and the designer use
    or open an existing `theme.json`. The BAPH0MAU5 template is a heptagram in the
    seal's colours, because the seal bitmap is not available to packs.
 3. Edit the identity, the palette (there is a "make a palette from one colour"
-   helper), the centrepiece (drop a PNG, or choose the heptagram) and the motion
+   helper), the centrepiece (drop a PNG, or choose the heptagram; two checkboxes hide the
+   heptagram and the contact dots so your own image or video shows clean) and the motion
    (sweeps, starting sweep, alert). The preview shows Scan, Mesh, Alert and Menu with
    colours after RGB565 clamping. The checks explain anything that is wrong.
    Pick the board to preview above the screen: **CYD 2.8"** or **Waveshare 3.5"**
