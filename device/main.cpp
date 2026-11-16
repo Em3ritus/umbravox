@@ -57,6 +57,9 @@ static unsigned consoleDwell=220;
 #include "rehome.h"
 #include "phase.h"
 #include <esp_now.h>
+#if defined(UMBRAVOX_COEX_PREFER)
+#include <esp_coexist.h>
+#endif
 #include "signatures.h"
 #include "nav.h"
 #include "layout.h"
@@ -787,6 +790,15 @@ void setup() {
 #endif
     cap::begin();
     blescan::begin();
+#if defined(UMBRAVOX_COEX_PREFER)
+    // Field A/B (BLE under-reporting while WiFi scans): which radio gets the airtime when both want it.
+    // 0 = WiFi, 1 = BLE, 2 = balanced; unset keeps the SDK default. Only the -coex* envs define it.
+    {
+        const esp_err_t ce = esp_coex_preference_set((esp_coex_prefer_t)UMBRAVOX_COEX_PREFER);
+        elog::event(ce == ESP_OK ? elog::INFO : elog::WARN, "coex", "preference %d (0 wifi, 1 ble, 2 balanced): %s",
+                    (int)UMBRAVOX_COEX_PREFER, esp_err_to_name(ce));
+    }
+#endif
     meshcore::begin();
     // The collector tier watches the same ESP-NOW receive path. Until a
     // coordinator registers it claims nothing, so the node mesh is unchanged.
