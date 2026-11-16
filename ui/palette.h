@@ -108,6 +108,9 @@ Centrepiece centrepiece(uint8_t id);
 bool diamondBadge(uint8_t id);
 uint8_t artOpacity(uint8_t id);
 uint8_t artScale(uint8_t id);
+// theme.json "heptagram"/"contacts" switches: false only for a pack that set "off". Built-ins and unknown ids: true.
+bool showHeptagram(uint8_t id);
+bool showContacts(uint8_t id);
 
 // The emblem art for this theme: the baked muffin for COSMIC MUFFIN, the
 // pack's for a pack (may be null), null for the heptagram / seal built-ins.

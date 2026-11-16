@@ -222,6 +222,19 @@ int main() {
         check("clearing twice is harmless", pal::themeCount() == pal::TH_COUNT);
     }
 
+    {   // art switches
+        pal::clearPacks();
+        themepack::Pack on  = mkPack("ARTON",  themepack::DIAL_COMPACT, 0x0001, ui::SW_RADAR, 0x1000);
+        themepack::Pack off = mkPack("ARTOFF", themepack::DIAL_COMPACT, 0x0001, ui::SW_RADAR, 0x2000);
+        off.hideHeptagram = true; off.hideContacts = true;
+        const int idOn = pal::addPack(on, nullptr), idOff = pal::addPack(off, nullptr);
+        check("pack default shows heptagram and contacts", pal::showHeptagram(idOn) && pal::showContacts(idOn));
+        check("pack with both off hides both", !pal::showHeptagram(idOff) && !pal::showContacts(idOff));
+        check("built-ins show both", pal::showHeptagram(pal::TH_UMBRAVOX) && pal::showContacts(pal::TH_UMBRAVOX) &&
+                                     pal::showHeptagram(pal::TH_COSMICMUFFIN) && pal::showContacts(pal::TH_COSMICMUFFIN));
+        pal::clearPacks();
+    }
+
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

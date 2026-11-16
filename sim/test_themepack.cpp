@@ -951,6 +951,23 @@ int main() {
     { Base b; b.col[3] = "\"123456\""; rejects("missing # rejected", b.str()); }
     { Base b; b.col[3] = "\"#1234567\""; rejects("long hex rejected", b.str()); }
     { Base b; b.extra = ",\"dial\":\"compact\""; rejects("duplicate key rejected", b.str()); }
+    {   // art switches: heptagram / contacts, "on" (default) or "off"
+        auto parsed = [](const std::string& extra, Pack& p, char* why) {
+            Base b; b.extra = extra; return run(b.str(), p, why); };
+        Pack p; char why[64];
+        check("switches default on", parsed("", p, why) && !p.hideHeptagram && !p.hideContacts);
+        check("heptagram off", parsed(",\"heptagram\":\"off\"", p, why) && p.hideHeptagram && !p.hideContacts);
+        check("contacts off", parsed(",\"contacts\":\"off\"", p, why) && !p.hideHeptagram && p.hideContacts);
+        check("both off", parsed(",\"heptagram\":\"off\",\"contacts\":\"off\"", p, why) && p.hideHeptagram && p.hideContacts);
+        check("explicit on stays on", parsed(",\"heptagram\":\"on\",\"contacts\":\"on\"", p, why) && !p.hideHeptagram && !p.hideContacts);
+        const char* bad[] = {"\"false\"", "\"OFF\"", "\"\"", "true", "0"};
+        for (const char* v : bad) {
+            Base b1; b1.extra = std::string(",\"heptagram\":") + v; rejects("bad heptagram value rejected", b1.str());
+            Base b2; b2.extra = std::string(",\"contacts\":") + v; rejects("bad contacts value rejected", b2.str());
+        }
+        Base d1; d1.extra = ",\"heptagram\":\"off\",\"heptagram\":\"off\""; rejects("duplicate heptagram rejected", d1.str());
+        Base d2; d2.extra = ",\"contacts\":\"off\",\"contacts\":\"off\""; rejects("duplicate contacts rejected", d2.str());
+    }
     { Base b; std::string s = b.str(); s.insert(s.size() - 2, ",\"void\":\"#000000\"");
       rejects("duplicate colour rejected", s); }
     { Base b; b.name = "5"; rejects("number for string rejected", b.str()); }
