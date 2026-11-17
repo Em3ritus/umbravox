@@ -7,6 +7,7 @@
   "MAX_EMBLEM": 9728,
   "MAX_PACK": 65536,
   "MAX_CLIP": 780312,
+  "MAX_LAYOUT_JSON": 4096,
   "MAX_CLIPS": 2,
   "MAX_SOUND": 576020,
   "MAX_SOUNDS": 2,
@@ -59,7 +60,7 @@
     },
     "presets": {
       "id": "presets",
-      "text": "Layout comes from presets only: two dial sizes. There is no custom screen layout, font or animation yet.",
+      "text": "Fonts and animations come from the built-in set. A layout moves, resizes and hides the pieces the device draws; it cannot add new kinds of piece.",
       "where": ["design", "docs"]
     },
     "builtins": {
@@ -116,6 +117,11 @@
       "id": "usbexclusive",
       "text": "Only one program can use the USB serial port at a time. Close any serial monitor (Arduino IDE, PlatformIO, screen) before connecting, and disconnect here before opening one.",
       "where": ["install", "docs"]
+    },
+    "layouts": {
+      "id": "layouts",
+      "text": "A layout changes the engine screens only (the Waveshare 3.5\" and the CYD's engine build). The default CYD release draws its older screens and ignores it, as does firmware older than the release that adds layouts; the theme's colours still show there.",
+      "where": ["design", "docs"]
     },
     "sharing": {
       "id": "sharing",

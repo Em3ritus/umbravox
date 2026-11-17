@@ -41,9 +41,9 @@ test('folder rule matches folderNameOk', () => {
   for (const bad of ['', '.', '..', 'a b', 'x'.repeat(32), 'a/b', 'é']) assert.ok(!re.test(bad), bad);
 });
 
-test('limitation texts: 19 entries, each with id, text and where', () => {
+test('limitation texts: 20 entries, each with id, text and where', () => {
   const entries = Object.entries(limits.limitations);
-  assert.equal(entries.length, 19);
+  assert.equal(entries.length, 20);
   for (const [k, v] of entries) {
     assert.equal(v.id, k);
     assert.ok(typeof v.text === 'string' && v.text.length > 20 && v.text.length < 400, k);

@@ -150,6 +150,7 @@ async function openThese(descs) {
     const r = openPackFiles(read);
     if (!r.ok) { msg.className = 'msg err'; msg.textContent = r.error; return; }
     begin(r.theme, r.emblem, r.clip, r.sounds);
+    adoptLayout(r.layout);
     if (r.warnings.length) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'Opened with changes: ' + r.warnings.join(' '); }
   } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not read those files: ' + e.message; }
 }
@@ -480,7 +481,7 @@ function tick(now) {
 }
 
 // ---------------------------------------------------------------- build + download
-function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip, state.sounds); }
+function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip, state.sounds, layoutText()); }
 // Save the pack as <folder>.zip through a temporary link. -> the folder name.
 function saveZip(pack) {
   const folder = pack.files[0].path.split('/')[0];
@@ -505,6 +506,11 @@ $('btn-zip2').addEventListener('click', download);
 $('btn-share').addEventListener('click', () => {
   if (checksNow.some((c) => c.level === 'error')) return;
   const m = $('action-msg');
+  if (layoutText()) {   // the community repository accepts layout.json from its next update (plan 6)
+    m.className = 'msg warn';
+    m.textContent = 'Sharing a theme with a layout is not open yet: the community themes repository accepts layouts from its next update. Download the pack and install it yourself for now, or set the layout back to Standard to share.';
+    return;
+  }
   try {
     const folder = saveZip(currentPack());
     window.open(shareUrl(currentTheme(), state.basedOn), '_blank', 'noopener');
@@ -739,6 +745,7 @@ async function openFromGallery() {
   const r = openPackFiles(got.files);
   if (!r.ok) { msg.className = 'msg err'; msg.textContent = 'The gallery theme could not be opened: ' + r.error; return; }
   begin(r.theme, r.emblem, r.clip, r.sounds, { folder, name: String(got.entry.name || r.theme.name) });
+  adoptLayout(r.layout);
   const m = $('action-msg'); m.className = r.warnings.length ? 'msg warn' : 'msg';
   m.textContent = 'Opened ' + r.theme.name + ' from the gallery.' + (r.warnings.length ? ' Opened with changes: ' + r.warnings.join(' ') : '');
 }
@@ -759,6 +766,15 @@ function boardRects(board) {
   return out;
 }
 function layoutChanged() { changed(); syncLayout(); }
+// An opened pack's layout.json: kept even when the device would refuse it, so the author can fix it in the Layout step
+// (the checks show why, and Download, Install and Share stay closed until it passes).
+function adoptLayout(text) {
+  if (!text) return;
+  try { state.layout = fromJson(text); }
+  catch (e) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'layout.json is not valid JSON, so the layout was left out.'; return; }
+  state.lsel = null;
+  layoutChanged();
+}
 function enterLayout() { selectBoard(state.lboard); }
 function selectBoard(b) {
   // The first visit to a board the author has not touched, while the other is laid out: draft it from that one.

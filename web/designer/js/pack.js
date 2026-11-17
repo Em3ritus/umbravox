@@ -43,8 +43,8 @@ export function folderName(name) {
 }
 
 // clip: an optional radar clip (js/radarvideo.js buildClip), written as radar.vid. sounds: optional alert sounds
-// ({low, med, high}, js/alertsound.js), written as alert.snd.
-export function buildPack(theme, emblem, clip = null, sounds = null) {
+// ({low, med, high}, js/alertsound.js), written as alert.snd. layout: optional layout.json text (js/layout.js toJson).
+export function buildPack(theme, emblem, clip = null, sounds = null, layout = null) {
   const dir = folderName(theme.name);
   const files = [{ path: dir + '/theme.json', data: new TextEncoder().encode(themeJson(theme)) }];
   if (theme.centrepiece === 'emblem') {
@@ -53,5 +53,6 @@ export function buildPack(theme, emblem, clip = null, sounds = null) {
   }
   if (clip) files.push({ path: dir + '/radar.vid', data: clipFile(clip) });
   if (hasSounds(sounds)) files.push({ path: dir + '/alert.snd', data: soundFile(sounds) });
+  if (layout) files.push({ path: dir + '/layout.json', data: new TextEncoder().encode(layout) });
   return { files, bytes: files.reduce((n, f) => n + f.data.length, 0) };
 }

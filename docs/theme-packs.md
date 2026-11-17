@@ -29,7 +29,8 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
 - No scripting and no custom animation. The format is data only and stays that way
   in this version.
 - No Gaze sweep and no Summon rite. They belong to the Baphomet seal.
-- No custom fonts and no custom screen layout. Layout is two presets (dial sizes).
+- No custom fonts yet. A layout (`layout.json`, the designer's Layout step) moves, resizes and hides the pieces the
+  device draws on the engine screens, but cannot add new kinds of piece.
 - No hiding or disabling alerts.
 - It cannot use the Baphomet seal bitmap (a pack can choose a heptagram instead).
 
@@ -42,10 +43,10 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
     emblem.bin            required only when "centrepiece" is "emblem"
     radar.vid             optional: a looping video for the Waveshare's radar
     alert.snd             optional: your own alert sounds for the Waveshare's speaker (LOW, MED, HIGH)
-    layout.json           optional: moves the header, footer and count tiles (engine screens; written by hand for now)
+    layout.json           optional: where the pieces of the engine screens sit (the designer's Layout step)
 ```
 
-The designer writes only the first four (it cannot make `layout.json` yet). Any other file in a pack folder
+The designer writes these files. Any other file in a pack folder
 (a `preview.png`, a readme) is ignored by the device.
 
 ## theme.json
@@ -170,7 +171,7 @@ is skipped with "no room for another clip". The clip counts in the pack's size f
 it gives a pack that crashed another try. While a clip plays the radar repaints in full 12 times a second: measured
 on a Waveshare the scan screen ran at about 14 frames a second instead of about 25.
 
-## layout.json (early: written by hand; the designer cannot make it yet)
+## layout.json
 
 `layout.json` moves, resizes or hides the pieces of the shared header and footer, and Scan's three count tiles, on
 the engine screens (the Waveshare 3.5" at 480x320 and the CYD engine build at 320x240). The default CYD release
@@ -489,9 +490,9 @@ each within its size limit.
   that loads fine but faults later, when drawn, is not covered (see Troubleshooting).
 - The Baphomet seal's own sweeps and rite are not in packs; alerts always show.
 
-## The 18 limitations
+## The 19 limitations
 
-These are the 18 numbered items below. `web/designer/js/limits.json` has 19 entries,
+These are the 19 numbered items below. `web/designer/js/limits.json` has 20 entries,
 because the characters rule (no `"` or `\` in name, header or author) is its own entry
 there but is folded into item 4 here, and the USB route entries appear in both.
 
@@ -509,8 +510,8 @@ there but is folded into item 4 here, and the USB route entries appear in both.
    read escapes and would skip the pack.
 5. **RGB565.** Colours are stored as RGB565, so fine differences between near colours
    disappear. The designer previews the colours the panel will really show.
-6. **Presets only.** Layout comes from two dial sizes. There is no custom screen layout,
-   font or animation yet.
+6. **Built-in pieces, fonts and animations.** Fonts and animations come from the built-in set. A layout moves,
+   resizes and hides the pieces the device draws; it cannot add new kinds of piece.
 7. **Built-in sweeps and alerts.** Sweeps and alerts come from the built-in set. Gaze and
    the Summon rite are not available to packs; they belong to the Baphomet seal.
 8. **Alerts stay visible.** A theme cannot hide or disable alerts. Status and alert-edge
@@ -540,7 +541,10 @@ there but is folded into item 4 here, and the USB route entries appear in both.
     Close any serial monitor (Arduino IDE, PlatformIO, screen) before connecting, and
     disconnect here before opening one.
 18. **Sharing.** Sharing needs a GitHub account. Shared themes are public, and you must have
-    the right to share any picture, video or sound in them.
+    the right to share any picture, video or sound in them. A theme with a layout cannot be shared yet.
+19. **Layouts change the engine screens only.** A layout applies to the Waveshare 3.5" and the CYD's engine build.
+    The default CYD release draws its older screens and ignores it, as does firmware older than the release that adds
+    layouts; the theme's colours still show there.
 
 What is tested and what is not. The pure rules are host-tested: the theme.json and
 emblem.bin parsers, pack admission, the boot-loop guard's decisions, the ASPECT drawing

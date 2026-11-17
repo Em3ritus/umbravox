@@ -187,6 +187,7 @@ export function selectPackFiles(list) {
   const emblems = list.filter((f) => base(f) === 'emblem.bin');
   const clips = list.filter((f) => base(f) === 'radar.vid');
   const snds = list.filter((f) => base(f) === 'alert.snd');
+  const lays = list.filter((f) => base(f) === 'layout.json');
   if (!themes.length) return { ok: false, error: 'No theme.json found. Choose a theme.json, or the theme folder that holds one.' };
   if (themes.length > 1) return { ok: false, error: 'Found more than one theme.json (' + themes.length + '). Choose one theme folder, not a folder of themes.' };
   const t = themes[0];
@@ -206,6 +207,11 @@ export function selectPackFiles(list) {
     if (dir(s) !== dir(t)) return { ok: false, error: 'alert.snd is not in the same folder as theme.json. Choose one theme folder.' };
     if (size(s) > limits.MAX_SOUND) return { ok: false, error: 'alert.snd is ' + size(s) + ' bytes; over the ' + limits.MAX_SOUND + ' byte limit, so it was not read.' };
     picked.push(s);
+  }
+  for (const l of lays) {
+    if (dir(l) !== dir(t)) return { ok: false, error: 'layout.json is not in the same folder as theme.json. Choose one theme folder.' };
+    if (size(l) > limits.MAX_LAYOUT_JSON) return { ok: false, error: 'layout.json is ' + size(l) + ' bytes; over the ' + limits.MAX_LAYOUT_JSON + ' byte limit, so it was not read.' };
+    picked.push(l);
   }
   return { ok: true, picked };
 }
@@ -236,5 +242,7 @@ export function openPackFiles(files) {
   if (sb) {
     try { sounds = readSoundFile(sb.data); } catch (e) { warnings.push(e.message + ', so the alert sounds were left out.'); }
   }
-  return { ok: true, theme: r.theme, emblem, clip, sounds, warnings };
+  const lb = sel.picked.find((f) => base(f) === 'layout.json');
+  const layout = lb ? new TextDecoder().decode(lb.data) : null;   // the Layout step checks it with the device rules
+  return { ok: true, theme: r.theme, emblem, clip, sounds, layout, warnings };
 }
