@@ -74,6 +74,10 @@ sim/bench_draw
 
 # UI design engine (ws-ui-engine) host tests
 sim/test_layout_engine
+sim/test_layout_override
+sim/test_themelayout
+sim/test_engine_pixels
+sim/test_layout_pack
 sim/test_scan_present
 sim/test_scan_render
 sim/test_scan_engine
