@@ -98,9 +98,31 @@ struct ChromeOverride {
     Rect hero, counts, scanBody;
 };
 
-// Until Task 3 installs overrides, these are the built-in geometry.
-inline Chrome chrome(int W, int H) { return builtinChrome(W, H); }
-inline ScanLayout scan(int W, int H) { return builtinScan(W, H); }
+// The active theme's layout, one per board ([0] Waveshare W>=400, [1] CYD). Installed
+// by pal::setTheme; nullptr (or a null board) means the built-in geometry. chrome()
+// and scan() read it, so drawing and hits read the same rects and cannot drift.
+struct LayoutOverride { const ChromeOverride* board[2]; };
+inline const LayoutOverride*& activeLayout() { static const LayoutOverride* p = nullptr; return p; }
+inline const ChromeOverride* activeBoard(int W) {
+    const LayoutOverride* l = activeLayout();
+    return l ? l->board[W >= 400 ? 0 : 1] : nullptr;
+}
+
+inline Chrome chrome(int W, int H) {
+    const ChromeOverride* o = activeBoard(W);
+    return o ? o->c : builtinChrome(W, H);
+}
+inline ScanLayout scan(int W, int H) {
+    const ChromeOverride* o = activeBoard(W);
+    if (!o) return builtinScan(W, H);
+    ScanLayout s{};
+    s.status = o->c.status; s.nav = o->c.nav; s.body = o->scanBody;
+    for (int i = 0; i < 4; i++) { s.statusCells[i] = o->c.statusCells[i]; s.navCells[i] = o->c.navCells[i]; }
+    s.counts = o->counts; s.hero = o->hero;
+    for (int i = 0; i < 3; i++) s.tiles[i] = o->tiles[i];
+    s.bridge = o->c.bridge; s.wordmark = o->c.wordmark; s.stop = o->c.stop;
+    return s;
+}
 
 // --- DOMAIN: rectangular map (radar centered inside) + contacts + range -------
 struct DomainLayout {
@@ -156,6 +178,7 @@ struct HitList {
     Hit items[22];
     int count = 0;
     void add(const char* slot, Rect r, Action a, int payload, const char* key, const char* desc) {
+        if (r.w <= 0 || r.h <= 0) return;   // a hidden piece has no hit, never a zero-size one at (0,0)
         items[count++] = {slot, r, a, payload, key, desc};
     }
 };
@@ -493,7 +516,7 @@ inline HitList echoesHits(int W, int H) {
 static constexpr int attuneKnobIds[]={0,1,2,3,6,8,9,10,11,12};
 static constexpr int kAttuneKnobs = 10;   // radio/recording only; display controls have their own page
 inline int attuneRowsPerPage(int H) {
-    const Chrome c = chrome(320, H);     // body height is width-independent
+    const Chrome c = builtinChrome(320, H);   // body height is width-independent; builtin so a CYD layout cannot leak into the Waveshare's knob count
     int n = (c.body.h - 44) / 44; if (n < 1) n = 1; if (n > 4) n = 4;
     return n;
 }
