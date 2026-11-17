@@ -241,7 +241,8 @@ These numbers are the same ones the device and the designer use
    the feature tables, not from testing each browser. The page shows a message if
    yours is too old.
 2. Start from a template (UMBRAVOX, BAPH0MAU5 or COSMIC MUFFIN), a blank theme,
-   or open an existing `theme.json`. The BAPH0MAU5 template is a heptagram in the
+   or open an existing `theme.json`. Under the templates, pick a **starting layout**
+   (Standard, Radar left, Big radar, Numbers or Bottom-up); change it later in step 4. The BAPH0MAU5 template is a heptagram in the
    seal's colours, because the seal bitmap is not available to packs.
 3. Edit the identity, the palette (there is a "make a palette from one colour"
    helper), the centrepiece (drop a PNG, or choose the heptagram; two checkboxes hide the
@@ -250,7 +251,15 @@ These numbers are the same ones the device and the designer use
    colours after RGB565 clamping. The checks explain anything that is wrong.
    Pick the board to preview above the screen: **CYD 2.8"** or **Waveshare 3.5"**
    (see *Designing for the Waveshare 3.5"* below).
-4. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**. The
+4. **Layout** (optional): the board's engine screen drawn by the device code, with every piece outlined. Click a
+   piece to select it, drag it to move it, pull a corner to resize it, arrow keys nudge it 1 px (Shift: 8 px); the
+   side panel shows its exact numbers and has **Hide** and **Back to default**; hidden pieces wait in a tray. Two tabs:
+   **Waveshare 3.5"** and **CYD 2.8"** (the CYD's engine build at 320x240). The first board you change is drafted
+   onto the other when you open its tab: check it there. The checks run the device's own layout rules, so the
+   designer never saves a layout the board would refuse. If the theme has a radar video and you made the Waveshare
+   radar smaller, the pack's `radar.vid` is made at the new size when you save (your draft keeps the original).
+   A theme with a layout cannot be shared yet.
+5. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**. The
    Install page has two routes: write to the card in a card reader, or send the pack
    over the board's USB cable with the card left in the board.
 

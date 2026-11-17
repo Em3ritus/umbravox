@@ -211,7 +211,7 @@ import { clipFile as _clipFile, buildClip as _buildClip, CLIP_SIZE as _SZ } from
     const bad = mk(2); bad[5] = 64;
     const r = openPackFiles([{ name: 'p/theme.json', data: tjson() }, { name: 'p/radar.vid', data: bad }]);
     assert.equal(r.ok, true); assert.equal(r.clip, null);
-    assert.ok(r.warnings.some((w) => /radar\.vid/.test(w) && /102/.test(w)), r.warnings.join('|'));
+    assert.ok(r.warnings.some((w) => /radar\.vid/.test(w) && /square/.test(w)), r.warnings.join('|'));
   });
 
   test('selectPackFiles reads radar.vid only from the theme.json folder, and not when it is over the limit', () => {

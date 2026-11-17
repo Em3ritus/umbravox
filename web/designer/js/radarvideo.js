@@ -6,6 +6,8 @@ export const CLIP_SIZE = 102;
 export const CLIP_FPS = 12;
 export const MAX_BYTES = 786432;                                   // the wasm's clip buffer (bridge.cpp)
 export const FRAME_BYTES = Math.ceil(CLIP_SIZE * CLIP_SIZE / 2);   // 5202
+export const CLIP_MIN = 24;                                         // the device takes any square clip from 24 to 102 (a smaller radar)
+export const frameBytes = (side) => Math.ceil(side * side / 2);
 export const MAX_FRAMES = Math.floor(MAX_BYTES / FRAME_BYTES);     // 151; capped at 150 = 12.5 s
 export const PAL_BYTES = 32;                                       // version 2: 16 RGB565 colours, little-endian
 export const MAX_COLOUR_FRAMES = 149;                              // 12 + 32 + 149 frames is the most that fits the 780312-byte limit
@@ -74,15 +76,16 @@ export function readClipFile(b) {
   if (b[0] !== 0x55 || b[1] !== 0x56 || b[2] !== 0x52 || b[3] !== 0x56) throw new Error('radar.vid is not a UVRV file');
   if (b[4] !== 1 && b[4] !== 2) throw new Error('radar.vid version is not 1 or 2');
   const colour = b[4] === 2;
-  if (b[5] !== CLIP_SIZE || b[6] !== CLIP_SIZE) throw new Error(`radar.vid must be ${CLIP_SIZE}x${CLIP_SIZE}`);
+  if (b[5] !== b[6]) throw new Error('radar.vid must be square');
+  if (b[5] < CLIP_MIN || b[5] > CLIP_SIZE) throw new Error(`radar.vid must be ${CLIP_MIN}x${CLIP_MIN} to ${CLIP_SIZE}x${CLIP_SIZE}`);
   if (b[7] < 1 || b[7] > 30) throw new Error('radar.vid fps must be 1 to 30');
   const head = CLIP_HEADER + (colour ? PAL_BYTES : 0);
   if (b.length < head) throw new Error('radar.vid is too short');
   const frames = b[8] | (b[9] << 8);
-  const most = colour ? MAX_COLOUR_FRAMES : 150;
+  const most = colour && b[5] === CLIP_SIZE ? MAX_COLOUR_FRAMES : 150;
   if (frames < 1 || frames > most) throw new Error('radar.vid frames must be 1 to ' + most);
   if (b[10] || b[11]) throw new Error('radar.vid reserved bytes are not zero');
-  if (b.length !== head + frames * FRAME_BYTES) throw new Error('radar.vid length does not match its frames');
+  if (b.length !== head + frames * frameBytes(b[5])) throw new Error('radar.vid length does not match its frames');
   const clip = { w: b[5], h: b[6], frames, fps: b[7], data: Uint8Array.from(b.subarray(head)) };
   if (colour) clip.palette = Uint8Array.from(b.subarray(CLIP_HEADER, head));
   return clip;
@@ -90,14 +93,14 @@ export function readClipFile(b) {
 
 // null when the clip is playable, else why not.
 export function validateClip(c) {
-  if (!c || c.w !== CLIP_SIZE || c.h !== CLIP_SIZE) return `the clip must be ${CLIP_SIZE}x${CLIP_SIZE}`;
+  if (!c || c.w !== c.h || c.w < CLIP_MIN || c.w > CLIP_SIZE) return `the clip must be square, ${CLIP_MIN}x${CLIP_MIN} to ${CLIP_SIZE}x${CLIP_SIZE}`;
   if (!(c.frames >= 1)) return 'the clip has no frames';
   if (!(c.fps >= 1 && c.fps <= 30)) return 'the clip fps must be 1 to 30';
-  if (c.data.length !== c.frames * FRAME_BYTES) return `the clip has ${c.data.length} bytes, expected ${c.frames * FRAME_BYTES}`;
+  if (c.data.length !== c.frames * frameBytes(c.w)) return `the clip has ${c.data.length} bytes, expected ${c.frames * frameBytes(c.w)}`;
   if (c.data.length > MAX_BYTES) return 'the clip is over the size limit';
   if (c.palette) {
     if (c.palette.length !== PAL_BYTES) return `the clip palette must be ${PAL_BYTES} bytes`;
-    if (c.frames > MAX_COLOUR_FRAMES) return `a colour clip has at most ${MAX_COLOUR_FRAMES} frames`;
+    if (c.w === CLIP_SIZE && c.frames > MAX_COLOUR_FRAMES) return `a colour clip has at most ${MAX_COLOUR_FRAMES} frames`;
   }
   return null;
 }
@@ -241,4 +244,37 @@ export async function grabGifFrames(file, { vpos = 0.5, onProgress } = {}) {
     imgs.forEach((i) => i.close());
     return frames;
   } finally { dec.close(); }
+}
+
+// The clip at another square side (the placed radar's radius: drawn 2x, it fills the disc). Grey levels are area
+// averaged; a colour clip's pixels are palette indices, so they are sampled at each target pixel's centre, never
+// averaged. A new clip is returned; the one passed in is not changed (the draft keeps its original).
+export function resizeClip(c, side) {
+  if (c.w === side) return c;
+  if (!(side >= CLIP_MIN && side <= CLIP_SIZE)) throw new Error(`a clip side must be ${CLIP_MIN} to ${CLIP_SIZE}`);
+  const W = c.w, fbIn = frameBytes(W), fbOut = frameBytes(side);
+  const data = new Uint8Array(c.frames * fbOut);
+  const lv = new Uint8Array(W * W), out = new Uint8Array(side * side);
+  for (let f = 0; f < c.frames; f++) {
+    const src = c.data.subarray(f * fbIn, (f + 1) * fbIn);
+    for (let i = 0; i < W * W; i++) lv[i] = (i & 1) ? src[i >> 1] & 15 : src[i >> 1] >> 4;
+    for (let ty = 0; ty < side; ty++) {
+      for (let tx = 0; tx < side; tx++) {
+        if (c.palette) {
+          const sx = Math.min(W - 1, Math.floor(((tx + 0.5) * W) / side)), sy = Math.min(W - 1, Math.floor(((ty + 0.5) * W) / side));
+          out[ty * side + tx] = lv[sy * W + sx];
+          continue;
+        }
+        const x0 = Math.floor((tx * W) / side), x1 = Math.max(x0 + 1, Math.floor(((tx + 1) * W) / side));
+        const y0 = Math.floor((ty * W) / side), y1 = Math.max(y0 + 1, Math.floor(((ty + 1) * W) / side));
+        let sum = 0, n = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { sum += lv[y * W + x]; n++; }
+        out[ty * side + tx] = Math.round(sum / n);
+      }
+    }
+    data.set(packLevels(out), f * fbOut);
+  }
+  const r = { w: side, h: side, frames: c.frames, fps: c.fps, data };
+  if (c.palette) r.palette = Uint8Array.from(c.palette);
+  return r;
 }

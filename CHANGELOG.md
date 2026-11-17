@@ -10,7 +10,9 @@ history is in git and the release notes.
   hides the header and footer pieces and Scan's count tiles on the engine screens; every engine screen draws in the
   space they leave, and taps follow the pieces. A layout that breaks a rule (a piece off screen or under 44 px, a
   control hidden, pieces overlapping, too little room) is skipped on its own and logged; the theme still loads.
-  Written by hand for now; the designer's Layout step comes later. Scan's radar, spectrum, channel readout and badge
+  The theme designer's new **Layout** step edits it on the live screen: drag, resize, hide, board tabs with the
+  other board drafted, starting layouts, and the device's own rules as checks; a radar video is saved at the placed
+  radar size. Sharing a theme with a layout opens with the next community-repository update. Scan's radar, spectrum, channel readout and badge
   are pieces too, and the radar can be any square size up to today's: rings for radii without a baked table are
   generated on the device with integer arithmetic (identical to the baked tables where both exist), and
   `radar.vid` may be any square from 24 to 102 pixels. Built-in themes draw exactly as before

@@ -56,12 +56,12 @@ export function createPreview(M) {
     // layout: optional layout.json text (js/layout.js toJson); refused by the device rules -> {ok:false, error}.
     loadDraft(theme, emblem, clip = null, layout = null) {
       let pack;
-      try { pack = buildPack(theme, emblem, clip); } catch (e) { return { ok: false, error: e.message }; }
+      try { pack = buildPack(theme, emblem, clip, null, layout); } catch (e) { return { ok: false, error: e.message }; }   // the clip as the board gets it
       const named = (n) => pack.files.find((f) => f.path.endsWith('/' + n));
       const json = named('theme.json').data;
       const emb = named('emblem.bin') ? named('emblem.bin').data : null;
       const vid = named('radar.vid') ? named('radar.vid').data : null;
-      const lay = layout ? new TextEncoder().encode(layout) : null;
+      const lay = named('layout.json') ? named('layout.json').data : null;
       const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => withBytes(vid, (cp, cl) => withBytes(lay, (lp, ll) => M._uv_load_pack(jp, jl, ep, el, cp, cl, lp, ll)))));
       if (id < 0) return { ok: false, error: M.UTF8ToString(M._uv_error()) };
       // Only ever a sweep the pack offers.
