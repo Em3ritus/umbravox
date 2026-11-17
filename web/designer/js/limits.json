@@ -116,6 +116,11 @@
       "id": "usbexclusive",
       "text": "Only one program can use the USB serial port at a time. Close any serial monitor (Arduino IDE, PlatformIO, screen) before connecting, and disconnect here before opening one.",
       "where": ["install", "docs"]
+    },
+    "sharing": {
+      "id": "sharing",
+      "text": "Sharing needs a GitHub account. Shared themes are public, and you must have the right to share any picture, video or sound in them.",
+      "where": ["design", "docs"]
     }
   }
 }

@@ -378,6 +378,39 @@ restart the unit. The designer's Web Serial route therefore leaves all three out
 else before writing it); only `tools/sdput.py`, run by you on your own computer,
 can delete or reboot.
 
+## Share a theme
+
+A theme can be offered to everyone through the themes gallery, a separate public repository
+(`Em3ritus/umbravox-community-themes`) with its own page. **This route is built but not yet live:** the
+repository and the gallery do not exist until the first release that carries this section's
+designer, and none of it has been run end to end.
+
+To share:
+
+1. Finish the theme in the designer so the checks show no errors, then press **Share...**.
+2. The designer saves the pack zip (the same one as Download pack) and opens a submission form on
+   GitHub with the theme's name and author filled in. You need a GitHub account.
+3. Drag the saved zip into the form, tick the two boxes and submit. A web page cannot attach the
+   file for you.
+
+What happens next:
+
+- The zip is unpacked under strict limits (one folder, only `theme.json`, `emblem.bin`, `radar.vid`
+  and `alert.snd`, 2 MB at most), checked with the device's own pack loader, and drawn to two
+  pictures, one for the CYD and one for the Waveshare. If it fails, a comment on your submission
+  says why.
+- A theme appears in the gallery only after the owner approves it. A theme name or folder the
+  gallery already has is refused, so a changed copy of someone else's theme needs a new name; it
+  keeps a "based on" credit.
+- Everything in a shared theme is public. Share only pictures, video and sound you made or have
+  the right to share. Themes are checked for format, not for content, and can be removed at any
+  time.
+
+To use a shared theme, press **Open in designer** in the gallery. The designer opens with that
+theme loaded (its address ends in `?theme=<folder>`), and from there it is changed, downloaded or
+installed like any other. Only a theme the gallery lists is fetched, and only the four pack files,
+each within its size limit.
+
 ## How the device treats a pack
 
 - Packs are read once, at **boot**, after the card mounts. After adding, changing or
@@ -412,9 +445,9 @@ can delete or reboot.
   that loads fine but faults later, when drawn, is not covered (see Troubleshooting).
 - The Baphomet seal's own sweeps and rite are not in packs; alerts always show.
 
-## The 17 limitations
+## The 18 limitations
 
-These are the 17 numbered items below. `web/designer/js/limits.json` has 18 entries,
+These are the 18 numbered items below. `web/designer/js/limits.json` has 19 entries,
 because the characters rule (no `"` or `\` in name, header or author) is its own entry
 there but is folded into item 4 here, and the USB route entries appear in both.
 
@@ -462,6 +495,8 @@ there but is folded into item 4 here, and the USB route entries appear in both.
 17. **USB route: one program.** Only one program can use the USB serial port at a time.
     Close any serial monitor (Arduino IDE, PlatformIO, screen) before connecting, and
     disconnect here before opening one.
+18. **Sharing.** Sharing needs a GitHub account. Shared themes are public, and you must have
+    the right to share any picture, video or sound in them.
 
 What is tested and what is not. The pure rules are host-tested: the theme.json and
 emblem.bin parsers, pack admission, the boot-loop guard's decisions, the ASPECT drawing

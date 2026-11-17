@@ -6,6 +6,11 @@ history is in git and the release notes.
 ## Unreleased
 
 ### Added
+- **Sharing a theme (designer side; the gallery is not live yet).** The designer's Share button saves the pack zip
+  and opens a pre-filled submission form on the themes repository; a designer address ending in `?theme=<folder>`
+  opens that gallery theme, fetching only a listed theme's four pack files within their size limits.
+  `tools/pack-preview.mjs` draws a pack to `cyd.png` and `waveshare.png` with the device's drawing code, for the
+  gallery's checks. Not yet run end to end: the themes repository does not exist yet.
 - **Theme art switches.** `theme.json` accepts optional `heptagram` and `contacts` keys, each `"on"` (default) or
   `"off"`. `heptagram: off` skips the drawn heptagram so a pack's own image or radar clip shows clean (on the wide
   Waveshare radar the heptagram was drawn over a clip); `contacts: off` skips the coloured contact dots. Contacts are
