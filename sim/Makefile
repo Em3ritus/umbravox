@@ -4,7 +4,7 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
-SRC = ../ui/oui.cpp main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp
+SRC = ../ui/oui.cpp main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp ../ui/themelayout.cpp
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -81,7 +81,7 @@ test_ble_ad: test_ble_ad.cpp ../device/ble_ad.h
 
 # theme.json is read off an SD card anyone can write to: sanitizers, as above.
 test_radarclip: test_radarclip.cpp packload.h $(ENGINE_HDR) ../ui/radar_clip.h ../ui/themepack.cpp ../ui/themepack.h ../ui/palette.cpp ../ui/palette.h $(PAL_DEPS)
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_radarclip.cpp $(PAL_DEPS) -lm
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_radarclip.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
 
 test_themepack: test_themepack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/model.h ../ui/palette.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm

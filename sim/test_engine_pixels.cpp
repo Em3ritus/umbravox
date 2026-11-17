@@ -54,8 +54,12 @@ struct FbSink : scanr::Sink {
 static const char* const SCREENS[] = {"scan", "codex", "domain", "menu", "mesh", "omens", "echoes", "attune", "aspect", "detail", "files"};
 constexpr int N_SCREENS = 11;
 
+// pal::setTheme installs the theme's own layout (none for a built-in), so a test layout
+// is installed after it.
+static const uieng::LayoutOverride* testLayout = nullptr;
 static FbSink render(int screen, uint8_t theme, int W, int H) {
     pal::setTheme(theme);
+    uieng::activeLayout() = testLayout;
     FbSink fb(W, H);
     switch (screen) {
     case 0: { static scanr::Compositor c; c.renderFull(W, H, scanfix::demo(theme), fb); break; }
@@ -97,7 +101,7 @@ static int writeGolden() {
 }
 
 static void testGolden() {
-    uieng::activeLayout() = nullptr;
+    testLayout = nullptr;
     int n = 0, changed = 0;
     for (const Golden& g : GOLDEN) {
         if (g.theme < 0) { check("engine_pixels.inc exists", false); return; }
@@ -161,7 +165,7 @@ static int strayInk(const FbSink& fb, const uieng::ChromeOverride& o, uieng::Rec
 
 static void testInk() {
     check("test layout resolves", buildLayout());
-    uieng::activeLayout() = &lo;
+    testLayout = &lo;
     for (int b = 0; b < 2; b++) {
         const int W = BW[b], H = BH[b];
         for (int s : {0, 1}) {   // scan, codex
@@ -170,12 +174,12 @@ static void testInk() {
             check(tag, strayInk(fb, ov[b], s == 0 ? ov[b].scanBody : ov[b].c.body, s) == 0);
         }
     }
-    uieng::activeLayout() = nullptr;
+    testLayout = nullptr;
 }
 
 // Task 5: every engine screen, every built-in theme, draws only in the pieces and its body.
 static void testScreensInBody() {
-    uieng::activeLayout() = &lo;
+    testLayout = &lo;
     for (int b = 0; b < 2; b++) {
         const int W = BW[b], H = BH[b];
         for (int s = 0; s < N_SCREENS; s++) {
@@ -188,7 +192,7 @@ static void testScreensInBody() {
             check(tag, stray == 0);
         }
     }
-    uieng::activeLayout() = nullptr;
+    testLayout = nullptr;
 }
 
 int main(int argc, char** argv) {
