@@ -22,9 +22,13 @@ import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSecond
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 import { shareUrl, renameWarning, THEMES_SITE } from './share.js';
 import { themeParam, fetchGalleryTheme } from './gallery.js';
+import { newLayout, setPiece, showPiece, isEmpty, toJson, fromJson, rectOf, draftOther, SCREEN } from './layout.js';
+import { toDevice, pickPiece, handleAt, dragTo, nudge } from './layout-edit.js';
+import { PRESETS, presetJson } from './layout-presets.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '' };
+const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '',
+  layout: newLayout(), lboard: 'waveshare', lsel: null, presetId: 'standard' };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
@@ -59,9 +63,11 @@ function show(view) {
   for (const b of document.querySelectorAll('.step')) {
     if (b.dataset.view === view) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     if (b.dataset.view === 'design') b.disabled = !state.theme;
+    if (b.dataset.view === 'layout') b.disabled = !state.theme || !preview || !preview.hasEngine();
     if (b.dataset.view === 'install') { const why = installBlock(); b.disabled = !!why; b.title = why || ''; }
   }
   if (view === 'install') enterInstall();
+  if (view === 'layout') enterLayout();
 }
 for (const b of document.querySelectorAll('.step')) b.addEventListener('click', () => show(b.dataset.view));
 
@@ -105,6 +111,9 @@ $('btn-blank').addEventListener('click', () => begin(blankTheme(), null));
 function begin(theme, emblem, clip = null, sounds = null, from = null) {
   state.basedOn = from ? from.folder : ''; state.basedOnName = from ? from.name : '';
   state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
+  const preset = PRESETS.find((p) => p.id === state.presetId);
+  state.layout = preset && preset.layout ? fromJson(presetJson(preset)) : newLayout();
+  state.lsel = null;
   $('open-msg').textContent = '';
   for (const k of LEVELS) sndSrc[k] = null;
   vidSrc = null; vidFile = null;
@@ -300,6 +309,11 @@ function refreshChecks() {
   checksNow = runChecks(t, state.emblem, state.clip, state.sounds);
   const rename = renameWarning(t.name, state.basedOnName);
   if (rename) checksNow.push({ level: 'warn', text: rename });
+  const lt = layoutText();
+  if (lt && preview) {
+    const v = preview.checkLayout(lt);
+    checksNow.push(v.ok ? { level: 'ok', text: 'Layout: the device accepts it on both boards.' } : { level: 'error', text: 'Layout: ' + v.why.replace(/^layout\.json: /, '') });
+  }
   const ul = $('checks'); clear(ul);
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
@@ -311,7 +325,7 @@ function refreshChecks() {
 }
 function refresh() {
   if (!preview || !state.theme) return;
-  const r = preview.loadDraft(currentTheme(), state.emblem, state.clip);
+  const r = preview.loadDraft(currentTheme(), state.emblem, state.clip, layoutText());
   const m = $('preview-msg');
   if (r.ok) { m.className = 'msg'; m.textContent = ''; }
   else { m.className = 'msg warn'; m.textContent = 'The preview shows the last version the device would accept. This one is rejected: ' + r.error; }
@@ -457,9 +471,10 @@ $('vid-clear').addEventListener('click', () => {
 let t0 = performance.now(), lastDraw = 0;
 function tick(now) {
   requestAnimationFrame(tick);
-  if (!preview || !preview.hasDraft() || state.view !== 'design' || document.hidden || now - lastDraw < 40) return;
+  if (!preview || !preview.hasDraft() || (state.view !== 'design' && state.view !== 'layout') || document.hidden || now - lastDraw < 40) return;
   lastDraw = now;
   const ms = now - t0;
+  if (state.view === 'layout') { paintLayout(Math.floor(ms / 20)); return; }
   const frame = state.tab === 'alert' ? Math.floor((ms % 2500) / 20) : Math.floor(ms / 20);
   paint($('preview'), preview.renderDraft(state.tab, frame, { board: previewBoard(), alertConf: state.conf }), previewBoard());
 }
@@ -728,6 +743,119 @@ async function openFromGallery() {
   m.textContent = 'Opened ' + r.theme.name + ' from the gallery.' + (r.warnings.length ? ' Opened with changes: ' + r.warnings.join(' ') : '');
 }
 
+// ---------------------------------------------------------------- the Layout step
+// The model is js/layout.js, the pointer maths js/layout-edit.js, the rules the device's own (preview.pieceNames,
+// defaultRect, checkLayout). This only wires them to the page.
+let layoutRules = null;
+function rules() {
+  if (!layoutRules) layoutRules = { names: preview.pieceNames(), defaultRect: (b, n) => preview.defaultRect(b, n) };
+  return layoutRules;
+}
+function layoutText() { return preview && !isEmpty(state.layout) ? toJson(state.layout, rules().names) : null; }
+const engineBoard = (b) => (b === 'waveshare' ? 'waveshare' : 'cyd-engine');
+function boardRects(board) {
+  const out = {};
+  for (const n of rules().names) out[n] = rectOf(state.layout, board, n, rules());
+  return out;
+}
+function layoutChanged() { changed(); syncLayout(); }
+function enterLayout() { selectBoard(state.lboard); }
+function selectBoard(b) {
+  // The first visit to a board the author has not touched, while the other is laid out: draft it from that one.
+  const L = state.layout;
+  if (L.master && L.master !== b && Object.keys(L.boards[b]).length === 0) {
+    state.layout = draftOther(L, L.master, b, rules());
+    $('layout-msg').className = 'msg'; $('layout-msg').textContent = 'Drafted from the other board. Check it, and drag anything that needs it.';
+    changed();
+  } else { $('layout-msg').textContent = ''; }
+  state.lboard = b; state.lsel = null;
+  for (const t of document.querySelectorAll('[data-lb]')) t.setAttribute('aria-selected', String(t.dataset.lb === b));
+  $('layout-cyd-note').hidden = b !== 'cyd';
+  syncLayout();
+}
+for (const t of document.querySelectorAll('[data-lb]')) t.addEventListener('click', () => selectBoard(t.dataset.lb));
+function syncLayout() {
+  if (!preview) return;
+  const sel = state.lsel, r = sel ? rectOf(state.layout, state.lboard, sel, rules()) : null;
+  $('layout-piece').textContent = sel ? sel : 'No piece selected';
+  for (const k of ['x', 'y', 'w', 'h']) { const i = $('layout-' + k); i.disabled = !r; i.value = r ? r[k] : ''; }
+  $('layout-hide').disabled = !r; $('layout-reset').disabled = !sel;
+  const tray = $('layout-tray'); clear(tray);
+  for (const n of rules().names) {
+    const p = state.layout.boards[state.lboard][n];
+    if (!p || !p.hidden) continue;
+    const b = el('button', { type: 'button', text: n });
+    b.addEventListener('click', () => { state.layout = showPiece(state.layout, state.lboard, n); state.lsel = n; layoutChanged(); });
+    tray.append(b);
+  }
+}
+for (const k of ['x', 'y', 'w', 'h']) $('layout-' + k).addEventListener('change', () => {
+  const n = state.lsel; if (!n) return;
+  const r = { ...rectOf(state.layout, state.lboard, n, rules()) };
+  r[k] = Math.round(Number($('layout-' + k).value) || 0);
+  state.layout = setPiece(state.layout, state.lboard, n, r); layoutChanged();
+});
+$('layout-hide').addEventListener('click', () => { if (!state.lsel) return; state.layout = setPiece(state.layout, state.lboard, state.lsel, 'hidden'); state.lsel = null; layoutChanged(); });
+$('layout-reset').addEventListener('click', () => { if (!state.lsel) return; state.layout = setPiece(state.layout, state.lboard, state.lsel, null); layoutChanged(); });
+
+let drag = null;   // {name, mode, start, rect}
+const canvasL = $('layout-canvas');
+function devicePoint(e) { const S = SCREEN[state.lboard]; return toDevice(e.clientX, e.clientY, canvasL.getBoundingClientRect(), S.w, S.h); }
+canvasL.addEventListener('pointerdown', (e) => {
+  if (!preview) return;
+  const p = devicePoint(e), rects = boardRects(state.lboard);
+  const selRect = state.lsel ? rects[state.lsel] : null;
+  const corner = selRect ? handleAt(selRect, p.x, p.y, 8) : null;
+  const name = corner ? state.lsel : pickPiece(rects, p.x, p.y);
+  state.lsel = name;
+  drag = name ? { name, mode: corner || 'move', start: p, rect: rects[name] } : null;
+  if (drag) canvasL.setPointerCapture(e.pointerId);
+  canvasL.focus(); syncLayout();
+});
+canvasL.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const r = dragTo(drag.rect, drag.start, devicePoint(e), drag.mode, SCREEN[state.lboard], { square: drag.name === 'radar' });
+  state.layout = setPiece(state.layout, state.lboard, drag.name, r);
+  changed(); syncLayout();
+});
+canvasL.addEventListener('pointerup', (e) => { if (drag) { drag = null; canvasL.releasePointerCapture(e.pointerId); layoutChanged(); } });
+canvasL.addEventListener('keydown', (e) => {
+  if (!state.lsel) return;
+  const r0 = rectOf(state.layout, state.lboard, state.lsel, rules());
+  const r = r0 && nudge(r0, e.key, e.shiftKey);
+  if (!r) return;
+  e.preventDefault();
+  state.layout = setPiece(state.layout, state.lboard, state.lsel, r); layoutChanged();
+});
+// The board's own frame (the device code through wasm), then outlines, the selection and its corner handles.
+function paintLayout(frame) {
+  const b = state.lboard, pb = engineBoard(b);
+  paint(canvasL, preview.renderDraft('scan', frame, { board: pb }), pb);
+  const ctx = canvasL.getContext('2d'), rects = boardRects(b);
+  ctx.lineWidth = 1;
+  for (const [n, r] of Object.entries(rects)) {
+    if (!r || r.w <= 0) continue;
+    ctx.strokeStyle = n === state.lsel ? '#ff4fcf' : 'rgba(180,150,255,.35)';
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    if (state.layout.adjusted[b].includes(n)) { ctx.fillStyle = '#ffd04a'; ctx.fillRect(r.x + r.w - 5, r.y + 1, 4, 4); }
+  }
+  const s = state.lsel && rects[state.lsel];
+  if (s) { ctx.fillStyle = '#ff4fcf'; for (const [x, y] of [[s.x, s.y], [s.x + s.w, s.y], [s.x, s.y + s.h], [s.x + s.w, s.y + s.h]]) ctx.fillRect(x - 3, y - 3, 6, 6); }
+}
+function buildPresets() {
+  const host = $('layout-presets'); clear(host);
+  for (const p of PRESETS) {
+    const b = el('button', { type: 'button', role: 'radio', title: p.description, text: p.name });
+    b.setAttribute('aria-checked', String(p.id === state.presetId));
+    b.addEventListener('click', () => {
+      state.presetId = p.id;
+      for (const c of host.children) c.setAttribute('aria-checked', String(c === b));
+      if (state.theme) { state.layout = p.layout ? fromJson(presetJson(p)) : newLayout(); state.lsel = null; layoutChanged(); }
+    });
+    host.append(b);
+  }
+}
+
 async function boot() {
   buildPalette();
   syncTabs();
@@ -736,6 +864,7 @@ async function boot() {
   catch (e) { preview = null; $('open-msg').textContent = ''; console.warn('preview unavailable', e); }
   recallBoard(); syncTabs();
   buildStart();
+  buildPresets();
   $('gallery-link').href = THEMES_SITE;
   await openFromGallery();
   if (preview && state.theme) refresh();

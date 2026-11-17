@@ -12,7 +12,8 @@
   <nav class="steps" aria-label="Steps">
     <button type="button" class="step" data-view="start" aria-current="page">1&nbsp; Start</button>
     <button type="button" class="step" data-view="design" disabled>2&nbsp; Design</button>
-    <button type="button" class="step" data-view="install" disabled>3&nbsp; Install</button>
+    <button type="button" class="step" data-view="layout" disabled>3&nbsp; Layout</button>
+    <button type="button" class="step" data-view="install" disabled>4&nbsp; Install</button>
   </nav>
 </header>
 
@@ -27,6 +28,11 @@
   <h1>Start from a look you like</h1>
   <p class="lede">Pick a template and change it, begin blank, or open a theme you already made.</p>
   <div id="templates" class="templates"></div>
+  <div class="card">
+    <h2>Starting layout</h2>
+    <p class="muted">Where the pieces of the screen sit. Change any of it later in the Layout step.</p>
+    <div id="layout-presets" class="tabs" role="radiogroup" aria-label="Starting layout"></div>
+  </div>
   <div class="two">
     <div class="card">
       <h2>Begin blank</h2>
@@ -165,7 +171,45 @@
   </div>
 </section>
 
-<!-- ============ 3 INSTALL ============ -->
+<!-- ============ 3 LAYOUT ============ -->
+<section id="view-layout" class="view" data-view="layout" hidden>
+  <div class="layout">
+    <div class="col wide">
+      <div class="card">
+        <div class="tabs" role="tablist" aria-label="Board">
+          <button type="button" id="layout-board-waveshare" role="tab" data-lb="waveshare">Waveshare 3.5"</button>
+          <button type="button" id="layout-board-cyd" role="tab" data-lb="cyd">CYD 2.8"</button>
+        </div>
+        <p id="layout-cyd-note" class="tiny muted" hidden>This is the CYD's engine build (320x240). The default CYD release draws the older 160x120 screens and ignores layouts.</p>
+        <div class="screen"><canvas id="layout-canvas" width="480" height="320" tabindex="0" aria-label="The device screen: drag a piece to move it, drag a corner to resize it, arrow keys nudge the selected piece"></canvas></div>
+        <div id="layout-msg" class="msg" role="status"></div>
+        <p class="tiny muted">Click a piece to select it, drag it to move it, pull a corner to resize it; arrow keys move it 1 px (Shift: 8 px). The first board you change is drafted onto the other when you open its tab; check it there.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h3 id="layout-piece">No piece selected</h3>
+        <div class="row">
+          <label class="field small"><span>x</span><input id="layout-x" type="number" step="1"></label>
+          <label class="field small"><span>y</span><input id="layout-y" type="number" step="1"></label>
+          <label class="field small"><span>w</span><input id="layout-w" type="number" step="1" min="1"></label>
+          <label class="field small"><span>h</span><input id="layout-h" type="number" step="1" min="1"></label>
+        </div>
+        <div class="row">
+          <button type="button" id="layout-hide" class="btn small">Hide</button>
+          <button type="button" id="layout-reset" class="btn small">Back to default</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Hidden pieces</h3>
+        <div id="layout-tray" class="tabs"></div>
+        <p class="tiny muted">Click a hidden piece to show it again where it was.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4 INSTALL ============ -->
 <section id="view-install" class="view" data-view="install" hidden>
   <h1>Put it on your card</h1>
   <p class="lede">Plug the SD card into this computer, pick it, and the theme is copied across.</p>
