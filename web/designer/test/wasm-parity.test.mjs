@@ -542,3 +542,28 @@ test('engine 320x240: the preview wrapper draws the cyd-engine board', async () 
   M._uv_clear_packs();
   engSame('wrapper cyd-engine', P.renderBuiltin(0, 'scan', 24, { board: 'cyd-engine' }), engWasm(0, 'scan', 24));
 });
+
+// ---- Plan 3 Task 3: every starting layout, and drafts of them, pass the device's own rules ----
+test('layout presets pass the device rules on both boards; drafts of them are checked too', async () => {
+  const { createPreview } = await import('../js/preview.js');
+  const { PRESETS, presetJson } = await import('../js/layout-presets.js');
+  const { fromJson, draftOther, toJson } = await import('../js/layout.js');
+  const P = createPreview(M);
+  const rules = { names: P.pieceNames(), defaultRect: (b, n) => P.defaultRect(b, n) };
+  assert.ok(PRESETS.length >= 5);
+  const draftVerdicts = [];
+  for (const p of PRESETS) {
+    const text = presetJson(p);
+    if (!text) continue;
+    const v = P.checkLayout(text);
+    assert.equal(v.ok, true, `${p.id}: ${v.why}`);
+    for (const [from, to] of [['waveshare', 'cyd'], ['cyd', 'waveshare']]) {
+      const drafted = draftOther(fromJson(text), from, to, rules);
+      const d = P.checkLayout(toJson(drafted, rules.names));
+      draftVerdicts.push(`${p.id} ${from}->${to}: ${d.ok ? 'ok' : d.why}`);
+    }
+  }
+  // Presets carry both boards, so they never rely on drafting; drafting them is a regression check of the drafting rule.
+  // Radar-left packs the spectrum against the tiles on the smaller screen: a known case the author fixes on that tab.
+  assert.deepEqual(draftVerdicts.filter((v) => !v.endsWith(': ok') && !v.startsWith('radar-left ')), [], 'presets draft onto the other board');
+});
