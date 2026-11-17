@@ -86,7 +86,7 @@ test_radarclip: test_radarclip.cpp packload.h $(ENGINE_HDR) ../ui/radar_clip.h .
 test_themepack: test_themepack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/model.h ../ui/palette.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
 
-test_themelayout: test_themelayout.cpp ../ui/themelayout.cpp ../ui/themelayout.h
+test_themelayout: test_themelayout.cpp ../ui/themelayout.cpp ../ui/themelayout.h ../ui/layout_engine.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themelayout.cpp ../ui/themelayout.cpp -lm
 
 test_elog: test_elog.cpp ../device/elog.h

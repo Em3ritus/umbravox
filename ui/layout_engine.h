@@ -30,7 +30,7 @@ struct Chrome {
     Rect statusCells[4], navCells[4];
     Rect wordmark, stop, bridge, menu, sd;
 };
-inline Chrome chrome(int W, int H) {
+inline Chrome builtinChrome(int W, int H) {   // the built-in geometry; chrome() may override it
     Chrome c;
     c.status={0,0,W,44}; c.nav={0,H-44,W,44}; c.body={8,52,W-16,H-104};
     c.menu={0,0,44,44};
@@ -64,8 +64,8 @@ struct ScanLayout {
     Rect counts, hero, tiles[3], bridge;
     Rect wordmark, stop;
 };
-inline ScanLayout scan(int W, int H) {
-    const Chrome c = chrome(W, H);               // design-1 bands, single-sourced
+inline ScanLayout builtinScan(int W, int H) {   // the built-in geometry; scan() may override it
+    const Chrome c = builtinChrome(W, H);               // design-1 bands, single-sourced
     ScanLayout s{};
     const bool wide = (W >= 400);
     const int M = wide ? 16 : 8;                 // design #1 margin: 16 @480, 8 @320
@@ -87,6 +87,20 @@ inline ScanLayout scan(int W, int H) {
     s.counts = {s.tiles[0].x, s.tiles[0].y, s.tiles[0].w, H - 104};
     return s;
 }
+
+// --- Theme layout override ----------------------------------------------------
+// A theme's layout.json, resolved for one board by themelayout::resolve (the only
+// producer). Every chrome rect is final: a hidden piece is {0,0,0,0}; c.body is the
+// body every non-Scan screen lays out in. tiles/hero/counts/scanBody are Scan's rects.
+struct ChromeOverride {
+    Chrome c;
+    Rect tiles[3];
+    Rect hero, counts, scanBody;
+};
+
+// Until Task 3 installs overrides, these are the built-in geometry.
+inline Chrome chrome(int W, int H) { return builtinChrome(W, H); }
+inline ScanLayout scan(int W, int H) { return builtinScan(W, H); }
 
 // --- DOMAIN: rectangular map (radar centered inside) + contacts + range -------
 struct DomainLayout {

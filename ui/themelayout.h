@@ -11,6 +11,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "layout_engine.h"
 
 namespace themelayout {
 
@@ -33,5 +34,15 @@ struct Layout { bool has[B_N]; Slot slot[B_N][P_N]; };  // zero-initialised = no
 // Parse n bytes of layout.json. On failure returns false and writes a short
 // reason into why (if whyCap > 0). `out` is only meaningful on true.
 bool parse(const char* json, size_t n, Layout& out, char* why, size_t whyCap);
+
+Board boardFor(int W);                         // W >= 400 -> B_WAVESHARE, else B_CYD
+uieng::Rect defaultRect(Board b, Piece p);     // the built-in rect of a piece on a board
+
+// Fill every piece of board b (DEFAULT -> its built-in rect, HIDDEN -> {0,0,0,0}),
+// place the body and shift Scan's rects, and check the result. Returns false with a
+// reason when any rule fails: a piece off screen, a tappable piece under 44 px, a
+// piece that cannot be hidden, two pieces overlapping, a tile over the radar, or too
+// little room left for the body. The only way to make a ChromeOverride.
+bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, size_t whyCap);
 
 }  // namespace themelayout
