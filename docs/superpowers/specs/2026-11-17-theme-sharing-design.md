@@ -1,6 +1,6 @@
 # Theme sharing: a submit button, a themes repository and a gallery (design)
 
-Status: DRAFT for owner approval, 2026-11-17. Branch `theme-sharing`. This is project 2 of the four set out in
+Status: approved by owner 2026-11-17. Branch `theme-sharing`. This is project 2 of the four set out in
 `2026-10-21-theme-packs-design.md` ("Sharing: a public themes repository, CI validation, preview gallery").
 
 ## Intent and why
