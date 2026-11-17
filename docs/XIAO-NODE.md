@@ -6,7 +6,7 @@ Use it with the UMBRAVOX native handheld firmware from the same release. Mesh pr
 version 4 interoperate; a coordinator now also reports how many nodes it carries in one optional trailing byte, which
 older handhelds ignore); default network ID: 0 (open). Previously stored enrollment survives these writes.
 
-Download [umbravox-xiao-c5-node.zip](https://github.com/Em3ritus/umbravox/releases/latest/download/umbravox-xiao-c5-node.zip).
+Download [umbravox-xiao-c5-node.zip](https://em3ritus.github.io/umbravox/umbravox-xiao-c5-node.zip).
 
 ## Install in your browser
 

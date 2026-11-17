@@ -113,6 +113,20 @@ int main() {
     a = parseAuth(b.data(), 4);                           // shorter than fixed params
     check("short body is safe", a == 0);
 
+    // A received frame ends with four checksum (FCS) bytes that sig_len counts. They are not elements: an open
+    // network whose checksum happens to start 48, 2 must not read as WPA2.
+    printf("frame check sequence:\n");
+    b = body(0x0421, {});                                 // ESS, short preamble, no privacy: open
+    const int openBody = (int)b.size();
+    for (uint8_t v : {48, 2, 0xAA, 0xBB}) b.push_back(v);  // the FCS, shaped like a tiny RSN element
+    const int sigLen = 24 + (int)b.size();                // MAC header + body + FCS, as the radio reports it
+    check("body length drops header and FCS", beaconBodyLen(sigLen) == openBody);
+    a = parseAuth(b.data(), beaconBodyLen(sigLen));
+    authString(a, s, sizeof s);
+    eq("FCS is not an element", s, "[OPEN][ESS]");
+    check("short frame clamps to 0", beaconBodyLen(27) == 0 && beaconBodyLen(0) == 0 && beaconBodyLen(-5) == 0);
+    check("exact header + FCS is 0", beaconBodyLen(28) == 0 && beaconBodyLen(29) == 1);
+
     char summary[64];
     authSummary(AUTH_ESS|AUTH_WPA2|AUTH_WPA3|AUTH_PSK|AUTH_SAE|AUTH_CCMP,summary,sizeof summary);
     eq("detail transition",summary,"WPA2/WPA3 PSK/SAE");

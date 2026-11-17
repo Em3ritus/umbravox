@@ -33,6 +33,10 @@ enum AuthBits : uint16_t {
 // elements, i.e. the frame from offset 24. `len` is what remains of it.
 uint16_t parseAuth(const uint8_t* body, int len);
 
+// The length of that body for a received frame. The radio's sig_len counts the 24-byte MAC header and the four
+// checksum (FCS) bytes at the end; neither is part of the body, and the FCS must not be read as an element.
+constexpr int beaconBodyLen(int sigLen) { return sigLen > 28 ? sigLen - 28 : 0; }
+
 // WiGLE's AuthMode column, e.g. "[WPA2-PSK-CCMP][ESS]" or "[OPEN][ESS]".
 // Writes at most n-1 characters plus a terminator.
 size_t authString(uint16_t bits, char* out, size_t n);

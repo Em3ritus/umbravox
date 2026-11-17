@@ -31,6 +31,11 @@ history is in git and the release notes.
 - `SDLS` sizes are 10 characters wide so every size keeps a leading space.
 
 ### Fixed
+- Beacon security parsing no longer reads the four checksum bytes at the end of a received frame as an information
+  element. About one beacon in 65,000 from an open network could be tagged WPA2. Applies to the handheld and the node.
+- The installer page's XIAO download link and the docs' and README's release links no longer go through GitHub's
+  "latest" release, which skips pre-releases and pointed at a release with no files (the download was a 404). The
+  download is now the ZIP the installer site hosts.
 - `perf.csv` `rec` column now reads the recording state (it was always 0); write failures are logged as warnings and
   the perf file is flushed on REC start and stop.
 - Boot freeze, probe noise, export failure reason and recording state in the logs (outing fixes).

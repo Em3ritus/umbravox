@@ -98,7 +98,7 @@ void onPacket(void* buf, wifi_promiscuous_pkt_type_t type) {
     r.band = is5(cur) ? 1 : 0;
     r.ssidLen = 0;
     r.ssid[0] = 0;
-    r.auth = ui::parseAuth(f + 24, (int)p->rx_ctrl.sig_len - 24);
+    r.auth = ui::parseAuth(f + 24, ui::beaconBodyLen((int)p->rx_ctrl.sig_len));
     if (p->rx_ctrl.sig_len >= 38 && f[36] == 0) {
         uint8_t n = f[37];
         if (n > 20) n = 20;
@@ -298,7 +298,7 @@ void report() {
         // ESP-NOW has a small transmit queue; filling it faster than the
         // radio drains it is how frames vanish with ESP_OK returned.
         const uint32_t until = millis() + 30;
-        while ((txOk + txFail) == waitFrom && millis() < until) delay(1);
+        while ((txOk + txFail) == waitFrom && (int32_t)(millis() - until) < 0) delay(1);   // signed: safe across the millis() wrap
     }
 
     // Separate status packet: existing sighting reports remain byte-identical.
