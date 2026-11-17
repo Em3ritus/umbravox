@@ -173,11 +173,30 @@ static void testInk() {
     uieng::activeLayout() = nullptr;
 }
 
+// Task 5: every engine screen, every built-in theme, draws only in the pieces and its body.
+static void testScreensInBody() {
+    uieng::activeLayout() = &lo;
+    for (int b = 0; b < 2; b++) {
+        const int W = BW[b], H = BH[b];
+        for (int s = 0; s < N_SCREENS; s++) {
+            int stray = 0;
+            for (int t = 0; t < pal::TH_COUNT; t++) {
+                const FbSink fb = render(s, (uint8_t)t, W, H);
+                stray += strayInk(fb, ov[b], s == 0 ? ov[b].scanBody : ov[b].c.body, s);
+            }
+            char tag[96]; snprintf(tag, sizeof tag, "%s %s: screen stays in the body (all themes)", BKEY[b], SCREENS[s]);
+            check(tag, stray == 0);
+        }
+    }
+    uieng::activeLayout() = nullptr;
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--write") == 0) return writeGolden();
     printf("== engine pixels\n");
     testGolden();
     testInk();
+    testScreensInBody();
     testGolden();   // installing and clearing a layout leaves the built-ins untouched
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;
