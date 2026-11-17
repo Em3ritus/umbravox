@@ -143,10 +143,11 @@ A **piece** is a named thing the firmware draws. Scan's pieces (names are the fo
 | `alert.card.low`, `alert.card.med`, `alert.card.high` | the alert words (what was seen, confidence, address), one rect per level | **no** |
 | `alert.clip` | the alert clip, if any (one per level allowed) | n/a |
 
-Radar size: the radar is square and may be resized between a minimum and the current size (r=102 on the
-Waveshare); the designer re-converts the theme's `radar.vid` to the placed size when it saves, so the device never
-scales a clip. (My call: the radar rework is needed for the owner's "full control"; capping at today's size keeps
-the drawing cost at or under today's.)
+Radar size: the radar is square and may be **any size** between a minimum and the current size (r=102 on the
+Waveshare, r=55 on the CYD) — the owner chose any size over a few fixed sizes. The rings are generated on the device
+for radii that have no built-in table, with integer arithmetic that gives exactly the built-in tables' pixels for
+the radii that have one. The designer re-converts the theme's `radar.vid` to the placed size when it saves, so the
+device never scales a clip. (My call: capping at today's size keeps the drawing cost at or under today's.)
 
 Alert rite: a theme with no clip keeps its format-1 rite, drawn in the card's rect behind the words, as today. A
 theme with a clip plays the clip instead of the rite. Tap-to-dismiss stays "tap anywhere", so a full-screen HIGH
