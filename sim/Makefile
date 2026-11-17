@@ -452,6 +452,9 @@ test_input_presentation: test_input_presentation.cpp ../device/i2c_budget.h ../u
 test_scan_latency: test_scan_latency.cpp scan_fixture.h ../ui/frame_present.h $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_scan_latency.cpp $(PAL_DEPS) -lm
 
+bench_radar: bench_radar.cpp scan_fixture.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ bench_radar.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+
 bench_scan: bench_scan.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ bench_scan.cpp $(PAL_DEPS) -lm
 

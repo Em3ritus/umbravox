@@ -31,6 +31,7 @@
 #include "palette.h"
 #include "themepack.h"
 #include "themelayout.h"
+#include "ring_gen.h"
 #include "packmedia.h"
 #include "board.h"
 #include "sound.h"
@@ -375,6 +376,15 @@ void visit(int i) {
 void scanWith();
 
 void scan() {
+    // The radar ring cache for radii without a baked table (a theme layout may size the radar freely): ~15 KB, so
+    // PSRAM, once, before any pack can install a layout. Without it an odd radius falls back to slow trig rings.
+    static bool ringsReady = false;
+    if (!ringsReady) {
+        const int cap = radargeometry::detail::kSlots * radargeometry::detail::kSlotCap;
+        auto* rings = (radargeometry::Point*)heap_caps_malloc((size_t)cap * sizeof(radargeometry::Point), MALLOC_CAP_SPIRAM);
+        if (rings) { radargeometry::setRingStorage(rings, cap); ringsReady = true; }
+        else elog::event(elog::WARN, "theme", "no PSRAM for the radar ring cache");
+    }
     if (!sdlog::present()) return;           // no card: nothing loaded, nothing skipped
     void* p = heap_caps_malloc(sizeof(Scratch), MALLOC_CAP_SPIRAM);
     if (!p) {

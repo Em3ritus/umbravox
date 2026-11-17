@@ -79,6 +79,7 @@ sim/test_themelayout
 sim/test_engine_pixels
 sim/test_layout_pack
 sim/test_ring_gen
+sim/bench_radar
 sim/test_scan_present
 sim/test_scan_render
 sim/test_scan_engine

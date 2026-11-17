@@ -150,14 +150,15 @@ ignores it. It is a little-endian binary like `emblem.bin`:
 | bytes | content |
 |---|---|
 | 4 | `U` `V` `R` `V` |
-| 1 each | the number 1 or 2 (version), width 102, height 102, fps (1 to 30) |
+| 1 each | the number 1 or 2 (version), width, height (equal: any square from 24 to 102; firmware before theme layouts accepts only 102), fps (1 to 30) |
 | 2 | frame count, little-endian (1 to 150) |
 | 2 | reserved, both 0 |
 | version 2 only: 32 | a palette: 16 colours as RGB565, little-endian |
-| frames x 5,202 | 4-bit pixels, two per byte (high nibble first), row by row. Version 1: grey levels, 0 black to 15 white, painted in the theme's colours. Version 2: an index into the palette, so the clip keeps its own colours |
+| frames x (width x height / 2) | 4-bit pixels, two per byte (high nibble first), row by row. Version 1: grey levels, 0 black to 15 white, painted in the theme's colours. Version 2: an index into the palette, so the clip keeps its own colours |
 
-The file must be exactly the length its header declares (at most 780,312 bytes, so a version 2 clip holds at most 149 frames). The board draws each frame 2x
-inside the radar disc, so 102 pixels fill it. The designer makes this file from any video the browser can play
+The file must be exactly the length its header declares (at most 780,312 bytes and 150 frames, so a 102x102 version 2 clip holds at most 149 frames). The board draws each frame 2x
+inside the radar disc, so a clip as wide as the radar's radius fills it: 102 pixels for the built-in radar, smaller
+for a radar a layout has made smaller (a larger clip is masked to the disc). The designer makes this file from any video the browser can play
 (`tools/video2radar.py` does the same on a command line): it crops a square, shrinks it, keeps 12 frames a second
 and drops the audio. With **Keep colours** on (the default) it picks the best 16 colours for the whole video (median cut,
 with light ordered dithering that does not shimmer between frames) and writes version 2; off, it writes 16 greys as
@@ -186,8 +187,14 @@ draws the older 160x120 screens and ignores this file, as does firmware older th
 - `waveshare` and `cyd` are each optional. A board the file leaves out keeps the built-in layout.
 - Each piece is `[x, y, width, height]` in that board's pixels, or `"hidden"`. A piece the file leaves out stays
   where it is built to be. The pieces are `menu`, `wordmark`, `status.gps`, `status.nodes`, `status.power`,
-  `bridge`, `sd`, `nav.scan`, `nav.domain`, `nav.codex`, `nav.poi`, `stop`, `count.wifi`, `count.5g` and
-  `count.ble`. Other names are ignored (later versions add pieces); a key named `script` is refused.
+  `bridge`, `sd`, `nav.scan`, `nav.domain`, `nav.codex`, `nav.poi`, `stop`, `count.wifi`, `count.5g`,
+  `count.ble`, and Scan's radar parts `radar`, `spectrum`, `channel` and `badge`. Other names are ignored (later
+  versions add pieces); a key named `script` is refused.
+- `radar` is the radar's square box, which includes a 2 px margin for the contact markers: radius = (width - 5) / 2.
+  Any size from 53x53 (radius 24) up to the built-in box (209x209 on the Waveshare, 115x115 on the CYD). The rune
+  and star rings show only from radius 42. `spectrum` is at least 42x22; `channel` at least its built-in size
+  (100x24 / 60x16); `badge` at least 24x24 (the emblem is drawn centred, radius = the smaller side / 2 - 4). The four
+  may overlap each other, as the built-in layout's do, but not the header, footer or count tiles.
 - Every screen other than Scan draws in the area the header and footer pieces leave free: the device finds the
   largest free rectangle and centres the screen in it, at its usual size. Scan's radar and any count tile you do
   not place move with it.
@@ -220,7 +227,7 @@ These numbers are the same ones the device and the designer use
 | `theme.json` | at most 4 KB (4,096 bytes) |
 | `layout.json` | at most 4 KB (4,096 bytes); every tappable piece at least 44x44 px |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
-| `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
+| `radar.vid` | square, 24x24 to 102x102 (older firmware: exactly 102x102), 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
 | `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; read from the card when the pack's theme is selected (one set in memory at a time) |
 | whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
@@ -571,7 +578,7 @@ rule is applied to the last path component and `.` is not a valid folder name.
 | Skipped: duplicate or reserved name | The `name` is already used by an earlier pack or is one of the four reserved names. |
 | Skipped: name, header or author | A double quote, a backslash, or a character outside the allowed set. |
 | Skipped: emblem | `centrepiece` is `emblem` but `emblem.bin` is missing, too big, over 96x96 or over 16 colours. |
-| Skipped: radar.vid | `radar.vid` is over 780,312 bytes. (A clip that is malformed, not 102x102 or the wrong length does not skip the pack: it loads without video, and `/diag.log` says "radar clip not used: ..." when its theme is selected.) |
+| Skipped: radar.vid | `radar.vid` is over 780,312 bytes. (A clip that is malformed, not square from 24 to 102, or the wrong length does not skip the pack: it loads without video, and `/diag.log` says "radar clip not used: ..." when its theme is selected.) |
 | Skipped: missing sweeps or colors | `sweeps` or one of the 20 colours is missing or malformed. |
 | Colours look different from the design | RGB565 rounding, or a status or alert-edge colour was replaced for contrast. |
 | The device went back to UMBRAVOX | The saved pack was renamed, removed or skipped. Select it again. |
