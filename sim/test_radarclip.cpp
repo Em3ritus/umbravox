@@ -20,7 +20,7 @@ static int fails = 0;
 static void check(const char* what, bool ok) { printf(ok ? "  ok   %s\n" : "  FAIL %s\n", what); if (!ok) fails++; }
 
 static std::vector<uint8_t> makeClip(int frames, int fps = 12, int w = 102, int h = 102) {
-    std::vector<uint8_t> v(CLIP_HDR + (size_t)frames * CLIP_FRAME_BYTES, 0);
+    std::vector<uint8_t> v(CLIP_HDR + (size_t)frames * clipFrameBytes(w), 0);
     v[0] = 'U'; v[1] = 'V'; v[2] = 'R'; v[3] = 'V'; v[4] = 1; v[5] = (uint8_t)w; v[6] = (uint8_t)h; v[7] = (uint8_t)fps;
     v[8] = (uint8_t)(frames & 255); v[9] = (uint8_t)(frames >> 8);
     for (size_t i = CLIP_HDR; i < v.size(); i++) v[i] = (uint8_t)(i * 7);
@@ -57,8 +57,14 @@ int main() {
         { auto x = v; x[0] = 'X'; bad("wrong magic", x, "UVRV"); }
         { auto x = v; x[4] = 3; bad("a newer version", x, "version"); }
         { auto x = v; x[4] = 0; bad("version 0", x, "version"); }
-        { auto x = v; x[5] = 64; bad("width 64", x, "102"); }
-        { auto x = v; x[6] = 101; bad("height 101", x, "102"); }
+        { auto x = v; x[5] = 64; bad("width 64 with height 102 (not square)", x, "square"); }
+        { auto x = v; x[6] = 101; bad("height 101 (not square)", x, "square"); }
+        { auto x = makeClip(2, 12, 64, 64); Clip c; char w2[64];
+          check("64x64 clip accepted (any square 24..102)", parseClip(x.data(), x.size(), c, w2, sizeof w2) && c.w == 64 && c.h == 64 && c.frames == 2); }
+        { auto x = makeClip(1, 12, 24, 24); Clip c; check("24x24 accepted", parseClip(x.data(), x.size(), c, nullptr, 0)); }
+        { auto x = makeClip(1, 12, 23, 23); bad("23x23", x, "24"); }
+        { auto x = makeClip(1, 12, 103, 103); bad("103x103", x, "102"); }
+        { auto x = makeClip(2, 12, 64, 64); x.pop_back(); bad("64x64 with a short frame", x, "length"); }
         { auto x = v; x[7] = 0; bad("fps 0", x, "fps"); }
         { auto x = v; x[7] = 31; bad("fps 31", x, "fps"); }
         { auto x = v; x[8] = 0; x[9] = 0; bad("zero frames", x, "frames"); }
@@ -191,8 +197,8 @@ int main() {
             Clip c; c.px = (const uint8_t*)1;
             if (parseClip(v.data(), v.size(), c, nullptr, 0)) {
                 accepted++;
-                inv = c.px == v.data() + CLIP_HDR && c.frames >= 1 && c.frames <= MAX_CLIP_FRAMES && c.w == 102 && c.h == 102
-                      && c.fps >= 1 && c.fps <= 30 && CLIP_HDR + (size_t)c.frames * CLIP_FRAME_BYTES == v.size();
+                inv = c.px == v.data() + CLIP_HDR && c.frames >= 1 && c.frames <= MAX_CLIP_FRAMES && c.w == c.h && c.w >= CLIP_MIN && c.w <= CLIP_W
+                      && c.fps >= 1 && c.fps <= 30 && CLIP_HDR + (size_t)c.frames * clipFrameBytes(c.w) == v.size();
             } else { refused++; inv = c.px == nullptr; }
         }
         char m[96]; snprintf(m, sizeof m, "invariant held over 4000 mutations (%d accepted, %d refused)", accepted, refused);

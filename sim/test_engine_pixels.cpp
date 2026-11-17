@@ -18,6 +18,7 @@
 #include "../ui/detail_render.h"
 #include "../ui/files_render.h"
 #include "../ui/palette.h"
+#include "../ui/themepack.h"
 #include "scan_fixture.h"
 #include "codex_fixture.h"
 #include "domain_fixture.h"
@@ -303,6 +304,45 @@ static void testRadarGroup() {
     check("no trig ring fallback for any of these radii", radargeometry::fallbackCalls() == 0);
 }
 
+// Plan 2 Task 5: a clip of any square size, drawn 2x and masked to the radar disc.
+static void testClipSizes() {
+    static uieng::ChromeOverride co[2];
+    static uieng::LayoutOverride cl;
+    const uieng::ScanLayout w = uieng::builtinScan(480, 320);
+    struct K { int side, radius; const char* name; } cases[] = {{64, 64, "64 clip in an r=64 radar"}, {102, 48, "102 clip in an r=48 radar"}};
+    for (const K& k : cases) {
+        const int box = 2 * k.radius + 5;
+        check(k.name, groupLayout(0, "\"radar\":" + rj({w.radar.x, w.radar.y, box, box}), co[0]));
+        cl.board[0] = &co[0]; cl.board[1] = nullptr;
+        std::vector<uint8_t> px(themepack::clipFrameBytes(k.side), 0x77);   // grey level 7 everywhere (a colour nothing else uses)
+        const scanr::RadarVideo v{k.side, k.side, 1, 12, px.data()};
+        pal::setTheme(pal::TH_UMBRAVOX);
+        uieng::activeLayout() = &cl;
+        auto sc = scanfix::demo(pal::TH_UMBRAVOX);
+        sc.video = &v; sc.animateSweep = false; sc.nBlips = 0;
+        FbSink fb(480, 320);
+        static scanr::Compositor c;
+        c.renderFull(480, 320, sc, fb);
+        uieng::activeLayout() = nullptr;
+        const uint16_t clipInk = ui::Canvas::mix(pal::VOID, pal::BRIGHT, 7, 15);
+        const uieng::Rect rb = co[0].radar;
+        const int fr = (rb.w - 5) / 2, cx = rb.x + fr + 2, cy = rb.y + fr + 2;
+        int inDisc = 0, discPx = 0, outside = 0;
+        for (int y = 0; y < 320; y++)
+            for (int x = 0; x < 480; x++) {
+                const bool clip = fb.fb[y * 480 + x] == clipInk;
+                const int dx = x - cx, dy = y - cy;
+                if (dx * dx + dy * dy < (fr - 3) * (fr - 3)) { discPx++; inDisc += clip; }
+                if (clip && !in(x, y, rb)) outside++;
+            }
+        char tag[96];
+        snprintf(tag, sizeof tag, "%s: never drawn outside the radar box", k.name);
+        check(tag, outside == 0);
+        snprintf(tag, sizeof tag, "%s: fills most of the disc (%d/%d)", k.name, inDisc, discPx);
+        check(tag, inDisc * 10 >= discPx * 8);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--write") == 0) return writeGolden();
     printf("== engine pixels\n");
@@ -311,6 +351,7 @@ int main(int argc, char** argv) {
     testScreensInBody();
     testMinimumPieces();
     testRadarGroup();
+    testClipSizes();
     testGolden();   // installing and clearing a layout leaves the built-ins untouched
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;

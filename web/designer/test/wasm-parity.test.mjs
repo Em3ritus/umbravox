@@ -407,7 +407,7 @@ test('pack clip: the CYD preview never shows it, and a bad clip is refused with 
   const shown = wsWasm(id, 'scan', 5, -1, -1, 2);
   const dir = packWithClip(good);
   const flip = (i, v) => { const x = Uint8Array.from(good); x[i] = v; return x; };
-  for (const [why, bytes, word] of [['wrong magic', flip(0, 0), 'UVRV'], ['wrong size', flip(5, 64), '102'], ['fps 0', flip(7, 0), 'fps'], ['truncated', good.slice(0, good.length - 1), 'length'], ['over-size', new Uint8Array(780313), 'over']]) {
+  for (const [why, bytes, word] of [['wrong magic', flip(0, 0), 'UVRV'], ['not square', flip(5, 64), 'square'], ['fps 0', flip(7, 0), 'fps'], ['truncated', good.slice(0, good.length - 1), 'length'], ['over-size', new Uint8Array(780313), 'over']]) {
     const rc = loadWithClip(dir, bytes);
     assert.equal(rc, -6, why);
     assert.match(err(), new RegExp(word), why);
