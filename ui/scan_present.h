@@ -446,7 +446,7 @@ public:
             const ScanScene& pv = store_[cur_].scene();
             const ScanParts p = sceneParts(W_, H_, pv, nw);
             const uieng::ScanLayout L = uieng::scan(W_, H_);
-            const int statusBottom = L.statusCells[0].y + L.statusCells[0].h, navTop = L.navCells[0].y;
+            const uieng::Bands B = uieng::bands(W_, H_);
             auto add = [&](const uieng::Rect& r) {
                 if (r.w <= 0 || r.h <= 0) return;
                 if (nreg_ < kMaxRegions) reg_[nreg_++] = r;
@@ -463,7 +463,7 @@ public:
                     for (int i = 0; i < n; i++) add(rg[i]);
                 } else add(L.hero);
             }
-            if (p.status) add({0, 0, W_, statusBottom});
+            if (p.status) add({0, B.statusTop, W_, B.statusBottom - B.statusTop});
             for (int i = 0; i < 3; i++) if (p.count[i] || p.fxCard[i]) add(L.tiles[i]);
             const bool covered = lvOld == 1 && lvNew == 1;           // a LOW/MED alert hides the hero, so its radar, channel readout and spectrum need no repaint
             if (p.ch && !covered)   add(scanr::chRect(W_, H_));
@@ -480,7 +480,7 @@ public:
             }
             char ra[16], rb[16];
             scanr::recLabel(pv, ra, 16); scanr::recLabel(nw, rb, 16);
-            if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, navTop, W_, H_ - navTop});   // REC/STOP and POI live on the nav
+            if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, B.navTop, W_, B.navBottom - B.navTop});   // REC/STOP and POI live on the nav
         } else {
             bool st = false, bd = false, fieldOnly = false, sweepOnly = false;
             sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly, &sweepOnly);
@@ -493,12 +493,11 @@ public:
                 box = sv == sn ? scanr::sweepBox(sn, radar, pv.now, nw.now) : radar;
             }
             const uieng::ScanLayout L = uieng::scan(W_, H_);
-            const int statusBottom = L.statusCells[0].y + L.statusCells[0].h;
-            const int navTop       = L.navCells[0].y;
-            if (st) sched_.invalidate(0, statusBottom);
+            const uieng::Bands B = uieng::bands(W_, H_);
+            if (st) sched_.invalidate(B.statusTop, B.statusBottom);
             if (bd) {
                 if (fieldOnly) sched_.invalidate(box.y, box.y + box.h);
-                else sched_.invalidate(statusBottom, navTop);
+                else sched_.invalidate(B.bodyTop, B.bodyBottom);
             }
             // design #1 SCAN carries the REC/STOP control on the NAV bar, which
             // is otherwise static: repaint the nav band only when the recording
@@ -507,7 +506,7 @@ public:
             scanr::recLabel(store_[cur_].scene(), ra, 16);
             scanr::recLabel(nw, rb, 16);
             const bool navDirty = __builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi;
-            if (navDirty) sched_.invalidate(navTop, H_);
+            if (navDirty) sched_.invalidate(B.navTop, B.navBottom);
             if (!st && bd && fieldOnly && !navDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
                 win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;
             }

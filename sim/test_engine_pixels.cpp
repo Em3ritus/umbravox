@@ -110,10 +110,75 @@ static void testGolden() {
     check(tag, changed == 0 && n == pal::TH_COUNT * N_SCREENS * 2);
 }
 
+// ---------- with a layout installed ----------------------------------------------
+static std::string rj(uieng::Rect r) { char b[64]; snprintf(b, sizeof b, "[%d,%d,%d,%d]", r.x, r.y, r.w, r.h); return b; }
+static const char* BKEY[2] = {"waveshare", "cyd"};
+static uieng::ChromeOverride ov[2];
+static uieng::LayoutOverride lo;
+
+// Footer moved up under the header, wordmark hidden: the bottom band and the
+// wordmark's old place are then outside every piece and outside the body.
+static bool buildLayout() {
+    bool all = true;
+    for (int b = 0; b < 2; b++) {
+        std::string pieces = "\"wordmark\":\"hidden\"";
+        const themelayout::Piece nav[5] = {themelayout::P_NAV_SCAN, themelayout::P_NAV_DOMAIN, themelayout::P_NAV_CODEX,
+                                           themelayout::P_NAV_POI, themelayout::P_STOP};
+        for (int i = 0; i < 5; i++) {
+            uieng::Rect r = themelayout::defaultRect((themelayout::Board)b, nav[i]); r.y = 44;
+            pieces += std::string(",\"") + themelayout::PIECE_NAME[nav[i]] + "\":" + rj(r);
+        }
+        const std::string s = std::string("{\"format\":1,\"") + BKEY[b] + "\":{" + pieces + "}}";
+        themelayout::Layout L; char why[96];
+        const bool ok = themelayout::parse(s.data(), s.size(), L, why, sizeof why) &&
+                        themelayout::resolve(L, (themelayout::Board)b, ov[b], why, sizeof why);
+        if (!ok) printf("  layout %s: %s\n", BKEY[b], why);
+        all = all && ok;
+    }
+    lo.board[0] = &ov[0]; lo.board[1] = &ov[1];
+    return all;
+}
+
+static bool in(int x, int y, uieng::Rect r) { return r.w > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h; }
+
+// Every pixel that is not the background lies in a visible piece or the body.
+static int strayInk(const FbSink& fb, const uieng::ChromeOverride& o, uieng::Rect body, int screen) {
+    const uieng::Chrome& c = o.c;
+    const uieng::Rect pieces[] = {c.menu, c.wordmark, c.statusCells[0], c.statusCells[1], c.statusCells[2], c.bridge, c.sd,
+                                  c.navCells[0], c.navCells[1], c.navCells[2], c.navCells[3], c.stop,
+                                  o.tiles[0], o.tiles[1], o.tiles[2]};
+    int stray = 0, firstX = -1, firstY = -1;
+    for (int y = 0; y < fb.H; y++)
+        for (int x = 0; x < fb.W; x++) {
+            if (fb.fb[y * fb.W + x] == pal::VOID) continue;
+            bool ok = in(x, y, body);
+            for (const uieng::Rect& r : pieces) ok = ok || in(x, y, r);
+            if (!ok) { if (!stray) { firstX = x; firstY = y; } stray++; }
+        }
+    if (stray) printf("       %s %dx%d: %d stray pixels, first at (%d,%d)\n", SCREENS[screen], fb.W, fb.H, stray, firstX, firstY);
+    return stray;
+}
+
+static void testInk() {
+    check("test layout resolves", buildLayout());
+    uieng::activeLayout() = &lo;
+    for (int b = 0; b < 2; b++) {
+        const int W = BW[b], H = BH[b];
+        for (int s : {0, 1}) {   // scan, codex
+            const FbSink fb = render(s, pal::TH_UMBRAVOX, W, H);
+            char tag[96]; snprintf(tag, sizeof tag, "%s %s: chrome ink stays in its pieces", BKEY[b], SCREENS[s]);
+            check(tag, strayInk(fb, ov[b], s == 0 ? ov[b].scanBody : ov[b].c.body, s) == 0);
+        }
+    }
+    uieng::activeLayout() = nullptr;
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--write") == 0) return writeGolden();
     printf("== engine pixels\n");
     testGolden();
+    testInk();
+    testGolden();   // installing and clearing a layout leaves the built-ins untouched
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;
 }

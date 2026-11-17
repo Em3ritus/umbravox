@@ -143,11 +143,51 @@ static void testOneBoard() {
     activeLayout() = nullptr;
 }
 
+// The row ranges the presenters repaint when the status, body or nav changes.
+static bool layoutOk[2];
+static bool ok_layout(int b) { return layoutOk[b]; }
+static bool rowsIn(Rect r, int y0, int y1) { return r.w <= 0 || (r.y >= y0 && r.y + r.h <= y1); }
+static void testBands() {
+    activeLayout() = nullptr;
+    for (int b = 0; b < 2; b++) {
+        const int W = BW[b], H = BH[b];
+        const Bands B = bands(W, H);
+        check("builtin bands are today's rows", B.statusTop == 0 && B.statusBottom == 44 && B.bodyTop == 44 &&
+                                                    B.bodyBottom == H - 44 && B.navTop == H - 44 && B.navBottom == H);
+    }
+    build();
+    // A scattered header: the bridge swaps places with the SCAN nav button, so a header piece sits on the bottom row.
+    for (int b = 0; b < 2; b++) {
+        const Rect br = themelayout::defaultRect((Board)b, themelayout::P_BRIDGE), ns = themelayout::defaultRect((Board)b, themelayout::P_NAV_SCAN);
+        std::string s = std::string("{\"format\":1,\"") + BKEY[b] + "\":{\"bridge\":" + rj(ns) + ",\"nav.scan\":" + rj(br) + "}}";
+        themelayout::Layout L; char why[96];
+        const bool ok = themelayout::parse(s.data(), s.size(), L, why, sizeof why) && themelayout::resolve(L, (Board)b, ov[b], why, sizeof why);
+        if (!ok) printf("  bands layout %s: %s\n", BKEY[b], why);
+        layoutOk[b] = ok;
+        lo.board[b] = &ov[b];
+    }
+    activeLayout() = &lo;
+    for (int b = 0; b < 2; b++) {
+        const int W = BW[b], H = BH[b];
+        const Bands B = bands(W, H);
+        const Chrome c = chrome(W, H);
+        bool ok = true;
+        const Rect head[] = {c.menu, c.wordmark, c.statusCells[0], c.statusCells[1], c.statusCells[2], c.bridge, c.sd};
+        for (const Rect& r : head) ok = ok && rowsIn(r, B.statusTop, B.statusBottom);
+        for (int i = 0; i < 4; i++) ok = ok && rowsIn(c.navCells[i], B.navTop, B.navBottom);
+        ok = ok && rowsIn(c.stop, B.navTop, B.navBottom) && rowsIn(c.body, B.bodyTop, B.bodyBottom);
+        char tag[96]; snprintf(tag, sizeof tag, "%s: a moved bridge is inside the status repaint rows", BKEY[b]);
+        check(tag, ok && ok_layout(b) && B.statusBottom == H && B.navTop == 0);
+    }
+    activeLayout() = nullptr;
+}
+
 int main() {
     printf("== layout override\n");
     testNoOverride();
     testOverride();
     testOneBoard();
+    testBands();
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;
 }

@@ -124,6 +124,26 @@ inline ScanLayout scan(int W, int H) {
     return s;
 }
 
+// The row ranges a presenter repaints when its status, body or nav changes. Built-in:
+// today's bands, exactly. With a theme layout the header and footer pieces can sit
+// anywhere, so each range is the rows of their bounding box, and the body's range
+// is the body widened by the 8-px gap the built-in layout leaves around it.
+struct Bands { int statusTop, statusBottom, bodyTop, bodyBottom, navTop, navBottom; };
+inline Bands bands(int W, int H) {
+    const Chrome c = chrome(W, H);
+    Bands b;
+    if (!activeBoard(W)) {
+        b.statusTop = 0; b.statusBottom = c.statusCells[0].y + c.statusCells[0].h;
+        b.navTop = c.navCells[0].y; b.navBottom = H;
+        b.bodyTop = b.statusBottom; b.bodyBottom = b.navTop;
+        return b;
+    }
+    b.statusTop = c.status.y; b.statusBottom = c.status.y + c.status.h;
+    b.navTop = c.nav.y; b.navBottom = c.nav.y + c.nav.h;
+    b.bodyTop = std::max(0, c.body.y - 8); b.bodyBottom = std::min(H, c.body.y + c.body.h + 8);
+    return b;
+}
+
 // --- DOMAIN: rectangular map (radar centered inside) + contacts + range -------
 struct DomainLayout {
     Rect status, nav, body, statusCells[4], navCells[4];

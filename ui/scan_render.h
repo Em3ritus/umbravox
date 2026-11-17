@@ -828,24 +828,37 @@ struct ChromeState {
 inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
                        const ChromeState& st, int activeTab) {
     const uieng::Chrome c = uieng::chrome(W, H);
-    // lay the full VOID ground (every screen's body sits on this), then the
-    // status/nav surfaces and full-width one-pixel dividers.
-    box(s, 0, 0, W, H, pal::VOID);
-    box(s, 0, 0, W, 44, pal::PANEL);
-    box(s, 0, H - 44, W, 44, pal::PANEL);
-    box(s, 0, 43, W, 1, pal::EDGE);
-    box(s, 0, H - 46, W, 1, pal::EDGE);
+    // Every piece draws at offsets from its OWN rect, so a theme layout can move it.
+    // The offsets are today's numbers measured from today's rects (builtinChrome),
+    // so the built-in layout draws exactly what it always did.
+    const uieng::Chrome bc = uieng::builtinChrome(W, H);
+    box(s, 0, 0, W, H, pal::VOID);   // the ground every screen's body sits on
+    if (!uieng::activeBoard(W)) {
+        // Built-in: full-width status/nav surfaces and one-pixel dividers.
+        box(s, 0, 0, W, 44, pal::PANEL);
+        box(s, 0, H - 44, W, 44, pal::PANEL);
+        box(s, 0, 43, W, 1, pal::EDGE);
+        box(s, 0, H - 46, W, 1, pal::EDGE);
+    } else {
+        // A theme layout: each visible piece is its own surface; no bands.
+        const uieng::Rect surf[] = {c.menu, c.wordmark, c.statusCells[0], c.statusCells[1], c.statusCells[2], c.bridge, c.sd,
+                                    c.navCells[0], c.navCells[1], c.navCells[2], c.navCells[3], c.stop};
+        for (const uieng::Rect& r : surf) if (r.w > 0 && r.h > 0) box(s, r.x, r.y, r.w, r.h, pal::PANEL);
+    }
 
-    for(int y:{8,13,18})box(s,14,y,16,2,activeTab==3?pal::BRIGHT:pal::TEXT);
-    centered(s,22,28,"MENU",1,activeTab==3?pal::BRIGHT:pal::TEXT);
-    if(activeTab==3)box(s,10,39,24,2,pal::WITCH_HI);
+    const auto mn=c.menu;
+    for(int y:{8,13,18})box(s,mn.x+14,mn.y+y,16,2,activeTab==3?pal::BRIGHT:pal::TEXT);
+    centered(s,mn.x+22,mn.y+28,"MENU",1,activeTab==3?pal::BRIGHT:pal::TEXT);
+    if(activeTab==3)box(s,mn.x+10,mn.y+39,24,2,pal::WITCH_HI);
     // Fixed title box: theme names fit without moving any controls.
     const char* name=pal::header(st.theme);
     const char* second=nullptr;
     const char* first=name;
     if (!strcmp(name,"CVLT OF BAPH0MAU5")){first="CVLT OF";second="BAPH0MAU5";}
     if (!strcmp(name,"COSMIC MUFFIN") || !strcmp(name,"COSMIC MVFFIN")){first="COSMIC";second="MUFFIN";}
-    if(second){centered(s,c.wordmark.x+c.wordmark.w/2,11,first,1,pal::BRIGHT);centered(s,c.wordmark.x+c.wordmark.w/2,25,second,1,pal::BRIGHT);}
+    const auto wm=c.wordmark;
+    if(wm.w<=0||wm.h<=0){}   // hidden by the theme's layout
+    else if(second){centered(s,wm.x+wm.w/2,wm.y+11,first,1,pal::BRIGHT);centered(s,wm.x+wm.w/2,wm.y+25,second,1,pal::BRIGHT);}
     else {
       const int badge=pal::diamondBadge(st.theme)?22:0;
       char clipped[64];snprintf(clipped,sizeof clipped,"%s",name);
@@ -854,34 +867,40 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
       if(limit>=3 && int(strlen(clipped))>limit){clipped[limit]=0;clipped[limit-1]=clipped[limit-2]=clipped[limit-3]='.';}
       name=clipped;
       const int x=c.wordmark.x+(c.wordmark.w-Font::width(name,scale)-badge)/2;
-      if(badge)diamondInto(s,x+7,21,7,pal::WITCH);
-      txt(s,x+badge,(44-7*scale)/2,name,scale,pal::BRIGHT);
+      if(badge)diamondInto(s,x+7,wm.y+21,7,pal::WITCH);
+      txt(s,x+badge,wm.y+(wm.h-7*scale)/2,name,scale,pal::BRIGHT);
     }
     char hb[24];
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
     const char* fix=gst==GpsState::Fresh ? (st.gps.mode==3?"3D":st.gps.mode==2?"2D":"FIX") : gst==GpsState::Stale?"STALE":"ACQ";
-    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,10,"GPS",1,pal::DIM);
-    centered(s,c.statusCells[0].x+c.statusCells[0].w/2,26,fix,1,gcol);
+    const auto gc=c.statusCells[0];
+    centered(s,gc.x+gc.w/2,gc.y+10,"GPS",1,pal::DIM);
+    centered(s,gc.x+gc.w/2,gc.y+26,fix,1,gcol);
     if(c.statusCells[1].w) {
-        const int nc=c.statusCells[1].x+c.statusCells[1].w/2;
-        centered(s,nc,10,"NODES",1,pal::DIM);
+        const auto nd=c.statusCells[1];
+        centered(s,nd.x+nd.w/2,nd.y+10,"NODES",1,pal::DIM);
         snprintf(hb,sizeof hb,"%d",st.nodes);
-        centered(s,c.statusCells[1].x+c.statusCells[1].w/2,26,hb,1,pal::TEXT);
+        centered(s,nd.x+nd.w/2,nd.y+26,hb,1,pal::TEXT);
     }
     const auto bt=c.bridge;
-    centered(s,bt.x+bt.w/2,10,"BRIDGE",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
-    centered(s,bt.x+bt.w/2,26,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
+    centered(s,bt.x+bt.w/2,bt.y+10,"BRIDGE",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
+    centered(s,bt.x+bt.w/2,bt.y+26,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
     if(st.bridgeOn) {
         const int width=Font::width("BRIDGE",1);
-        box(s,bt.x+(bt.w-width)/2,37,width,2,pal::WITCH_HI);
+        box(s,bt.x+(bt.w-width)/2,bt.y+37,width,2,pal::WITCH_HI);
     }
+    // The SD icon draws in the sd piece, the battery in the power piece. Their x offsets
+    // are today's (equal gaps across the built-in sd + power area), measured per piece.
+    const auto sdr=c.sd, pw=c.statusCells[2];
+    const bool sdShown=sdr.w>0&&sdr.h>0;
     // Read-only storage icon; adjacent battery keeps its own >=44px hit.
     const uint16_t sdInk=st.sd==ui::StorageState::Ready?pal::GREEN:st.sd==ui::StorageState::Error?pal::AMBER:pal::DIM;
     // Distribute free space equally before, between, and after the icons.
     if(W>=400){
-    const int iconGap=(W-c.sd.x-14-24)/3;
-    const int sx=c.sd.x+iconGap,sy=13;
+    const int iconGap=(W-bc.sd.x-14-24)/3;
+    const int sx=sdr.x+iconGap,sy=sdr.y+13;
+    if(sdShown){
     box(s,sx,sy,10,1,sdInk);box(s,sx,sy,1,17,sdInk);box(s,sx,sy+16,14,1,sdInk);
     box(s,sx+13,sy+4,1,13,sdInk);
     for(int i=0;i<4;i++)box(s,sx+10+i,sy+i,1,1,sdInk);
@@ -890,8 +909,9 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
         for(int i=0;i<3;i++)box(s,sx+3+i*3,sy+3,1,4,sdInk);
         if(st.sd==ui::StorageState::Missing)for(int i=0;i<14;i++)box(s,sx+i,sy+14-i,1,2,sdInk);
     }
+    }
     const bool cell=st.pmuOk&&st.hasCell,level=cell&&st.batt>=0&&st.batt<=100;
-    const int bx=sx+14+iconGap,by=cell?8:16;
+    const int bx=pw.x+(bc.sd.x+iconGap+14+iconGap-bc.statusCells[2].x),by=pw.y+(cell?8:16);
     const uint16_t bi=cell?(st.charging?pal::GREEN:level&&st.batt<=20?pal::AMBER:pal::TEXT):pal::DIM;
     frame(s,bx,by,22,11,bi);box(s,bx+22,by+3,2,5,bi);
     if(level&&st.batt>0)box(s,bx+2,by+2,std::max(1,18*st.batt/100),7,bi);
@@ -899,15 +919,16 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     else if(!st.hasCell)for(int i=0;i<20;i++)box(s,bx+1+i,by+10-i/2,1,1,pal::DIM);
     if(cell){
         if(level)snprintf(hb,sizeof hb,"%d%%",st.batt);else snprintf(hb,sizeof hb,"?");
-        centered(s,bx+12,27,hb,1,bi);
+        centered(s,bx+12,pw.y+27,hb,1,bi);
         // A plus beside the battery identifies charging independently of color.
         if(st.charging){box(s,bx-5,by+5,3,1,bi);box(s,bx-4,by+4,1,3,bi);}
     }
     }else{
     const bool compact=W<400;
     const int sw=compact?12:14,sh=compact?15:17,bw=compact?18:22,bh=compact?9:11;
-    const int iconGap=(W-c.sd.x-sw-(bw+2))/3;
-    const int sx=c.sd.x+iconGap,sy=(44-sh)/2;
+    const int iconGap=(W-bc.sd.x-sw-(bw+2))/3;
+    const int sx=sdr.x+iconGap,sy=sdr.y+(44-sh)/2;
+    if(sdShown){
     box(s,sx,sy,sw-4,1,sdInk);box(s,sx,sy,1,sh,sdInk);box(s,sx,sy+sh-1,sw,1,sdInk);
     box(s,sx+sw-1,sy+4,1,sh-4,sdInk);
     for(int i=0;i<4;i++)box(s,sx+sw-4+i,sy+i,1,1,sdInk);
@@ -916,8 +937,9 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
         for(int i=0;i<3;i++)box(s,sx+3+i*(compact?2:3),sy+3,1,4,sdInk);
         if(st.sd==ui::StorageState::Missing)for(int i=0;i<sw;i++)box(s,sx+i,sy+sh-3-i*(sh-4)/(sw-1),1,2,sdInk);
     }
+    }
     const bool cell=st.pmuOk&&st.hasCell,level=cell&&st.batt>=0&&st.batt<=100;
-    const int bx=sx+sw+iconGap,by=cell?8:(44-bh)/2;
+    const int bx=pw.x+(bc.sd.x+iconGap+sw+iconGap-bc.statusCells[2].x),by=pw.y+(cell?8:(44-bh)/2);
     const uint16_t bi=cell?(st.charging?pal::GREEN:level&&st.batt<=20?pal::AMBER:pal::TEXT):pal::DIM;
     frame(s,bx,by,bw,bh,bi);box(s,bx+bw,by+3,2,bh-6,bi);
     if(level&&st.batt>0)box(s,bx+2,by+2,std::max(1,(bw-4)*st.batt/100),bh-4,bi);
@@ -925,7 +947,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     else if(!st.hasCell)for(int i=0;i<bw-2;i++)box(s,bx+1+i,by+bh-2-i*(bh-3)/(bw-3),1,1,pal::DIM);
     if(cell){
         if(level)snprintf(hb,sizeof hb,"%d%%",st.batt);else snprintf(hb,sizeof hb,"?");
-        centered(s,bx+(bw+2)/2,27,hb,1,bi);
+        centered(s,bx+(bw+2)/2,pw.y+27,hb,1,bi);
         if(st.charging){box(s,bx-5,by+bh/2,3,1,bi);box(s,bx-4,by+bh/2-1,1,3,bi);}
     }
     }
@@ -937,14 +959,15 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
         const int ns=fitScale(nav[i],r.w-8,2), width=Font::width(nav[i],ns);
         const int lx=r.x+(r.w-width)/2;
         const bool on=activeTab==i;
-        txt(s,lx,H-44+(44-7*ns)/2,nav[i],ns,on?pal::BRIGHT:pal::TEXT);
-        if(on)box(s,lx,H-8,width,2,pal::WITCH_HI);
+        txt(s,lx,r.y+(r.h-7*ns)/2,nav[i],ns,on?pal::BRIGHT:pal::TEXT);
+        if(on)box(s,lx,r.y+r.h-8,width,2,pal::WITCH_HI);
     }
     const auto mark=c.navCells[3];
     const bool feedback=st.poi!=ui::PoiStatus::Ready;
     const uint16_t poiInk=st.poi==ui::PoiStatus::Saved?pal::GREEN:pal::AMBER;
-    centered(s,mark.x+mark.w/2,H-(feedback?36:30),"POI",2,feedback?poiInk:pal::TEXT);
-    if(feedback)centered(s,mark.x+mark.w/2,H-16,ui::poiLabel(st.poi),1,poiInk);
+    const int mb=mark.y+mark.h;   // offsets from the piece's bottom edge, as today's from H
+    centered(s,mark.x+mark.w/2,mb-(feedback?36:30),"POI",2,feedback?poiInk:pal::TEXT);
+    if(feedback)centered(s,mark.x+mark.w/2,mb-16,ui::poiLabel(st.poi),1,poiInk);
 
     const auto record=c.stop;
     ScanScene tmp;tmp.rec=st.rec;
@@ -955,9 +978,10 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     const uint16_t ink=on?pal::RED:warning?pal::AMBER:pal::DIM;
     const int scale=fitScale(label,record.w-8,2),width=Font::width(label,scale);
     const int x=record.x+(record.w-width)/2;
-    txt(s,x,H-30,label,scale,ink);
-    if(on || st.rec==Rec::Saving)box(s,x,H-8,width,2,ink);
-    if(st.rec==Rec::Incomplete)centered(s,record.x+record.w/2,H-12,"UNSAVED",1,ink);
+    const int rb=record.y+record.h;
+    txt(s,x,rb-30,label,scale,ink);
+    if(on || st.rec==Rec::Saving)box(s,x,rb-8,width,2,ink);
+    if(st.rec==Rec::Incomplete)centered(s,record.x+record.w/2,rb-12,"UNSAVED",1,ink);
 
 }
 
@@ -1050,6 +1074,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     char num[16]; const long vals[3] = { sc.wifi, sc.g5, sc.ble };
     const bool fx = W >= 400 && sc.fx.on;                              // side-panel texture and motion
     for (int i=0;i<3;i++){ const uieng::Rect t=L.tiles[i];
+        if (t.w <= 0 || t.h <= 0) continue;   // hidden by the theme's layout
         box(s, t.x, t.y, t.w, t.h, pal::PANEL);
         if (fx) fxCard(s, t, band[i], sc.now, i, sc.fx.spark[i]);
         box(s, t.x, t.y, 3, t.h, band[i]);
