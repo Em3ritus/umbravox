@@ -1190,6 +1190,13 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
         if((clean||sc.animateSweep)&&sty==ui::SW_RADAR)radarNeedle(s,fcx,fcy,fr,sc.animateSweep?sweepAngle(sc.now):uint16_t(384));   // over the artwork
         if(cvlt){box(s,fcx-2,fcy,5,1,pal::DIM);box(s,fcx,fcy-2,1,5,pal::DIM);}
         if(!cvlt && !mascot && !sigil && !logo){box(s, fcx-5, fcy, 11, 1, pal::BRIGHT); box(s, fcx, fcy-5, 1, 11, pal::BRIGHT);}  // centre cross
+        // Markers are clipped to the radar box: a rim contact's marker, halo and outline would otherwise reach up to
+        // 3 px past it, onto a neighbouring piece that the radar's repaint region does not cover.
+        const auto mbox = [&](int x, int y, int w, int h, uint16_t c) {
+            const int x0 = std::max(x, radar.x), y0 = std::max(y, radar.y);
+            const int x1 = std::min(x + w, radar.x + radar.w), y1 = std::min(y + h, radar.y + radar.h);
+            if (x1 > x0 && y1 > y0) box(s, x0, y0, x1 - x0, y1 - y0, c);
+        };
         for (int i=0, nb=pal::showContacts(sc.theme)?sc.nBlips:0;i<nb;i++){   // theme.json "contacts":"off"; pre-projected contacts -> field markers
             const FieldBlip& b = sc.blips[i];
             const Marker m = placeMarker(b.bearing, b.dist, b.band, sc.now - b.lastSeen, fr);
@@ -1200,14 +1207,14 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
                     uint16_t ink = band[m.band];
                     if (lk.flare) {
                         const uint16_t halo = ui::Canvas::mix(pal::VOID, ink, lk.flare, kTailLevels * 2);
-                        box(s, px - sq/2 - 2, py - sq/2, sq + 4, sq, halo);       // plus-shaped glow, soft corners
-                        box(s, px - sq/2, py - sq/2 - 2, sq, sq + 4, halo);
+                        mbox( px - sq/2 - 2, py - sq/2, sq + 4, sq, halo);       // plus-shaped glow, soft corners
+                        mbox( px - sq/2, py - sq/2 - 2, sq, sq + 4, halo);
                         ink = ui::Canvas::mix(ink, pal::BRIGHT, lk.flare, kTailLevels);
                     }
-                    if (cvlt || mascot || orbit || sigil || logo) box(s, px - sq/2 - 1, py - sq/2 - 1, sq + 2, sq + 2, pal::VOID);
-                    box(s, px - sq/2, py - sq/2, sq, sq, ink);
+                    if (cvlt || mascot || orbit || sigil || logo) mbox( px - sq/2 - 1, py - sq/2 - 1, sq + 2, sq + 2, pal::VOID);
+                    mbox( px - sq/2, py - sq/2, sq, sq, ink);
                 } else {
-                    const int sq = m.sizePx; if(cvlt || mascot || orbit || sigil || logo)box(s,fcx+m.dx-sq/2-1,fcy+m.dy-sq/2-1,sq+2,sq+2,pal::VOID); box(s, fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
+                    const int sq = m.sizePx; if(cvlt || mascot || orbit || sigil || logo)mbox(fcx+m.dx-sq/2-1,fcy+m.dy-sq/2-1,sq+2,sq+2,pal::VOID); mbox( fcx+m.dx-sq/2, fcy+m.dy-sq/2, sq, sq, band[m.band]);
                 }
             }
         }

@@ -272,6 +272,10 @@ static void testRadarGroup() {
         r = {bs.radar.x, bs.radar.y, 61, 61};
         const bool ok = R(b, "\"radar\":" + rectJson(r) + ",\"spectrum\":\"hidden\",\"channel\":\"hidden\",\"badge\":\"hidden\"", o, why, sizeof why);
         T("hero is the bounding box of the visible group", ok && same(o.hero, r));
+        // Review I1: the group's bounding box (the alert area) must not enclose a tile or a chrome piece.
+        const std::string enclose = b == 0 ? "\"radar\":[124,120,101,101],\"count.wifi\":[240,120,100,60]"
+                                           : "\"radar\":[104,52,53,53],\"count.wifi\":[170,80,60,60]";
+        T("radar parts enclosing a tile refused", !R(b, enclose, o, why, sizeof why) && contains(why, "enclose"));
     }
 }
 

@@ -400,6 +400,9 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     const bool groupDefault = L.slot[b][P_RADAR].how == SLOT_DEFAULT && L.slot[b][P_SPECTRUM].how == SLOT_DEFAULT &&
                               L.slot[b][P_CHANNEL].how == SLOT_DEFAULT && L.slot[b][P_BADGE].how == SLOT_DEFAULT;
     if (groupDefault || !visible(hero)) hero = shifted(bs.hero);
+    else    // the group's box is the alert area and the threat target: it may not take in a tile or a header/footer piece
+        for (int p = 0; p < P_RADAR; p++)
+            if (overlaps(hero, r[p])) return say(why, whyCap, "the radar parts enclose %s", PIECE_NAME[p]);
 
     uieng::Chrome& c = out.c;
     c.menu = r[P_MENU]; c.wordmark = r[P_WORDMARK];

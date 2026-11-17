@@ -343,6 +343,33 @@ static void testClipSizes() {
     }
 }
 
+// Review I2: a contact on the rim never draws outside the radar box (built-in layout, every theme, both boards).
+static void testRimContacts() {
+    static scanr::FieldBlip rim[36];
+    for (int i = 0; i < 36; i++) rim[i] = {uint16_t(i * 10 + 3), 100, uint8_t(i % 3), 4900};
+    for (int b = 0; b < 2; b++) {
+        const int W = BW[b], H = BH[b];
+        const uieng::Rect rb = uieng::builtinScan(W, H).radar;
+        int outside = 0;
+        for (int t = 0; t < pal::TH_COUNT; t++)
+            for (int live = 0; live < 2; live++) {
+                pal::setTheme((uint8_t)t);
+                uieng::activeLayout() = nullptr;
+                static scanr::Compositor c;
+                auto sc = scanfix::demo((uint8_t)t);
+                sc.animateSweep = live; sc.nBlips = 0;
+                FbSink a(W, H); c.renderFull(W, H, sc, a);
+                sc.blips = rim; sc.nBlips = 36;
+                FbSink z(W, H); c.renderFull(W, H, sc, z);
+                for (int y = 0; y < H; y++)
+                    for (int x = 0; x < W; x++)
+                        if (a.fb[y * W + x] != z.fb[y * W + x] && !in(x, y, rb)) outside++;
+            }
+        char tag[96]; snprintf(tag, sizeof tag, "%s: rim contacts stay inside the radar box (%d px outside)", BKEY[b], outside);
+        check(tag, outside == 0);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--write") == 0) return writeGolden();
     printf("== engine pixels\n");
@@ -352,6 +379,7 @@ int main(int argc, char** argv) {
     testMinimumPieces();
     testRadarGroup();
     testClipSizes();
+    testRimContacts();
     testGolden();   // installing and clearing a layout leaves the built-ins untouched
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;
