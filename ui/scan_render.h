@@ -12,7 +12,7 @@
 #include "sigil.h"
 #include "model.h"
 #include "poi_state.h"
-#include "radar_geometry.h"
+#include "ring_gen.h"
 #include "crew_art.h"
 #include "layout_engine.h"
 #include "palette.h"
@@ -1124,7 +1124,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
             if(picture)continue;      // the picture is the dial; rings over it only add clutter
             const int rr=fr*(k*23)/69;
             int count=0;
-            const auto* ring=radargeometry::ring(rr,count);
+            const auto* ring=radargeometry::ringFor(rr,count);
             if (ring) {
                 const bool thick = W>=400;       // layout A: 2 px rings (each table point also paints the pixel inward)
                 auto plot=[&](int x,int y,int cov){
