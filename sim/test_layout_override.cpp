@@ -227,8 +227,28 @@ static void testHeroParts() {
     activeLayout() = nullptr;
 }
 
+// Plan 2 Task 4: a radar-group piece outside the body's rows is inside the body repaint rows.
+static void testGroupRows() {
+    for (int b = 0; b < 2; b++) {
+        const Rect wm = themelayout::defaultRect((Board)b, themelayout::P_WORDMARK), ch = themelayout::defaultRect((Board)b, themelayout::P_CHANNEL);
+        std::string s = std::string("{\"format\":1,\"") + BKEY[b] + "\":{\"wordmark\":\"hidden\",\"channel\":" + rj({wm.x, 0, ch.w, ch.h}) + "}}";
+        themelayout::Layout L; char why[96];
+        const bool ok = themelayout::parse(s.data(), s.size(), L, why, sizeof why) && themelayout::resolve(L, (Board)b, ov[b], why, sizeof why);
+        if (!ok) printf("  channel layout %s: %s\n", BKEY[b], why);
+        lo.board[b] = ok ? &ov[b] : nullptr;
+    }
+    activeLayout() = &lo;
+    for (int b = 0; b < 2; b++) {
+        const Bands B = bands(BW[b], BH[b]);
+        char tag[96]; snprintf(tag, sizeof tag, "%s: a channel in the header row is inside the body repaint rows", BKEY[b]);
+        check(tag, ov[b].channel.y == 0 && rowsIn(ov[b].channel, B.bodyTop, B.bodyBottom));
+    }
+    activeLayout() = nullptr;
+}
+
 int main() {
     printf("== layout override\n");
+    testGroupRows();
     testHeroParts();
     testTileRows();
     testNoOverride();

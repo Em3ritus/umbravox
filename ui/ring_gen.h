@@ -71,6 +71,9 @@ inline Cache& cache() {
 }
 }  // namespace detail
 
+// How many times a ring was drawn with the slow trig fallback (scan_render.h). Tests assert it stays 0.
+inline int& fallbackCalls() { static int n = 0; return n; }
+
 inline void setRingStorage(Point* buf, int cap) {
     detail::Cache& c = detail::cache();
     c.buf = buf; c.cap = cap;

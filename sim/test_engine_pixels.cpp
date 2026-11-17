@@ -232,6 +232,77 @@ static void testMinimumPieces() {
     testLayout = nullptr;
 }
 
+// ---------- plan 2: the radar group as separate pieces ---------------------------------
+// Scan only, strict: ink only in the visible chrome pieces, tiles and radar-group pieces (not the whole body).
+static int strayScan(const FbSink& fb, const uieng::ChromeOverride& o) {
+    const uieng::Chrome& c = o.c;
+    const uieng::Rect pieces[] = {c.menu, c.wordmark, c.statusCells[0], c.statusCells[1], c.statusCells[2], c.bridge, c.sd,
+                                  c.navCells[0], c.navCells[1], c.navCells[2], c.navCells[3], c.stop,
+                                  o.tiles[0], o.tiles[1], o.tiles[2], o.radar, o.spectrum, o.channel, o.badge};
+    int stray = 0, fx = -1, fy = -1;
+    for (int y = 0; y < fb.H; y++)
+        for (int x = 0; x < fb.W; x++) {
+            if (fb.fb[y * fb.W + x] == pal::VOID) continue;
+            bool ok = false;
+            for (const uieng::Rect& r : pieces) ok = ok || in(x, y, r);
+            if (!ok) { if (!stray) { fx = x; fy = y; } stray++; }
+        }
+    if (stray) printf("       scan %dx%d: %d stray pixels, first at (%d,%d)\n", fb.W, fb.H, stray, fx, fy);
+    return stray;
+}
+
+static FbSink renderScan(uint8_t theme, int W, int H, uint8_t sweep) {
+    pal::setTheme(theme);
+    uieng::activeLayout() = testLayout;
+    FbSink fb(W, H);
+    static scanr::Compositor c;
+    auto sc = scanfix::demo(theme);
+    sc.sweep = sweep; sc.animateSweep = true;
+    c.renderFull(W, H, sc, fb);
+    return fb;
+}
+
+static bool groupLayout(int b, const std::string& pieces, uieng::ChromeOverride& o) {
+    const std::string s = std::string("{\"format\":1,\"") + BKEY[b] + "\":{" + pieces + "}}";
+    themelayout::Layout L; char why[96];
+    const bool ok = themelayout::parse(s.data(), s.size(), L, why, sizeof why) &&
+                    themelayout::resolve(L, (themelayout::Board)b, o, why, sizeof why);
+    if (!ok) printf("  group layout %s: %s\n", BKEY[b], why);
+    return ok;
+}
+
+static void testRadarGroup() {
+    static uieng::ChromeOverride go[2];
+    static uieng::LayoutOverride gl;
+    struct Case { const char* name; std::string pieces[2]; };
+    const uieng::ScanLayout w = uieng::builtinScan(480, 320), c = uieng::builtinScan(320, 240);
+    const Case cases[] = {
+        {"radar r=77 left, spectrum moved", {"\"radar\":" + rj({124, 56, 159, 159}) + ",\"spectrum\":" + rj({300, 210, 150, 50}),
+                                             "\"radar\":" + rj({104, 52, 85, 85}) + ",\"spectrum\":" + rj({200, 140, 110, 40})}},
+        {"radar at the minimum", {"\"radar\":" + rj({w.radar.x, w.radar.y, 53, 53}), "\"radar\":" + rj({c.radar.x, c.radar.y, 53, 53})}},
+        {"radar hidden", {"\"radar\":\"hidden\"", "\"radar\":\"hidden\""}},
+        {"spectrum at its minimum", {"\"spectrum\":" + rj({w.spectrum.x, w.spectrum.y, 42, 22}), "\"spectrum\":" + rj({c.spectrum.x, c.spectrum.y, 42, 22})}},
+    };
+    radargeometry::fallbackCalls() = 0;
+    for (const Case& k : cases) {
+        bool built = true;
+        for (int b = 0; b < 2; b++) built = groupLayout(b, k.pieces[b], go[b]) && built;
+        gl.board[0] = &go[0]; gl.board[1] = &go[1];
+        char tag[128]; snprintf(tag, sizeof tag, "%s: layout resolves", k.name);
+        check(tag, built);
+        testLayout = &gl;
+        for (int b = 0; b < 2; b++) {
+            int stray = 0;
+            for (int t = 0; t < pal::TH_COUNT; t++)
+                for (int sw = 0; sw < ui::SW_COUNT; sw++) stray += strayScan(renderScan((uint8_t)t, BW[b], BH[b], (uint8_t)sw), go[b]);
+            snprintf(tag, sizeof tag, "%s %s: ink only in the pieces (all themes, all sweeps)", BKEY[b], k.name);
+            check(tag, stray == 0);
+        }
+        testLayout = nullptr;
+    }
+    check("no trig ring fallback for any of these radii", radargeometry::fallbackCalls() == 0);
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--write") == 0) return writeGolden();
     printf("== engine pixels\n");
@@ -239,6 +310,7 @@ int main(int argc, char** argv) {
     testInk();
     testScreensInBody();
     testMinimumPieces();
+    testRadarGroup();
     testGolden();   // installing and clearing a layout leaves the built-ins untouched
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;

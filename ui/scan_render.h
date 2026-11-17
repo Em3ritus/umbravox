@@ -1069,15 +1069,17 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     // Channel readout and theme identity above the radar.
     const uieng::Rect hr = L.hero;
     // Theme identity occupies the former field heading, independently of radar clipping.
-    if (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || (sc.theme==pal::TH_COSMICMUFFIN && W<400)) {   // the muffin picture fills the wide radar, so no badge there
+    // Each part of the hero draws in its own rect (uieng::heroParts has the built-in places; a theme layout may move them).
+    const uieng::Rect bg = L.badge, chr = L.channel;
+    if (bg.w > 0 && bg.h > 0 && (pal::centrepiece(sc.theme)==pal::CP_RADAR_EMBLEM || (sc.theme==pal::TH_COSMICMUFFIN && W<400))) {   // the muffin picture fills the wide radar, so no badge there
         const auto* headingEmblem=pal::emblem(sc.theme);
-        const int badgeR=W>=400?27:22;
-        if(headingEmblem)emblemInto(s,*headingEmblem,hr.x+4+badgeR,hr.y+4+badgeR,badgeR,true,pal::artOpacity(sc.theme),false,true);
+        const int badgeR=std::min(bg.w,bg.h)/2-4;   // 27 / 22 at the built-in size
+        if(headingEmblem)emblemInto(s,*headingEmblem,bg.x+bg.w/2,bg.y+bg.h/2,badgeR,true,pal::artOpacity(sc.theme),false,true);
     }
     const int channelScale = W>=400 ? 2 : 1;
-    txt(s, hr.x + hr.w - 4 - Font::width(sc.ch,channelScale), hr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
+    if (chr.w > 0 && chr.h > 0)
+        txt(s, chr.x + chr.w - 4 - Font::width(sc.ch,channelScale), chr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
 
-    const HeroSub hs = heroSub(hr);
     // Center between the top inset and spectrum; retain the approved radar sizes.
     const auto radar = radarBounds(W,H);
     const int fr = (radar.w-5)/2;
@@ -1125,7 +1127,8 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
                         plot(fcx+ix, fcy+iy, ring[i].coverage);
                     }
                 }
-            } else { // other logical sizes retain the original geometry
+            } else { // no table and no cache storage: the slow trig path (counted; tests require it unused)
+                radargeometry::fallbackCalls()++;
                 for (int a=0;a<1440;a++){ const double t=a*3.14159265/720.0;
                     pt(s, fcx+(int)(rr*std::cos(t)+0.5), fcy+(int)(rr*std::sin(t)+0.5), pal::EDGE); }
             }
@@ -1149,7 +1152,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
             int kk=0; for (int n=0;n<7;n++){ const int nk=(kk+3)%7; line(s,vx[kk],vy[kk],vx[nk],vy[nk],pal::EDGE_LIT); kk=nk; }
         }
         if(sty!=ui::SW_RADAR)drawSweepStyle(s,sty,fcx,fcy,fr,sc.now);                   // the chosen search, over the artwork
-        if (W>=400 && ringKind(sc.theme)==RING_RUNES) { // the runic ring: 2x glyphs, lit by the sweep
+        if (W>=400 && fr>=42 && ringKind(sc.theme)==RING_RUNES) {   // under r 42 the 11 px glyphs would collide // the runic ring: 2x glyphs, lit by the sweep
             const int R=runeRingRadius(fr);
             for (int k=0;k<kRunes;k++) {
                 int rx,ry; runePos(k,R,rx,ry);
@@ -1170,7 +1173,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
                 }
             }
         }
-        if (W>=400 && ringKind(sc.theme)==RING_STARS) {  // the galaxy's stars: little sparkles on the ring, flaring as the sweep passes
+        if (W>=400 && fr>=42 && ringKind(sc.theme)==RING_STARS) {  // the galaxy's stars: little sparkles on the ring, flaring as the sweep passes
             const int R=runeRingRadius(fr);
             const uint16_t hue[3]={pal::ICE,pal::MAGENTA,pal::AMBER};
             for (int k=0;k<kRunes;k++) {
@@ -1216,8 +1219,16 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     // (MAGENTA), kCh24..20 (8) are 5 GHz (ICE), so the divider lands at bar 13.
     // Width/pitch derive from the spectrum band so it fits 480 and 320 alike; a
     // thin divider + a label under each group read it as data, not vibe.
-    const int sx0   = hs.spectrum.x;
-    const int pitch = (hs.spectrum.w / kChannels >= 2) ? hs.spectrum.w / kChannels : 2;
+    // The bars sit in the spectrum piece: a label band under them and a gap above the tallest
+    // (Waveshare: inset 1 px, band 14, gap 4; CYD: band 11, gap 7) -- today's numbers at the built-in size.
+    const uieng::Rect sp = L.spectrum;
+    if (sp.w <= 0 || sp.h <= 0) return;   // hidden: nothing below this draws
+    const bool wideSpec = W >= 400;
+    const int specBand = wideSpec ? 14 : 11, specGap = wideSpec ? 4 : 7;
+    const int specX = sp.x + (wideSpec ? 1 : 0), specW = sp.w - (wideSpec ? 3 : 0);
+    struct { int barBase, barMax; } hs{ sp.y + sp.h - specBand, sp.h - specBand - specGap };
+    const int sx0   = specX;
+    const int pitch = (specW / kChannels >= 2) ? specW / kChannels : 2;
     const int bw    = (pitch > 3) ? pitch - 2 : (pitch > 2 ? pitch - 1 : 1);   // readable bar, small gap (don't merge)
     if (fx) fxSpectrumBack(s, sx0, kChannels * pitch, hs.barBase, hs.barMax);
     if (sc.channels && sc.nChannels == kChannels)
@@ -1230,7 +1241,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     if (fx) fxBaseline(s, sx0, kChannels * pitch, hs.barBase, sc.now);
     const int boundX = sx0 + kCh24 * pitch;                   // 2.4 | 5 GHz split (start of bar 13)
     box(s, boundX - 1, hs.barBase - hs.barMax, 1, hs.barMax, pal::EDGE);   // thin band divider
-    const int labY = hr.y + hr.h - 8;
+    const int labY = sp.y + sp.h - 8;
     const bool shortLab = pitch < 4;                           // the narrow right-hand column
     txt(s, sx0,        labY, shortLab ? "2.4G" : "2.4 GHZ", 1, pal::DIM);   // under the 2.4 GHz (pink) group
     txt(s, boundX + 2, labY, shortLab ? "5G" : "5 GHZ", 1, pal::DIM);   // under the 5 GHz (cyan) group

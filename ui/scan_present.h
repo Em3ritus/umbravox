@@ -468,8 +468,9 @@ public:
             const bool covered = lvOld == 1 && lvNew == 1;           // a LOW/MED alert hides the hero, so its radar, channel readout and spectrum need no repaint
             if (p.ch && !covered)   add(scanr::chRect(W_, H_));
             if ((p.chan || p.fxSpec) && !covered) add(scanr::specRect(W_, H_));
-            if ((p.marks || p.sweep) && !covered) {
-                const auto radar = scanr::radarBounds(W_, H_);
+            const auto radarBox = scanr::radarBounds(W_, H_);
+            if ((p.marks || p.sweep) && !covered && radarBox.w > 0) {   // a hidden radar has nothing to repaint
+                const auto radar = radarBox;
                 uieng::Rect boxes[6]; int nb = 0;
                 if (!p.marks && pv.animateSweep && nw.animateSweep) {      // sweep only: just what moved (old and new wedge, arc, ring band...)
                     const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
@@ -488,7 +489,7 @@ public:
             const auto radar = scanr::radarBounds(W_, H_);
             uieng::Rect box = radar;
             const ScanScene& pv = store_[cur_].scene();
-            if (sweepOnly && !wasPending && pv.animateSweep && nw.animateSweep) {
+            if (radar.w > 0 && sweepOnly && !wasPending && pv.animateSweep && nw.animateSweep) {
                 const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
                 box = sv == sn ? scanr::sweepBox(sn, radar, pv.now, nw.now) : radar;
             }

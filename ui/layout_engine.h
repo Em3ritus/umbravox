@@ -176,8 +176,10 @@ inline Bands bands(int W, int H) {
     b.statusTop = c.status.y; b.statusBottom = c.status.y + c.status.h;
     b.navTop = c.nav.y; b.navBottom = c.nav.y + c.nav.h;
     b.bodyTop = std::max(0, c.body.y - 8); b.bodyBottom = std::min(H, c.body.y + c.body.h + 8);
-    // Scan's count tiles change with the body but may sit outside its rows: widen the range over them.
-    for (const Rect& t : activeBoard(W)->tiles)
+    // Scan's count tiles and radar parts change with the body but may sit outside its rows: widen the range over them.
+    const ChromeOverride* o = activeBoard(W);
+    const Rect scanParts[] = {o->tiles[0], o->tiles[1], o->tiles[2], o->radar, o->spectrum, o->channel, o->badge};
+    for (const Rect& t : scanParts)
         if (t.w > 0 && t.h > 0) { b.bodyTop = std::min(b.bodyTop, t.y); b.bodyBottom = std::max(b.bodyBottom, t.y + t.h); }
     return b;
 }
