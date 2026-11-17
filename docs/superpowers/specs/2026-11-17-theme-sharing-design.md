@@ -91,8 +91,8 @@ index.json                       generated list the gallery and the designer rea
 
 ### Submitting (designer)
 - The Share button is enabled when the current pack passes the designer's checks. It downloads `<folder>.zip` (the
-  same zip as "Download pack") and opens the themes repository's issue form in a new tab with the title, theme name,
-  author and target boards pre-filled through the form's URL parameters.
+  same zip as "Download pack") and opens the themes repository's issue form in a new tab with the title, theme name
+  and author pre-filled through the form's URL parameters.
 - The form (a GitHub issue form) has: theme name, author credit, "based on" (optional), a text area to drag the zip into
   (GitHub text areas accept attachments),
   and two required tick boxes: the right-to-share statement and agreement to the content rule.

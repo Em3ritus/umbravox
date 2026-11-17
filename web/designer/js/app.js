@@ -466,30 +466,36 @@ function tick(now) {
 
 // ---------------------------------------------------------------- build + download
 function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip, state.sounds); }
+// Save the pack as <folder>.zip through a temporary link. -> the folder name.
+function saveZip(pack) {
+  const folder = pack.files[0].path.split('/')[0];
+  const blob = new Blob([makeZip(pack.files)], { type: 'application/zip' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: folder + '.zip' });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return folder;
+}
 function download() {
+  const m = $('action-msg');
   try {
-    const pack = currentPack();
-    const folder = pack.files[0].path.split('/')[0];
-    const blob = new Blob([makeZip(pack.files)], { type: 'application/zip' });
-    const a = el('a', { href: URL.createObjectURL(blob), download: folder + '.zip' });
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    const m = $('action-msg'); m.className = 'msg';
+    const folder = saveZip(currentPack());
+    m.className = 'msg';
     m.textContent = 'Downloaded ' + folder + '.zip. Unzip it and copy the ' + folder + ' folder into the themes folder on the SD card.';
-  } catch (e) { const m = $('action-msg'); m.className = 'msg err'; m.textContent = e.message; }
+  } catch (e) { m.className = 'msg err'; m.textContent = e.message; }
 }
 $('btn-download').addEventListener('click', download);
 $('btn-zip2').addEventListener('click', download);
+// Share: save the same zip as Download pack, then open the themes repository's submission form with the fields
+// filled. The page cannot attach the zip to the form; the person drags it in.
 $('btn-share').addEventListener('click', () => {
   if (checksNow.some((c) => c.level === 'error')) return;
-  const before = $('action-msg').textContent;
-  download();                                        // the same zip as Download pack; it sets the message or an error
   const m = $('action-msg');
-  if (m.classList.contains('err')) return;
-  let folder; try { folder = currentPack().files[0].path.split('/')[0]; } catch (e) { m.textContent = before; return; }
-  window.open(shareUrl(currentTheme(), state.basedOn), '_blank', 'noopener');
-  m.className = 'msg';
-  m.textContent = 'Saved ' + folder + '.zip and opened the submission form. Drag the zip into the form, tick the two boxes and submit.';
+  try {
+    const folder = saveZip(currentPack());
+    window.open(shareUrl(currentTheme(), state.basedOn), '_blank', 'noopener');
+    m.className = 'msg';
+    m.textContent = 'Saved ' + folder + '.zip. The submission form should have opened in a new tab: drag the zip into it, tick the two boxes and submit. If no tab opened, allow pop-ups for this page and press Share again.';
+  } catch (e) { m.className = 'msg err'; m.textContent = e.message; }
 });
 $('btn-install').addEventListener('click', () => show('install'));
 
