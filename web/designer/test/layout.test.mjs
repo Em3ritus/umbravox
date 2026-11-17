@@ -94,3 +94,30 @@ test('drafting stays on the target screen', () => {
     assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= 480 && r.y + r.h <= 320, n);
   }
 });
+
+import { withDrafts } from '../js/layout.js';
+
+test('an opened layout.json is checked and saved as it is until the first edit (review I2)', () => {
+  const original = '{"format":7,"waveshare":{"stop":[0,0,96,44],"stop":[0,0,96,44]}}';
+  const L = fromJson(original);
+  assert.equal(toJson(L, NAMES), original, 'the device rules see the file the author opened');
+  const edited = setPiece(L, 'waveshare', 'menu', 'hidden');
+  assert.notEqual(toJson(edited, NAMES), original, 'an edit writes a fresh file');
+});
+
+test('fromJson ignores prototype keys and non-objects, and reports what it left out', () => {
+  const L = fromJson('{"format":1,"waveshare":{"__proto__":[1,2,3,4],"stp":[1,2,3,4],"stop":[1,2,3]},"cyd":"hidden"}', NAMES);
+  assert.equal(Object.getPrototypeOf(L.boards.waveshare), Object.prototype);
+  assert.equal(Object.keys(L.boards.waveshare).length, 0);
+  assert.ok(L.dropped.some((d) => /stp/.test(d)) && L.dropped.some((d) => /stop/.test(d)) && L.dropped.some((d) => /cyd/.test(d)));
+  assert.throws(() => fromJson('null'), /layout\.json/);
+});
+
+test('before saving, a board the author never opened is drafted from the other (review I4)', () => {
+  const L = setPiece(newLayout(), 'waveshare', 'stop', { x: 380, y: 270, w: 90, h: 44 });
+  const D = withDrafts(L, rules, new Set(['waveshare']));
+  assert.ok(D.boards.cyd.stop, 'the CYD got a draft');
+  const visited = withDrafts(L, rules, new Set(['waveshare', 'cyd']));
+  assert.equal(visited.boards.cyd.stop, undefined, 'a board the author opened (and left default) is not drafted over');
+  assert.equal(withDrafts(newLayout(), rules, new Set()).master, null);
+});

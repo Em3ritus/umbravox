@@ -14,6 +14,7 @@ const NOT_TAPPABLE = new Set(['wordmark', 'sd', 'radar', 'spectrum', 'channel', 
 // Pieces drawn at fixed offsets: never smaller than their built-in size (ui/themelayout.cpp); badge >= 24, spectrum >= 42x22.
 const BUILT_IN_FLOOR = new Set(['wordmark', 'sd', 'channel']);
 
+// An edit makes a fresh layout: clone() drops `raw` (the opened file's text) and `dropped`.
 const clone = (L) => ({
   boards: { waveshare: { ...L.boards.waveshare }, cyd: { ...L.boards.cyd } },
   master: L.master,
@@ -50,7 +51,7 @@ export function showPiece(L, board, name) {
   return p.rect ? setPiece(L, board, name, p.rect) : setPiece(L, board, name, null);
 }
 
-export const isEmpty = (L) => BOARD_NAMES.every((b) => Object.keys(L.boards[b]).length === 0);
+export const isEmpty = (L) => !L.raw && BOARD_NAMES.every((b) => Object.keys(L.boards[b]).length === 0);
 
 // Where a piece is on a board: its placed rect, null when hidden, or the default.
 export function rectOf(L, board, name, rules) {
@@ -63,6 +64,7 @@ export function rectOf(L, board, name, rules) {
 // layout.json text: both boards always (the device never guesses a board), pieces in the device's order, only the
 // ones that differ from the default. null when nothing is laid out (the pack then has no layout.json).
 export function toJson(L, names) {
+  if (L.raw) return L.raw;   // an opened file, untouched: the device rules judge exactly what the author opened
   if (isEmpty(L)) return null;
   const out = { format: 1 };
   for (const b of BOARD_NAMES) {
@@ -77,18 +79,42 @@ export function toJson(L, names) {
   return JSON.stringify(out);
 }
 
-export function fromJson(text) {
-  const j = JSON.parse(text);
+// An opened layout.json. The text is kept as `raw` and is what toJson returns (and so what is checked and saved)
+// until the first edit, so a file the device refuses is shown as refused, never quietly rewritten. Entries the editor
+// cannot show are listed in `dropped` (names: the device's piece names, to report a misspelt one). Throws on a file
+// that is not a JSON object.
+const PLAIN = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+export function fromJson(text, names = null) {
+  let j;
+  try { j = JSON.parse(text); } catch (e) { throw new Error('layout.json is not valid JSON'); }
+  if (!PLAIN(j)) throw new Error('layout.json is not a JSON object');
   const L = newLayout();
+  L.raw = text; L.dropped = [];
   for (const b of BOARD_NAMES) {
-    const o = j[b] || {};
-    for (const [n, v] of Object.entries(o)) {
+    if (!(b in j)) continue;
+    const o = j[b];
+    if (!PLAIN(o)) { L.dropped.push(`${b} is not an object`); continue; }
+    for (const n of Object.keys(o)) {
+      const v = o[n];
+      if (BAD_KEYS.has(n) || (names && !names.includes(n))) { L.dropped.push(`${b}: "${n}" is not a piece`); continue; }
       if (v === 'hidden') L.boards[b][n] = { rect: null, hidden: true };
-      else if (Array.isArray(v) && v.length === 4) L.boards[b][n] = { rect: { x: v[0], y: v[1], w: v[2], h: v[3] }, hidden: false };
+      else if (Array.isArray(v) && v.length === 4 && v.every((x) => Number.isInteger(x) && Math.abs(x) < 32768))
+        L.boards[b][n] = { rect: { x: v[0], y: v[1], w: v[2], h: v[3] }, hidden: false };
+      else L.dropped.push(`${b}: ${n} is not [x, y, w, h] or "hidden"`);
     }
   }
-  if (!isEmpty(L)) L.master = Object.keys(L.boards.waveshare).length ? 'waveshare' : 'cyd';
+  if (BOARD_NAMES.some((b) => Object.keys(L.boards[b]).length)) L.master = Object.keys(L.boards.waveshare).length ? 'waveshare' : 'cyd';
   return L;
+}
+
+// Before checking or saving: if one board is laid out and the other was never opened in the editor, draft it, so a
+// saved pack always carries both boards (spec "Two boards"). A board the author opened is left as they left it.
+export function withDrafts(L, rules, visited) {
+  if (!L.master || L.raw) return L;
+  const other = L.master === 'waveshare' ? 'cyd' : 'waveshare';
+  if (visited.has(other) || Object.keys(L.boards[other]).length) return L;
+  return draftOther(L, L.master, other, rules);
 }
 
 const overlaps = (a, b) => a && b && a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

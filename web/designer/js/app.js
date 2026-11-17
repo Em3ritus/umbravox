@@ -22,13 +22,13 @@ import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSecond
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 import { shareUrl, renameWarning, THEMES_SITE } from './share.js';
 import { themeParam, fetchGalleryTheme } from './gallery.js';
-import { newLayout, setPiece, showPiece, isEmpty, toJson, fromJson, rectOf, draftOther, SCREEN } from './layout.js';
+import { newLayout, setPiece, showPiece, isEmpty, toJson, fromJson, rectOf, draftOther, withDrafts, SCREEN } from './layout.js';
 import { toDevice, pickPiece, handleAt, dragTo, nudge } from './layout-edit.js';
 import { PRESETS, presetJson } from './layout-presets.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '',
-  layout: newLayout(), lboard: 'waveshare', lsel: null, presetId: 'standard' };
+  layout: newLayout(), lboard: 'waveshare', lsel: null, presetId: 'standard', lvisited: new Set() };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
@@ -46,7 +46,7 @@ const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
 // ---------------------------------------------------------------- views
 function installBlock() {
   if (!state.theme) return 'Choose a template first.';
-  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds);
+  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds, layoutText(), preview ? (t) => preview.checkLayout(t) : null);
   return g.ok ? null : g.reason;
 }
 function show(view) {
@@ -113,7 +113,8 @@ function begin(theme, emblem, clip = null, sounds = null, from = null) {
   state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
   const preset = PRESETS.find((p) => p.id === state.presetId);
   state.layout = preset && preset.layout ? fromJson(presetJson(preset)) : newLayout();
-  state.lsel = null;
+  state.layout.raw = null;   // a preset is a starting point, not an opened file
+  state.lsel = null; state.lvisited = new Set();
   $('open-msg').textContent = '';
   for (const k of LEVELS) sndSrc[k] = null;
   vidSrc = null; vidFile = null;
@@ -314,7 +315,11 @@ function refreshChecks() {
   if (lt && preview) {
     const v = preview.checkLayout(lt);
     checksNow.push(v.ok ? { level: 'ok', text: 'Layout: the device accepts it on both boards.' } : { level: 'error', text: 'Layout: ' + v.why.replace(/^layout\.json: /, '') });
-  }
+    // The Layout step says it too: the board picture there keeps the last layout the device accepted.
+    const lm = $('layout-msg');
+    if (!v.ok) { lm.className = 'msg err'; lm.textContent = 'The device would refuse this layout: ' + v.why.replace(/^layout\.json: /, '') + '. The picture shows the last layout it accepted.'; }
+    else if (lm.className === 'msg err') { lm.className = 'msg'; lm.textContent = ''; }
+  } else if ($('layout-msg').className === 'msg err') { $('layout-msg').className = 'msg'; $('layout-msg').textContent = ''; }
   const ul = $('checks'); clear(ul);
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
@@ -493,6 +498,7 @@ function saveZip(pack) {
 }
 function download() {
   const m = $('action-msg');
+  if (checksNow.some((c) => c.level === 'error')) { m.className = 'msg err'; m.textContent = 'Fix the errors in the checks first.'; return; }
   try {
     const folder = saveZip(currentPack());
     m.className = 'msg';
@@ -758,7 +764,12 @@ function rules() {
   if (!layoutRules) layoutRules = { names: preview.pieceNames(), defaultRect: (b, n) => preview.defaultRect(b, n) };
   return layoutRules;
 }
-function layoutText() { return preview && !isEmpty(state.layout) ? toJson(state.layout, rules().names) : null; }
+// The layout.json the pack carries: with a board the author never opened drafted from the other (withDrafts).
+function layoutText() {
+  if (!preview) return null;
+  const L = withDrafts(state.layout, rules(), state.lvisited);
+  return isEmpty(L) ? null : toJson(L, rules().names);
+}
 const engineBoard = (b) => (b === 'waveshare' ? 'waveshare' : 'cyd-engine');
 function boardRects(board) {
   const out = {};
@@ -768,11 +779,16 @@ function boardRects(board) {
 function layoutChanged() { changed(); syncLayout(); }
 // An opened pack's layout.json: kept even when the device would refuse it, so the author can fix it in the Layout step
 // (the checks show why, and Download, Install and Share stay closed until it passes).
+// Opened and gallery packs never take the Start page's preset: they have their own layout.json, or none.
 function adoptLayout(text) {
-  if (!text) return;
-  try { state.layout = fromJson(text); }
-  catch (e) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'layout.json is not valid JSON, so the layout was left out.'; return; }
-  state.lsel = null;
+  state.layout = newLayout(); state.lsel = null; state.lvisited = new Set();
+  if (text) {
+    const m = $('action-msg');
+    try {
+      state.layout = fromJson(text, preview ? rules().names : null);
+      if (state.layout.dropped.length) { m.className = 'msg warn'; m.textContent = 'layout.json: ' + state.layout.dropped.join('; ') + '. The Layout step shows the rest; any edit saves a fresh file without these.'; }
+    } catch (e) { m.className = 'msg warn'; m.textContent = e.message + ', so the layout was left out.'; }
+  }
   layoutChanged();
 }
 function enterLayout() { selectBoard(state.lboard); }
@@ -784,7 +800,7 @@ function selectBoard(b) {
     $('layout-msg').className = 'msg'; $('layout-msg').textContent = 'Drafted from the other board. Check it, and drag anything that needs it.';
     changed();
   } else { $('layout-msg').textContent = ''; }
-  state.lboard = b; state.lsel = null;
+  state.lboard = b; state.lsel = null; state.lvisited.add(b);
   for (const t of document.querySelectorAll('[data-lb]')) t.setAttribute('aria-selected', String(t.dataset.lb === b));
   $('layout-cyd-note').hidden = b !== 'cyd';
   syncLayout();
