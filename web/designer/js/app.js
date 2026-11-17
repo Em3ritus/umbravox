@@ -20,9 +20,11 @@ import { loadWasm, W, H, BOARDS } from './preview.js';
 import { grabFrames, grabGifFrames, isGifFile, buildClip, quantizeColour, greyFrames, MAX_COLOUR_FRAMES } from './radarvideo.js';
 import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSeconds, LEVELS } from './alertsound.js';
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
+import { shareUrl, renameWarning, THEMES_SITE } from './share.js';
+import { themeParam, fetchGalleryTheme } from './gallery.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high' };
+const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '' };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
@@ -99,7 +101,9 @@ function buildStart() {
 }
 $('btn-blank').addEventListener('click', () => begin(blankTheme(), null));
 
-function begin(theme, emblem, clip = null, sounds = null) {
+// from: the gallery entry a theme was opened from ({folder, name}); every other start clears it.
+function begin(theme, emblem, clip = null, sounds = null, from = null) {
+  state.basedOn = from ? from.folder : ''; state.basedOnName = from ? from.name : '';
   state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
   $('open-msg').textContent = '';
   for (const k of LEVELS) sndSrc[k] = null;
@@ -294,12 +298,14 @@ function currentTheme() { return themeFromState(state); }
 function refreshChecks() {
   const t = currentTheme();
   checksNow = runChecks(t, state.emblem, state.clip, state.sounds);
+  const rename = renameWarning(t.name, state.basedOnName);
+  if (rename) checksNow.push({ level: 'warn', text: rename });
   const ul = $('checks'); clear(ul);
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
   }
   const bad = checksNow.some((c) => c.level === 'error');
-  for (const id of ['btn-download', 'btn-install']) { $(id).disabled = bad; $(id).title = bad ? 'Fix the errors in the checks first.' : ''; }
+  for (const id of ['btn-download', 'btn-install', 'btn-share']) { $(id).disabled = bad; $(id).title = bad ? 'Fix the errors in the checks first.' : ''; }
   const nav = document.querySelector('.step[data-view="install"]'), why = installBlock();
   nav.disabled = !!why; nav.title = why || '';
 }
@@ -475,7 +481,15 @@ function download() {
 $('btn-download').addEventListener('click', download);
 $('btn-zip2').addEventListener('click', download);
 $('btn-share').addEventListener('click', () => {
-  const m = $('action-msg'); m.className = 'msg'; m.textContent = 'Sharing arrives in a later release. For now, download the pack and send the zip to a friend.';
+  if (checksNow.some((c) => c.level === 'error')) return;
+  const before = $('action-msg').textContent;
+  download();                                        // the same zip as Download pack; it sets the message or an error
+  const m = $('action-msg');
+  if (m.classList.contains('err')) return;
+  let folder; try { folder = currentPack().files[0].path.split('/')[0]; } catch (e) { m.textContent = before; return; }
+  window.open(shareUrl(currentTheme(), state.basedOn), '_blank', 'noopener');
+  m.className = 'msg';
+  m.textContent = 'Saved ' + folder + '.zip and opened the submission form. Drag the zip into the form, tick the two boxes and submit.';
 });
 $('btn-install').addEventListener('click', () => show('install'));
 
@@ -694,6 +708,20 @@ $('btn-usb-send').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- boot
+// "?theme=<folder>": open that gallery theme, through the same checks as a theme opened from files.
+async function openFromGallery() {
+  const folder = themeParam(location.search);
+  if (!folder) return;
+  const msg = $('open-msg'); msg.className = 'msg'; msg.textContent = 'Opening the gallery theme...';
+  const got = await fetchGalleryTheme(folder);
+  if (!got.ok) { msg.className = 'msg err'; msg.textContent = got.error; return; }
+  const r = openPackFiles(got.files);
+  if (!r.ok) { msg.className = 'msg err'; msg.textContent = 'The gallery theme could not be opened: ' + r.error; return; }
+  begin(r.theme, r.emblem, r.clip, r.sounds, { folder, name: String(got.entry.name || r.theme.name) });
+  const m = $('action-msg'); m.className = r.warnings.length ? 'msg warn' : 'msg';
+  m.textContent = 'Opened ' + r.theme.name + ' from the gallery.' + (r.warnings.length ? ' Opened with changes: ' + r.warnings.join(' ') : '');
+}
+
 async function boot() {
   buildPalette();
   syncTabs();
@@ -702,6 +730,8 @@ async function boot() {
   catch (e) { preview = null; $('open-msg').textContent = ''; console.warn('preview unavailable', e); }
   recallBoard(); syncTabs();
   buildStart();
+  $('gallery-link').href = THEMES_SITE;
+  await openFromGallery();
   if (preview && state.theme) refresh();
   if (!preview) {
     const m = $('preview-msg'); m.className = 'msg warn';

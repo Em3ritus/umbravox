@@ -17,3 +17,10 @@ export function shareUrl(theme, basedOn = '') {
   if (FOLDER_RE.test(String(basedOn))) q.set('based-on', String(basedOn));
   return 'https://github.com/' + THEMES_REPO + '/issues/new?' + q.toString();
 }
+
+// A theme opened from the gallery and shared again must take a new name: the gallery refuses a name it already has.
+// -> the warning text, or '' when there is nothing to say.
+export function renameWarning(name, galleryName) {
+  const a = String(name || '').trim().toUpperCase(), b = String(galleryName || '').trim().toUpperCase();
+  return b && a === b ? 'Change the name before sharing: the gallery already has a theme called ' + String(galleryName).trim() + '.' : '';
+}

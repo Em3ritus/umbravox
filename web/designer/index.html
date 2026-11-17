@@ -44,6 +44,7 @@
       <input type="file" id="in-files" multiple accept=".json,.bin" hidden>
       <input type="file" id="in-folder" webkitdirectory hidden>
       <div id="open-msg" class="msg" role="status"></div>
+      <p class="tiny muted">Or <a id="gallery-link" href="#" rel="noopener">browse themes other people have shared</a> and open one here.</p>
     </div>
   </div>
 </section>
@@ -155,7 +156,7 @@
         <div class="actions">
           <button type="button" id="btn-download" class="btn">Download pack</button>
           <button type="button" id="btn-install" class="btn go">Install to SD card</button>
-          <button type="button" id="btn-share" class="btn">Share...</button>
+          <button type="button" id="btn-share" class="btn" aria-describedby="action-msg">Share...</button>
         </div>
         <div id="action-msg" class="msg" role="status"></div>
         <div data-limits="rest"></div>
