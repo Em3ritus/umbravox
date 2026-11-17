@@ -339,6 +339,10 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
         if (s.x < 0 || s.y < 0 || s.x + s.w > W || s.y + s.h > H) return say(why, whyCap, "%s is off screen", name);
         if (tappable(p) && (s.w < MIN_TAP || s.h < MIN_TAP))
             return say(why, whyCap, "%s must be at least 44 px each way", name);
+        if (!tappable(p)) {   // wordmark and sd draw at fixed offsets: anything smaller would spill outside the piece
+            const Rect d = defaultRect(b, (Piece)p);
+            if (s.w < d.w || s.h < d.h) return say(why, whyCap, "%s must be at least its built-in size", name);
+        }
     }
 
     // The body: today's size, centred in the largest area the header and footer leave.

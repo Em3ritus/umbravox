@@ -182,8 +182,29 @@ static void testBands() {
     activeLayout() = nullptr;
 }
 
+// Review I1: a count tile moved outside the body's rows (the CYD row-repaint path) must be inside the body repaint rows.
+static void testTileRows() {
+    for (int b = 0; b < 2; b++) {
+        std::string s = std::string("{\"format\":1,\"") + BKEY[b] + "\":{\"wordmark\":\"hidden\",\"count.wifi\":" +
+                        rj(themelayout::defaultRect((Board)b, themelayout::P_WORDMARK)) + "}}";
+        themelayout::Layout L; char why[96];
+        const bool ok = themelayout::parse(s.data(), s.size(), L, why, sizeof why) && themelayout::resolve(L, (Board)b, ov[b], why, sizeof why);
+        if (!ok) printf("  tile layout %s: %s\n", BKEY[b], why);
+        lo.board[b] = ok ? &ov[b] : nullptr;
+    }
+    activeLayout() = &lo;
+    for (int b = 0; b < 2; b++) {
+        const Bands B = bands(BW[b], BH[b]);
+        const Rect t = ov[b].tiles[0];
+        char tag[96]; snprintf(tag, sizeof tag, "%s: a tile in the header row is inside the body repaint rows", BKEY[b]);
+        check(tag, t.y == 0 && rowsIn(t, B.bodyTop, B.bodyBottom));
+    }
+    activeLayout() = nullptr;
+}
+
 int main() {
     printf("== layout override\n");
+    testTileRows();
     testNoOverride();
     testOverride();
     testOneBoard();

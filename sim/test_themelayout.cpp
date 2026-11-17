@@ -200,8 +200,13 @@ static void testResolve() {
             check(tag, !R(b, std::string("\"") + PIECE_NAME[p] + "\":" + rectJson(r), o, why, sizeof why) &&
                        contains(why, "44"));
         }
-        snprintf(tag, sizeof tag, "%s: wordmark may be 20 tall", BKEY[b]);
+        snprintf(tag, sizeof tag, "%s: wordmark smaller than built-in refused", BKEY[b]);
         r = bc.wordmark; r.h = 20;
+        check(tag, !R(b, "\"wordmark\":" + rectJson(r), o, why, sizeof why) && contains(why, "built-in size"));
+        snprintf(tag, sizeof tag, "%s: tiny sd refused (review: [60,0,2,2] was accepted)", BKEY[b]);
+        check(tag, !R(b, "\"wordmark\":\"hidden\",\"sd\":[60,0,2,2]", o, why, sizeof why) && contains(why, "built-in size"));
+        snprintf(tag, sizeof tag, "%s: wordmark at its built-in size allowed", BKEY[b]);
+        r = bc.wordmark; r.y = 0; r.h = 44;
         check(tag, R(b, "\"wordmark\":" + rectJson(r), o, why, sizeof why) && same(o.c.wordmark, r));
 
         const Piece fixed[] = {P_MENU, P_STOP, P_BRIDGE, P_GPS, P_NODES, P_POWER, P_NAV_SCAN, P_NAV_DOMAIN, P_NAV_CODEX, P_NAV_POI};

@@ -195,12 +195,50 @@ static void testScreensInBody() {
     testLayout = nullptr;
 }
 
+// Review I2: every tappable piece at the 44x44 minimum (shrunk in place) still keeps its ink inside it, on every
+// screen and theme. With the recording control in each of its states, the longest labels draw.
+static void testMinimumPieces() {
+    static uieng::ChromeOverride mo[2];
+    static uieng::LayoutOverride ml;
+    bool built = true;
+    for (int b = 0; b < 2; b++) {
+        std::string pieces;
+        for (int p = 0; p < themelayout::P_N; p++) {
+            if (p == themelayout::P_WORDMARK || p == themelayout::P_SD || p >= themelayout::P_COUNT_WIFI) continue;
+            uieng::Rect r = themelayout::defaultRect((themelayout::Board)b, (themelayout::Piece)p);
+            r.w = 44; r.h = 44;
+            pieces += std::string(pieces.empty() ? "" : ",") + "\"" + themelayout::PIECE_NAME[p] + "\":" + rj(r);
+        }
+        const std::string s = std::string("{\"format\":1,\"") + BKEY[b] + "\":{" + pieces + "}}";
+        themelayout::Layout L; char why[96];
+        const bool ok = themelayout::parse(s.data(), s.size(), L, why, sizeof why) &&
+                        themelayout::resolve(L, (themelayout::Board)b, mo[b], why, sizeof why);
+        if (!ok) printf("  minimum layout %s: %s\n", BKEY[b], why);
+        built = built && ok;
+        ml.board[b] = &mo[b];
+    }
+    check("minimum-size layout resolves", built);
+    testLayout = &ml;
+    for (int b = 0; b < 2; b++) {
+        const int W = BW[b], H = BH[b];
+        for (int s = 0; s < N_SCREENS; s++) {
+            int stray = 0;
+            for (int t = 0; t < pal::TH_COUNT; t++)
+                stray += strayInk(render(s, (uint8_t)t, W, H), mo[b], s == 0 ? mo[b].scanBody : mo[b].c.body, s);
+            char tag[96]; snprintf(tag, sizeof tag, "%s %s: 44-px pieces keep their ink (all themes)", BKEY[b], SCREENS[s]);
+            check(tag, stray == 0);
+        }
+    }
+    testLayout = nullptr;
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--write") == 0) return writeGolden();
     printf("== engine pixels\n");
     testGolden();
     testInk();
     testScreensInBody();
+    testMinimumPieces();
     testGolden();   // installing and clearing a layout leaves the built-ins untouched
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;
