@@ -4,7 +4,7 @@
 
 **Goal:** A Share button in the theme designer that files a submission in a public themes repository, automatic checks that turn it into a pull request with preview pictures, and a gallery whose themes open in the designer.
 
-**Architecture:** Two repositories. The firmware repository (this one, branch `theme-sharing`) gains three pure designer modules, their wiring, and a Node tool that renders a pack to PNG with the real drawing engine. A new themes repository (developed locally in a sibling directory `umbravox-themes`, next to the firmware checkout; it is created on GitHub only when the owner asks) holds the submission form, intake scripts, workflows and the static gallery, and uses the firmware repository at a pinned tag for the pack checker and renderer.
+**Architecture:** Two repositories. The firmware repository (this one, branch `theme-sharing`) gains three pure designer modules, their wiring, and a Node tool that renders a pack to PNG with the real drawing engine. A new themes repository (developed locally in a sibling directory `umbravox-community-themes`, next to the firmware checkout; it is created on GitHub only when the owner asks) holds the submission form, intake scripts, workflows and the static gallery, and uses the firmware repository at a pinned tag for the pack checker and renderer.
 
 **Tech Stack:** Plain ES modules, `node --test`, Node `zlib` (no npm dependencies), GitHub Actions, GitHub Pages, the existing `sim/umbravox --check-pack` and `tools/build-designer-wasm.sh`.
 
@@ -17,7 +17,7 @@
 - No owner real name, email or home path in any tracked file in either repository: `git grep -nE "/home/[a-z]+"` empty before any push.
 - Commits: author `Em3ritus <152051018+Em3ritus@users.noreply.github.com>`, trailer `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`.
 - Tests first; show the failing run before the code.
-- Names used everywhere: themes repository `Em3ritus/umbravox-themes` (placeholder until the owner confirms), themes site `https://em3ritus.github.io/umbravox-themes/`, designer `https://em3ritus.github.io/umbravox/designer/`, form file `submit-theme.yml`, firmware pin tag `v1.2.1` or the first tag that contains Task 4.
+- Names used everywhere: themes repository `Em3ritus/umbravox-community-themes` (placeholder until the owner confirms), themes site `https://em3ritus.github.io/umbravox-community-themes/`, designer `https://em3ritus.github.io/umbravox/designer/`, form file `submit-theme.yml`, firmware pin tag `v1.2.1` or the first tag that contains Task 4.
 - Pack file names are exactly `theme.json`, `emblem.bin`, `radar.vid`, `alert.snd`. Folder rule: `^[A-Za-z0-9_-]{1,31}$`.
 - Submission limits: zip at most 2,097,152 bytes; at most 5 entries; unpacked total at most 2,097,152 bytes; one top-level folder.
 - Limitation 13 in `docs/theme-packs.md` and `web/designer/js/limits.json` stays true: packs are checked for format only.
@@ -41,7 +41,7 @@
 - Test: `web/designer/test/share.test.mjs`
 
 **Interfaces:**
-- Produces: `THEMES_REPO = 'Em3ritus/umbravox-themes'`, `THEMES_SITE = 'https://em3ritus.github.io/umbravox-themes/'`, `FOLDER_RE = /^[A-Za-z0-9_-]{1,31}$/`, `shareUrl(theme, basedOn = '') -> string`.
+- Produces: `THEMES_REPO = 'Em3ritus/umbravox-community-themes'`, `THEMES_SITE = 'https://em3ritus.github.io/umbravox-community-themes/'`, `FOLDER_RE = /^[A-Za-z0-9_-]{1,31}$/`, `shareUrl(theme, basedOn = '') -> string`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -123,7 +123,7 @@ test('the fetched files open through openPackFiles', ...);                     /
 ```js
 test('the Share button no longer says sharing arrives later', () => assert.equal(/Sharing arrives in a later release/.test(read('web/designer/js/app.js')), false));
 test('app.js uses the share link and the gallery loader', () => { const s = read('web/designer/js/app.js'); assert.match(s, /from '\.\/share\.js'/); assert.match(s, /from '\.\/gallery\.js'/); assert.match(s, /themeParam\(location\.search\)/); });
-test('the Start view links to the gallery', () => assert.match(read('web/designer/index.html'), /umbravox-themes/));
+test('the Start view links to the gallery', () => assert.match(read('web/designer/index.html'), /umbravox-community-themes/));
 ```
 Plus: the limits tests expect the new `sharing` entry with text "Sharing needs a GitHub account. Shared themes are public, and you must have the right to share any picture, video or sound in them."
 
@@ -180,7 +180,7 @@ test('two different templates give different cyd.png bytes', ...);
 
 ---
 
-## Part B: themes repository (local directory `umbravox-themes`, `git init`, branch `main`, not pushed)
+## Part B: themes repository (local directory `umbravox-community-themes`, `git init`, branch `main`, not pushed)
 
 ### Task 6: Intake: read the form and unpack the zip safely
 
@@ -226,7 +226,7 @@ test('two different templates give different cyd.png bytes', ...);
 - Consumes: `index.json` (Task 7), `previews/<folder>/cyd.png` and `waveshare.png`, `themes/<folder>/<file>`.
 - Produces: `cardHtml(entry, {designer, repo}) -> string` and `escapeHtml(s)` exported from `site/gallery.js`; the page fetches `index.json` relative to itself and fills `<main id="cards">`.
 
-- [ ] **Step 1: Write the failing tests:** `cardHtml` for an entry named `<b>X</b>` by `A"B` contains the escaped text and no raw `<b>`; contains `href="https://em3ritus.github.io/umbravox/designer/?theme=ember"`; contains both picture paths with `alt` text and `loading="lazy"`; shows "Based on" only when set; contains a report link to `https://github.com/Em3ritus/umbravox-themes/issues/new?template=report-theme.yml&theme=ember`; `index.html` has a viewport meta tag, the content notice text "Themes are made by other people and are checked for format only.", and no external script or stylesheet host.
+- [ ] **Step 1: Write the failing tests:** `cardHtml` for an entry named `<b>X</b>` by `A"B` contains the escaped text and no raw `<b>`; contains `href="https://em3ritus.github.io/umbravox/designer/?theme=ember"`; contains both picture paths with `alt` text and `loading="lazy"`; shows "Based on" only when set; contains a report link to `https://github.com/Em3ritus/umbravox-community-themes/issues/new?template=report-theme.yml&theme=ember`; `index.html` has a viewport meta tag, the content notice text "Themes are made by other people and are checked for format only.", and no external script or stylesheet host.
 - [ ] **Step 2: Run** `npm test` — Expected: FAIL.
 - [ ] **Step 3: Implement.** One column at phone width, 16 px side gutter, dark and light via `prefers-color-scheme`. "Download zip" is built in the browser from the theme's files (copy `makeZip` from the designer into `site/zip.js` with a comment naming its source) so no zip is stored in the repository. An empty index shows "No themes yet."
 - [ ] **Step 4: Run** — Expected: PASS.

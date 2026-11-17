@@ -1,8 +1,8 @@
 // Sharing a theme: where the themes repository and its site are, and the link the Share button opens.
 // Pure: no DOM, so the tests can assert on strings.
 
-export const THEMES_REPO = 'Em3ritus/umbravox-themes';
-export const THEMES_SITE = 'https://em3ritus.github.io/umbravox-themes/';
+export const THEMES_REPO = 'Em3ritus/umbravox-community-themes';
+export const THEMES_SITE = 'https://em3ritus.github.io/umbravox-community-themes/';
 
 // A theme's folder name, the same rule the device applies to a pack folder.
 export const FOLDER_RE = /^[A-Za-z0-9_-]{1,31}$/;

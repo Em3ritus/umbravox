@@ -73,9 +73,9 @@ The owner chose approach 1 on 2026-11-17.
 ## Design
 
 ### Where things live
-- A **separate public repository** (working name `umbravox-themes`, under the same account) holds the approved themes,
+- A **separate public repository** (working name `umbravox-community-themes`, under the same account) holds the approved themes,
   the submission form, the workflows and the gallery page. It publishes its own GitHub Pages site, which is served at
-  `https://em3ritus.github.io/umbravox-themes/`: the same origin as the designer, so the designer can fetch a theme's
+  `https://em3ritus.github.io/umbravox-community-themes/`: the same origin as the designer, so the designer can fetch a theme's
   files directly. (Assistant's call; reason: isolation from the firmware repository.)
 - The firmware repository changes only in the designer (the Share button and loading a theme from the gallery) and in
   the docs.
@@ -150,6 +150,6 @@ There is a clearly marked, empty "content screening" step between 3 and 4 for la
 - The designer in a real browser, desktop and phone width.
 
 ## Open items for the owner
-- The repository name (`umbravox-themes` is a placeholder) and whether its site may be public from day one.
+- The repository name (`umbravox-community-themes` is a placeholder) and whether its site may be public from day one.
 - Wording of the content rule and the right-to-share statement.
 - Whether the owner's own bundled-style packs should seed the gallery.

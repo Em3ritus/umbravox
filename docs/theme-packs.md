@@ -381,7 +381,7 @@ can delete or reboot.
 ## Share a theme
 
 A theme can be offered to everyone through the themes gallery, a separate public repository
-(`Em3ritus/umbravox-themes`) with its own page. **This route is built but not yet live:** the
+(`Em3ritus/umbravox-community-themes`) with its own page. **This route is built but not yet live:** the
 repository and the gallery do not exist until the first release that carries this section's
 designer, and none of it has been run end to end.
 
