@@ -42,9 +42,10 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
     emblem.bin            required only when "centrepiece" is "emblem"
     radar.vid             optional: a looping video for the Waveshare's radar
     alert.snd             optional: your own alert sounds for the Waveshare's speaker (LOW, MED, HIGH)
+    layout.json           optional: moves the header, footer and count tiles (engine screens; written by hand for now)
 ```
 
-The designer writes only these. Any other file in a pack folder
+The designer writes only the first four (it cannot make `layout.json` yet). Any other file in a pack folder
 (a `preview.png`, a readme) is ignored by the device.
 
 ## theme.json
@@ -168,6 +169,41 @@ is skipped with "no room for another clip". The clip counts in the pack's size f
 it gives a pack that crashed another try. While a clip plays the radar repaints in full 12 times a second: measured
 on a Waveshare the scan screen ran at about 14 frames a second instead of about 25.
 
+## layout.json (early: written by hand; the designer cannot make it yet)
+
+`layout.json` moves, resizes or hides the pieces of the shared header and footer, and Scan's three count tiles, on
+the engine screens (the Waveshare 3.5" at 480x320 and the CYD engine build at 320x240). The default CYD release
+draws the older 160x120 screens and ignores this file, as does firmware older than the release that adds it;
+`theme.json` is unchanged, so on those the theme still shows its colours, centrepiece, sweep and alert.
+
+```json
+{ "format": 1,
+  "waveshare": { "stop": [288, 276, 96, 44], "nav.poi": [384, 276, 96, 44], "wordmark": "hidden" },
+  "cyd": { } }
+```
+
+- `format` is required and must be `1`.
+- `waveshare` and `cyd` are each optional. A board the file leaves out keeps the built-in layout.
+- Each piece is `[x, y, width, height]` in that board's pixels, or `"hidden"`. A piece the file leaves out stays
+  where it is built to be. The pieces are `menu`, `wordmark`, `status.gps`, `status.nodes`, `status.power`,
+  `bridge`, `sd`, `nav.scan`, `nav.domain`, `nav.codex`, `nav.poi`, `stop`, `count.wifi`, `count.5g` and
+  `count.ble`. Other names are ignored (later versions add pieces); a key named `script` is refused.
+- Every screen other than Scan draws in the area the header and footer pieces leave free: the device finds the
+  largest free rectangle and centres the screen in it, at its usual size. Scan's radar and any count tile you do
+  not place move with it.
+
+What makes the device refuse a layout (it then uses the built-in layout and keeps the rest of the theme; the reason
+is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
+
+- a piece off the screen;
+- a piece you can tap (everything except `wordmark` and `sd`) smaller than 44 px either way;
+- hiding `menu`, `stop`, `bridge`, a `status.*` cell or a `nav.*` button (only `wordmark`, `sd` and the
+  `count.*` tiles can be hidden);
+- two pieces overlapping, or a count tile over the radar;
+- too little room left for the screens (the free area must be at least 464x216 on the Waveshare and 304x136 on the CYD);
+- a file over 4,096 bytes, or one that is not valid layout JSON (duplicate keys, a value that is not four whole
+  numbers or `"hidden"`, nesting deeper than three levels).
+
 ## Limits
 
 These numbers are the same ones the device and the designer use
@@ -182,6 +218,7 @@ These numbers are the same ones the device and the designer use
 | `header` | 18 characters |
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |
+| `layout.json` | at most 4 KB (4,096 bytes); every tappable piece at least 44x44 px |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
 | `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
 | `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; read from the card when the pack's theme is selected (one set in memory at a time) |

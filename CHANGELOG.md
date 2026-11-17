@@ -6,6 +6,12 @@ history is in git and the release notes.
 ## Unreleased
 
 ### Added
+- **Theme layouts (first part of the full UI overhaul).** A pack may carry `layout.json`, which moves, resizes or
+  hides the header and footer pieces and Scan's count tiles on the engine screens; every engine screen draws in the
+  space they leave, and taps follow the pieces. A layout that breaks a rule (a piece off screen or under 44 px, a
+  control hidden, pieces overlapping, too little room) is skipped on its own and logged; the theme still loads.
+  Written by hand for now; the designer's Layout step comes later. Built-in themes draw exactly as before
+  (`sim/test_engine_pixels` fingerprints all 220 built-in engine renders).
 - **Sharing a theme (designer side; the gallery is not live yet).** The designer's Share button saves the pack zip
   and opens a pre-filled submission form on the themes repository; a designer address ending in `?theme=<folder>`
   opens that gallery theme, fetching only a listed theme's four pack files within their size limits.
