@@ -15,6 +15,7 @@
 #pragma once
 #include "../ui/palette.h"
 #include "../ui/themepack.h"
+#include "../ui/themelayout.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -42,6 +43,9 @@ inline int& emblemsUsed() { static int n = 0; return n; }
 inline uint8_t* clipBuf(int i) { static uint8_t b[themepack::MAX_CLIPS][themepack::MAX_CLIP]; return b[i]; }
 inline themepack::Clip* clipSlot(int i) { static themepack::Clip c[themepack::MAX_CLIPS]; return &c[i]; }
 inline int& clipsUsed() { static int n = 0; return n; }
+
+// A pack's resolved layout, by pal pack slot. Lives as long as the program (pal keeps the pointer).
+inline themelayout::PackLayout* layoutSlot(int s) { static themelayout::PackLayout l[themepack::MAX_PACKS]; return &l[s]; }
 
 inline void fail(char* why, size_t cap, const char* fmt, const char* a = "", unsigned b = 0) {
     if (cap) snprintf(why, cap, fmt, a, b);
@@ -80,8 +84,9 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
     const char* folder = slash ? slash + 1 : dir;
     if (!folderNameOk(folder)) { detail::fail(why, whyCap, "%s", admitWhy(ADMIT_BAD_FOLDER)); return ERR; }
 
-    char jsonPath[460], emblemPath[460], clipPath[460];
+    char jsonPath[460], emblemPath[460], clipPath[460], layoutPath[460];
     snprintf(jsonPath, sizeof jsonPath, "%s/theme.json", dir);
+    snprintf(layoutPath, sizeof layoutPath, "%s/layout.json", dir);
     snprintf(emblemPath, sizeof emblemPath, "%s/emblem.bin", dir);
     snprintf(clipPath, sizeof clipPath, "%s/radar.vid", dir);
 
@@ -140,6 +145,22 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
     if (id < 0) { detail::fail(why, whyCap, "%s", admitWhy(ADMIT_FULL)); return ERR; }
     if (em) detail::emblemsUsed()++;      // that buffer now belongs to the pack
     if (clip) detail::clipsUsed()++;
+
+    // layout.json is optional; a bad one skips only the layout (the reason goes in why, the pack stays).
+    const long long ls = detail::fileSize(layoutPath);
+    if (ls >= 0) {
+        const int s = pal::packSlot((uint8_t)id);
+        static uint8_t lbuf[themelayout::MAX_JSON];
+        if (s < 0) {
+            detail::fail(why, whyCap, "layout.json: no pack slot");
+        } else if ((unsigned long long)ls > themelayout::MAX_JSON) {
+            if (whyCap) snprintf(why, whyCap, "layout.json over %u bytes", (unsigned)themelayout::MAX_JSON);
+        } else if (!detail::readAll(layoutPath, lbuf, (size_t)ls)) {
+            detail::fail(why, whyCap, "layout.json could not be read");
+        } else if (themelayout::build((const char*)lbuf, (size_t)ls, *detail::layoutSlot(s), why, whyCap)) {
+            pal::setPackLayout(id, &detail::layoutSlot(s)->lo);
+        }
+    }
     return id;
 }
 

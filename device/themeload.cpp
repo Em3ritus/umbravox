@@ -30,6 +30,7 @@
 #include "elog.h"
 #include "palette.h"
 #include "themepack.h"
+#include "themelayout.h"
 #include "packmedia.h"
 #include "board.h"
 #include "sound.h"
@@ -60,7 +61,7 @@ uint16_t nSeen = 0;                          // valid-named folders listed
 // what Wi-Fi and BLE run out of.
 struct Scratch {
     char     names[MAX_FOLDERS][32];
-    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS], sndSz[MAX_FOLDERS];
+    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS], sndSz[MAX_FOLDERS], laySz[MAX_FOLDERS];
     union {
         uint8_t      json[MAX_JSON];
         GuardScratch guard;
@@ -88,6 +89,10 @@ uint8_t*    clipBuf = nullptr;
 uint8_t*    sndBuf = nullptr;
 Clip        clipNow;
 Sound       sndNow;
+
+// Each registered pack's resolved layout.json, by pack slot (pal::packSlot). pal keeps a POINTER into it, so the block
+// lives for the whole program: PSRAM, allocated at the first pack that has a layout, never freed.
+themelayout::PackLayout* layouts = nullptr;
 
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
@@ -158,11 +163,12 @@ void measure() {
         S->embSz[i]  = pathOf(path, S->names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
         S->clipSz[i] = pathOf(path, S->names[i], "radar.vid")  ? sdlog::sizeOf(path) : 0;
         S->sndSz[i]  = pathOf(path, S->names[i], "alert.snd")  ? sdlog::sizeOf(path) : 0;
+        S->laySz[i]  = pathOf(path, S->names[i], "layout.json") ? sdlog::sizeOf(path) : 0;
     }
 }
 
 uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot wrap it
-    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i] + S->sndSz[i];   // an edited clip gives the pack another try
+    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i] + S->sndSz[i] + S->laySz[i];   // an edited file gives the pack another try
     return t > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)t;
 }
 
@@ -279,7 +285,31 @@ bool stepLoad(const PackMedia& m) {
     return job.prog.done();
 }
 
-bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, uint32_t packTotal, char (&why)[WHY_CAP]) {
+// layout.json, read after the pack is registered (theme.json's buffer is free again by then). A bad layout skips the
+// layout only: logged, counted with the skipped packs, and the theme keeps its built-in layout.
+void loadLayout(const char* folder, uint32_t size, int id) {
+    char why[WHY_CAP] = "", safe[32];
+    logSafe(safe, folder);
+    const int slot = pal::packSlot((uint8_t)id);
+    char path[PATH_CAP];
+    if (slot < 0) setWhy(why, "layout.json: no pack slot");
+    else if (size > themelayout::MAX_JSON) setWhy(why, "layout.json over %u bytes", (unsigned)themelayout::MAX_JSON);
+    else if (!layouts && !(layouts = (themelayout::PackLayout*)heap_caps_calloc(MAX_PACKS, sizeof(themelayout::PackLayout), MALLOC_CAP_SPIRAM)))
+        setWhy(why, "no PSRAM for layout.json");
+    else {
+        const uint32_t n = pathOf(path, folder, "layout.json") ? sdlog::readFile(path, S->buf.json, (uint32_t)MAX_JSON) : 0;
+        if (n == 0 || n != size) setWhy(why, "layout.json could not be read");
+        else if (themelayout::build((const char*)S->buf.json, n, layouts[slot], why, capOf(why))) {
+            pal::setPackLayout(id, &layouts[slot].lo);
+            elog::event(elog::INFO, "theme", "%s: layout loaded", safe);
+            return;
+        }
+    }
+    countSkip();
+    elog::event(elog::WARN, "theme", "%s: layout skipped: %s", safe, why);
+}
+
+bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, uint32_t ls, uint32_t packTotal, char (&why)[WHY_CAP]) {
     static_assert(std::extent<std::remove_reference_t<decltype(std::declval<Scratch&>().buf.json)>>::value
                   == MAX_JSON, "theme.json buffer");
     char path[PATH_CAP];
@@ -312,6 +342,7 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_
         ctl.setHasMedia(slot, true);
     }
     taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
+    if (ls > 0) loadLayout(folder, ls, id);
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
     elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s%s", folder, p.name, id, cs ? " with a radar clip" : "", ss ? " with alert sounds" : "");
     return true;
@@ -334,7 +365,7 @@ void visit(int i) {
     formatLoading(rec, capOf(rec), folder, total);
     if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
     char why[WHY_CAP] = "unknown";
-    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], total, why);
+    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], S->laySz[i], total, why);
     guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }

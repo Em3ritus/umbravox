@@ -138,7 +138,7 @@ bool slotValue(P& p, const char* piece, Slot& out) {
     if (peek(p, '"')) {
         char v[8]; size_t vl = 0;
         if (!str(p, v, 7, &vl)) return false;
-        if (vl == 6 && memcmp(v, "hidden", 6) == 0) { out.how = HIDDEN; return true; }
+        if (vl == 6 && memcmp(v, "hidden", 6) == 0) { out.how = SLOT_HIDDEN; return true; }
         return failPiece(p, piece, "expected [x, y, w, h] or \"hidden\"");
     }
     if (!eat(p, '[')) return failPiece(p, piece, "expected [x, y, w, h] or \"hidden\"");
@@ -149,7 +149,7 @@ bool slotValue(P& p, const char* piece, Slot& out) {
     }
     if (!eat(p, ']')) return failPiece(p, piece, "expected four numbers");
     if (v[2] <= 0 || v[3] <= 0) return failPiece(p, piece, "width and height must be positive");
-    out.how = PLACED; out.x = v[0]; out.y = v[1]; out.w = v[2]; out.h = v[3];
+    out.how = SLOT_PLACED; out.x = v[0]; out.y = v[1]; out.w = v[2]; out.h = v[3];
     return true;
 }
 
@@ -328,12 +328,12 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     for (int p = 0; p < P_N; p++) {
         const Slot& s = L.slot[b][p];
         const char* name = PIECE_NAME[p];
-        if (s.how == HIDDEN) {
+        if (s.how == SLOT_HIDDEN) {
             if (!hideable(p)) return say(why, whyCap, "%s cannot be hidden", name);
             r[p] = {0, 0, 0, 0};
             continue;
         }
-        if (s.how != PLACED) { r[p] = defaultRect(b, (Piece)p); continue; }
+        if (s.how != SLOT_PLACED) { r[p] = defaultRect(b, (Piece)p); continue; }
         r[p] = {s.x, s.y, s.w, s.h};
         if (s.w <= 0 || s.h <= 0) return say(why, whyCap, "%s: width and height must be positive", name);
         if (s.x < 0 || s.y < 0 || s.x + s.w > W || s.y + s.h > H) return say(why, whyCap, "%s is off screen", name);
@@ -351,7 +351,7 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     const uieng::ScanLayout bs = uieng::builtinScan(W, H);
     auto shifted = [&](Rect q) { return Rect{q.x + dx, q.y + dy, q.w, q.h}; };
     for (int p = P_COUNT_WIFI; p < P_N; p++)
-        if (L.slot[b][p].how == DEFAULT) r[p] = shifted(bs.tiles[p - P_COUNT_WIFI]);
+        if (L.slot[b][p].how == SLOT_DEFAULT) r[p] = shifted(bs.tiles[p - P_COUNT_WIFI]);
 
     const Rect hero = shifted(bs.hero);
     for (int p = 0; p < P_N; p++) {
@@ -389,6 +389,31 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     out.hero = hero;
     out.counts = shifted(bs.counts);
     out.scanBody = shifted(bs.body);
+    if (why && whyCap) why[0] = 0;
+    return true;
+}
+
+bool build(const char* json, size_t n, PackLayout& out, char* why, size_t whyCap) {
+    out.lo.board[0] = out.lo.board[1] = nullptr;
+    if (n > MAX_JSON) {
+        if (why && whyCap) snprintf(why, whyCap, "layout.json over %u bytes", (unsigned)MAX_JSON);
+        return false;
+    }
+    Layout L;   // ~300 bytes on the loader task's stack: never in .bss (internal RAM is scarce)
+    char r[80];
+    if (!parse(json, n, L, r, sizeof r)) {
+        if (why && whyCap) snprintf(why, whyCap, "layout.json: %s", r);
+        return false;
+    }
+    for (int b = 0; b < B_N; b++) {
+        if (!L.has[b]) continue;
+        if (!resolve(L, (Board)b, out.ov[b], r, sizeof r)) {
+            if (why && whyCap) snprintf(why, whyCap, "layout.json: %s", r);
+            out.lo.board[0] = out.lo.board[1] = nullptr;
+            return false;
+        }
+        out.lo.board[b] = &out.ov[b];
+    }
     if (why && whyCap) why[0] = 0;
     return true;
 }

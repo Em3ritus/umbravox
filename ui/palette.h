@@ -10,6 +10,7 @@
 // the cold instrument cyan survives only as ICE, and only ever as *data*.
 #pragma once
 #include <stdint.h>
+namespace uieng { struct LayoutOverride; }
 
 namespace themepack { struct Pack; struct Emblem; struct Clip; struct Sound; }
 
@@ -92,6 +93,10 @@ int addPack(const themepack::Pack& p, const themepack::Emblem* e, const themepac
 // tests): the device never calls this -- its packs are loaded once at boot.
 // It does not repaint: the caller runs setTheme before anything draws.
 void clearPacks();
+// Attach a registered pack's resolved layout (or, with nullptr, detach it). The pointer is
+// kept, so what it points at must live as long as the pack. setTheme installs the active
+// theme's layout as uieng::activeLayout() (nullptr for built-ins and layout-less packs).
+void setPackLayout(int packId, const uieng::LayoutOverride* lo);
 
 // The theme id of an SD pack or bundled crew theme with this exact name, or -1.
 // The original three reserved built-in names do not match.

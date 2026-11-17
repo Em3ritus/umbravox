@@ -26,20 +26,20 @@ static void testParse() {
 
     check("parses a waveshare menu rect",
           P("{\"format\":1,\"waveshare\":{\"menu\":[0,276,44,44]}}", L) && L.has[B_WAVESHARE] && !L.has[B_CYD] &&
-          L.slot[B_WAVESHARE][P_MENU].how == PLACED && L.slot[B_WAVESHARE][P_MENU].x == 0 &&
+          L.slot[B_WAVESHARE][P_MENU].how == SLOT_PLACED && L.slot[B_WAVESHARE][P_MENU].x == 0 &&
           L.slot[B_WAVESHARE][P_MENU].y == 276 && L.slot[B_WAVESHARE][P_MENU].w == 44 &&
           L.slot[B_WAVESHARE][P_MENU].h == 44);
     check("hidden wordmark",
           P("{\"format\":1,\"cyd\":{\"wordmark\":\"hidden\"}}", L) && L.has[B_CYD] &&
-          L.slot[B_CYD][P_WORDMARK].how == HIDDEN);
-    check("absent piece is DEFAULT",
-          P("{\"format\":1,\"cyd\":{\"wordmark\":\"hidden\"}}", L) && L.slot[B_CYD][P_STOP].how == DEFAULT &&
-          L.slot[B_WAVESHARE][P_WORDMARK].how == DEFAULT);
+          L.slot[B_CYD][P_WORDMARK].how == SLOT_HIDDEN);
+    check("absent piece is SLOT_DEFAULT",
+          P("{\"format\":1,\"cyd\":{\"wordmark\":\"hidden\"}}", L) && L.slot[B_CYD][P_STOP].how == SLOT_DEFAULT &&
+          L.slot[B_WAVESHARE][P_WORDMARK].how == SLOT_DEFAULT);
     check("empty board object counts as present", P("{\"format\":1,\"cyd\":{}}", L) && L.has[B_CYD]);
     check("every piece name parses", [&] {
         for (int i = 0; i < P_N; i++) {
             std::string s = std::string("{\"format\":1,\"waveshare\":{\"") + PIECE_NAME[i] + "\":[1,2,50,50]}}";
-            if (!P(s, L) || L.slot[B_WAVESHARE][i].how != PLACED) return false;
+            if (!P(s, L) || L.slot[B_WAVESHARE][i].how != SLOT_PLACED) return false;
         }
         return true;
     }());
@@ -118,8 +118,8 @@ static void testFuzz() {
         for (int b = 0; b < B_N; b++)
             for (int i = 0; i < P_N; i++) {
                 const Slot& sl = L.slot[b][i];
-                if (sl.how != DEFAULT && sl.how != PLACED && sl.how != HIDDEN) invariant = false;
-                if (sl.how == PLACED && (sl.w <= 0 || sl.h <= 0)) invariant = false;
+                if (sl.how != SLOT_DEFAULT && sl.how != SLOT_PLACED && sl.how != SLOT_HIDDEN) invariant = false;
+                if (sl.how == SLOT_PLACED && (sl.w <= 0 || sl.h <= 0)) invariant = false;
             }
     }
     printf("  fuzz: 200000 mutations, %ld accepted\n", accepted);

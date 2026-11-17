@@ -27,9 +27,9 @@ enum Piece : uint8_t {
 };
 extern const char* const PIECE_NAME[P_N];
 
-enum How : uint8_t { DEFAULT = 0, PLACED, HIDDEN };
-struct Slot { How how; int16_t x, y, w, h; };          // x,y,w,h meaningful only when PLACED (w,h > 0)
-struct Layout { bool has[B_N]; Slot slot[B_N][P_N]; };  // zero-initialised = no boards, all DEFAULT
+enum How : uint8_t { SLOT_DEFAULT = 0, SLOT_PLACED, SLOT_HIDDEN };
+struct Slot { How how; int16_t x, y, w, h; };          // x,y,w,h meaningful only when SLOT_PLACED (w,h > 0)
+struct Layout { bool has[B_N]; Slot slot[B_N][P_N]; };  // zero-initialised = no boards, all SLOT_DEFAULT
 
 // Parse n bytes of layout.json. On failure returns false and writes a short
 // reason into why (if whyCap > 0). `out` is only meaningful on true.
@@ -38,11 +38,19 @@ bool parse(const char* json, size_t n, Layout& out, char* why, size_t whyCap);
 Board boardFor(int W);                         // W >= 400 -> B_WAVESHARE, else B_CYD
 uieng::Rect defaultRect(Board b, Piece p);     // the built-in rect of a piece on a board
 
-// Fill every piece of board b (DEFAULT -> its built-in rect, HIDDEN -> {0,0,0,0}),
+// Fill every piece of board b (SLOT_DEFAULT -> its built-in rect, SLOT_HIDDEN -> {0,0,0,0}),
 // place the body and shift Scan's rects, and check the result. Returns false with a
 // reason when any rule fails: a piece off screen, a tappable piece under 44 px, a
 // piece that cannot be hidden, two pieces overlapping, a tile over the radar, or too
 // little room left for the body. The only way to make a ChromeOverride.
 bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, size_t whyCap);
+
+// A pack's resolved layout, as pal keeps it. lo.board[b] points into ov[b] (or is null
+// for a board the file leaves out), so a PackLayout must stay where build() filled it.
+struct PackLayout { uieng::LayoutOverride lo; uieng::ChromeOverride ov[B_N]; };
+
+// parse + resolve every board the file gives. False with "layout.json: <reason>" (or
+// "layout.json over 4096 bytes") in why; out.lo is then all null.
+bool build(const char* json, size_t n, PackLayout& out, char* why, size_t whyCap);
 
 }  // namespace themelayout
