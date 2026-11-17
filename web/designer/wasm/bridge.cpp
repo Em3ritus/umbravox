@@ -234,6 +234,14 @@ EMSCRIPTEN_KEEPALIVE void uv_render(int theme, int screen, int frame, int sweep,
 
 // The Waveshare 3.5" engine UI (480x320), one frame as RGBA. Same arguments as uv_render plus the alert's confidence
 // (ui::CONF_LOW 0, MED 1, HIGH 2); screen 4 is ASPECT. The drawing is ui/preview_ws.h, shared with the host reference.
+// The engine UI at w x h (480x320 Waveshare or 320x240 CYD engine build): what layout.json changes.
+EMSCRIPTEN_KEEPALIVE void uv_render_engine(int theme, int screen, int frame, int sweep,
+                                           int alert_style, int alert_conf, int w, int h, unsigned char* out) {
+    if (!out || w < 1 || h < 1 || w > prevws::W || h > prevws::H) return;
+    static uint16_t px[prevws::W * prevws::H];
+    prevws::render(theme, screen, frame, sweep, alert_style, alert_conf, px, w, h);
+    for (int i = 0; i < w * h; i++) rgb565ToRgba(px[i], out + 4 * i);
+}
 EMSCRIPTEN_KEEPALIVE int uv_ws_width() { return prevws::W; }
 EMSCRIPTEN_KEEPALIVE int uv_ws_height() { return prevws::H; }
 EMSCRIPTEN_KEEPALIVE void uv_render_ws(int theme, int screen, int frame, int sweep,

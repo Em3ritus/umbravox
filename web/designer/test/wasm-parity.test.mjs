@@ -484,3 +484,61 @@ test('layout: a refused layout.json refuses the draft with the reason, keeping t
   assert.equal(id, -7);
   assert.match(M.UTF8ToString(M._uv_error()), /layout\.json: stop cannot be hidden/);
 });
+
+// ---- Plan 3 Task 2: the engine UI at 320x240 (the CYD engine build), for the Layout step's CYD tab ----
+const CYD_W = 320, CYD_H = 240;
+function engWasm(theme, screen, frame, conf = 2) {
+  const n = CYD_W * CYD_H * 4;
+  const ptr = M._malloc(n);
+  try {
+    M._uv_render_engine(theme, WS_SCREEN[screen], frame, -1, -1, conf, CYD_W, CYD_H, ptr);
+    return M.HEAPU8.slice(ptr, ptr + n);
+  } finally { M._free(ptr); }
+}
+function engSim(theme, screen, frame, packDir = null, conf = 2) {
+  const out = path.join(tmp, `e${simN++}.rgba`);
+  const args = [String(theme), String(WS_SCREEN[screen]), String(frame), '-1', '-1', String(conf), out, '--size', '320x240'];
+  if (packDir) args.push('--pack', packDir);
+  run(WS_SIM, args);
+  const b = fs.readFileSync(out);
+  assert.equal(b.length, CYD_W * CYD_H * 4);
+  return new Uint8Array(b);
+}
+function engSame(name, a, b) {
+  if (Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0) return;
+  let px = 0;
+  for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) px++;
+  assert.fail(`${name}: ${px} of ${CYD_W * CYD_H} pixels differ`);
+}
+
+test('engine 320x240: every built-in theme draws as the simulator draws it', () => {
+  M._uv_clear_packs();
+  for (let t = 0; t < BUILTIN_COUNT; t++)
+    for (const screen of ['scan', 'menu'])
+      for (const frame of [0, 24]) engSame(`engine 320x240 theme ${t} ${screen} ${frame}`, engWasm(t, screen, frame), engSim(t, screen, frame));
+});
+
+test('engine 320x240: a CYD layout shows in the 320x240 preview', () => {
+  const dir = path.join(tmp, `cyd-layout-${simN++}`, 'lay');
+  fs.mkdirSync(dir, { recursive: true });
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  fs.writeFileSync(path.join(dir, 'theme.json'), json);
+  const layout = Buffer.from(JSON.stringify({ format: 1, cyd: { wordmark: 'hidden', sd: 'hidden' } }));
+  fs.writeFileSync(path.join(dir, 'layout.json'), layout);
+  M._uv_clear_packs();
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(layout), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.ok(id >= 0, M.UTF8ToString(M._uv_error()));
+  const withLayout = engWasm(id, 'scan', 24);
+  engSame('cyd layout pack', withLayout, engSim(id, 'scan', 24, dir));
+  M._uv_clear_packs();
+  const plain = withBytes(new Uint8Array(json), (jp, jl) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, 0, 0));
+  assert.notDeepEqual(engWasm(plain, 'scan', 24), withLayout);
+});
+
+test('engine 320x240: the preview wrapper draws the cyd-engine board', async () => {
+  const { createPreview } = await import('../js/preview.js');
+  const P = createPreview(M);
+  assert.ok(P.hasEngine());
+  M._uv_clear_packs();
+  engSame('wrapper cyd-engine', P.renderBuiltin(0, 'scan', 24, { board: 'cyd-engine' }), engWasm(0, 'scan', 24));
+});

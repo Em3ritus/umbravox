@@ -9,6 +9,8 @@ import { sweepId, startSweep } from './model.js';
 export const BOARDS = {
   cyd: { id: 'cyd', name: 'CYD 2.8" (320x240)', w: 160, h: 120, screens: ['scan', 'mesh', 'alert', 'menu'] },
   waveshare: { id: 'waveshare', name: 'Waveshare 3.5" (480x320)', w: 480, h: 320, screens: ['scan', 'mesh', 'alert', 'menu', 'aspect'] },
+  // The CYD's engine build at full size: what layout.json changes (the default CYD release draws the 160x120 screens).
+  'cyd-engine': { id: 'cyd-engine', name: 'CYD 2.8" engine build (320x240)', w: 320, h: 240, screens: ['scan', 'mesh', 'alert', 'menu', 'aspect'] },
 };
 export const W = BOARDS.cyd.w, H = BOARDS.cyd.h;     // the original exports: the CYD
 export const SCREENS = { scan: 0, mesh: 1, alert: 2, menu: 3, aspect: 4 };
@@ -26,12 +28,13 @@ export function createPreview(M) {
   };
 
   const hasWs = typeof M._uv_render_ws === 'function';
+  const hasEngine = typeof M._uv_render_engine === 'function';
 
   // opts: {board: 'cyd' (default) | 'waveshare', alertConf: 'low' | 'med' | 'high' (Waveshare only; default high)}.
   function paint(theme, screen, frame, sweep, opts = {}) {
     const board = opts.board ?? 'cyd';
     const b = BOARDS[board];
-    if (!b || (board === 'waveshare' && !hasWs)) throw new Error('unknown board ' + board);
+    if (!b || (board === 'waveshare' && !hasWs) || (board === 'cyd-engine' && !hasEngine)) throw new Error('unknown board ' + board);
     if (!b.screens.includes(screen)) throw new Error(`the ${board} preview has no ${screen} screen`);
     const conf = ALERT_CONFS[opts.alertConf ?? 'high'];
     if (conf === undefined) throw new Error('unknown alertConf ' + opts.alertConf);
@@ -40,6 +43,7 @@ export function createPreview(M) {
     try {
       // Alert style is left to the theme: a pack plays the one rite its theme.json names.
       if (board === 'waveshare') M._uv_render_ws(theme, SCREENS[screen], frame, sweep, -1, conf, ptr);
+      else if (board === 'cyd-engine') M._uv_render_engine(theme, SCREENS[screen], frame, sweep, -1, conf, b.w, b.h, ptr);
       else M._uv_render(theme, SCREENS[screen], frame, sweep, -1, ptr);
       return M.HEAPU8.slice(ptr, ptr + bytes);
     } finally { M._free(ptr); }
@@ -68,6 +72,8 @@ export function createPreview(M) {
     hasDraft: () => draft !== null,
     // The boards this build of the wasm can draw ('waveshare' needs uv_render_ws).
     boards: () => (hasWs ? ['cyd', 'waveshare'] : ['cyd']),
+    // The CYD engine build's 320x240 screen (the Layout step's CYD tab); not offered in the Design step's board picker.
+    hasEngine: () => hasEngine,
     // One frame of the current draft as RGBA: 160x120 for the CYD, 480x320 for the Waveshare.
     renderDraft(screen, frame, opts) {
       if (!draft) throw new Error('no draft loaded');
