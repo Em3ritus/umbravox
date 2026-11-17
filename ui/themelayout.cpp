@@ -391,6 +391,8 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     c.nav = bbox(r, foot, 5);
     for (int i = 0; i < 3; i++) out.tiles[i] = r[P_COUNT_WIFI + i];
     out.hero = hero;
+    out.radar = shifted(bs.radar); out.spectrum = shifted(bs.spectrum);
+    out.channel = shifted(bs.channel); out.badge = shifted(bs.badge);
     out.counts = shifted(bs.counts);
     out.scanBody = shifted(bs.body);
     if (why && whyCap) why[0] = 0;

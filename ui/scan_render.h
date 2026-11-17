@@ -781,31 +781,12 @@ inline HeroSub heroSub(uieng::Rect hr) {
 }
 
 // Shared geometry for drawing and narrow animation invalidation.
-inline uieng::Rect radarBounds(int W, int H) {
-    const auto hr=uieng::scan(W,H).hero;
-    if (W>=400) {                                   // layout A: a big radar, left of the right-hand column
-        const int r=102, cx=hr.x+168, cy=hr.y+hr.h/2;
-        return {cx-r-2,cy-r-2,2*r+5,2*r+5};
-    }
-    const auto hs=heroSub(hr);
-    const auto f=hs.field;
-    const int cx = f.x+f.w/2;
-    const int top = hr.y+4, bottom = hs.barBase-hs.barMax-2;
-    // Compact panels retain the accepted optical lift.
-    const int cy = (top+bottom)/2 - 2;
-    const int r = std::min(f.w/2-4,(bottom-top)/2);
-    return {cx-r-2,cy-r-2,2*r+5,2*r+5}; // include the largest marker half-size
-}
+// The radar's box (uieng::heroParts has the built-in formulas; a theme layout may place it).
+inline uieng::Rect radarBounds(int W, int H) { return uieng::scan(W,H).radar; }
 // Dirty regions of the wide layout (layout A) outside the radar: the channel readout (wide enough for an
 // 8-glyph "CH 165" style string, right-aligned) and the spectrum column with its labels.
-inline uieng::Rect chRect(int W, int H) {
-    const auto hr = uieng::scan(W, H).hero;
-    return { hr.x + hr.w - 4 - 96, hr.y, 100, 24 };
-}
-inline uieng::Rect specRect(int W, int H) {
-    const auto hr = uieng::scan(W, H).hero; const auto hs = heroSub(hr);
-    return { hs.side.x, hs.spectrum.y, hs.side.w, hr.y + hr.h - hs.spectrum.y };
-}
+inline uieng::Rect chRect(int W, int H) { return uieng::scan(W, H).channel; }
+inline uieng::Rect specRect(int W, int H) { return uieng::scan(W, H).spectrum; }
 inline uint32_t sweepPhase(uint32_t now) { return uint32_t(sweepAngle(now)) * 72u / 1024u; }   // coarse, kept for callers that want a step count
 
 // --- shared design-1 chrome (header + nav): composed by EVERY engine screen ---

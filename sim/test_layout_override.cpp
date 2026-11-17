@@ -202,8 +202,34 @@ static void testTileRows() {
     activeLayout() = nullptr;
 }
 
+// Plan 2 Task 2: the hero's parts are scan() rects, equal to today's formulas.
+static void testHeroParts() {
+    activeLayout() = nullptr;
+    const ScanLayout w = scan(480, 320), c = scan(320, 240);
+    check("waveshare radar {188,56,209,209}", w.radar == Rect{188, 56, 209, 209});
+    check("waveshare spectrum {398,194,66,74}", w.spectrum == Rect{398, 194, 66, 74});
+    check("waveshare channel {364,52,100,24}", w.channel == Rect{364, 52, 100, 24});
+    check("waveshare badge {124,52,62,62}", w.badge == Rect{124, 52, 62, 62});
+    check("cyd radar {151,52,115,115}", c.radar == Rect{151, 52, 115, 115});
+    check("cyd spectrum {138,162,140,26}", c.spectrum == Rect{138, 162, 140, 26});
+    check("cyd channel {252,52,60,16}", c.channel == Rect{252, 52, 60, 16});
+    check("cyd badge {104,52,52,52}", c.badge == Rect{104, 52, 52, 52});
+    // With a layout that shifts the body, the parts shift with the hero.
+    build();
+    activeLayout() = &lo;
+    for (int b = 0; b < 2; b++) {
+        const ScanLayout s = scan(BW[b], BH[b]), e = builtinScan(BW[b], BH[b]);
+        const int dx = s.hero.x - e.hero.x, dy = s.hero.y - e.hero.y;
+        auto sh = [&](Rect r) { return Rect{r.x + dx, r.y + dy, r.w, r.h}; };
+        char tag[64]; snprintf(tag, sizeof tag, "%s: parts shift with the hero", BKEY[b]);
+        check(tag, dy == 44 && s.radar == sh(e.radar) && s.spectrum == sh(e.spectrum) && s.channel == sh(e.channel) && s.badge == sh(e.badge));
+    }
+    activeLayout() = nullptr;
+}
+
 int main() {
     printf("== layout override\n");
+    testHeroParts();
     testTileRows();
     testNoOverride();
     testOverride();

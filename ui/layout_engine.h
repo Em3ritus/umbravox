@@ -63,7 +63,38 @@ struct ScanLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
     Rect counts, hero, tiles[3], bridge;
     Rect wordmark, stop;
+    Rect radar, spectrum, channel, badge;   // the hero's parts (radar = its box incl. the 2 px marker margin)
 };
+
+// The hero's parts as the built-in layout places them in a hero rect: today's formulas
+// (scan_render.h heroSub/radarBounds/chRect/specRect and the badge offsets), moved here
+// so a theme layout can place each part. `wide` is the board (W >= 400).
+struct HeroParts { Rect radar, spectrum, channel, badge; };
+inline HeroParts heroParts(int W, Rect hr) {
+    HeroParts p{};
+    if (W >= 400) {
+        const int r = 102, cx = hr.x + 168, cy = hr.y + hr.h / 2;
+        p.radar = {cx - r - 2, cy - r - 2, 2 * r + 5, 2 * r + 5};
+        const int barMax = 56, barBase = hr.y + hr.h - 14, sx = hr.x + hr.w - 66;
+        const int top = barBase - barMax - 4;
+        p.spectrum = {sx, top, 66, hr.y + hr.h - top};
+        p.channel = {hr.x + hr.w - 100, hr.y, 100, 24};
+        p.badge = {hr.x, hr.y, 2 * 27 + 8, 2 * 27 + 8};
+        return p;
+    }
+    // compact: the field between a 16 px heading and a 26 px spectrum strip
+    const int fx = hr.x + 2, fw = hr.w - 4;
+    const int sw = std::min(140, hr.w - 8);
+    p.spectrum = {hr.x + (hr.w - sw) / 2, hr.y + hr.h - 26, sw, 26};
+    const int barBase = hr.y + hr.h - 11, barMax = 8;
+    const int cx = fx + fw / 2, top = hr.y + 4, bottom = barBase - barMax - 2;
+    const int cy = (top + bottom) / 2 - 2;                      // the accepted optical lift
+    const int r = std::min(fw / 2 - 4, (bottom - top) / 2);
+    p.radar = {cx - r - 2, cy - r - 2, 2 * r + 5, 2 * r + 5};
+    p.channel = {hr.x + hr.w - 60, hr.y, 60, 16};
+    p.badge = {hr.x, hr.y, 2 * 22 + 8, 2 * 22 + 8};
+    return p;
+}
 inline ScanLayout builtinScan(int W, int H) {   // the built-in geometry; scan() may override it
     const Chrome c = builtinChrome(W, H);               // design-1 bands, single-sourced
     ScanLayout s{};
@@ -85,6 +116,8 @@ inline ScanLayout builtinScan(int W, int H) {   // the built-in geometry; scan()
     }
     s.bridge = c.bridge;
     s.counts = {s.tiles[0].x, s.tiles[0].y, s.tiles[0].w, H - 104};
+    const HeroParts hp = heroParts(W, s.hero);
+    s.radar = hp.radar; s.spectrum = hp.spectrum; s.channel = hp.channel; s.badge = hp.badge;
     return s;
 }
 
@@ -96,6 +129,7 @@ struct ChromeOverride {
     Chrome c;
     Rect tiles[3];
     Rect hero, counts, scanBody;
+    Rect radar, spectrum, channel, badge;   // the hero's parts (hidden = zero rect)
 };
 
 // The active theme's layout, one per board ([0] Waveshare W>=400, [1] CYD). Installed
@@ -121,6 +155,7 @@ inline ScanLayout scan(int W, int H) {
     s.counts = o->counts; s.hero = o->hero;
     for (int i = 0; i < 3; i++) s.tiles[i] = o->tiles[i];
     s.bridge = o->c.bridge; s.wordmark = o->c.wordmark; s.stop = o->c.stop;
+    s.radar = o->radar; s.spectrum = o->spectrum; s.channel = o->channel; s.badge = o->badge;
     return s;
 }
 
