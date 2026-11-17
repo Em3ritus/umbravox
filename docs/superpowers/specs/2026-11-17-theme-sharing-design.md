@@ -93,7 +93,8 @@ index.json                       generated list the gallery and the designer rea
 - The Share button is enabled when the current pack passes the designer's checks. It downloads `<folder>.zip` (the
   same zip as "Download pack") and opens the themes repository's issue form in a new tab with the title, theme name,
   author and target boards pre-filled through the form's URL parameters.
-- The form (a GitHub issue form) has: theme name, author credit, "based on" (optional), a field to drag the zip into,
+- The form (a GitHub issue form) has: theme name, author credit, "based on" (optional), a text area to drag the zip into
+  (GitHub text areas accept attachments),
   and two required tick boxes: the right-to-share statement and agreement to the content rule.
 - The page tells the user, before leaving, that they must drag the saved zip into the form.
 
@@ -118,6 +119,9 @@ There is a clearly marked, empty "content screening" step between 3 and 4 for la
 ### Gallery
 - A static page: one card per theme with name, author, "based on", both pictures and two actions: **Open in designer**
   and **Download zip**. Works at phone width. A "Report a theme" link opens a pre-filled report issue.
+- The gallery shows pictures only. A theme's video and alert sounds are seen and heard after opening it in the designer
+  (assistant's call; keeps the page light).
+- If a submission issue is edited, the checks run again and update the same pull request.
 - A short content rule and a notice that themes are checked for format only and are made by other people.
 
 ### Opening a gallery theme in the designer
