@@ -435,3 +435,52 @@ test('colour clip: wasm equals the host engine, shows its own colours, and diffe
   assert.notEqual(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0, 'the palette changes the picture');
   M._uv_clear_packs();
 });
+
+// ---- Plan 3: the layout rules and layout.json through the bridge (the device's own themelayout code) ----
+const PIECES = ['menu', 'wordmark', 'status.gps', 'status.nodes', 'status.power', 'bridge', 'sd', 'nav.scan', 'nav.domain',
+  'nav.codex', 'nav.poi', 'stop', 'count.wifi', 'count.5g', 'count.ble', 'radar', 'spectrum', 'channel', 'badge'];
+
+test('layout: piece names, defaults and the verdict come from the device code', async () => {
+  const { createPreview } = await import('../js/preview.js');
+  const P = createPreview(M);
+  assert.deepEqual(P.pieceNames(), PIECES);
+  assert.deepEqual(P.defaultRect('waveshare', 'stop'), { x: 384, y: 276, w: 96, h: 44 });
+  assert.deepEqual(P.defaultRect('cyd', 'radar'), { x: 151, y: 52, w: 115, h: 115 });
+  const ok = JSON.stringify({ format: 1, waveshare: { wordmark: 'hidden' }, cyd: { wordmark: 'hidden' } });
+  assert.deepEqual(P.checkLayout(ok), { ok: true });
+  const bad = P.checkLayout('{"format":1,"cyd":{"menu":"hidden"}}');
+  assert.equal(bad.ok, false);
+  assert.match(bad.why, /menu cannot be hidden/);
+  assert.match(P.checkLayout('{"format":1,').why, /layout\.json/);
+});
+
+test('layout: a pack with layout.json draws in wasm exactly as the simulator draws it', () => {
+  const dir = path.join(tmp, `layout-pack-${simN++}`, 'lay');
+  fs.mkdirSync(dir, { recursive: true });
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  fs.writeFileSync(path.join(dir, 'theme.json'), json);
+  const layout = Buffer.from(JSON.stringify({ format: 1, waveshare: { stop: [288, 276, 96, 44], 'nav.poi': [384, 276, 96, 44], wordmark: 'hidden' } }));
+  fs.writeFileSync(path.join(dir, 'layout.json'), layout);
+  M._uv_clear_packs();
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(layout), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.ok(id >= 0, M.UTF8ToString(M._uv_error()));
+  for (const frame of [0, 24]) {
+    const out = path.join(tmp, `w${simN++}.rgba`);
+    run(WS_SIM, [String(id), String(WS_SCREEN.scan), String(frame), '-1', '-1', '2', out, '--pack', dir]);
+    wsSame(`layout pack scan frame ${frame}`, wsWasm(id, 'scan', frame, -1, -1, 2), new Uint8Array(fs.readFileSync(out)));
+  }
+  // and the layout really moved STOP: the wasm frame differs from the same pack without it
+  const withLayout = wsWasm(id, 'scan', 24, -1, -1, 2);
+  M._uv_clear_packs();
+  const plain = withBytes(new Uint8Array(json), (jp, jl) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, 0, 0));
+  assert.notDeepEqual(wsWasm(plain, 'scan', 24, -1, -1, 2), withLayout);
+});
+
+test('layout: a refused layout.json refuses the draft with the reason, keeping the last good one', () => {
+  M._uv_clear_packs();
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  const bad = Buffer.from('{"format":1,"cyd":{"stop":"hidden"}}');
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(bad), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.equal(id, -7);
+  assert.match(M.UTF8ToString(M._uv_error()), /layout\.json: stop cannot be hidden/);
+});

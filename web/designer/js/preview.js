@@ -49,14 +49,16 @@ export function createPreview(M) {
     // Try a draft. {ok:true, id} on success; {ok:false, error} otherwise, and the
     // previous good draft stays on screen.
     // clip: an optional radar clip (js/radarvideo.js buildClip), loaded with the pack exactly as the board reads radar.vid.
-    loadDraft(theme, emblem, clip = null) {
+    // layout: optional layout.json text (js/layout.js toJson); refused by the device rules -> {ok:false, error}.
+    loadDraft(theme, emblem, clip = null, layout = null) {
       let pack;
       try { pack = buildPack(theme, emblem, clip); } catch (e) { return { ok: false, error: e.message }; }
       const named = (n) => pack.files.find((f) => f.path.endsWith('/' + n));
       const json = named('theme.json').data;
       const emb = named('emblem.bin') ? named('emblem.bin').data : null;
       const vid = named('radar.vid') ? named('radar.vid').data : null;
-      const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => withBytes(vid, (cp, cl) => M._uv_load_pack(jp, jl, ep, el, cp, cl))));
+      const lay = layout ? new TextEncoder().encode(layout) : null;
+      const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => withBytes(vid, (cp, cl) => withBytes(lay, (lp, ll) => M._uv_load_pack(jp, jl, ep, el, cp, cl, lp, ll)))));
       if (id < 0) return { ok: false, error: M.UTF8ToString(M._uv_error()) };
       // Only ever a sweep the pack offers.
       const name = startSweep(theme);
@@ -70,6 +72,27 @@ export function createPreview(M) {
     renderDraft(screen, frame, opts) {
       if (!draft) throw new Error('no draft loaded');
       return paint(draft.id, screen, frame, draft.sweep, opts);
+    },
+    // The layout rules, from the device's own code (ui/themelayout.*): never retyped in JS.
+    pieceNames() {
+      const n = M._uv_piece_count();
+      return Array.from({ length: n }, (_, i) => M.UTF8ToString(M._uv_piece_name(i)));
+    },
+    defaultRect(board, piece) {
+      const b = board === 'waveshare' ? 0 : board === 'cyd' ? 1 : -1;
+      const i = this.pieceNames().indexOf(piece);
+      if (b < 0 || i < 0) throw new Error(`unknown board or piece: ${board} ${piece}`);
+      const p = M._malloc(16);
+      try {
+        M._uv_layout_default(b, i, p);
+        const v = new Int32Array(M.HEAPU8.buffer.slice(p, p + 16));
+        return { x: v[0], y: v[1], w: v[2], h: v[3] };
+      } finally { M._free(p); }
+    },
+    checkLayout(text) {
+      const bytes = new TextEncoder().encode(text);
+      const ok = withBytes(bytes, (p, l) => M._uv_layout_check(p, l));
+      return ok ? { ok: true } : { ok: false, why: M.UTF8ToString(M._uv_error()) };
     },
     // One frame of a built-in (0 UMBRAVOX, 1 BAPH0MAU5, 2 COSMIC MUFFIN).
     renderBuiltin(id, screen, frame, opts) { return paint(id, screen, frame, -1, opts); },

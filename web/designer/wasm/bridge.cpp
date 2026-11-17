@@ -17,6 +17,7 @@
 #include "../../../ui/palette.h"
 #include "../../../ui/signatures.h"
 #include "../../../ui/themepack.h"
+#include "../../../ui/themelayout.h"
 #include "../../../ui/preview_ws.h"
 #include <emscripten/emscripten.h>
 #include <stdarg.h>
@@ -33,6 +34,7 @@ enum {
     UV_ERR_ADMIT  = -4,   // themepack::admit refused (reserved name, ...)
     UV_ERR_FULL   = -5,   // pal::addPack refused (cannot happen with one draft)
     UV_ERR_CLIP   = -6,   // radar.vid over-size or refused by parseClip
+    UV_ERR_LAYOUT = -7,   // layout.json over-size or refused by themelayout::build (the device would skip the layout)
 };
 
 char g_err[128] = "";
@@ -87,12 +89,16 @@ EMSCRIPTEN_KEEPALIVE void uv_clear_packs() {
 // Parse and admit a draft pack, in sim/packload.h's order and with its rules:
 // sizes -> parse -> emblem (only when the centrepiece is emblem) -> admit ->
 // register. Returns the theme id (>= 0) or a negative UV_ERR_*.
+// The draft's layout.json, as pal keeps it (a pointer): static, and rebuilt in place only once the draft is accepted.
+themelayout::PackLayout g_layout, g_layoutProbe;
+
 EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
                                       const unsigned char* emblem, int emblem_len,
-                                      const unsigned char* clip, int clip_len) {
+                                      const unsigned char* clip, int clip_len,
+                                      const char* layout, int layout_len) {
     using namespace themepack;
     g_err[0] = 0;
-    if (json_len < 0 || emblem_len < 0 || clip_len < 0) return fail(UV_ERR_INPUT, "negative length");
+    if (json_len < 0 || emblem_len < 0 || clip_len < 0 || layout_len < 0) return fail(UV_ERR_INPUT, "negative length");
     if (!json || json_len == 0) return fail(UV_ERR_INPUT, "theme.json is empty");
     if ((size_t)json_len > MAX_JSON) return fail(UV_ERR_INPUT, "theme.json over 4096 bytes");
 
@@ -121,6 +127,13 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
         if (!parseClip(clip, (size_t)clip_len, probe, cwhy, sizeof cwhy)) return fail(UV_ERR_CLIP, "%s", cwhy);
     }
 
+    // layout.json is optional. The device would skip a bad one and keep the theme; the designer refuses the draft so the
+    // author sees why (the same themelayout::build the device runs).
+    if (layout && layout_len > 0) {
+        char lwhy[96];
+        if (!themelayout::build(layout, (size_t)layout_len, g_layoutProbe, lwhy, sizeof lwhy)) return fail(UV_ERR_LAYOUT, "%s", lwhy);
+    }
+
     // The draft replaces whatever was loaded, so no other pack name is taken.
     const Admit a = admit(DRAFT_FOLDER, p, nullptr, 0);
     if (a != ADMIT_OK) return fail(UV_ERR_ADMIT, "%s", admitWhy(a));
@@ -145,7 +158,31 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
     }
     const int id = pal::addPack(p, em, cl);
     if (id < 0) return fail(UV_ERR_FULL, "%s", admitWhy(ADMIT_FULL));
+    if (layout && layout_len > 0) {
+        char lwhy[96];
+        if (!themelayout::build(layout, (size_t)layout_len, g_layout, lwhy, sizeof lwhy)) return fail(UV_ERR_LAYOUT, "%s", lwhy);   // unreachable: same bytes
+        pal::setPackLayout(id, &g_layout.lo);
+    }
     return id;
+}
+
+// The layout rules, for the designer's Layout step: the device's own names, defaults and verdict.
+EMSCRIPTEN_KEEPALIVE int uv_piece_count() { return themelayout::P_N; }
+EMSCRIPTEN_KEEPALIVE const char* uv_piece_name(int i) { return (i >= 0 && i < themelayout::P_N) ? themelayout::PIECE_NAME[i] : ""; }
+// board 0 Waveshare, 1 CYD; writes x, y, w, h (int32) to out.
+EMSCRIPTEN_KEEPALIVE void uv_layout_default(int board, int piece, int* out) {
+    if (!out) return;
+    if (board < 0 || board >= themelayout::B_N || piece < 0 || piece >= themelayout::P_N) { out[0] = out[1] = out[2] = out[3] = 0; return; }
+    const uieng::Rect r = themelayout::defaultRect((themelayout::Board)board, (themelayout::Piece)piece);
+    out[0] = r.x; out[1] = r.y; out[2] = r.w; out[3] = r.h;
+}
+// 1 when the device would accept this layout.json on every board it gives; 0 with the reason in uv_error().
+EMSCRIPTEN_KEEPALIVE int uv_layout_check(const char* json, int len) {
+    g_err[0] = 0;
+    if (!json || len <= 0) return fail(0, "layout.json is empty"), 0;
+    char lwhy[96];
+    if (!themelayout::build(json, (size_t)len, g_layoutProbe, lwhy, sizeof lwhy)) { fail(0, "%s", lwhy); return 0; }
+    return 1;
 }
 
 // Draw one 160x120 frame as RGBA into out (W*H*4 bytes). Builds the State the
