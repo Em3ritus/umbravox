@@ -10,7 +10,8 @@ namespace themelayout {
 const char* const PIECE_NAME[P_N] = {
     "menu", "wordmark", "status.gps", "status.nodes", "status.power", "bridge", "sd",
     "nav.scan", "nav.domain", "nav.codex", "nav.poi", "stop",
-    "count.wifi", "count.5g", "count.ble"};
+    "count.wifi", "count.5g", "count.ble",
+    "radar", "spectrum", "channel", "badge"};
 
 namespace {
 
@@ -247,11 +248,14 @@ namespace {
 using uieng::Rect;
 
 constexpr int MIN_TAP = 44;
+constexpr int MIN_RADAR_BOX = 2 * 24 + 5;   // radius 24 plus the 2 px marker margin each side
 const int BOARD_W[B_N] = {480, 320}, BOARD_H[B_N] = {320, 240};
 
-bool tappable(int p) { return p != P_WORDMARK && p != P_SD; }
-bool hideable(int p) { return p == P_WORDMARK || p == P_SD || p >= P_COUNT_WIFI; }
-bool isTile(int p) { return p >= P_COUNT_WIFI; }
+bool isTile(int p) { return p == P_COUNT_WIFI || p == P_COUNT_5G || p == P_COUNT_BLE; }
+bool isGroup(int p) { return p == P_RADAR || p == P_SPECTRUM || p == P_CHANNEL || p == P_BADGE; }   // the radar group
+bool isChrome(int p) { return p < P_COUNT_WIFI; }                                                   // header and footer
+bool tappable(int p) { return isChrome(p) ? (p != P_WORDMARK && p != P_SD) : isTile(p); }
+bool hideable(int p) { return p == P_WORDMARK || p == P_SD || isTile(p) || isGroup(p); }
 bool visible(const Rect& r) { return r.w > 0 && r.h > 0; }
 bool overlaps(const Rect& a, const Rect& b) {
     return visible(a) && visible(b) && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -318,7 +322,14 @@ Rect defaultRect(Board b, Piece p) {
     case P_STOP: return c.stop;
     default: break;
     }
-    return uieng::builtinScan(W, H).tiles[p - P_COUNT_WIFI];
+    const uieng::ScanLayout s = uieng::builtinScan(W, H);
+    switch (p) {
+    case P_RADAR: return s.radar;
+    case P_SPECTRUM: return s.spectrum;
+    case P_CHANNEL: return s.channel;
+    case P_BADGE: return s.badge;
+    default: return s.tiles[p - P_COUNT_WIFI];
+    }
 }
 
 bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, size_t whyCap) {
@@ -339,10 +350,17 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
         if (s.x < 0 || s.y < 0 || s.x + s.w > W || s.y + s.h > H) return say(why, whyCap, "%s is off screen", name);
         if (tappable(p) && (s.w < MIN_TAP || s.h < MIN_TAP))
             return say(why, whyCap, "%s must be at least 44 px each way", name);
-        if (!tappable(p)) {   // wordmark and sd draw at fixed offsets: anything smaller would spill outside the piece
+        if (p == P_WORDMARK || p == P_SD || p == P_CHANNEL) {   // drawn at fixed offsets: smaller would spill outside the piece
             const Rect d = defaultRect(b, (Piece)p);
             if (s.w < d.w || s.h < d.h) return say(why, whyCap, "%s must be at least its built-in size", name);
         }
+        if (p == P_RADAR) {    // square; r = (w-5)/2 from 24 up to today's radius on this board
+            if (s.w != s.h) return say(why, whyCap, "radar must be square");
+            const Rect d = defaultRect(b, P_RADAR);
+            if (s.w < MIN_RADAR_BOX || s.w > d.w) return say(why, whyCap, "radar must be 53 px up to its built-in size");
+        }
+        if (p == P_SPECTRUM && (s.w < 42 || s.h < 22)) return say(why, whyCap, "spectrum must be at least 42x22 px");
+        if (p == P_BADGE && (s.w < 24 || s.h < 24)) return say(why, whyCap, "badge must be at least 24x24 px");
     }
 
     // The body: today's size, centred in the largest area the header and footer leave.
@@ -354,15 +372,34 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     const int dx = body.x - bc.body.x, dy = body.y - bc.body.y;
     const uieng::ScanLayout bs = uieng::builtinScan(W, H);
     auto shifted = [&](Rect q) { return Rect{q.x + dx, q.y + dy, q.w, q.h}; };
-    for (int p = P_COUNT_WIFI; p < P_N; p++)
-        if (L.slot[b][p].how == SLOT_DEFAULT) r[p] = shifted(bs.tiles[p - P_COUNT_WIFI]);
-
-    const Rect hero = shifted(bs.hero);
-    for (int p = 0; p < P_N; p++) {
-        for (int q = p + 1; q < P_N; q++)
-            if (overlaps(r[p], r[q])) return say(why, whyCap, "%s overlaps %s", PIECE_NAME[p], PIECE_NAME[q]);
-        if (isTile(p) && overlaps(r[p], hero)) return say(why, whyCap, "%s overlaps the radar", PIECE_NAME[p]);
+    for (int p = P_COUNT_WIFI; p < P_N; p++) {
+        if (L.slot[b][p].how != SLOT_DEFAULT) continue;
+        if (isTile(p)) r[p] = shifted(bs.tiles[p - P_COUNT_WIFI]);
+        else if (p == P_RADAR) r[p] = shifted(bs.radar);
+        else if (p == P_SPECTRUM) r[p] = shifted(bs.spectrum);
+        else if (p == P_CHANNEL) r[p] = shifted(bs.channel);
+        else if (p == P_BADGE) r[p] = shifted(bs.badge);
     }
+
+    for (int p = 0; p < P_N; p++)
+        for (int q = p + 1; q < P_N; q++) {
+            if (isGroup(p) && isGroup(q)) continue;   // the radar's parts may overlap each other, as the built-in layout's do
+            if (overlaps(r[p], r[q])) return say(why, whyCap, "%s overlaps %s", PIECE_NAME[p], PIECE_NAME[q]);
+        }
+    // The hero (alert area, threat target): the bounding box of the visible radar group, or the built-in hero.
+    Rect hero{0, 0, 0, 0};
+    for (int p = P_RADAR; p <= P_BADGE; p++) {
+        const Rect& e = r[p];
+        if (!visible(e)) continue;
+        if (!visible(hero)) { hero = e; continue; }
+        const int x0 = e.x < hero.x ? e.x : hero.x, y0 = e.y < hero.y ? e.y : hero.y;
+        const int x1 = e.x + e.w > hero.x + hero.w ? e.x + e.w : hero.x + hero.w;
+        const int y1 = e.y + e.h > hero.y + hero.h ? e.y + e.h : hero.y + hero.h;
+        hero = {x0, y0, x1 - x0, y1 - y0};
+    }
+    const bool groupDefault = L.slot[b][P_RADAR].how == SLOT_DEFAULT && L.slot[b][P_SPECTRUM].how == SLOT_DEFAULT &&
+                              L.slot[b][P_CHANNEL].how == SLOT_DEFAULT && L.slot[b][P_BADGE].how == SLOT_DEFAULT;
+    if (groupDefault || !visible(hero)) hero = shifted(bs.hero);
 
     uieng::Chrome& c = out.c;
     c.menu = r[P_MENU]; c.wordmark = r[P_WORDMARK];
@@ -391,8 +428,7 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     c.nav = bbox(r, foot, 5);
     for (int i = 0; i < 3; i++) out.tiles[i] = r[P_COUNT_WIFI + i];
     out.hero = hero;
-    out.radar = shifted(bs.radar); out.spectrum = shifted(bs.spectrum);
-    out.channel = shifted(bs.channel); out.badge = shifted(bs.badge);
+    out.radar = r[P_RADAR]; out.spectrum = r[P_SPECTRUM]; out.channel = r[P_CHANNEL]; out.badge = r[P_BADGE];
     out.counts = shifted(bs.counts);
     out.scanBody = shifted(bs.body);
     if (why && whyCap) why[0] = 0;

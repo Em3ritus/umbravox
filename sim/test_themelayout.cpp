@@ -194,7 +194,7 @@ static void testResolve() {
         check(tag, !R(b, "\"stop\":" + rectJson(r), o, why, sizeof why) && contains(why, "off screen"));
 
         for (int p = 0; p < P_N; p++) {
-            if (p == P_WORDMARK || p == P_SD) continue;
+            if (p == P_WORDMARK || p == P_SD || p >= P_RADAR) continue;   // not tappable: no 44 px rule
             r = defaultRect((Board)b, (Piece)p); r.w = 43;
             snprintf(tag, sizeof tag, "%s: %s under 44 refused", BKEY[b], PIECE_NAME[p]);
             check(tag, !R(b, std::string("\"") + PIECE_NAME[p] + "\":" + rectJson(r), o, why, sizeof why) &&
@@ -224,7 +224,7 @@ static void testResolve() {
         snprintf(tag, sizeof tag, "%s: overlap refused", BKEY[b]);
         check(tag, !R(b, "\"stop\":" + rectJson(bc.navCells[3]), o, why, sizeof why) && contains(why, "overlaps"));
         snprintf(tag, sizeof tag, "%s: tile over the radar refused", BKEY[b]);
-        r = {bs.hero.x, bs.hero.y, 60, 60};
+        r = {bs.radar.x + bs.radar.w / 2 - 30, bs.radar.y + bs.radar.w / 2 - 30, 60, 60};
         check(tag, !R(b, "\"count.wifi\":" + rectJson(r), o, why, sizeof why) && contains(why, "radar"));
         snprintf(tag, sizeof tag, "%s: tile over a tile refused", BKEY[b]);
         check(tag, !R(b, "\"count.wifi\":" + rectJson(bs.tiles[1]), o, why, sizeof why) && contains(why, "overlaps"));
@@ -235,12 +235,54 @@ static void testResolve() {
     }
 }
 
+// Plan 2 Task 3: the radar group (radar, spectrum, channel, badge).
+static void testRadarGroup() {
+    char why[96], tag[96];
+    for (int b = 0; b < B_N; b++) {
+        const int W = BW[b];
+        const uieng::ScanLayout bs = uieng::builtinScan(W, BH[b]);
+        uieng::ChromeOverride o;
+        auto T = [&](const char* name, bool ok) { snprintf(tag, sizeof tag, "%s: %s", BKEY[b], name); check(tag, ok); };
+
+        T("defaults equal the built-in parts", R(b, "", o, why, sizeof why) && same(o.radar, bs.radar) && same(o.spectrum, bs.spectrum) &&
+                                                  same(o.channel, bs.channel) && same(o.badge, bs.badge) && same(o.hero, bs.hero));
+        T("defaultRect knows the group", same(defaultRect((Board)b, P_RADAR), bs.radar) && same(defaultRect((Board)b, P_BADGE), bs.badge));
+        uieng::Rect r = bs.radar; r.w -= 2;
+        T("radar must be square", !R(b, "\"radar\":" + rectJson(r), o, why, sizeof why) && contains(why, "square"));
+        r = {bs.radar.x, bs.radar.y, 52, 52};
+        T("radar under 53 refused", !R(b, "\"radar\":" + rectJson(r), o, why, sizeof why) && contains(why, "radar"));
+        r = {bs.radar.x, bs.radar.y, bs.radar.w + 2, bs.radar.w + 2};
+        T("radar over today's box refused", !R(b, "\"radar\":" + rectJson(r), o, why, sizeof why) && contains(why, "radar"));
+        r = {bs.radar.x, bs.radar.y, 101, 101};
+        T("radar 101 accepted", R(b, "\"radar\":" + rectJson(r), o, why, sizeof why) && same(o.radar, r));
+        r = bs.spectrum; r.w = 41;
+        T("spectrum under 42 wide refused", !R(b, "\"spectrum\":" + rectJson(r), o, why, sizeof why) && contains(why, "spectrum"));
+        r = bs.spectrum; r.h = 21;
+        T("spectrum under 22 tall refused", !R(b, "\"spectrum\":" + rectJson(r), o, why, sizeof why) && contains(why, "spectrum"));
+        r = bs.channel; r.w -= 1;
+        T("channel smaller than built-in refused", !R(b, "\"channel\":" + rectJson(r), o, why, sizeof why) && contains(why, "built-in size"));
+        r = {bs.badge.x, bs.badge.y, 23, 23};
+        T("badge under 24 refused", !R(b, "\"badge\":" + rectJson(r), o, why, sizeof why) && contains(why, "badge"));
+        T("all four hideable", R(b, "\"radar\":\"hidden\",\"spectrum\":\"hidden\",\"channel\":\"hidden\",\"badge\":\"hidden\"", o, why, sizeof why) &&
+                               o.radar.w == 0 && o.spectrum.w == 0 && o.channel.w == 0 && o.badge.w == 0 && same(o.hero, bs.hero));
+        T("the group may overlap itself (as the built-in does)", R(b, "\"badge\":" + rectJson({bs.radar.x, bs.radar.y, 40, 40}), o, why, sizeof why));
+        r = {bs.tiles[0].x, bs.tiles[0].y, 60, 60};
+        T("radar over a tile refused", !R(b, "\"radar\":" + rectJson(r), o, why, sizeof why) && contains(why, "overlaps"));
+        // hero = bounding box of the visible group
+        r = {bs.radar.x, bs.radar.y, 61, 61};
+        const bool ok = R(b, "\"radar\":" + rectJson(r) + ",\"spectrum\":\"hidden\",\"channel\":\"hidden\",\"badge\":\"hidden\"", o, why, sizeof why);
+        T("hero is the bounding box of the visible group", ok && same(o.hero, r));
+    }
+}
+
 int main() {
     printf("== themelayout parse\n");
     testParse();
     testFuzz();
     printf("== themelayout resolve\n");
     testResolve();
+    printf("== radar group\n");
+    testRadarGroup();
     printf(fails ? "FAILED: %d\n" : "all passed\n", fails);
     return fails ? 1 : 0;
 }

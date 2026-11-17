@@ -23,7 +23,8 @@ enum Board : uint8_t { B_WAVESHARE, B_CYD, B_N };   // 480x320, 320x240
 enum Piece : uint8_t {
     P_MENU, P_WORDMARK, P_GPS, P_NODES, P_POWER, P_BRIDGE, P_SD,
     P_NAV_SCAN, P_NAV_DOMAIN, P_NAV_CODEX, P_NAV_POI, P_STOP,
-    P_COUNT_WIFI, P_COUNT_5G, P_COUNT_BLE, P_N
+    P_COUNT_WIFI, P_COUNT_5G, P_COUNT_BLE,
+    P_RADAR, P_SPECTRUM, P_CHANNEL, P_BADGE, P_N
 };
 extern const char* const PIECE_NAME[P_N];
 
