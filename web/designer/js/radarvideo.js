@@ -118,8 +118,9 @@ const W3 = [3, 4, 2];                                                         //
 // One palette for all frames by median cut over the colours actually used (counted at RGB565, the board's depth),
 // then every pixel -> nearest palette entry, optionally with ordered dithering. Deterministic. Returns
 // { palette: Uint8Array(32) (16 RGB565, little-endian), frames: Uint8Array(w*h) of indexes 0..15 per frame }.
-export function quantizeColour(rgbaFrames, { dither = true, strength = 20 } = {}) {
-  const n = CLIP_SIZE * CLIP_SIZE;
+// width/height: the frames' size (the radar clip's 102x102 by default); colours: how many to pick (the palette is always 16).
+export function quantizeColour(rgbaFrames, { dither = true, strength = 20, width = CLIP_SIZE, height = width, colours = 16 } = {}) {
+  const n = width * height;
   const hist = new Map();                                                     // rgb565 -> count
   const to565 = (r, g, b) => ((Math.round(r * 31 / 255) << 11) | (Math.round(g * 63 / 255) << 5) | Math.round(b * 31 / 255));
   for (const f of rgbaFrames) for (let i = 0; i < n; i++) { const k = to565(f[4 * i], f[4 * i + 1], f[4 * i + 2]); hist.set(k, (hist.get(k) || 0) + 1); }
@@ -127,7 +128,7 @@ export function quantizeColour(rgbaFrames, { dither = true, strength = 20 } = {}
   const entries = [...hist.entries()].sort((a, b) => a[0] - b[0]).map(([k, c]) => ({ k, c, rgb: expand(k) }));
   let boxes = [entries];
   const spread = (box) => { let best = 0, ch = 0; for (let c = 0; c < 3; c++) { let lo = 255, hi = 0; for (const e of box) { lo = Math.min(lo, e.rgb[c]); hi = Math.max(hi, e.rgb[c]); } const s = (hi - lo) * W3[c]; if (s > best) { best = s; ch = c; } } return { best, ch }; };
-  while (boxes.length < 16) {
+  while (boxes.length < colours) {
     let pick = -1, score = 0, pch = 0;
     boxes.forEach((b, i) => { if (b.length < 2) return; const { best, ch } = spread(b); const s = best * b.reduce((t, e) => t + e.c, 0); if (s > score) { score = s; pick = i; pch = ch; } });
     if (pick < 0) break;
@@ -153,7 +154,7 @@ export function quantizeColour(rgbaFrames, { dither = true, strength = 20 } = {}
     for (let i = 0; i < n; i++) {
       const r = f[4 * i], g = f[4 * i + 1], b = f[4 * i + 2];
       if (dither) {
-        const bias = ((BAYER[(i % CLIP_SIZE & 3) + 4 * (Math.floor(i / CLIP_SIZE) & 3)] + 0.5) / 16 - 0.5) * strength;
+        const bias = ((BAYER[(i % width & 3) + 4 * (Math.floor(i / width) & 3)] + 0.5) / 16 - 0.5) * strength;
         out[i] = nearest(r + bias, g + bias, b + bias);
       } else {
         const k = to565(r, g, b);

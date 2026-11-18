@@ -657,3 +657,13 @@ test('uv_font_check accepts every built-in font the designer ships and refuses a
   assert.equal(withBytes(fixtureArt(4, 4, 2), (p, l) => M._uv_art_check(p, l)), 1);
   assert.equal(withBytes(Uint8Array.from([1, 2]), (p, l) => M._uv_art_check(p, l)), 0);
 });
+
+test('uv_art_check: the device accepts every picture the designer makes (decor, CYD background, frame, animated, transparent)', async () => {
+  const { imageToArt, artToBin } = await import('../js/artfmt.js');
+  const src = new Uint8ClampedArray(64 * 48 * 4).map((_, i) => (i % 4 === 3 ? (i % 7 ? 255 : 0) : (i * 37) & 255));
+  for (const [w, h, frames, transparent] of [[37, 61, 1, false], [320, 240, 1, false], [12, 12, 1, true], [30, 30, 5, true]]) {
+    const a = imageToArt(new Array(frames).fill(src), 64, 48, { w, h, transparent, delays: [80, 90, 100, 110, 120] });
+    const ok = withBytes(artToBin(a), (p, l) => M._uv_art_check(p, l));
+    assert.equal(ok, 1, `${w}x${h}x${frames}: ${M.UTF8ToString(M._uv_error())}`);
+  }
+});
