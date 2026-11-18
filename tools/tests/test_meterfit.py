@@ -131,6 +131,25 @@ class FitTests(unittest.TestCase):
         self.assertIn("negative", r.stderr)
         self.assertIsNone(j)
 
+    def test_a_one_board_run_does_not_drop_the_other_boards_fit(self):
+        # 5c minor 5: re-measuring one board must not silently wipe the fit of the other.
+        with tempfile.TemporaryDirectory() as d:
+            ws, cyd, out = (os.path.join(d, n) for n in ("ws.csv", "cyd.csv", "fit.json"))
+            write(ws, rows("waveshare"))
+            write(cyd, rows("cyd-engine", seed=2))
+            go = lambda *args: subprocess.run([sys.executable, str(TOOL), *args, "--out", out], capture_output=True,
+                                              text=True)
+            self.assertEqual(go(ws, cyd).returncode, 0)
+            before = Path(out).read_text()
+            r = go(ws)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("cyd-engine", r.stderr)
+            self.assertIn("--drop-missing", r.stderr)
+            self.assertEqual(Path(out).read_text(), before)
+            r = go(ws, "--drop-missing")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(sorted(json.loads(Path(out).read_text())["boards"]), ["waveshare"])
+
 
 if __name__ == "__main__":
     unittest.main()
