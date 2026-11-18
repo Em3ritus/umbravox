@@ -723,3 +723,14 @@ test('the command allow-list admits SDPUT of alert.snd and nothing like it', () 
   assert.ok(!isAllowedCommand('SDPUT /themes/my-pack/alert.wav 4000 00000000'));
   assert.ok(!isAllowedCommand('SDDEL /themes/my-pack/alert.snd'));
 });
+
+test('checkFiles: layout.json, fonts and pictures install too, pictures and fonts first, theme.json last', () => {
+  const f = (n, len = 4) => ({ path: 'mine/' + n, data: new Uint8Array(len).fill(1) });
+  const r = checkFiles([f('theme.json'), f('layout.json'), f('f3.fnt'), f('a12.art'), f('a1.art'), f('radar.vid')]);
+  assert.ok(r.ok, r.error);
+  assert.deepEqual(r.ordered.map((o) => o.name), ['radar.vid', 'a1.art', 'a12.art', 'f3.fnt', 'layout.json', 'theme.json']);
+  assert.equal(r.ordered[1].devicePath, '/themes/mine/a1.art');
+  for (const bad of ['f8.fnt', 'a16.art', 'a01.art', 'font.fnt']) assert.equal(checkFiles([f('theme.json'), f(bad)]).ok, false, bad);
+  assert.match(checkFiles([f('theme.json'), f('f0.fnt', 12801)]).error, /12800/);
+  assert.match(checkFiles([f('theme.json'), f('a0.art', 196609)]).error, /196608/);
+});

@@ -21,6 +21,17 @@ test('numeric limits equal the constexprs in ui/themepack.h', () => {
   assert.equal(limits.MIN_EDGE_CONTRAST_X10, Number(/MIN_EDGE_CONTRAST_X10\s*=\s*(\d+)/.exec(read('ui/contrast.h'))[1]));
 });
 
+test('the font and picture limits equal ui/fontpack.h, ui/artpack.h, ui/packassets.h and ui/layout_engine.h', () => {
+  const num = (file, k) => Number(new RegExp('\\b' + k + '\\s*=\\s*(\\d+)').exec(read(file))[1]);
+  assert.equal(limits.MAX_FONT, num('ui/fontpack.h', 'MAX_FONT'));
+  assert.equal(limits.MAX_ART, num('ui/artpack.h', 'MAX_ART'));
+  assert.equal(limits.MAX_ART_TOTAL, num('ui/artpack.h', 'MAX_ART_TOTAL'));
+  assert.equal(limits.MAX_ART_FRAMES, num('ui/artpack.h', 'MAX_ART_FRAMES'));
+  assert.equal(limits.MAX_FONTS, num('ui/packassets.h', 'MAX_FONTS'));
+  assert.equal(limits.MAX_ARTS, num('ui/packassets.h', 'MAX_ARTS'));
+  assert.equal(limits.MAX_DECOR, num('ui/layout_engine.h', 'MAX_DECOR'));
+});
+
 test('the radar clip limits equal ui/themepack.h (MAX_CLIP is built from three constants)', () => {
   const n = (k) => Number(new RegExp('constexpr\\s+(?:int|size_t)\\s+(?:\\w+\\s*=\\s*\\d+\\s*,\\s*)*' + k + '\\s*=\\s*(\\d+)').exec(header)[1]);
   const hdr = n('CLIP_HDR'), frames = n('MAX_CLIP_FRAMES'), w = n('CLIP_W'), h = n('CLIP_H');

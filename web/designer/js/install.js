@@ -33,7 +33,8 @@ export async function installToCard(root, files) {
     const dirs = new Map();
     for (const folder of folders) dirs.set(folder, await themes.getDirectoryHandle(folder, { create: true }));
     for (const [folder, d] of dirs) {
-      for (const stale of ['emblem.bin', 'radar.vid', 'alert.snd', 'layout.json']) {
+      const media = [...Array.from({ length: 16 }, (_, i) => 'a' + i + '.art'), ...Array.from({ length: 8 }, (_, i) => 'f' + i + '.fnt')];
+      for (const stale of ['emblem.bin', 'radar.vid', 'alert.snd', 'layout.json', ...media]) {
         if (!files.some((f) => f.path === folder + '/' + stale) && await exists(d, stale)) {
           res.state = 'unknown';
           await d.removeEntry(stale);

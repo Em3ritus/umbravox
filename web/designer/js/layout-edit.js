@@ -24,6 +24,11 @@ export function pickPiece(rects, x, y) {
     const r = rects[Z_ORDER[i]];
     if (r && r.w > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return Z_ORDER[i];
   }
+  // Decor draws under every piece (decor.0 lowest), so it is picked last, topmost decor first.
+  for (let i = 7; i >= 0; i--) {
+    const r = rects['decor.' + i];
+    if (r && r.w > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return 'decor.' + i;
+  }
   return null;
 }
 

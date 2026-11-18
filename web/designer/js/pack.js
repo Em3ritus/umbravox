@@ -53,7 +53,8 @@ export function folderName(name) {
 
 // clip: an optional radar clip (js/radarvideo.js buildClip), written as radar.vid. sounds: optional alert sounds
 // ({low, med, high}, js/alertsound.js), written as alert.snd. layout: optional layout.json text (js/layout.js toJson).
-export function buildPack(theme, emblem, clip = null, sounds = null, layout = null) {
+// media: the layout's font and picture files, [{ name: 'f0.fnt' | 'a3.art', data }] (js/layoutmedia.js packMedia).
+export function buildPack(theme, emblem, clip = null, sounds = null, layout = null, media = []) {
   const dir = folderName(theme.name);
   const files = [{ path: dir + '/theme.json', data: new TextEncoder().encode(themeJson(theme)) }];
   if (theme.centrepiece === 'emblem') {
@@ -62,6 +63,10 @@ export function buildPack(theme, emblem, clip = null, sounds = null, layout = nu
   }
   if (clip) files.push({ path: dir + '/radar.vid', data: clipFile(clipForLayout(clip, layout)) });
   if (hasSounds(sounds)) files.push({ path: dir + '/alert.snd', data: soundFile(sounds) });
+  for (const m of media || []) {
+    if (!/^(f[0-7]\.fnt|a([0-9]|1[0-5])\.art)$/.test(m.name)) throw new Error('bad media file name: ' + m.name);
+    files.push({ path: dir + '/' + m.name, data: m.data });
+  }
   if (layout) files.push({ path: dir + '/layout.json', data: new TextEncoder().encode(layout) });
   return { files, bytes: files.reduce((n, f) => n + f.data.length, 0) };
 }

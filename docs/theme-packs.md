@@ -29,8 +29,8 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
 - No scripting and no custom animation. The format is data only and stays that way
   in this version.
 - No Gaze sweep and no Summon rite. They belong to the Baphomet seal.
-- No custom fonts yet. A layout (`layout.json`, the designer's Layout step) moves, resizes and hides the pieces the
-  device draws on the engine screens, but cannot add new kinds of piece.
+- A layout (`layout.json`, the designer's Layout step) moves, resizes, hides and restyles the pieces the device draws
+  on the engine screens, with pixel fonts and pictures, but cannot add new kinds of piece.
 - No hiding or disabling alerts.
 - It cannot use the Baphomet seal bitmap (a pack can choose a heptagram instead).
 
@@ -562,8 +562,9 @@ there but is folded into item 4 here, and the USB route entries appear in both.
    read escapes and would skip the pack.
 5. **RGB565.** Colours are stored as RGB565, so fine differences between near colours
    disappear. The designer previews the colours the panel will really show.
-6. **Built-in pieces, fonts and animations.** Fonts and animations come from the built-in set. A layout moves,
-   resizes and hides the pieces the device draws; it cannot add new kinds of piece.
+6. **Built-in pieces.** A layout moves, resizes, hides and restyles the pieces the device draws, and adds pictures
+   with no function; it cannot add new kinds of piece. Fonts are the built-in pixel fonts or a TTF/OTF you upload,
+   turned into pixels at the sizes used (at most 8 fonts and 16 pictures per theme). Only one picture per board moves.
 7. **Built-in sweeps and alerts.** Sweeps and alerts come from the built-in set. Gaze and
    the Summon rite are not available to packs; they belong to the Baphomet seal.
 8. **Alerts stay visible.** A theme cannot hide or disable alerts. Status and alert-edge
