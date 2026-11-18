@@ -205,3 +205,5 @@ sim/snd_check
 /sim/test_theme_art
 /sim/test_cvlt_clip
 sim/test_discoverypolicy
+/sim/test_scan_frame
+/sim/test_meter

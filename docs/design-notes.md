@@ -815,6 +815,53 @@ simulator. Settings are clamped as the device clamps them, so `--theme 0
 Always check `--scale 2` before believing a layout. Everything is legible at
 4x; the panel is not 4x.
 
+## Speed meter (plan 5c)
+
+The engine builds draw SCAN in bounded 16-row slices and only what changed: the engine's dirty regions on wide
+panels, else the radar's column window (a sweep-only frame), else whole strips (`ui/scan_frame.h`, shared by
+`device/engine_adapter.cpp` and the host). `framepresent::Frame::present` then sends only the changed rectangles and
+returns how many pixels it sent. The two counts, **drawn** (composed) and **pushed** (sent), are what a frame costs:
+
+- On the board, the console command `FRAMELOG 1` (engine builds only) prints one line per finished SCAN frame,
+  `[frm] d <drawn> p <pushed> us <compose+compare+transfer> gap <ms since the last frame> a <alert conf or -1>`, and
+  keeps the screen lit. `FRAMELOG 0` turns it off. Its few counters live in PSRAM past the back frame, so it costs no
+  internal RAM (the `ws-c5-35-engine` `.dram0.bss` is at its cap).
+- In the designer, `ui/meter.h` replays the theme the same way (demo state from `prevws::demo`, the preview's own
+  input) and the wasm export `uv_meter` returns the counts. Two differences from the plain demo, both to match the
+  board: an alert is raised after 2 scan frames (it rises over a drawn scan screen, so its frame 0 is not the entry
+  repaint), and the blips keep frame 0's last-heard time and fade with the clock (the demo moves every blip every
+  frame, which redrew the whole dial: 46,816 px a frame where the Waveshare draws one wedge, 19,888 px).
+- `web/designer/js/meter.js` applies two fits per board from `js/meter-fit.json`, `ms = a*drawn + b*pushed + c`, one
+  for scan frames and one for alert frames (an alert pixel costs 2-2.5x a scan pixel: the rite, cards, text), and
+  judges the **p95 frame** (nearest rank; the single worst frame is ~3x the median on both boards and mostly noise).
+  Scan skips the entry repaint (frames 0-1); an alert keeps its first frame.
+- Limits: scan = what the meter predicts for the built-in theme (p95) + 15%, per board, so the fit's bias (it reads
+  6-13% under the board on every calibration pack) cancels out. Alerts: 400 ms on both boards, but the alert model is
+  rough (34% under to 40% over the board, depending on pack and level), so the alert row only warns: past its limit
+  it stays amber. Only a scan row past 100% blocks Download, Install and Share.
+
+**Redo the calibration after any change to drawing or the display path.** Both boards need an engine build. The
+CYD engine build needs its own partition table: see `docs/NM-NATIVE-ENGINE.md`.
+
+```
+node tools/meter-packs.mjs PACKS
+~/.platformio/penv/bin/python tools/meterprobe.py --port /dev/ttyUSB0 --board cyd-engine --packs PACKS --out cyd.csv
+~/.platformio/penv/bin/python tools/meterprobe.py --port /dev/ttyACM0 --board waveshare  --packs PACKS --out ws.csv
+python3 tools/meterfit.py ws.csv cyd.csv --out web/designer/js/meter-fit.json
+node tools/meter-limits.mjs web/designer/js/meter-fit.json   # scan limits from the built-in theme's prediction
+node tools/meter-crosscheck.mjs web/designer/js/meter-fit.json ws.csv cyd.csv PACKS
+```
+
+`meterfit.py` fits scan and alert frames separately, leaves out the first frame of every mode run (on the board MED
+and LOW rise over the previous card, which the replay cannot reproduce), clamps a negative slope to 0 and refits the
+other term (refused if that is negative too), and refuses an empty input or a board with fewer than 3 packs or no
+alert frames. The scan limit it
+writes is provisional (the measured built-in p95 + 15%): `meter-limits.mjs` replaces it, and `npm test` fails while
+the shipped file is stale. `meter-crosscheck.mjs` compares predicted with measured p95 frame times on steady frames:
+a scan row more than 15% off fails, alert rows are info. Pixel counts are not compared: the board draws live data the
+demo state does not, so they differ by 20-35% while the times agree. On the 2026-11-18 data every scan row is within
+13% except the Waveshare stress-p4 (-30%; over its limit either way). Keep the CSVs in `private/logs/`.
+
 ## Not done yet
 
 - Touch (XPT2046 on CS 1, no IRQ line) and therefore any navigation.

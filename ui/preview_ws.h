@@ -52,16 +52,18 @@ inline void fxHistory(const ui::State& s, uint32_t now, scanr::Fx& out) {
 }
 
 // w x h: 480x320 (the Waveshare, the default) or 320x240 (the CYD engine build); out holds w*h pixels.
-inline void render(int theme, int screen, int frame, int sweep, int alertStyle, int alertConf, uint16_t* out, int w = W, int h = H) {
+// The demo State and header Chrome for one frame: the preview's and the speed meter's (ui/meter.h) input, so the two
+// cannot drift apart. alertOn holds an alert of alertStyle (< 0: the theme's own) and alertConf up; its age is
+// frame * frameMs, as is the header clock.
+inline void demo(int theme, int frame, int sweep, bool alertOn, int alertStyle, int alertConf, ui::State& s, uiproj::Chrome& c,
+                 int frameMs = 20) {
     const uint8_t themeId = (uint8_t)theme;
-    pal::setTheme(themeId);
     const uint32_t f = (uint32_t)frame;
-    ui::State s = ui::demoState(f);
+    s = ui::demoState(f);
     s.set.sweep = sweep >= 0 ? (uint8_t)sweep : (uint8_t)ui::SW_RADAR;
     s.set.theme = themeId;
     s.set.labels = 0;
     s.netId = 0;
-    const bool alertOn = screen == ALERT || alertStyle >= 0;
     if (alertOn) {
         s.set.alertStyle = (uint8_t)(alertStyle >= 0 ? alertStyle : 0);
         s.alertActive = true;
@@ -69,19 +71,25 @@ inline void render(int theme, int screen, int frame, int sweep, int alertStyle, 
         s.alertConf = (uint8_t)alertConf;
         std::snprintf(s.alertWhy, sizeof s.alertWhy, "%s", "DRONEID");
         std::snprintf(s.alertName, sizeof s.alertName, "%s", "60:60:1F:A2:4C:19");
-        s.alertAge = (uint16_t)(f * 20);
+        s.alertAge = (uint16_t)(f * (uint32_t)frameMs);
     }
     else s.alertActive = false;          // demoState raises a CYD-sized demo alert every 2.4 s; here that would cover the whole screen
     ui::clampSettings(s.set);
     s.filter = ui::F_WIFI;
 
-    uiproj::Chrome c;
+    c = uiproj::Chrome{};
     c.gps = scanr::GnssFix{true, 3, 12, 500};
     c.rec = scanr::Rec::Off;
     c.hasCell = true;
     c.batt = 78;
-    c.now = 1000 + f * 20;
+    c.now = 1000 + f * (uint32_t)frameMs;
     c.pmuOk = true;
+}
+
+inline void render(int theme, int screen, int frame, int sweep, int alertStyle, int alertConf, uint16_t* out, int w = W, int h = H) {
+    pal::setTheme((uint8_t)theme);
+    ui::State s; uiproj::Chrome c;
+    demo(theme, frame, sweep, screen == ALERT || alertStyle >= 0, alertStyle, alertConf, s, c);
 
     if (w < 1 || h < 1 || w > W) return;    // the strip buffer holds one 480-wide band
     uint16_t band[W * 16];

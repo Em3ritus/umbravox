@@ -42,6 +42,7 @@ static unsigned consoleDwell=220;
 #if defined(UMBRAVOX_SCAN_ENGINE)
 #include "../ui/project.h"
 #include "engine_adapter.h"   // Shared native UI engine, all screens
+#include "../ui/scan_frame.h"   // FRAMELOG line format (plan 5c)
 #endif
 #include "alertlog.h"
 #include "sound.h"
@@ -1134,6 +1135,14 @@ bool pollConsole() {
                 const int n = atoi(line + 5);
                 if (n >= 0 && n < pal::themeCount()) { consoleTheme = n; Serial.printf("theme %d requested (%s)\n", n, pal::themeName((uint8_t)n)); }
                 else Serial.printf("THEME 0..%d\n", pal::themeCount() - 1);
+            } else if (!strncmp(line, "FRAMELOG", 8)) {
+#ifdef UMBRAVOX_SCAN_ENGINE
+                const bool on = atoi(line + 8) != 0;
+                engineadapter::frameLog(on);
+                Serial.printf("framelog: %s\n", engineadapter::frameLogOn() ? "on (one [frm] line per scan frame; the screen stays lit)" : on ? "off (no PSRAM)" : "off");
+#else
+                Serial.println("framelog: engine builds only");
+#endif
             } else if (!strncmp(line, "TEST", 4)) {
                 testStep = 0;
                 testAt   = millis();
@@ -1682,6 +1691,9 @@ void loop() {
 #endif
         dimmed = false;
     }
+#ifdef UMBRAVOX_SCAN_ENGINE
+    if (engineadapter::frameLogOn()) { lastTouchMs = millis(); dimmed = false; }   // FRAMELOG: measuring needs a lit screen
+#endif
     const uint16_t idleS = ui::IDLE_S[set.idleIdx % ui::IDLE_N];
     if (idleS && !dimmed && (millis() - lastTouchMs) > (uint32_t)idleS * 1000)
         dimmed = true;
@@ -2232,6 +2244,8 @@ void loop() {
         engineadapter::service(/*budgetStrips*/4);       // one bounded slice this loop
         bootStall("engine service",renderStart);
         engineadapter::sampleCapture(cap::frames(), cap::uniques(), blescan::adverts());
+        { engineadapter::FrameRec fr;
+          if (engineadapter::takeFrame(fr)) { char b[72]; scanframe::formatFrm(b, sizeof b, fr.drawn, fr.pushed, fr.us, fr.gapMs, fr.alert); Serial.println(b); } }
         perflog::frame(millis() - tD, 0);
 
         static uint32_t engLogAt = 0;

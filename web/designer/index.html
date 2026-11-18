@@ -190,6 +190,11 @@
         </div>
         <div class="screen"><canvas id="layout-canvas" width="480" height="320" tabindex="0" aria-label="The device screen: drag a piece to move it, drag a corner to resize it, arrow keys nudge the selected piece"></canvas></div>
         <div id="layout-msg" class="msg" role="status"></div>
+        <div id="meter" class="meter" aria-live="polite">
+          <h3 class="tiny">Speed on the boards <span class="muted">(p95 frame)</span></h3>
+          <ul id="meter-rows" class="meter-rows"></ul>
+          <p id="meter-note" class="tiny muted"></p>
+        </div>
         <p class="tiny muted">Click a piece to select it, drag it to move it, pull a corner to resize it; arrow keys move it 1 px (Shift: 8 px). The first board you change is drafted onto the other when you open its tab; check it there.</p>
       </div>
     </div>
