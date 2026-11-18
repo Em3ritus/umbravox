@@ -53,3 +53,11 @@ test('a layout the device refuses closes the gate (review C1); an accepted one, 
   assert.equal(installGate(t, null, null, null, '{"format":1}', accept).ok, true);
   assert.equal(installGate(t, null, null, null, null, refuse).ok, true, 'no layout: nothing to check');
 });
+test('a layout over the speed limit is blocked with the meter reason; amber and uncalibrated are not', () => {
+  const m = makeTemplate('cosmic');
+  const over = installGate(m.theme, m.emblem, null, null, null, null, { over: true, reason: 'Speed: Waveshare scan is 40 ms, over its 33 ms limit.' });
+  assert.equal(over.ok, false);
+  assert.equal(over.reason, 'Fix this first: Speed: Waveshare scan is 40 ms, over its 33 ms limit.');
+  assert.equal(installGate(m.theme, m.emblem, null, null, null, null, { over: false, reason: null }).ok, true);
+  assert.equal(installGate(m.theme, m.emblem, null, null, null, null, null).ok, true);
+});

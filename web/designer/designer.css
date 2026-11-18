@@ -125,3 +125,13 @@ hr{border:0; border-top:1px solid var(--edge); margin:18px 0}
 @media (max-width:1100px){ .design{grid-template-columns:1fr 1fr} .col.wide{grid-column:1/-1} }
 @media (max-width:720px){ .design,.two,.two.install{grid-template-columns:1fr} .top{padding:12px 16px} main{padding:16px} .step{padding:6px 14px} }
 @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+
+/* the speed meter (plan 5c): one row per board and kind, its state as the mark and colour */
+.meter{margin:.5rem 0}
+.meter h3{margin:0 0 .25rem}
+.meter-rows{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.15rem .75rem}
+.meter-rows li::before{display:inline-block;width:1.1em}
+.meter-rows li.ok::before{content:"v";color:var(--green,inherit)}
+.meter-rows li.amber{color:var(--amber)} .meter-rows li.amber::before{content:"!"}
+.meter-rows li.over{color:var(--red)} .meter-rows li.over::before{content:"x"}
+.meter-rows li.uncalibrated{opacity:.7} .meter-rows li.uncalibrated::before{content:"?"}

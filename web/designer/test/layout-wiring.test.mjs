@@ -52,7 +52,7 @@ test('the Start page lists every starting layout', () => {
 });
 
 test('review fixes: the Install step, Download and the opened-pack path all respect the layout verdict', () => {
-  assert.match(app, /installGate\(currentTheme\(\), state\.emblem, state\.clip, state\.sounds, layoutText\(\), preview \? \(t\) => preview\.checkLayout\(t\) : null\)/);
+  assert.match(app, /installGate\(currentTheme\(\), state\.emblem, state\.clip, state\.sounds, layoutText\(\), preview \? \(t\) => preview\.checkLayout\(t\) : null, meter\.verdict\)/);
   assert.match(app, /function download\(\) \{\n  const m = \$\('action-msg'\);\n  if \(checksNow\.some\(\(c\) => c\.level === 'error'\)\)/);
   assert.match(app, /function adoptLayout\(text\) \{\n  state\.layout = newLayout\(\);/, 'an opened pack never keeps the Start page preset');
   assert.match(app, /The device would refuse this layout/, 'the Layout step says why');
@@ -71,4 +71,13 @@ test('plan 5b: the alert mode, the card panel and the effect controls are on the
   assert.match(app, /alertFrame\(/);
   assert.match(app, /nextMode\(/);
   assert.match(app, /renderDraft\('alert'/);
+});
+
+test('plan 5c: the speed meter is on the Layout step and over a limit closes Download, Install and Share', () => {
+  for (const id of ['meter', 'meter-rows', 'meter-note']) assert.match(html, new RegExp(`id="${id}"`), id);
+  assert.match(app, /from '\.\/meter\.js'/);
+  assert.match(app, /fetch\('js\/meter-fit\.json'\)/);
+  assert.match(app, /function download\(\) \{[^]*?meter\.verdict && meter\.verdict\.over[^]*?saveZip/, 'Download refuses a layout over the limit');
+  assert.match(app, /\$\('btn-share'\)\.addEventListener\('click', \(\) => \{[^]*?meter\.verdict && meter\.verdict\.over[^]*?shareUrl/, 'Share refuses it too');
+  assert.match(app, /\$\(id\)\.disabled = bad \|\| slow/);
 });

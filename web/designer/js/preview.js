@@ -125,6 +125,19 @@ export function createPreview(M) {
       const ok = withBytes(bytes, (p, l) => M._uv_layout_check(p, l));
       return ok ? { ok: true } : { ok: false, why: M.UTF8ToString(M._uv_error()) };
     },
+    // The speed meter's counts (js/meter.js): the draft (or UMBRAVOX) replayed for `frames` frames of the scan screen
+    // or an alert, the way the board's engine draws it -> [{drawn, pushed}] per frame. board: 'waveshare' | 'cyd-engine'.
+    measure(board, mode, frames = 30, frameMs = 20) {
+      const b = BOARDS[board], m = { scan: -1, low: 0, med: 1, high: 2 }[mode];
+      if (!b || board === 'cyd' || typeof M._uv_meter !== 'function') throw new Error('the meter has no board ' + board);
+      if (m === undefined) throw new Error('unknown meter mode ' + mode);
+      const p = M._malloc(frames * 8);
+      try {
+        const n = M._uv_meter(draft ? draft.id : 0, b.w, b.h, m, frames, frameMs, p);
+        const v = new Uint32Array(M.HEAPU8.buffer, p, frames * 2);
+        return Array.from({ length: n }, (_, i) => ({ drawn: v[2 * i], pushed: v[2 * i + 1] }));
+      } finally { M._free(p); }
+    },
     // One frame of a built-in (0 UMBRAVOX, 1 BAPH0MAU5, 2 COSMIC MUFFIN).
     renderBuiltin(id, screen, frame, opts) { return paint(id, screen, frame, -1, opts); },
   };

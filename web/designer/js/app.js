@@ -29,12 +29,15 @@ import { encodeFont, rasteriseFont } from './fontfmt.js';
 import { grabGifArt } from './artfmt.js';
 import { toDevice, pickPiece, handleAt, dragTo, nudge } from './layout-edit.js';
 import { PRESETS, presetJson } from './layout-presets.js';
+import { loadFit, meterRows, measureAll, meterLabel } from './meter.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '',
   layout: newLayout(), lboard: 'waveshare', lsel: null, presetId: 'standard', lvisited: new Set(),
   media: { fonts: {}, pictures: {} }, mediaVersion: 0, lscreen: 'scan', lmode: 'scan', lplay: null };
 let preview = null;       // null until the wasm loads (or if it cannot)
+// The speed meter's state (plan 5c; see "the speed meter" below): the boards' fit, its note, the last verdict.
+const meter = { fit: null, fitNote: 'Loading the boards\' measurements...', verdict: null, timer: 0 };
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
 
@@ -51,7 +54,7 @@ const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
 // ---------------------------------------------------------------- views
 function installBlock() {
   if (!state.theme) return 'Choose a template first.';
-  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds, layoutText(), preview ? (t) => preview.checkLayout(t) : null);
+  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds, layoutText(), preview ? (t) => preview.checkLayout(t) : null, meter.verdict);
   return g.ok ? null : g.reason;
 }
 function show(view) {
@@ -333,8 +336,8 @@ function refreshChecks() {
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
   }
-  const bad = checksNow.some((c) => c.level === 'error');
-  for (const id of ['btn-download', 'btn-install', 'btn-share']) { $(id).disabled = bad; $(id).title = bad ? 'Fix the errors in the checks first.' : ''; }
+  const bad = checksNow.some((c) => c.level === 'error'), slow = !!(meter.verdict && meter.verdict.over);
+  for (const id of ['btn-download', 'btn-install', 'btn-share']) { $(id).disabled = bad || slow; $(id).title = bad ? 'Fix the errors in the checks first.' : slow ? meter.verdict.reason : ''; }
   const nav = document.querySelector('.step[data-view="install"]'), why = installBlock();
   nav.disabled = !!why; nav.title = why || '';
 }
@@ -342,8 +345,34 @@ function refresh() {
   if (!preview || !state.theme) return;
   const r = preview.loadDraft(currentTheme(), state.emblem, state.clip, layoutText(), previewMedia());
   const m = $('preview-msg');
-  if (r.ok) { m.className = 'msg'; m.textContent = ''; }
+  if (r.ok) { m.className = 'msg'; m.textContent = ''; scheduleMeter(); }
   else { m.className = 'msg warn'; m.textContent = 'The preview shows the last version the device would accept. This one is rejected: ' + r.error; }
+}
+// ---------------------------------------------------------------- the speed meter (plan 5c)
+// The fit (js/meter-fit.json) was measured on the boards; without it every row says "not calibrated" and nothing is
+// blocked. The draft is re-measured 400 ms after the last change (~0.1 s of wasm for both boards).
+fetch('js/meter-fit.json').then((r) => (r.ok ? r.json() : null)).then((j) => {
+  const f = j ? loadFit(j) : { ok: false, why: 'This designer has no measurements from the boards yet.' };
+  meter.fit = f.ok ? f.fit : null;
+  meter.fitNote = f.ok ? `Measured on the boards on ${f.fit.measured} (firmware ${f.fit.firmware}). Over a limit, Download, Install and Share stay closed.` : f.why + ' The meter shows no times and blocks nothing.';
+  scheduleMeter();
+}).catch(() => { meter.fitNote = 'The boards\' measurements could not be read. The meter shows no times and blocks nothing.'; syncMeter(); });
+function scheduleMeter() { clearTimeout(meter.timer); meter.timer = setTimeout(runMeter, 400); }
+function runMeter() {
+  if (!preview || !state.theme || typeof preview.measure !== 'function') { syncMeter(); return; }
+  try {
+    meter.verdict = meterRows(meter.fit, measureAll((b, mode, n, ms) => preview.measure(b, mode, n, ms), meter.fit));
+  } catch (e) { meter.verdict = null; meter.fitNote = 'The meter could not run: ' + e.message; }
+  syncMeter();
+  refreshChecks();
+}
+function syncMeter() {
+  const ul = $('meter-rows'); clear(ul);
+  for (const r of (meter.verdict ? meter.verdict.rows : [])) {
+    const text = r.state === 'uncalibrated' ? `${meterLabel(r)}: not calibrated` : `${meterLabel(r)}: ~${r.ms} ms of ${r.limit} ms`;
+    ul.append(el('li', { class: r.state, text }));
+  }
+  $('meter-note').textContent = meter.verdict && meter.verdict.over ? meter.verdict.reason + ' ' + meter.fitNote : meter.fitNote;
 }
 for (const b of $('tabs').children) b.addEventListener('click', () => { state.tab = b.dataset.v; syncTabs(); t0 = performance.now(); });
 // The board being previewed (remembered per browser; the CYD until the person picks another).
@@ -508,6 +537,7 @@ function saveZip(pack) {
 function download() {
   const m = $('action-msg');
   if (checksNow.some((c) => c.level === 'error')) { m.className = 'msg err'; m.textContent = 'Fix the errors in the checks first.'; return; }
+  if (meter.verdict && meter.verdict.over) { m.className = 'msg err'; m.textContent = meter.verdict.reason; return; }
   try {
     const folder = saveZip(currentPack());
     m.className = 'msg';
@@ -521,6 +551,7 @@ $('btn-zip2').addEventListener('click', download);
 $('btn-share').addEventListener('click', () => {
   if (checksNow.some((c) => c.level === 'error')) return;
   const m = $('action-msg');
+  if (meter.verdict && meter.verdict.over) { m.className = 'msg err'; m.textContent = meter.verdict.reason; return; }
   if (layoutText()) {   // the community repository accepts layout.json from its next update (plan 6)
     m.className = 'msg warn';
     m.textContent = 'Sharing a theme with a layout is not open yet: the community themes repository accepts layouts from its next update. Download the pack and install it yourself for now, or set the layout back to Standard to share.';
