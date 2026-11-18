@@ -21,6 +21,7 @@
 #include "../../../ui/packassets.h"
 #include <stdlib.h>
 #include "../../../ui/preview_ws.h"
+#include "../../../ui/meter.h"
 #include <emscripten/emscripten.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -336,6 +337,17 @@ EMSCRIPTEN_KEEPALIVE void uv_render_ws(int theme, int screen, int frame, int swe
     static uint16_t px[prevws::W * prevws::H];
     prevws::render(theme, screen, frame, sweep, alert_style, alert_conf, px);
     for (int i = 0; i < prevws::W * prevws::H; i++) rgb565ToRgba(px[i], out + 4 * i);
+}
+
+// The speed meter (plan 5c): replay `frames` frames of the scan screen (mode -1) or an alert of LOW/MED/HIGH
+// (mode 0/1/2) at w x h through the board's slice loop; out receives 2*frames values: drawn, pushed per frame.
+// Returns the number of frames written (0 for a bad argument).
+EMSCRIPTEN_KEEPALIVE int uv_meter(int theme, int w, int h, int mode, int frames, int frameMs, uint32_t* out) {
+    if (!out || frames < 1 || frames > 600) return 0;
+    std::vector<uimeter::Count> v((size_t)frames);
+    const int n = meter::run(theme, w, h, mode, frames, frameMs, v.data());
+    for (int i = 0; i < n; i++) { out[2 * i] = v[i].drawn; out[2 * i + 1] = v[i].pushed; }
+    return n;
 }
 
 } // extern "C"
