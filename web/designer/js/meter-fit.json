@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "measured": "2026-11-18",
+  "firmware": "dd0e2af",
+  "boards": {
+    "cyd-engine": {
+      "scan": {
+        "a": 0.0003892648932145494,
+        "b": 0.0008883068020545876,
+        "c": 5.154106257293374,
+        "rmsMs": 0.922,
+        "frames": 4903
+      },
+      "alert": {
+        "a": 0.00015262231233781999,
+        "b": 0.000620298149387091,
+        "c": 52.3418581832558,
+        "rmsMs": 22.521,
+        "frames": 988
+      },
+      "frameMs": 15,
+      "limits": {
+        "scanMs": 47.7,
+        "alertMs": 400
+      },
+      "frames": 5891,
+      "packs": [
+        "alert-fx",
+        "builtin",
+        "meter-fullcard",
+        "meter-small",
+        "stress-p4"
+      ]
+    },
+    "waveshare": {
+      "scan": {
+        "a": 0.0009663568458909443,
+        "b": 0.00102845425323976,
+        "c": -1.8894973484205817,
+        "rmsMs": 3.119,
+        "frames": 2844
+      },
+      "alert": {
+        "a": 0.000895845942613057,
+        "b": 0,
+        "c": 129.04198160747106,
+        "rmsMs": 46.766,
+        "frames": 397
+      },
+      "frameMs": 35,
+      "limits": {
+        "scanMs": 73.9,
+        "alertMs": 400
+      },
+      "frames": 3241,
+      "packs": [
+        "alert-fx",
+        "builtin",
+        "meter-fullcard",
+        "meter-small",
+        "stress-p4"
+      ]
+    }
+  }
+}

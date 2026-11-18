@@ -4,9 +4,11 @@
 //   node tools/meter-crosscheck.mjs PROBE.csv [MORE.csv ...] PACKS_DIR
 //
 // For every board, pack and mode in the tools/meterprobe.py CSVs, replay the same pack in the wasm (ui/meter.h via
-// uv_meter) at the board's measured frame period, and compare the WORST frame's pixels drawn and pushed with the
-// board's. The fit in meter-fit.json is only right for the designer if the two agree: more than 15% apart on any
-// row exits 1. Pack 'builtin' is theme 0 (no pack); every other pack is PACKS_DIR/<pack>.
+// uv_meter) at the board's measured frame period, and compare the p95 frame's pixels drawn and pushed with the
+// board's (the meter judges p95). Steady frames only, on both sides: the board's first frame of every mode run is a
+// transition the replay cannot reproduce (MED and LOW rise over the previous card), so it is left out, as
+// tools/meterfit.py does; the replay leaves out its scan entry repaint and the alert's rise. More than 15% apart on
+// any row exits 1. Pack 'builtin' is theme 0 (no pack); every other pack is PACKS_DIR/<pack>.
 // Needs the preview built: tools/build-designer-wasm.sh.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,18 +64,23 @@ function replay(id, board, mode, frameMs) {
     const n = M._uv_meter(id, w, h, MODE[mode], FRAMES, frameMs, p);
     const v = new Uint32Array(M.HEAPU8.buffer, p, FRAMES * 2);
     const out = [];
-    for (let i = mode === 'scan' ? SKIP_SCAN : 0; i < n; i++) out.push({ drawn: v[2 * i], pushed: v[2 * i + 1] });
+    for (let i = mode === 'scan' ? SKIP_SCAN : 1; i < n; i++) out.push({ drawn: v[2 * i], pushed: v[2 * i + 1] });
     return out;
   } finally { M._free(p); }
 }
 
-const worst = (list, k) => list.reduce((m, r) => Math.max(m, Number(r[k])), 0);
+const p95 = (list, k) => {
+  const s = list.map((r) => Number(r[k])).sort((x, y) => x - y);
+  return s.length ? s[Math.max(0, Math.ceil(0.95 * s.length) - 1)] : 0;
+};
+// The board's rows without the first frame of every run of the same board, pack and mode (file order).
+const steady = rows.filter((r, i) => i > 0 && rows[i - 1].board === r.board && rows[i - 1].pack === r.pack && rows[i - 1].mode === r.mode);
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 let bad = 0;
 const ids = new Map();
 for (const board of [...new Set(rows.map((r) => r.board))]) {
   if (!SIZE[board]) { console.error(`unknown board ${board}`); process.exit(2); }
-  const br = rows.filter((r) => r.board === board);
+  const br = steady.filter((r) => r.board === board);
   const frameMs = Math.max(1, Math.round(median(br.filter((r) => r.mode === 'scan' && Number(r.gap) > 0).map((r) => Number(r.gap)))) || 20);
   for (const pack of [...new Set(br.map((r) => r.pack))]) {
     if (!ids.has(pack)) ids.set(pack, loadPack(pack));
@@ -82,11 +89,11 @@ for (const board of [...new Set(rows.map((r) => r.board))]) {
       if (!dev.length) continue;
       const sim = replay(ids.get(pack), board, mode, frameMs);
       for (const k of ['drawn', 'pushed']) {
-        const a = worst(dev, k), b = worst(sim, k);
+        const a = p95(dev, k), b = p95(sim, k);
         const off = Math.abs(a - b) / Math.max(a, 1);
         const ok = off <= TOL;
         if (!ok) bad++;
-        console.log(`${ok ? 'ok  ' : 'FAIL'} ${board} ${pack} ${mode} ${k}: board ${a}, wasm ${b} (${(off * 100).toFixed(1)}%)`);
+        console.log(`${ok ? 'ok  ' : 'FAIL'} ${board} ${pack} ${mode} ${k} p95: board ${a}, wasm ${b} (${(off * 100).toFixed(1)}%)`);
       }
     }
   }

@@ -1,6 +1,7 @@
 import csv
 import importlib.util
 import json
+import math
 import os
 import random
 import subprocess
@@ -15,15 +16,23 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
 
-def rows(board, a=0.0002, b=0.0001, c=3.0, packs=("builtin", "meter-small", "stress-p4", "alert-fx"), noise=0.1, seed=1):
+SCAN = (0.0002, 0.0001, 3.0)
+ALERT = (0.0006, 0.0003, 20.0)
+
+
+def rows(board, scan=SCAN, alert=ALERT, packs=("builtin", "meter-small", "stress-p4", "alert-fx"), noise=0.1, seed=1,
+         spike=0.0):
+    """Per pack: a block of scan frames, then a block of high frames (as the board's probe walks them). `spike`
+    adds that many ms to the first frame of every block: the transition frame meterfit must leave out."""
     rnd = random.Random(seed)
     out = []
     for i, pk in enumerate(packs):
-        for k in range(40):
-            d = rnd.randint(2000, 150000) // (i + 1)
-            p = rnd.randint(1000, d)
-            ms = a * d + b * p + c + rnd.uniform(-noise, noise)
-            out.append([board, pk, "scan" if k % 2 else "high", d, p, int(ms * 1000), 40])
+        for mode, (a, b, c) in (("scan", scan), ("high", alert)):
+            for k in range(40):
+                d = 2000 + rnd.randint(0, 150000) // (i + 1)
+                p = rnd.randint(1000, d)
+                ms = a * d + b * p + c + rnd.uniform(-noise, noise) + (spike if k == 0 else 0.0)
+                out.append([board, pk, mode, d, p, int(ms * 1000), 40])
     return out
 
 
@@ -34,56 +43,87 @@ def write(path, rs):
         w.writerows(rs)
 
 
+def run(rs, board="waveshare"):
+    with tempfile.TemporaryDirectory() as d:
+        src, out = os.path.join(d, "in.csv"), os.path.join(d, "fit.json")
+        write(src, rs)
+        r = subprocess.run([sys.executable, str(TOOL), src, "--out", out], capture_output=True, text=True)
+        j = json.loads(Path(out).read_text()) if os.path.exists(out) else None
+        return r, j
+
+
+def p95(xs):
+    xs = sorted(xs)
+    return xs[math.ceil(0.95 * len(xs)) - 1]
+
+
 class FitTests(unittest.TestCase):
     def test_recovers_the_coefficients(self):
-        f = mod.fit([(r[3], r[4], r[5] / 1000.0) for r in rows("waveshare")])
+        f = mod.fit([(r[3], r[4], r[5] / 1000.0) for r in rows("waveshare") if r[2] == "scan"])
         self.assertAlmostEqual(f["a"], 0.0002, delta=0.0002 * 0.05)
         self.assertAlmostEqual(f["b"], 0.0001, delta=0.0001 * 0.05)
         self.assertAlmostEqual(f["c"], 3.0, delta=3.0 * 0.05)
         self.assertLess(f["rmsMs"], 0.1)
 
-    def test_writes_the_fit_with_limits(self):
-        with tempfile.TemporaryDirectory() as d:
-            src, out = os.path.join(d, "ws.csv"), os.path.join(d, "fit.json")
-            rs = rows("waveshare")
-            write(src, rs)
-            r = subprocess.run([sys.executable, str(TOOL), src, "--out", out], capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            j = json.loads(Path(out).read_text())
-            self.assertEqual(j["version"], 1)
-            ws = j["boards"]["waveshare"]
-            self.assertEqual(ws["frameMs"], 40)
-            self.assertEqual(ws["limits"]["alertMs"], 250)
-            worst = max(r[5] for r in rs if r[1] == "builtin" and r[2] == "scan") / 1000.0
-            self.assertAlmostEqual(ws["limits"]["scanMs"], round(worst * 1.15, 1), places=1)
-            self.assertNotIn("cyd-engine", j["boards"])
+    def test_p95_is_nearest_rank(self):
+        self.assertEqual(mod.p95(list(range(1, 21))), 19)
+        self.assertEqual(mod.p95(list(range(1, 31))), 29)
+        self.assertEqual(mod.p95([5.0]), 5.0)
 
-    def test_cyd_scan_limit_is_14_unless_given(self):
-        with tempfile.TemporaryDirectory() as d:
-            src, out = os.path.join(d, "cyd.csv"), os.path.join(d, "fit.json")
-            write(src, rows("cyd-engine"))
-            subprocess.run([sys.executable, str(TOOL), src, "--out", out], check=True, capture_output=True)
-            self.assertEqual(json.loads(Path(out).read_text())["boards"]["cyd-engine"]["limits"]["scanMs"], 14)
-            subprocess.run([sys.executable, str(TOOL), src, "--out", out, "--cyd-scan-ms", "30"], check=True, capture_output=True)
-            self.assertEqual(json.loads(Path(out).read_text())["boards"]["cyd-engine"]["limits"]["scanMs"], 30)
+    def test_fits_scan_and_alert_separately(self):
+        r, j = run(rows("waveshare"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(j["version"], 2)
+        ws = j["boards"]["waveshare"]
+        for kind, (a, b, c) in (("scan", SCAN), ("alert", ALERT)):
+            self.assertAlmostEqual(ws[kind]["a"], a, delta=a * 0.05, msg=kind)
+            self.assertAlmostEqual(ws[kind]["b"], b, delta=b * 0.05, msg=kind)
+            self.assertAlmostEqual(ws[kind]["c"], c, delta=c * 0.05, msg=kind)
+        self.assertEqual(ws["frameMs"], 40)
+
+    def test_limits_are_builtin_scan_p95_plus_15_and_alert_400_on_both_boards(self):
+        rs = rows("waveshare") + rows("cyd-engine", seed=2)
+        r, j = run(rs)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for b in ("waveshare", "cyd-engine"):
+            steady = [x[5] / 1000.0 for i, x in enumerate(rs)
+                      if x[0] == b and x[1] == "builtin" and x[2] == "scan" and rs[i - 1][:3] == x[:3]]
+            L = j["boards"][b]["limits"]
+            self.assertEqual(L["alertMs"], 400)
+            self.assertAlmostEqual(L["scanMs"], round(p95(steady) * 1.15, 1), places=1, msg=b)
+
+    def test_leaves_out_the_transition_frame(self):
+        r, j = run(rows("waveshare", spike=500.0))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ws = j["boards"]["waveshare"]
+        self.assertAlmostEqual(ws["alert"]["c"], ALERT[2], delta=ALERT[2] * 0.05)
+        self.assertLess(ws["scan"]["rmsMs"], 0.1)
+        self.assertLess(ws["limits"]["scanMs"], 100)
+
+    def test_clamps_a_negative_pushed_slope_to_zero(self):
+        r, j = run(rows("waveshare", alert=(0.0008, -0.0002, 20.0)))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        al = j["boards"]["waveshare"]["alert"]
+        self.assertEqual(al["b"], 0)
+        self.assertGreater(al["a"], 0)
 
     def test_refuses_too_few_packs(self):
-        with tempfile.TemporaryDirectory() as d:
-            src, out = os.path.join(d, "ws.csv"), os.path.join(d, "fit.json")
-            write(src, rows("waveshare", packs=("builtin", "meter-small")))
-            r = subprocess.run([sys.executable, str(TOOL), src, "--out", out], capture_output=True, text=True)
-            self.assertEqual(r.returncode, 2)
-            self.assertIn("3", r.stderr)
-            self.assertFalse(os.path.exists(out))
+        r, j = run(rows("waveshare", packs=("builtin", "meter-small")))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("3", r.stderr)
+        self.assertIsNone(j)
 
-    def test_refuses_a_negative_slope(self):
-        with tempfile.TemporaryDirectory() as d:
-            src, out = os.path.join(d, "ws.csv"), os.path.join(d, "fit.json")
-            write(src, rows("waveshare", a=-0.0002, c=40.0))
-            r = subprocess.run([sys.executable, str(TOOL), src, "--out", out], capture_output=True, text=True)
-            self.assertEqual(r.returncode, 2)
-            self.assertIn("negative", r.stderr)
-            self.assertFalse(os.path.exists(out))
+    def test_refuses_a_board_without_alert_frames(self):
+        r, j = run([x for x in rows("waveshare") if x[2] == "scan"])
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("alert", r.stderr)
+        self.assertIsNone(j)
+
+    def test_refuses_when_both_slopes_are_negative(self):
+        r, j = run(rows("waveshare", alert=(-0.0002, -0.0001, 400.0)))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("negative", r.stderr)
+        self.assertIsNone(j)
 
 
 if __name__ == "__main__":

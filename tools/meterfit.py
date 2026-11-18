@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Fit the speed meter's frame time per board from tools/meterprobe.py CSVs (plan 5c):
 
-    python3 tools/meterfit.py ws.csv cyd.csv --out web/designer/js/meter-fit.json [--cyd-scan-ms 14]
+    python3 tools/meterfit.py ws.csv cyd.csv --out web/designer/js/meter-fit.json
 
-Per board, least squares over every frame of every pack: ms ~ a*drawn + b*pushed + c. The designer
-(web/designer/js/meter.js) applies it to the counts its wasm replay (ui/meter.h) produces, and judges the worst
-frame against the board's limits: alerts 250 ms on both boards; scan 14 ms on the CYD engine build (or
---cyd-scan-ms); scan on the Waveshare = the built-in theme's worst measured scan frame + 15%.
+Per board, two least-squares fits ms ~ a*drawn + b*pushed + c: one over the scan frames, one over the alert frames
+(LOW, MED, HIGH). An alert pixel costs 2-2.5x a scan pixel (the rite, cards, text), so one model over both cannot
+work. The first frame after every change of pack or mode is left out: on the board MED and LOW appear over the
+previous card, which the designer's replay cannot reproduce. A negative slope is clamped to 0 and the other term
+refitted alone (pixels cannot cost negative time); both negative refuses the board.
 
-A board is refused (exit 2, nothing written) with fewer than 3 distinct packs or a negative slope: either means
-the measurements cannot separate drawing from pushing, and a bad fit must never reach the designer.
+The designer (web/designer/js/meter.js) applies the fits to the counts its wasm replay (ui/meter.h) produces and
+judges the p95 frame (nearest rank) against the board's limits: scan = the built-in theme's measured scan p95 + 15%;
+alerts = 400 ms on both boards.
+
+A board is refused (exit 2, nothing written) with fewer than 3 distinct packs, no alert or no built-in scan frames,
+or both slopes of a fit negative: a bad fit must never reach the designer.
 """
 import argparse
 import csv
@@ -21,9 +26,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-ALERT_MS = 250
-CYD_SCAN_MS = 14
-WS_SCAN_MARGIN = 1.15
+ALERT_MS = 400
+SCAN_MARGIN = 1.15
 
 
 def _solve3(m, v):
@@ -58,6 +62,43 @@ def fit(samples):
     return {"a": a, "b": b, "c": c, "rmsMs": rms}
 
 
+def fit_nonneg(samples):
+    """fit() with a and b kept >= 0: a negative one is clamped to 0 and the other refitted alone."""
+    f = fit(samples)
+    if f["a"] >= 0 and f["b"] >= 0:
+        return f
+    i = 0 if f["b"] < 0 else 1  # the term kept
+    xs = [s[i] for s in samples]
+    ys = [s[2] for s in samples]
+    n = len(samples)
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    k = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx if sxx else -1.0
+    if k < 0:
+        raise ValueError("negative slope (a=%.3g, b=%.3g, and %.3g alone): the frames do not separate drawing from "
+                         "pushing" % (f["a"], f["b"], k))
+    c = my - k * mx
+    rms = math.sqrt(sum((k * s[i] + c - s[2]) ** 2 for s in samples) / n)
+    return {"a": k if i == 0 else 0, "b": k if i == 1 else 0, "c": c, "rmsMs": rms}
+
+
+def p95(xs):
+    """Nearest-rank 95th percentile (the same rule as web/designer/js/meter.js)."""
+    xs = sorted(xs)
+    return xs[max(0, math.ceil(0.95 * len(xs)) - 1)]
+
+
+def steady(rows):
+    """Drop the first frame after every change of board, pack or mode (in file order)."""
+    out, prev = [], None
+    for r in rows:
+        key = (r["board"], r["pack"], r["mode"])
+        if key == prev:
+            out.append(r)
+        prev = key
+    return out
+
+
 def read_rows(paths):
     out = []
     for p in paths:
@@ -68,25 +109,29 @@ def read_rows(paths):
     return out
 
 
-def board_fit(board, rows, cyd_scan_ms):
+def board_fit(board, rows):
     packs = {r["pack"] for r in rows}
     if len(packs) < 3:
         raise ValueError("%s: %d distinct packs measured, the fit needs at least 3" % (board, len(packs)))
-    f = fit([(r["drawn"], r["pushed"], r["ms"]) for r in rows])
-    if f["a"] < 0 or f["b"] < 0:
-        raise ValueError("%s: negative slope (a=%.3g, b=%.3g): the measurements do not separate drawing from pushing"
-                         % (board, f["a"], f["b"]))
+    out = {}
+    for kind, sel in (("scan", lambda r: r["mode"] == "scan"), ("alert", lambda r: r["mode"] != "scan")):
+        rs = [r for r in rows if sel(r)]
+        if len(rs) < 3:
+            raise ValueError("%s: no %s frames measured" % (board, kind))
+        try:
+            f = fit_nonneg([(r["drawn"], r["pushed"], r["ms"]) for r in rs])
+        except ValueError as e:
+            raise ValueError("%s %s: %s" % (board, kind, e))
+        out[kind] = {"a": f["a"], "b": f["b"], "c": f["c"], "rmsMs": round(f["rmsMs"], 3), "frames": len(rs)}
     gaps = [r["gap"] for r in rows if r["mode"] == "scan" and r["gap"] > 0]
-    frame_ms = int(round(statistics.median(gaps))) if gaps else 20
-    if board == "waveshare":
-        builtin = [r["ms"] for r in rows if r["pack"] == "builtin" and r["mode"] == "scan"]
-        if not builtin:
-            raise ValueError("waveshare: no built-in theme scan frames (pack 'builtin'): the scan limit comes from them")
-        scan_ms = round(max(builtin) * WS_SCAN_MARGIN, 1)
-    else:
-        scan_ms = cyd_scan_ms
-    return {"a": f["a"], "b": f["b"], "c": f["c"], "rmsMs": round(f["rmsMs"], 3), "frameMs": frame_ms,
-            "limits": {"scanMs": scan_ms, "alertMs": ALERT_MS}, "frames": len(rows), "packs": sorted(packs)}
+    builtin = [r["ms"] for r in rows if r["pack"] == "builtin" and r["mode"] == "scan"]
+    if not builtin:
+        raise ValueError("%s: no built-in theme scan frames (pack 'builtin'): the scan limit comes from them" % board)
+    out["frameMs"] = int(round(statistics.median(gaps))) if gaps else 20
+    out["limits"] = {"scanMs": round(p95(builtin) * SCAN_MARGIN, 1), "alertMs": ALERT_MS}
+    out["frames"] = len(rows)
+    out["packs"] = sorted(packs)
+    return out
 
 
 def git_sha():
@@ -101,22 +146,24 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("csv", nargs="+")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--cyd-scan-ms", type=float, default=CYD_SCAN_MS)
     a = ap.parse_args()
-    rows = read_rows(a.csv)
-    cyd = int(a.cyd_scan_ms) if float(a.cyd_scan_ms).is_integer() else a.cyd_scan_ms
+    rows = steady(read_rows(a.csv))
     boards = {}
     try:
         for b in sorted({r["board"] for r in rows}):
-            boards[b] = board_fit(b, [r for r in rows if r["board"] == b], cyd)
+            boards[b] = board_fit(b, [r for r in rows if r["board"] == b])
     except ValueError as e:
         print("meterfit: %s" % e, file=sys.stderr)
         sys.exit(2)
-    out = {"version": 1, "measured": datetime.date.today().isoformat(), "firmware": git_sha(), "boards": boards}
+    out = {"version": 2, "measured": datetime.date.today().isoformat(), "firmware": git_sha(), "boards": boards}
     Path(a.out).write_text(json.dumps(out, indent=2) + "\n")
     for b, f in boards.items():
-        print("%s: ms = %.4g*drawn + %.4g*pushed + %.3g (rms %.2f ms, %d frames), frame %d ms, limits scan %s / alert %s ms"
-              % (b, f["a"], f["b"], f["c"], f["rmsMs"], f["frames"], f["frameMs"], f["limits"]["scanMs"], f["limits"]["alertMs"]))
+        for k in ("scan", "alert"):
+            m = f[k]
+            print("%s %s: ms = %.4g*drawn + %.4g*pushed + %.3g (rms %.2f ms, %d frames)"
+                  % (b, k, m["a"], m["b"], m["c"], m["rmsMs"], m["frames"]))
+        print("%s: frame %d ms, limits (p95) scan %s / alert %s ms" % (b, f["frameMs"], f["limits"]["scanMs"],
+                                                                      f["limits"]["alertMs"]))
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 #include "../ui/preview_ws.h"
 #include "../ui/themelayout.h"
 #include "packload.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -63,10 +64,23 @@ static void board(int w, int h, const char* name) {
     expect(same(scan, again), "two runs give identical counts");
     expect(!scan.empty() && scan[0].drawn == (uint32_t)(w * h) && scan[0].pushed == (uint32_t)(w * h), "scan frame 0 is a full repaint");
     expect(worstPushed(scan, 2) < (uint32_t)(w * h / 2), "steady scan frames push under half the screen");
+    // The board's blips keep the time they were last heard and fade with the clock, so a typical steady frame
+    // redraws one sweep wedge (Waveshare 19,888 px, CYD 6-7k px in the probe logs), not the whole dial.
+    std::vector<uint32_t> d;
+    for (size_t i = 2; i < scan.size(); i++) d.push_back(scan[i].drawn);
+    std::sort(d.begin(), d.end());
+    printf("    steady scan median drawn %u\n", d.empty() ? 0u : d[d.size() / 2]);
+    expect(!d.empty() && d[d.size() / 2] < (uint32_t)(w * h / 6), "a typical steady scan frame draws a wedge, not the whole dial");
 
     // The built-in HIGH card is the whole screen on both boards, and the alert's first frame draws it.
     const auto high = run(t, w, h, 2);
     expect(worstDrawn(high) >= (uint32_t)(w * h), "alert HIGH draws at least the card");
+
+    // On the board an alert rises over a drawn scan screen: the replay runs scan frames first and returns only the
+    // alert's frames, so the alert's frame 0 is not the entry repaint of the whole screen.
+    const auto low = run(t, w, h, 0);
+    expect(low.size() == 30, "30 alert frames (the scan warm-up is not returned)");
+    expect(!low.empty() && low[0].pushed < (uint32_t)(w * h), "alert LOW frame 0 rises over the scan screen (no full repaint)");
 }
 
 int main() {
