@@ -88,7 +88,7 @@ int main() {
       check("an out-of-range slot is ignored, not indexed", c.next(0).kind == Step::NOTHING); }
 
     // --- Progress: a load cut into slices so the screen keeps updating between them -------------------------------
-    { packmedia::Progress p; p.start(100, 50);
+    { packmedia::Progress p; { const uint32_t two[2] = {100, 50}; p.start(two, 2); }
       check("two files: not done at the start", !p.done());
       auto a = p.next(64);
       check("first slice: file 0, offset 0, the slice size", a.file == 0 && a.off == 0 && a.len == 64);
@@ -101,24 +101,46 @@ int main() {
       p.advance(c.len);
       check("done once every byte of both is read", p.done() && p.next(64).len == 0); }
 
-    { packmedia::Progress p; p.start(0, 30);
+    { packmedia::Progress p; { const uint32_t two[2] = {0, 30}; p.start(two, 2); }
       auto a = p.next(64);
       check("a missing first file is skipped", a.file == 1 && a.len == 30); p.advance(30);
       check("and the load ends", p.done()); }
 
-    { packmedia::Progress p; p.start(0, 0);
+    { packmedia::Progress p; { const uint32_t two[2] = {0, 0}; p.start(two, 2); }
       check("nothing to read: done at once", p.done()); }
 
-    { packmedia::Progress p; p.start(10, 20);
+    { packmedia::Progress p; { const uint32_t two[2] = {10, 20}; p.start(two, 2); }
       p.skipFile();
       auto a = p.next(64);
       check("skipFile abandons the current file and moves to the next", a.file == 1 && a.off == 0 && a.len == 20);
       p.skipFile();
       check("skipping the last file ends the load", p.done()); }
 
-    { packmedia::Progress p; p.start(1000, 0); uint32_t total = 0, n = 0;
+    { packmedia::Progress p; { const uint32_t two[2] = {1000, 0}; p.start(two, 2); } uint32_t total = 0, n = 0;
       while (!p.done()) { auto s = p.next(256); total += s.len; n++; p.advance(s.len); }
       check("slices add up to the file, none over the slice size", total == 1000 && n == 4); }
+
+    // Plan 4: any number of files (clip, sounds, fonts, pictures), in manifest order, empty ones skipped.
+    { const uint32_t sizes[5] = {0, 5000, 40000, 0, 7};
+      packmedia::Progress p; p.start(sizes, 5);
+      auto a = p.next(16384);
+      check("N files: the first non-empty file first", a.file == 1 && a.off == 0 && a.len == 5000); p.advance(a.len);
+      uint32_t got2 = 0; int slices2 = 0;
+      while (!p.done() && p.next(16384).file == 2) { auto s = p.next(16384); got2 += s.len; slices2++; p.advance(s.len); }
+      check("N files: file 2 in slices", got2 == 40000 && slices2 == 3);
+      auto e = p.next(16384);
+      check("N files: the empty file 3 is skipped, file 4 last", e.file == 4 && e.len == 7); p.advance(e.len);
+      check("N files: done exactly after the last", p.done() && p.next(16384).len == 0); }
+    { uint32_t sizes[packmedia::MEDIA_FILES_MAX]; for (auto& s : sizes) s = 3;
+      packmedia::Progress p; p.start(sizes, packmedia::MEDIA_FILES_MAX); int n = 0;
+      while (!p.done()) { auto s = p.next(64); check("26 files: in order", s.file == n); n++; p.advance(s.len); }
+      check("26 files: every one read", n == packmedia::MEDIA_FILES_MAX && packmedia::MEDIA_FILES_MAX == 26); }
+    { uint32_t sizes[packmedia::MEDIA_FILES_MAX + 5]; for (auto& s : sizes) s = 1;
+      packmedia::Progress p; p.start(sizes, packmedia::MEDIA_FILES_MAX + 5);
+      int n = 0; while (!p.done() && n < 100) { p.advance(p.next(64).len); n++; }
+      check("a count over MEDIA_FILES_MAX is capped, never read past the list", n <= packmedia::MEDIA_FILES_MAX); }
+    { packmedia::Progress p; p.start(nullptr, 3);
+      check("no list: nothing to read", p.done()); }
 
     // Only a panel at least WIDE_PANEL_W wide draws a pack's radar clip, so a narrower one never reads it from the card.
     check("the 480 px Waveshare reads the clip", packmedia::clipWanted(480));

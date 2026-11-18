@@ -110,6 +110,23 @@ static void testPutPolicy() {
         {"/themes/01234567890123456789012345678901/theme.json", 10, false, nullptr}, // 32
         {"/themes/CON/theme.json",            10,   false, nullptr},          // DOS device names
         {"/themes/nul/theme.json",            10,   false, nullptr},
+        // plan 4: layout.json, the pack fonts f0..f7.fnt and pictures a0..a15.art, each under its cap
+        {"/themes/x/layout.json",             16384, true, "/themes/x/layout.json"},
+        {"/themes/x/LAYOUT.JSON",             10,   true,  "/themes/x/layout.json"},
+        {"/themes/x/layout.json",             16385, false, nullptr},
+        {"/themes/x/f0.fnt",                  12800, true, "/themes/x/f0.fnt"},
+        {"/themes/x/F7.FNT",                  100,  true,  "/themes/x/f7.fnt"},
+        {"/themes/x/f7.fnt",                  12801, false, nullptr},
+        {"/themes/x/a0.art",                  10,   true,  "/themes/x/a0.art"},
+        {"/themes/x/a15.art",                 196608, true, "/themes/x/a15.art"},
+        {"/themes/x/a15.art",                 196609, false, nullptr},
+        {"/themes/x/f8.fnt",                  10,   false, nullptr},
+        {"/themes/x/a16.art",                 10,   false, nullptr},
+        {"/themes/x/a01.art",                 10,   false, nullptr},
+        {"/themes/x/font.fnt",                10,   false, nullptr},
+        {"/themes/x/a1.fnt",                  10,   false, nullptr},
+        {"/themes/x/f1.art",                  10,   false, nullptr},
+        {"/themes/x/a1.art.tmp",              10,   false, nullptr},
         {"/themes/Com1/theme.json",           10,   false, nullptr},
         {"/themes/lpt9/emblem.bin",           10,   false, nullptr},
         {"/themes/aux/theme.json",            10,   false, nullptr},

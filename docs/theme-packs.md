@@ -232,7 +232,13 @@ Each board may also have a `style` block for every other screen, and up to eight
   tile has room.
 - `decor.0` to `decor.7` are drawn in that order, under every other piece, at exactly their rect's size.
 - Fonts and pictures are read from the card when the theme is selected. Until they have loaded, and if one cannot
-  be read, the theme draws with the built-in font and no picture.
+  be read, the theme draws with the built-in font and no picture. A font or picture the layout names that is missing
+  from the folder, or over its limit (a font 12,800 bytes, a picture 196,608 bytes, one board's pictures together
+  393,216 bytes), skips the layout. If the device resets while reading them, the pack is skipped from then on until
+  one of `theme.json`, `emblem.bin`, `radar.vid`, `alert.snd` or `layout.json` changes size (fonts and pictures are
+  not measured at boot).
+- Over USB (`tools/sdput.py`, the designer's USB install) `layout.json`, `f0.fnt`-`f7.fnt` and `a0.art`-`a15.art`
+  are sent too.
 
 What makes the device refuse a layout (it then uses the built-in layout and keeps the rest of the theme; the reason
 is in `/diag.log` and counts toward the skipped number on the ASPECT screen):

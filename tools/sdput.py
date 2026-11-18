@@ -2,7 +2,7 @@
 """Install theme packs and delete files on the UMBRAVOX SD card over the wired
 USB console, without pulling the card.
 
-    sdput.py PORT put   <folder>    upload <folder>/radar.vid, alert.snd and emblem.bin (if present), then theme.json
+    sdput.py PORT put   <folder>    upload <folder>/radar.vid, alert.snd, a*.art, f*.fnt, emblem.bin and layout.json (if present), then theme.json
     sdput.py PORT del   <path>      delete one file (theme files and old WD-*.csv logs only)
     sdput.py PORT rmdir <folder>    remove an EMPTY /themes/<folder>
     sdput.py PORT ls    [dir]       list the card's root (or a directory)
@@ -36,6 +36,10 @@ MAX_JSON = 4096          # ui/themepack.h
 MAX_EMBLEM = 9728
 MAX_CLIP = 780312        # radar.vid: 12 + 150 frames of 5202 bytes
 MAX_SOUND = 576020       # alert.snd: 20 + three sounds of at most 96000 16-bit samples
+MAX_LAYOUT = 16384       # layout.json (ui/themelayout.h MAX_JSON)
+MAX_FONT = 12800         # f0..f7.fnt (ui/fontpack.h)
+MAX_ART = 196608         # a0..a15.art (ui/artpack.h)
+MEDIA = ["a%d.art" % i for i in range(16)] + ["f%d.fnt" % i for i in range(8)]
 RETRIES = 3              # a failed chunk is resent up to this many times
 DOS_NAMES = {"con", "prn", "aux", "nul"} | {p + str(d) for p in ("com", "lpt") for d in range(10)}
 
@@ -131,6 +135,8 @@ def pack_files(folder):
     clip = read_pack_file(real, "radar.vid", MAX_CLIP)
     sound = read_pack_file(real, "alert.snd", MAX_SOUND)
     emblem = read_pack_file(real, "emblem.bin", MAX_EMBLEM)
+    layout = read_pack_file(real, "layout.json", MAX_LAYOUT)
+    media = [(n, read_pack_file(real, n, MAX_ART if n.endswith(".art") else MAX_FONT)) for n in sorted(MEDIA)]
     theme = read_pack_file(real, "theme.json", MAX_JSON)
     if theme is None:
         raise ValueError("%s has no theme.json" % folder)
@@ -139,8 +145,13 @@ def pack_files(folder):
         files.append(("/themes/%s/radar.vid" % name, clip))
     if sound is not None:
         files.append(("/themes/%s/alert.snd" % name, sound))
+    for n, data in media:                    # the pictures and fonts layout.json names, before it
+        if data is not None:
+            files.append(("/themes/%s/%s" % (name, n), data))
     if emblem is not None:
         files.append(("/themes/%s/emblem.bin" % name, emblem))
+    if layout is not None:
+        files.append(("/themes/%s/layout.json" % name, layout))
     files.append(("/themes/%s/theme.json" % name, theme))
     return name, files
 
@@ -374,6 +385,15 @@ def selftest_files(check):
         name, files = pack_files(good)
         check("a plain pack is read", name == "good-pack" and [f[0] for f in files] ==
               ["/themes/good-pack/emblem.bin", "/themes/good-pack/theme.json"])
+
+        styled = pack("styled-pack")
+        for n, body in (("layout.json", b"{}"), ("f3.fnt", b"F"), ("a12.art", b"A"), ("a1.art", b"A"), ("f8.fnt", b"X"), ("notes.txt", b"X")):
+            with open(os.path.join(styled, n), "wb") as fh:
+                fh.write(body)
+        name, files = pack_files(styled)
+        check("layout.json, fonts and pictures are sent, pictures and fonts first, theme.json last, nothing else",
+              [f[0] for f in files] == ["/themes/styled-pack/a1.art", "/themes/styled-pack/a12.art", "/themes/styled-pack/f3.fnt",
+                                        "/themes/styled-pack/layout.json", "/themes/styled-pack/theme.json"])
 
         d = pack("sym-theme", theme=None)
         os.symlink(secret, os.path.join(d, "theme.json"))
