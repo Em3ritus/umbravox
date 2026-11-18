@@ -62,6 +62,7 @@ static unsigned consoleDwell=220;
 #include <esp_coexist.h>
 #endif
 #include "signatures.h"
+#include "../ui/alert_repeat.h"
 #include "nav.h"
 #include "layout.h"
 #include "palette.h"
@@ -1907,24 +1908,45 @@ void loop() {
 
     constexpr uint32_t ALERT_MS = 6000;
     ui::AlertRec historyAlert;bool haveHistoryAlert=false;
+    uint32_t alertEpisode = 0;          // the repeat table's episode for a shown alert; 0 for TEST
     s.alertActive = false;
     if (alertlog::takeLiveTestRequest()) { testStep = 0; testAt = millis(); }   // the OMENS test button: same sequence as the console TEST
     if (testAlert(s, millis())) {
         // a test alert is up; leave it alone
     } else if (set.alertMin != ui::CONF_OFF) {
-        ui::AlertRec w, b, best;
-        bool have = false;
-        if (cap::lastAlert(w) && w.conf >= set.alertMin &&
-            (millis() - w.atMs) < ALERT_MS) { best = w; have = true; }
-        if (blescan::lastAlert(b) && b.conf >= set.alertMin &&
-            (millis() - b.atMs) < ALERT_MS &&
-            (!have || b.atMs > best.atMs))  { best = b; have = true; }
-        if (have) {
-            historyAlert=best;haveHistoryAlert=true;
+        // Both radios' latest alert, newest first. The history gets the newest, as before; the takeover shows the
+        // first one the repeat table lets through (ui/alert_repeat.h), so a quiet camera does not hide a due drone.
+        ui::AlertRec w, b, cand[2];
+        int nc = 0;
+        const uint32_t now = millis();
+        const bool hw = cap::lastAlert(w) && w.conf >= set.alertMin && (int32_t)(now - w.atMs) < (int32_t)ALERT_MS;
+        const bool hb = blescan::lastAlert(b) && b.conf >= set.alertMin && (int32_t)(now - b.atMs) < (int32_t)ALERT_MS;
+        if (hw && hb) { const bool bNewer = (int32_t)(b.atMs - w.atMs) > 0; cand[0] = bNewer ? b : w; cand[1] = bNewer ? w : b; nc = 2; }
+        else if (hw) { cand[0] = w; nc = 1; }
+        else if (hb) { cand[0] = b; nc = 1; }
+#if defined(UMBRAVOX_SCAN_ENGINE)
+        alertrepeat::Table* const table = engineadapter::alertRepeatTable();   // PSRAM; null without a frame: show all
+#else
+        static alertrepeat::Table staticTable;                                  // no engine adapter: ~0.8 KB of .bss
+        alertrepeat::Table* const table = &staticTable;
+#endif
+        if (nc) { historyAlert = cand[0]; haveHistoryAlert = true; }
+        for (int i = 0; i < nc; i++) {
+            alertrepeat::Verdict v;
+            if (table) v = table->see(cand[i], now, set.alertRepeat);
+            else { v.show = true; }
+            if (!v.show || s.alertActive) continue;
+            const ui::AlertRec& best = cand[i];
             s.alertActive = true;
             s.alertThreat = best.threat;
             s.alertConf   = best.conf;
-            for (int k = 0; k < 19 && best.why[k]; k++) s.alertWhy[k] = best.why[k];
+            alertEpisode  = v.episode;
+            if (best.threat == ui::TH_DRONE && v.repeat)
+                alertrepeat::reason(s.alertWhy, sizeof s.alertWhy, ui::TH_DRONE, (uint32_t)(now - v.firstMs) / 60000u);
+            else if (best.threat == ui::TH_FOLLOW && best.minutes > 0)
+                alertrepeat::reason(s.alertWhy, sizeof s.alertWhy, ui::TH_FOLLOW, best.minutes);
+            else
+                for (int k = 0; k < 19 && best.why[k]; k++) s.alertWhy[k] = best.why[k];
             for (int k = 0; k < ui::SSID_MAX; k++)      s.alertName[k] = best.name[k];
         }
     }
@@ -1936,8 +1958,17 @@ void loop() {
         static uint8_t  lastThreat = 0;
         static char     lastName[ui::SSID_MAX] = {0};
         static uint32_t startedAt = 0;
+        static uint32_t lastEpisode = 0;
         if (s.alertActive) {
-            if (s.alertThreat != lastThreat || strncmp(s.alertName, lastName, sizeof lastName)) {
+            // A new episode (ui/alert_repeat.h) is a new alert even for the same device: a drone's 20-min re-alert
+            // and a follow re-alert ring and wake like the first. TEST has no episode: its threat or name decides.
+            const bool fresh = alertEpisode ? alertEpisode != lastEpisode
+                                            : (s.alertThreat != lastThreat || strncmp(s.alertName, lastName, sizeof lastName));
+            if (fresh) {
+                lastEpisode = alertEpisode;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+                engineadapter::alertNewEpisode();
+#endif
                 startedAt  = millis();
                 lastThreat = s.alertThreat;
                 snprintf(lastName, sizeof lastName, "%s", s.alertName);
@@ -1958,6 +1989,7 @@ void loop() {
         } else {
             lastThreat = 0;
             lastName[0] = 0;
+            lastEpisode = 0;
         }
     }
 

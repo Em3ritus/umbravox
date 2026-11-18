@@ -11,6 +11,8 @@
 
 class Arduino_TFT;
 
+#include "../ui/alert_repeat.h"
+
 namespace engineadapter {
 
 void begin(Arduino_TFT* gfx, int W, int H);
@@ -41,6 +43,13 @@ bool service(int budgetStrips);
 // nav + set + the request flags the device loop already consumes. Returns true
 // when the screen changed.
 bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s);
+
+// Alert repeats (ui/alert_repeat.h). The table lives in PSRAM past the back frame (the ws-c5-35-engine .dram0.bss is
+// at its cap); null when there is no PSRAM frame, and then every alert shows as before. A tap-dismiss starts that
+// device's cooldown here. A new alert episode clears tap-dismiss, so a drone that never leaves still shows its
+// 20-min re-alert after an earlier tap.
+alertrepeat::Table* alertRepeatTable();
+void alertNewEpisode();
 
 void serviceSettings(); // apply staged hardware settings outside the input-dispatch stack
 

@@ -72,6 +72,10 @@ See [Waveshare partitions](docs/WAVESHARE-PARTITIONS.md),
 - **DOMAIN:** browse located APs with a geographic view, adjustable range and access to full AP details. Locations require available location evidence; unknown positions are not invented.
 - **Clients and probes:** inspect observed station/AP relationships and requested network names. Hidden-name resolution uses captured evidence; a probe alone does not prove association.
 - **Alerts:** review signature matches with evidence and confidence, plus a clearly labeled test alert. A vendor or signature match is an indication, not proof of a device's owner or purpose.
+  The same device does not keep interrupting: a camera, plate reader or body cam alerts once, then stays quiet for
+  the ALERT REPEAT time (Settings > ALERTS: 1 min, 10 min, 1 hour or until reboot; default 10 min). A tracker that
+  travels with you re-alerts every 10 minutes with how long it has been with you, and a drone every 20 minutes
+  while it stays; a stronger confidence always alerts. Every sighting still goes in the alert history.
 
 ## Record and export
 

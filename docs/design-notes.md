@@ -862,6 +862,23 @@ a scan row more than 15% off fails, alert rows are info. Pixel counts are not co
 demo state does not, so they differ by 20-35% while the times agree. On the 2026-11-18 data every scan row is within
 13% except the Waveshare stress-p4 (-30%; over its limit either way). Keep the CSVs in `private/logs/`.
 
+## Alert repeats
+
+`ui/alert_repeat.h` (host-tested in `sim/test_alert_repeat.cpp`) decides which sightings raise the takeover again.
+A device keeps an alert active while it is re-detected (a hit under 6 s old); dropping out for longer and coming
+back is a new episode. Fixed things alert once and stay quiet for `Settings.alertRepeat` (1 min / 10 min / 1 h /
+until reboot, NVS `alertrep`). `TH_FOLLOW` re-alerts at most every 10 min (blescan raises it again while the tracker
+is still with you, with `AlertRec.minutes`) and `TH_DRONE` every 20 min, even if it never leaves; neither follows
+the setting. A rise in confidence always shows. Keyed on threat + address (the name only without an address: a
+follow alert's name changes with the distance). 16 devices, oldest-touched evicted, not kept across reboots.
+
+`device/main.cpp` asks the table for both radios' alerts, newest first, before raising `s.alertActive`, so the card,
+the tone and the screen wake stay quiet together; the OMENS history still gets the newest sighting every time. The
+tone and wake key on the table's episode, so a same-device re-alert rings and wakes. A tap-dismiss starts that
+device's cooldown, and a new episode clears the dismiss. On engine builds the table lives in PSRAM after FRAMELOG's
+state (`engineadapter::alertRepeatTable()`; the `ws-c5-35-engine` `.dram0.bss` is at its cap); without a PSRAM frame
+every alert shows as before. The non-engine CYD build keeps it in `.bss` (~0.8 KB). TEST bypasses the table.
+
 ## Not done yet
 
 - Touch (XPT2046 on CS 1, no IRQ line) and therefore any navigation.
