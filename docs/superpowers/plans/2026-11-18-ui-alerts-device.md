@@ -2,8 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **DRAFT for the owner's review (written 2026-11-18 overnight). Do not execute until the owner confirms it,
-> including the four "Decisions made here" below.**
+> **Approved by the owner 2026-11-18** (all four decisions; execution inline, one final review).
 
 **Goal:** A layout theme places and styles the alert card for each level, may play a picture in place of the rite,
 and may make other pieces flash, pulse or shake during an alert; the CYD engine build gets the alert takeover.
@@ -167,6 +166,7 @@ CYD engine alert frames; Test: `sim/test_alert_takeover.cpp`, `sim/test_scan_pre
   Waveshare UMBRAVOX ~19 ms, CYD draw ~6 ms).
 - [ ] **Step 2:** `docs/theme-packs.md`: alert cards, pictures, effects and their limits; `docs/design-notes.md` one
   paragraph on effects as post-processes.
-- [ ] **Step 3 (owner):** an alert on hardware needs a real detection (no console trigger exists): note in the
-  handoff that the alert look on the boards is unverified until one happens, or add a debug-only trigger in a
-  separate, owner-approved change.
+- [ ] **Step 3:** the alert look on hardware: the console `TEST` command (and the OMENS test button) already walks
+  HIGH/MED/LOW test alerts, 5 s each (`device/main.cpp` `TEST_SEQ`). With a test pack that sets cards and effects,
+  send `TEST` on both boards, check that the boards stay up (no reset, heap as before) and log frame times during the
+  takeover; the look itself is the owner's to judge by eye.
