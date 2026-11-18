@@ -29,7 +29,7 @@ import { encodeFont, rasteriseFont } from './fontfmt.js';
 import { grabGifArt } from './artfmt.js';
 import { toDevice, pickPiece, handleAt, dragTo, nudge } from './layout-edit.js';
 import { PRESETS, presetJson } from './layout-presets.js';
-import { loadFit, meterRows, measureAll, meterLabel } from './meter.js';
+import { loadFit, meterRows, measureAll, meterText } from './meter.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '',
@@ -354,7 +354,7 @@ function refresh() {
 fetch('js/meter-fit.json').then((r) => (r.ok ? r.json() : null)).then((j) => {
   const f = j ? loadFit(j) : { ok: false, why: 'This designer has no measurements from the boards yet.' };
   meter.fit = f.ok ? f.fit : null;
-  meter.fitNote = f.ok ? `Measured on the boards on ${f.fit.measured} (firmware ${f.fit.firmware}). Over a limit, Download, Install and Share stay closed.` : f.why + ' The meter shows no times and blocks nothing.';
+  meter.fitNote = f.ok ? `Measured on the boards on ${f.fit.measured} (firmware ${f.fit.firmware}). Over a scan limit, Download, Install and Share stay closed; the alert row only warns.` : f.why + ' The meter shows no times and blocks nothing.';
   scheduleMeter();
 }).catch(() => { meter.fitNote = 'The boards\' measurements could not be read. The meter shows no times and blocks nothing.'; syncMeter(); });
 function scheduleMeter() { clearTimeout(meter.timer); meter.timer = setTimeout(runMeter, 400); }
@@ -369,8 +369,7 @@ function runMeter() {
 function syncMeter() {
   const ul = $('meter-rows'); clear(ul);
   for (const r of (meter.verdict ? meter.verdict.rows : [])) {
-    const text = r.state === 'uncalibrated' ? `${meterLabel(r)}: not calibrated` : `${meterLabel(r)}: ~${r.ms} ms of ${r.limit} ms`;
-    ul.append(el('li', { class: r.state, text }));
+    ul.append(el('li', { class: r.state, text: meterText(r) }));
   }
   $('meter-note').textContent = meter.verdict && meter.verdict.over ? meter.verdict.reason + ' ' + meter.fitNote : meter.fitNote;
 }

@@ -78,6 +78,9 @@ whether the CYD cap lives in `limits.json` or comes from the wasm bridge (one so
   script in `tools/` (like `bootprobe.py`) that loads each on both boards, runs `TEST`, and logs counters and
   measured ms per frame. Fit per board: `ms ≈ a·drawn + b·pushed + c`. The fit ships in the designer; the probe stays
   so the fit can be redone after firmware changes.
+- **Superseded after calibration (owner, 2026-11-18):** separate scan and alert fits per board, judged on the p95
+  frame; scan limit = the built-in theme's predicted scan p95 + 15%; alerts 400 ms and warn only (never block). The
+  original limits below were measured from slices, not whole frames. See `docs/design-notes.md` "Speed meter".
 - **Limits** (owner approved my proposal, 2026-11-18), judged on the **worst single frame**:
   - alerts, both boards: <= 250 ms (>= 4 frames/s; ALERT FX measured 190 avg / 221 worst and looked right);
   - scan, CYD: <= 14 ms (today's firmware regression line);

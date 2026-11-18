@@ -23,38 +23,43 @@ function counts(mode, frames = 30, frameMs = 40) {
   return Array.from({ length: n }, (_, i) => ({ drawn: v[2 * i], pushed: v[2 * i + 1] }));
 }
 
-// The board's rows for the replay's own counts, pushed scaled by `scale`. The first frame of every mode run is the
-// transition (MED and LOW rise over the previous card on the board): `spike` multiplies it.
-function csvFor(scale, spike = 1) {
+// A fit where every scan frame costs 20 ms and every alert frame 90 ms, whatever its pixels.
+const FIT = { version: 2, boards: { waveshare: { scan: { a: 0, b: 0, c: 20 }, alert: { a: 0, b: 0, c: 90 }, frameMs: 40, limits: { scanMs: 30, alertMs: 400 } } } };
+
+// The board's rows for the replay's own counts. scanUs / alertUs: the board's time per frame. The first frame of every
+// mode run is the transition (MED and LOW rise over the previous card on the board): `spike` multiplies its time.
+function csvFor(scanUs, alertUs = 90000, spike = 1) {
   const rows = ['board,pack,mode,drawn,pushed,us,gap'];
-  const add = (mode, list, us) => list.forEach((c, i) => {
-    const k = i === 0 ? spike : 1;
-    rows.push(`waveshare,builtin,${mode},${c.drawn * k},${Math.round(c.pushed * scale * k)},${us},40`);
-  });
-  add('scan', counts(-1).slice(2), 20000);
-  ['low', 'med', 'high'].forEach((m, i) => add(m, counts(i), 90000));
+  const add = (mode, list, us) => list.forEach((c, i) => rows.push(`waveshare,builtin,${mode},${c.drawn},${c.pushed},${i === 0 ? us * spike : us},40`));
+  add('scan', counts(-1).slice(2), scanUs);
+  ['low', 'med', 'high'].forEach((m, i) => add(m, counts(i), alertUs));
   return rows.join('\n') + '\n';
 }
 
-test('meter-crosscheck passes counts that match the wasm replay and fails ones that do not', () => {
+function xcheck(csv) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'uvx-xcheck-'));
   fs.mkdirSync(path.join(d, 'packs'));
-  const tool = path.join(ROOT, 'tools/meter-crosscheck.mjs');
-  fs.writeFileSync(path.join(d, 'same.csv'), csvFor(1));
-  const ok = spawnSync('node', [tool, path.join(d, 'same.csv'), path.join(d, 'packs')], { encoding: 'utf8' });
+  fs.writeFileSync(path.join(d, 'fit.json'), JSON.stringify(FIT));
+  fs.writeFileSync(path.join(d, 'probe.csv'), csv);
+  return spawnSync('node', [path.join(ROOT, 'tools/meter-crosscheck.mjs'), path.join(d, 'fit.json'), path.join(d, 'probe.csv'), path.join(d, 'packs')], { encoding: 'utf8' });
+}
+
+test('meter-crosscheck passes predicted scan times within 15% of the board and fails ones that are not', () => {
+  const ok = xcheck(csvFor(22000));
   assert.equal(ok.status, 0, ok.stdout + ok.stderr);
-  assert.match(ok.stdout, /builtin/);
-  fs.writeFileSync(path.join(d, 'off.csv'), csvFor(2));
-  const bad = spawnSync('node', [tool, path.join(d, 'off.csv'), path.join(d, 'packs')], { encoding: 'utf8' });
+  assert.match(ok.stdout, /builtin scan p95: board 22\.0 ms, predicted 20\.0 ms/);
+  const bad = xcheck(csvFor(40000));
   assert.equal(bad.status, 1, bad.stdout + bad.stderr);
-  assert.match(bad.stdout, /pushed/);
+  assert.match(bad.stdout, /FAIL waveshare builtin scan/);
+});
+
+test('meter-crosscheck reports alert rows but never fails on them (the alert row is rough)', () => {
+  const r = xcheck(csvFor(20000, 300000));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /info waveshare builtin high p95: board 300\.0 ms, predicted 90\.0 ms/);
 });
 
 test('meter-crosscheck compares steady frames: a huge transition frame on the board does not fail it', () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'uvx-xcheck-'));
-  fs.mkdirSync(path.join(d, 'packs'));
-  fs.writeFileSync(path.join(d, 'spike.csv'), csvFor(1, 10));
-  const r = spawnSync('node', [path.join(ROOT, 'tools/meter-crosscheck.mjs'), path.join(d, 'spike.csv'), path.join(d, 'packs')], { encoding: 'utf8' });
+  const r = xcheck(csvFor(20000, 90000, 10));
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /p95/);
 });

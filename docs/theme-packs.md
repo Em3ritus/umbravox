@@ -301,18 +301,20 @@ is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
 
 The board shares one CPU between drawing and listening to the radios, so a layout that takes too long to draw costs
 captures. The Layout step's speed meter shows, for each board, the scan screen and the slowest alert level, as the
-time of the **worst single frame**:
+time of a **slow frame** (the 95th percentile: 1 frame in 20 is slower; the very slowest is mostly noise):
 
 - it replays the layout with the device's own drawing code (the same code the board runs, built into the designer),
   counting the pixels each frame draws and the pixels it sends to the screen;
-- it turns those counts into milliseconds with a formula measured on both real boards (`js/meter-fit.json`);
-- limits: an alert frame at most 250 ms on both boards; a scan frame at most 14 ms on the CYD engine build, and on
-  the Waveshare the built-in theme's own worst frame plus 15%. The calibration session can change these values, and
-  `js/meter-fit.json` records the ones in force.
+- it turns those counts into milliseconds with formulas measured on both real boards (`js/meter-fit.json`), one for
+  the scan screen and one for alerts;
+- limits: a scan frame at most the built-in theme's own (as the meter reads it) plus 15%, per board; an alert frame
+  at most 400 ms on both boards. `js/meter-fit.json` records the ones in force.
 
-From 80% of a limit the row turns amber, which is a warning only. Past 100% the designer closes Download, Install
-and Share for that layout and says which board and which frame type is too slow. The usual causes are a large
-animated picture, effects on large pieces, or a full-screen card with an effect. A designer with no measurements
+From 80% of a limit the row turns amber, which is a warning only (the built-in theme itself sits at about 87%, so
+amber on the scan row is normal). Past 100% on a scan row the designer closes Download, Install and Share for that
+layout and says which board is too slow. The alert row is a rough estimate: past its limit it turns amber and warns,
+but never blocks. The usual causes of a slow layout are a large animated picture, effects on large pieces, or a
+full-screen card with an effect. A designer with no measurements
 yet shows "not calibrated" and blocks nothing.
 
 ## Limits

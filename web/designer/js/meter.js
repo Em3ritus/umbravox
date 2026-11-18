@@ -5,6 +5,8 @@
 // scan frames and one for alert frames per board (an alert pixel costs 2-2.5x a scan pixel), measured on the boards
 // (tools/meterprobe.py, tools/meterfit.py) and shipped as js/meter-fit.json with the limits. Each row is judged on
 // its p95 frame (nearest rank): the single worst frame is ~3x the median on both boards and mostly noise.
+// The scan limit is the built-in theme's PREDICTED scan p95 + 15%, so the fit's bias (6-13% under the board on
+// every calibration pack) cancels out. The alert row is rough (34% under to 40% over the board): it warns, never blocks.
 // Nothing here knows a number of its own: a board the fit lacks is "uncalibrated" and never blocks.
 
 export const METER_BOARDS = ['waveshare', 'cyd-engine'];
@@ -13,6 +15,7 @@ export const METER_FRAMES = 30;
 const SKIP_SCAN = 2;          // the entry repaint is not a layout's steady cost; an alert's first frame is real
                               // (ui/meter.h raises it over a drawn scan screen)
 const AMBER = 80;
+export const SCAN_MARGIN = 1.15;   // scan limit = the built-in theme's predicted scan p95 + 15% (tools/meter-limits.mjs)
 const NAME = { waveshare: 'Waveshare', 'cyd-engine': 'CYD' };
 
 const num = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -50,8 +53,9 @@ export function p95(xs) {
   return s[Math.max(0, Math.ceil(0.95 * s.length) - 1)];
 }
 
-// {rows: [{board, kind, level, ms, limit, pct, state}], over, reason}. One scan row and one alert row (the level
-// with the highest p95) per measured board; ms is that p95 frame. state: ok | amber (from 80%) | over (past 100%) | uncalibrated.
+// {rows: [{board, kind, level, ms, limit, pct, state, rough}], over, reason}. One scan row and one alert row (the
+// level with the highest p95) per measured board; ms is that p95 frame. state: ok | amber (from 80%) | over (past
+// 100%, scan only: an alert row past its limit stays amber) | uncalibrated. rough: the alert model is too coarse to block.
 export function meterRows(fit, measured) {
   const rows = [];
   for (const b of METER_BOARDS) {
@@ -64,10 +68,12 @@ export function meterRows(fit, measured) {
     let level = 'low', alertMs = -1;
     for (const l of ['low', 'med', 'high']) { const w = judge(f && f.alert, m[l], 0); if (w > alertMs) { alertMs = w; level = l; } }
     for (const [kind, ms, lv] of [['scan', scanMs, null], ['alert', alertMs, level]]) {
-      if (!f) { rows.push({ board: b, kind, level: lv, ms: null, limit: null, pct: null, state: 'uncalibrated' }); continue; }
+      const rough = kind === 'alert';
+      if (!f) { rows.push({ board: b, kind, level: lv, ms: null, limit: null, pct: null, state: 'uncalibrated', rough }); continue; }
       const limit = kind === 'scan' ? f.limits.scanMs : f.limits.alertMs;
       const pct = (ms / limit) * 100;
-      rows.push({ board: b, kind, level: lv, ms: round1(ms), limit, pct, state: pct > 100 ? 'over' : pct >= AMBER ? 'amber' : 'ok' });
+      const state = pct > 100 && !rough ? 'over' : pct >= AMBER ? 'amber' : 'ok';
+      rows.push({ board: b, kind, level: lv, ms: round1(ms), limit, pct, state, rough });
     }
   }
   const bad = rows.find((r) => r.state === 'over');
@@ -75,4 +81,19 @@ export function meterRows(fit, measured) {
   return { rows, over: !!bad, reason: bad ? `Speed: ${what(bad)} is ${bad.ms} ms, over its ${bad.limit} ms limit (p95 frame).` : null };
 }
 
+// The scan limit for a board: the built-in theme's (theme 0, no pack) scan frames, as measure() returns them at the
+// fit's frame period, through the board's scan model; p95 from frame SKIP_SCAN, + 15%. null for a board the fit lacks.
+export function builtinScanLimit(fit, board, frames) {
+  const f = fit && fit.boards && fit.boards[board];
+  if (!f) return null;
+  const k = f.scan;
+  return round1(p95(frames.slice(SKIP_SCAN).map((fr) => k.a * fr.drawn + k.b * fr.pushed + k.c)) * SCAN_MARGIN);
+}
+
 export const meterLabel = (r) => `${NAME[r.board]} ${r.kind === 'scan' ? 'scan' : `alert ${r.level.toUpperCase()}`}`;
+
+// The panel's line for one row.
+export function meterText(r) {
+  if (r.state === 'uncalibrated') return `${meterLabel(r)}: not calibrated`;
+  return `${meterLabel(r)}: ~${r.ms} ms of ${r.limit} ms${r.rough ? ' (rough: warns, never blocks)' : ''}`;
+}

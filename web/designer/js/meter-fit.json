@@ -20,7 +20,7 @@
       },
       "frameMs": 15,
       "limits": {
-        "scanMs": 47.7,
+        "scanMs": 41.3,
         "alertMs": 400
       },
       "frames": 5891,
@@ -49,7 +49,7 @@
       },
       "frameMs": 35,
       "limits": {
-        "scanMs": 73.9,
+        "scanMs": 66.1,
         "alertMs": 400
       },
       "frames": 3241,

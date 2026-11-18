@@ -22,6 +22,13 @@ python; `unittest` in `tools/tests/`), plain ES modules with `node:test`.
 
 ## Global Constraints
 
+> **Ruling (owner, 2026-11-18, after calibration):** one fit over every frame does not work (alert pixels cost
+> 2-2.5x scan pixels; the fit came out with a negative slope). Now: separate scan and alert fits per board, judged
+> on the p95 frame; scan limit = the built-in theme's PREDICTED scan p95 + 15% (`tools/meter-limits.mjs`); alerts
+> 400 ms, but the alert row only warns (amber), never blocks; the cross-check compares predicted with measured p95
+> times (scan within 15%), not pixel counts. The 250 ms / 14 ms / worst-frame rules below are superseded. Details:
+> `docs/design-notes.md` "Speed meter".
+
 - Limits are judged on the worst single frame: alerts, both boards, <= 250 ms. Scan on the CYD <= 14 ms. Scan on
   the Waveshare = the built-in theme's calibrated worst frame + 15%. Amber from 80% of a limit. Over 100% blocks
   Install, Download and Share. These are starting values: the calibration task may change them, and the limits it

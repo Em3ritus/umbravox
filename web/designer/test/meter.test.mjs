@@ -3,11 +3,12 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { ROOT } from './_util.mjs';
-import { loadFit, meterRows, measureAll, p95 } from '../js/meter.js';
+import { loadFit, meterRows, measureAll, p95, builtinScanLimit, meterText } from '../js/meter.js';
 import { createPreview } from '../js/preview.js';
 import { makeTemplate } from '../js/model.js';
 
@@ -61,11 +62,32 @@ test('judged on the p95 frame: one slow frame in 20 is not the verdict, two are'
 });
 
 test('scan frames use the scan model and skip the first two; alert frames use the alert model from their first', () => {
-  const m = meterRows(FIT, { waveshare: { scan: fr(99999, 99999, 5000), low: fr(1), med: fr(210000, 1), high: fr(1) } });
+  const m = meterRows(FIT, { waveshare: { scan: fr(99999, 99999, 5000), low: fr(1), med: fr(190000, 1), high: fr(1) } });
   const scan = m.rows.find((r) => r.kind === 'scan'), alert = m.rows.find((r) => r.kind === 'alert');
   assert.equal(scan.ms, 5);
-  assert.equal(alert.level, 'med'); assert.equal(alert.ms, 420); assert.equal(alert.state, 'over');
-  assert.match(m.reason, /Waveshare alert \(MED\) is 420 ms, over its 400 ms limit/);
+  assert.equal(alert.level, 'med'); assert.equal(alert.ms, 380); assert.equal(alert.state, 'amber');
+});
+
+test('the alert row is rough: past its limit it warns (amber) and never blocks', () => {
+  const m = meterRows(FIT, { waveshare: { scan: fr(99999, 99999, 5000), low: fr(1), med: fr(210000, 1), high: fr(1) } });
+  const alert = m.rows.find((r) => r.kind === 'alert');
+  assert.equal(alert.ms, 420); assert.equal(alert.state, 'amber'); assert.equal(alert.rough, true);
+  assert.ok(alert.pct > 100);
+  assert.equal(m.over, false); assert.equal(m.reason, null);
+  assert.equal(m.rows.find((r) => r.kind === 'scan').rough, false);
+});
+
+test('meterText says the alert row is rough and only warns', () => {
+  const m = meterRows(FIT, { waveshare: { scan: fr(99999, 99999, 5000), low: fr(1), med: fr(210000, 1), high: fr(1) } });
+  assert.equal(meterText(m.rows[0]), 'Waveshare scan: ~5 ms of 10 ms');
+  assert.equal(meterText(m.rows[1]), 'Waveshare alert MED: ~420 ms of 400 ms (rough: warns, never blocks)');
+  assert.equal(meterText({ board: 'cyd-engine', kind: 'scan', level: null, state: 'uncalibrated' }), 'CYD scan: not calibrated');
+});
+
+test('builtinScanLimit is the predicted built-in scan p95 + 15%, skipping the entry frames', () => {
+  const frames = [...fr(99999, 99999), ...many(19, 10000), ...fr(50000)];
+  assert.equal(builtinScanLimit(FIT, 'waveshare', frames), 11.5);
+  assert.equal(builtinScanLimit(FIT, 'nope', frames), null);
 });
 
 test('a board the fit does not have is uncalibrated and never blocks', () => {
@@ -97,11 +119,31 @@ test('measure replays the draft on both boards in under 2 s', () => {
 });
 
 const SHIPPED = path.join(ROOT, 'web/designer/js/meter-fit.json');
-test('the built-in theme with the Standard layout is under its limits with the shipped fit', { skip: !fs.existsSync(SHIPPED) && 'js/meter-fit.json is written by the calibration session (plan 5c Task 7)' }, () => {
+test('the built-in theme with the Standard layout is under its limits with the shipped fit', () => {
   const f = loadFit(JSON.parse(fs.readFileSync(SHIPPED, 'utf8')));
   assert.equal(f.ok, true, f.why);
   const t = makeTemplate('umbravox');
   assert.equal(preview.loadDraft(t.theme, t.emblem).ok, true);
   const m = meterRows(f.fit, measureAll((b, mode, n, ms) => preview.measure(b, mode, n, ms), f.fit));
   for (const r of m.rows) assert.ok(r.state === 'ok' || r.state === 'amber', `${r.board} ${r.kind}: ${r.ms} ms of ${r.limit} ms`);
+});
+
+test('the shipped scan limits are the built-in theme\'s predicted p95 + 15% (tools/meter-limits.mjs --check)', () => {
+  const r = spawnSync('node', [path.join(ROOT, 'tools/meter-limits.mjs'), SHIPPED, '--check'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+});
+
+test('meter-limits writes the scan limits and --check catches a stale one', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'uvx-limits-'));
+  const f = path.join(d, 'fit.json');
+  const j = JSON.parse(fs.readFileSync(SHIPPED, 'utf8'));
+  for (const b of Object.values(j.boards)) b.limits.scanMs = 999;
+  fs.writeFileSync(f, JSON.stringify(j));
+  const tool = path.join(ROOT, 'tools/meter-limits.mjs');
+  assert.equal(spawnSync('node', [tool, f, '--check'], { encoding: 'utf8' }).status, 1);
+  const w = spawnSync('node', [tool, f], { encoding: 'utf8' });
+  assert.equal(w.status, 0, w.stdout + w.stderr);
+  const out = JSON.parse(fs.readFileSync(f, 'utf8'));
+  for (const b of Object.keys(out.boards)) assert.ok(out.boards[b].limits.scanMs < 999, b);
+  assert.equal(spawnSync('node', [tool, f, '--check'], { encoding: 'utf8' }).status, 0);
 });

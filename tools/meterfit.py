@@ -10,8 +10,9 @@ previous card, which the designer's replay cannot reproduce. A negative slope is
 refitted alone (pixels cannot cost negative time); both negative refuses the board.
 
 The designer (web/designer/js/meter.js) applies the fits to the counts its wasm replay (ui/meter.h) produces and
-judges the p95 frame (nearest rank) against the board's limits: scan = the built-in theme's measured scan p95 + 15%;
-alerts = 400 ms on both boards.
+judges the p95 frame (nearest rank) against the board's limits: alerts 400 ms on both boards (the alert row only
+warns); scan is written here as the built-in theme's MEASURED scan p95 + 15%, which is provisional:
+tools/meter-limits.mjs replaces it with the built-in theme's PREDICTED p95 + 15%, which cancels the fit's bias.
 
 A board is refused (exit 2, nothing written) with fewer than 3 distinct packs, no alert or no built-in scan frames,
 or both slopes of a fit negative: a bad fit must never reach the designer.

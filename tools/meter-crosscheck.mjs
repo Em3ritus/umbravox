@@ -1,28 +1,34 @@
 #!/usr/bin/env node
-// Do the designer's pixel counts agree with the board's? (plan 5c)
+// Does the designer's speed meter predict the board's frame times? (plan 5c)
 //
-//   node tools/meter-crosscheck.mjs PROBE.csv [MORE.csv ...] PACKS_DIR
+//   node tools/meter-crosscheck.mjs FIT.json PROBE.csv [MORE.csv ...] PACKS_DIR
 //
 // For every board, pack and mode in the tools/meterprobe.py CSVs, replay the same pack in the wasm (ui/meter.h via
-// uv_meter) at the board's measured frame period, and compare the p95 frame's pixels drawn and pushed with the
-// board's (the meter judges p95). Steady frames only, on both sides: the board's first frame of every mode run is a
-// transition the replay cannot reproduce (MED and LOW rise over the previous card), so it is left out, as
-// tools/meterfit.py does; the replay leaves out its scan entry repaint and the alert's rise. More than 15% apart on
-// any row exits 1. Pack 'builtin' is theme 0 (no pack); every other pack is PACKS_DIR/<pack>.
-// Needs the preview built: tools/build-designer-wasm.sh.
+// uv_meter) at the fit's frame period, put the frames through the fit (scan or alert model) and compare the p95
+// frame time with the board's measured p95 (the meter judges p95). Steady frames only, on both sides: the board's
+// first frame of every mode run is a transition the replay cannot reproduce (MED and LOW rise over the previous
+// card), so it is left out, as tools/meterfit.py does; the replay leaves out its scan entry repaint and the alert's
+// rise. A scan row more than 15% off exits 1. Alert rows are printed as info and never fail: the alert model is
+// rough (the meter only warns on it). Pixel counts are not compared: the board draws live data the demo state
+// does not, so they differ by 20-35% while the times still agree.
+// Pack 'builtin' is theme 0 (no pack); every other pack is PACKS_DIR/<pack>. Needs tools/build-designer-wasm.sh.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openPackFiles } from '../web/designer/js/model.js';
 import { createPreview } from '../web/designer/js/preview.js';
+import { loadFit, p95 } from '../web/designer/js/meter.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOL = 0.15, FRAMES = 30, SKIP_SCAN = 2;
 const SIZE = { waveshare: [480, 320], 'cyd-engine': [320, 240] };
 const MODE = { scan: -1, low: 0, med: 1, high: 2 };
 
 const args = process.argv.slice(2);
-if (args.length < 2) { console.error('usage: meter-crosscheck.mjs PROBE.csv [...] PACKS_DIR'); process.exit(2); }
+if (args.length < 3) { console.error('usage: meter-crosscheck.mjs FIT.json PROBE.csv [...] PACKS_DIR'); process.exit(2); }
 const packsDir = args.pop();
+const fitLoad = loadFit(JSON.parse(fs.readFileSync(args.shift(), 'utf8')));
+if (!fitLoad.ok) { console.error(fitLoad.why); process.exit(2); }
+const FIT = fitLoad.fit.boards;
 
 const rows = [];
 for (const f of args) {
@@ -69,34 +75,28 @@ function replay(id, board, mode, frameMs) {
   } finally { M._free(p); }
 }
 
-const p95 = (list, k) => {
-  const s = list.map((r) => Number(r[k])).sort((x, y) => x - y);
-  return s.length ? s[Math.max(0, Math.ceil(0.95 * s.length) - 1)] : 0;
-};
 // The board's rows without the first frame of every run of the same board, pack and mode (file order).
 const steady = rows.filter((r, i) => i > 0 && rows[i - 1].board === r.board && rows[i - 1].pack === r.pack && rows[i - 1].mode === r.mode);
-const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 let bad = 0;
 const ids = new Map();
 for (const board of [...new Set(rows.map((r) => r.board))]) {
   if (!SIZE[board]) { console.error(`unknown board ${board}`); process.exit(2); }
+  if (!FIT[board]) { console.error(`the fit has no board ${board}`); process.exit(2); }
   const br = steady.filter((r) => r.board === board);
-  const frameMs = Math.max(1, Math.round(median(br.filter((r) => r.mode === 'scan' && Number(r.gap) > 0).map((r) => Number(r.gap)))) || 20);
   for (const pack of [...new Set(br.map((r) => r.pack))]) {
     if (!ids.has(pack)) ids.set(pack, loadPack(pack));
     for (const mode of Object.keys(MODE)) {
       const dev = br.filter((r) => r.pack === pack && r.mode === mode);
       if (!dev.length) continue;
-      const sim = replay(ids.get(pack), board, mode, frameMs);
-      for (const k of ['drawn', 'pushed']) {
-        const a = p95(dev, k), b = p95(sim, k);
-        const off = Math.abs(a - b) / Math.max(a, 1);
-        const ok = off <= TOL;
-        if (!ok) bad++;
-        console.log(`${ok ? 'ok  ' : 'FAIL'} ${board} ${pack} ${mode} ${k} p95: board ${a}, wasm ${b} (${(off * 100).toFixed(1)}%)`);
-      }
+      const k = FIT[board][mode === 'scan' ? 'scan' : 'alert'];
+      const sim = replay(ids.get(pack), board, mode, FIT[board].frameMs);
+      const a = p95(dev.map((r) => Number(r.us) / 1000)), b = p95(sim.map((r) => k.a * r.drawn + k.b * r.pushed + k.c));
+      const off = Math.abs(a - b) / Math.max(a, 0.001);
+      const tag = mode !== 'scan' ? 'info' : off <= TOL ? 'ok  ' : 'FAIL';
+      if (tag === 'FAIL') bad++;
+      console.log(`${tag} ${board} ${pack} ${mode} p95: board ${a.toFixed(1)} ms, predicted ${b.toFixed(1)} ms (${b >= a ? '+' : '-'}${(off * 100).toFixed(0)}%)`);
     }
   }
 }
-console.log(bad ? `${bad} rows more than ${TOL * 100}% apart` : 'the wasm counts agree with the board');
+console.log(bad ? `${bad} scan rows more than ${TOL * 100}% apart` : 'the predicted scan times agree with the board');
 process.exit(bad ? 1 : 0);
