@@ -50,10 +50,12 @@ static void fill(scanpres::SceneStore& st, int theme, uint32_t now, const AlertS
 static uieng::BoardLook gLook[2];
 static uieng::LayoutOverride gLo{};
 static bool gLookOn = false;   // pal::setTheme resets the layout: pipeline() puts the test look back after it
-static void useLook(bool on) { gLookOn = on; gLo.board[0] = gLo.board[1] = nullptr; gLo.look[0] = &gLook[0]; gLo.look[1] = &gLook[1]; uieng::activeLayout() = on ? &gLo : nullptr; }
+static const uieng::LayoutOverride* gActive = &gLo;
+static void useLook(bool on) { gLookOn = on; gActive = &gLo; gLo.board[0] = gLo.board[1] = nullptr; gLo.look[0] = &gLook[0]; gLo.look[1] = &gLook[1]; uieng::activeLayout() = on ? &gLo : nullptr; }
+static void useLayout(const uieng::LayoutOverride* lo) { gLookOn = lo != nullptr; gActive = lo; uieng::activeLayout() = lo; }
 static bool pipeline(const RiteCase& r, int w, int h) {
     pal::setTheme(r.theme);
-    if (gLookOn) uieng::activeLayout() = &gLo;
+    if (gLookOn) uieng::activeLayout() = gActive;
     std::vector<uint16_t> front(w * h), back(w * h), panel(w * h, 0);
     framepresent::Frame f; f.begin(front.data(), back.data(), w, h);
     scanpres::Engine e; e.reset(w, h); e.enter();
@@ -176,6 +178,16 @@ static void cardTests() {
             expect(lineH(sc1) >= 7, "card_font_min_after_fit: line height after fitting >= 7");
         }
         useLook(false); assets::clear((uint8_t)pal::TH_UMBRAVOX);
+    }
+    // review I3: a card scale sizes the label only; the detail lines stay at the detail scale and keep their spacing
+    for (int scl : {3, 4}) {
+        clearLook(); gLook[0].card[uieng::CARD_LOW].scale = (uint8_t)scl; useLook(true);
+        ScanScene a = base; a.alert = mk(ui::CONF_LOW, 3000); ScanScene b = a; b.alert.name[0] = 0;
+        const auto ia = full(W, H, a), ib = full(W, H, b);
+        int y0 = 9999, y1 = -1; for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) if (ia[y * W + x] != ib[y * W + x]) { y0 = std::min(y0, y); y1 = std::max(y1, y); }
+        useLook(false);
+        char m[120]; snprintf(m, sizeof m, "card scale %d: the name line is %d rows (detail scale 2: at most 14) (review I3)", scl, y1 - y0 + 1);
+        expect(y1 >= y0 && y1 - y0 + 1 <= 14, m);
     }
     // card_regions: a settled LOW alert with a card repaints only inside the card
     {
@@ -366,6 +378,16 @@ static void effectTests() {
     expect(pipeline(kRites[0], W, H) && pipeline(kRites[3], W, H), "effect_clears / effect_regions: dirty regions cover every change");
     (void)hero;
     useLook(false);
+    {   // review I1: a region whose rows miss a shaking piece but whose 16-row strip holds some of them
+        const char* js = "{\"format\":1,\"waveshare\":{\"count.wifi\":{\"rect\":[16,52,100,68],\"effect\":\"shake\"},"
+                         "\"count.5g\":{\"rect\":[20,124,100,68],\"effect\":\"flash\"}}}";
+        themelayout::PackLayout* pl = new themelayout::PackLayout(); char why[96];
+        const bool built = themelayout::build(js, strlen(js), *pl, why, sizeof why);
+        useLayout(&pl->lo);
+        const bool ok = built && pipeline(kRites[0], W, H);
+        useLayout(nullptr); delete pl;
+        expect(ok, "a shake next to another dirty region sharing its strip rows repaints correctly (review I1)");
+    }
 }
 
 // Plan 5a Task 5: the CYD engine build (320x240) gets the takeover.
@@ -409,6 +431,17 @@ static void cydTests() {
             }
         }
         expect(ok, "cyd_settled_rows: a settled alert repaints only its regions' rows");
+    }
+    {   // review I2: the longest real reason (blescan's follower) stays inside the card, built-in and theme cards
+        pal::setTheme(pal::TH_UMBRAVOX);
+        ScanScene base = scanfix::demo(pal::TH_UMBRAVOX); base.animateSweep = true; base.now = 2000;
+        const auto plain = full(W, H, base);
+        ScanScene a = base; a.alert = mk(ui::CONF_LOW, 3000); std::snprintf(a.alert.why, sizeof a.alert.why, "%s", "TRAVELLED WITH YOU");
+        int in = 0; const bool okHero = onlyInside(full(W, H, a), plain, W, H, hero, &in);
+        clearLook(); gLook[1].card[uieng::CARD_LOW].r = {0, 44, 160, 96}; useLook(true);
+        const bool okCard = onlyInside(full(W, H, a), plain, W, H, {0, 44, 160, 96});
+        useLook(false);
+        expect(okHero && okCard, "a long reason stays inside the card: CYD hero and a 160x96 card (review I2)");
     }
     for (const RiteCase& r : kRites) { char m[96]; snprintf(m, sizeof m, "cyd %s: dirty rows cover every change across on/off/level/age", r.name); expect(pipeline(r, W, H), m); }
     {   // and with a theme's cards and effects on the CYD

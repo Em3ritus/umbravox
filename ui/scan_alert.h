@@ -130,9 +130,13 @@ inline void alertText(Rc& r, const AlertScene& a, uint16_t edge, int age, const 
     }
     const int ds = activeFont() ? 1 : 2, tail = settle + n * b.charMs, step = scanr::lineH(ds) + 5;   // a card font draws the details at its own size
     const int y1 = b.hi ? r.Y + r.H - 14 - scanr::lineH(ds) - 2 * step : ny + scanr::lineH(ns) + 8;
-    if (age > tail)       centered(r.s, cx, y1, a.why, ds, pal::DIM);
-    if (age > tail + 80 && a.name[0]) centered(r.s, cx, y1 + step, a.name, fitScale(a.name, r.W - 16, ds), pal::TEXT);
-    if (age > tail + 160) centered(r.s, cx, y1 + 2 * step, a.conf == ui::CONF_HIGH ? "HIGH" : a.conf == ui::CONF_MED ? "MED" : "LOW", ds, edge);
+    // The detail lines fit the card at no more than ds (a card's scale sizes the label only), so they keep `step` apart
+    // and stay inside the card on the narrow CYD hero too.
+    auto fit = [&](const char* t) { return std::min(ds, fitScale(t, r.W - 16, ds)); };
+    const char* confW = a.conf == ui::CONF_HIGH ? "HIGH" : a.conf == ui::CONF_MED ? "MED" : "LOW";
+    if (age > tail)       centered(r.s, cx, y1, a.why, fit(a.why), pal::DIM);
+    if (age > tail + 80 && a.name[0]) centered(r.s, cx, y1 + step, a.name, fit(a.name), pal::TEXT);
+    if (age > tail + 160) centered(r.s, cx, y1 + 2 * step, confW, fit(confW), edge);
 }
 
 inline void riteMotif(Rc& r, uint8_t theme, uint16_t edge, int mx, int my, int rm, int opacity) {
@@ -435,12 +439,22 @@ inline void drawEffects(S& s, int W, int H, const AlertScene& a) {
 
 // The card for this alert: its rect, and the theme's font and scale for its words while it draws.
 inline void drawAlertCard(S& s, const ScanScene& sc, int W, const uieng::Rect& card) {
+    // Nothing the card draws leaves its rect: draw through the strip cut down to the card (every primitive clips to
+    // its strip's window), so a small card or a long reason cannot spill onto the scene.
+    // (Exception: the built-in Waveshare cards keep today's pixels byte-identical, including the opening frame's few
+    // pixels just outside the hero.)
     const uieng::AlertCard* c = alertCard(W, sc.alert.conf);
-    if (!c || (c->font < 0 && !c->scale)) { drawAlertTakeover(s, sc, card); return; }
-    FontScope fs(alertCardFont(W, sc.alert.conf), card);
+    S v = s;
+    if (W < 400 || (c && c->r.w > 0)) {
+        const int x0 = std::max(s.lo, card.x), x1 = std::min(s.hi, card.x + card.w);
+        const int y0 = std::max(s.y0, card.y), y1 = std::min(s.y0 + s.h, card.y + card.h);
+        if (x1 <= x0 || y1 <= y0) return;
+        v.px = s.px + (y0 - s.y0) * s.stride + (x0 - s.lo); v.y0 = y0; v.h = y1 - y0; v.lo = x0; v.hi = x1;   // stride kept
+    }
+    FontScope fs(c ? alertCardFont(W, sc.alert.conf) : nullptr, card);
     const uint8_t cap = textstate::scaleCap;
-    textstate::scaleCap = c->scale;
-    drawAlertTakeover(s, sc, card);
+    textstate::scaleCap = c ? c->scale : 0;
+    drawAlertTakeover(v, sc, card);
     textstate::scaleCap = cap;
 }
 

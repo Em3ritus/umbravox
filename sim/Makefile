@@ -596,5 +596,5 @@ test_sweep_styles: test_sweep_styles.cpp scan_fixture.h $(ENGINE_HDR) ../ui/fram
 test_alert_gate: test_alert_gate.cpp ../ui/alert_gate.h
 	$(CXX) $(CXXFLAGS) -o $@ test_alert_gate.cpp -lm
 
-test_alert_takeover: test_alert_takeover.cpp scan_fixture.h fontfix.h artfix.h $(ENGINE_HDR) ../ui/frame_present.h $(PAL_DEPS)
-	$(CXX) $(CXXFLAGS) -o $@ test_alert_takeover.cpp $(PAL_DEPS) -lm
+test_alert_takeover: test_alert_takeover.cpp scan_fixture.h fontfix.h artfix.h $(ENGINE_HDR) ../ui/frame_present.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_alert_takeover.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm

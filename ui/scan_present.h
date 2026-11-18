@@ -499,7 +499,10 @@ public:
                     if (!shake[i]) continue;
                     for (int j = 0; j < nreg_; j++) {
                         uieng::Rect& g = reg_[j];
-                        if (g.x >= fx[i].x + fx[i].w || g.x + g.w <= fx[i].x || g.y >= fx[i].y + fx[i].h || g.y + g.h <= fx[i].y) continue;
+                        // a region is composed and staged over whole 16-row strips, so test its strip-snapped rows
+                        const int sy0 = (g.y / scanr::Compositor::STRIP_H) * scanr::Compositor::STRIP_H;
+                        const int sy1 = ((g.y + g.h + scanr::Compositor::STRIP_H - 1) / scanr::Compositor::STRIP_H) * scanr::Compositor::STRIP_H;
+                        if (g.x >= fx[i].x + fx[i].w || g.x + g.w <= fx[i].x || sy0 >= fx[i].y + fx[i].h || sy1 <= fx[i].y) continue;
                         const int x0 = std::min(g.x, fx[i].x), x1 = std::max(g.x + g.w, fx[i].x + fx[i].w);
                         g.x = x0; g.w = x1 - x0;
                     }
