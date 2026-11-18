@@ -203,7 +203,7 @@ test('lookChecks: STOP\'s fill must read under its red and amber labels, and eve
 
 // ---- plan 5b: alert card warnings (never errors: the device accepts these and behaves as the text says) ----
 // (lookChecks is imported above)
-import { newLayout, setCard, rectOf } from '../js/layout.js';
+import { newLayout, setCard, setPiece, rectOf } from '../js/layout.js';
 const CNAMES = ['menu', 'stop', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi', 'radar', 'count.ble', 'status.gps'];
 const CDEF = { waveshare: { menu: { x: 0, y: 0, w: 44, h: 44 }, stop: { x: 384, y: 276, w: 96, h: 44 }, 'nav.scan': { x: 0, y: 276, w: 96, h: 44 },
   'nav.domain': { x: 96, y: 276, w: 96, h: 44 }, 'nav.codex': { x: 192, y: 276, w: 96, h: 44 }, 'nav.poi': { x: 288, y: 276, w: 96, h: 44 }, radar: { x: 188, y: 56, w: 209, h: 209 },
@@ -268,4 +268,11 @@ test('an opened card picture that does not fit warns; an uploaded one is refitte
   assert.ok(!warns(L, { fonts: {}, pictures: { 'file:a3': pic(100, 90) } }).some((t) => /picture does not fit/.test(t)));
   const U = setCard(newLayout(), 'cyd', 'high', { rect: { x: 0, y: 0, w: 200, h: 120 }, pic: 'pic:1:big.png' });
   assert.ok(!warns(U, { fonts: {}, pictures: { 'pic:1:big.png': pic(400, 400) } }).some((t) => /picture does not fit/.test(t)));
+});
+
+test('review: a theme card over a hidden control does not warn about it', () => {
+  let L = setCard(newLayout(), 'waveshare', 'low', { rect: { x: 200, y: 160, w: 280, h: 160 } });
+  L = setPiece(L, 'waveshare', 'stop', 'hidden');
+  assert.ok(!warns(L).some((t) => /covers stop:/.test(t)), warns(L).join('\n'));
+  assert.ok(warns(L).some((t) => /covers nav\.poi:/.test(t)), 'other controls still warn');
 });

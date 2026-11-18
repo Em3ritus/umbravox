@@ -159,3 +159,12 @@ test('5c minor 3: a board measured with no frames is never shown as 0 ms', () =>
   const alert = w.find((r) => r.board === 'waveshare' && r.kind === 'alert');
   assert.equal(alert.level, 'med'); assert.equal(alert.ms, 2);
 });
+
+test('review: a calibrated board that returned no frames says so, and an empty alert row names no level', () => {
+  const rows = meterRows(FIT, { waveshare: { scan: fr(99999, 99999), low: [], med: [], high: [] } }).rows;
+  const scan = rows.find((r) => r.kind === 'scan'), alert = rows.find((r) => r.kind === 'alert');
+  assert.equal(meterText(scan), 'Waveshare scan: no frames measured');
+  assert.equal(meterText(alert), 'Waveshare alert: no frames measured');
+  const none = meterRows(null, { waveshare: { scan: fr(1), low: fr(1), med: fr(1), high: fr(1) } }).rows;
+  assert.equal(meterText(none.find((r) => r.kind === 'scan')), 'Waveshare scan: not calibrated');
+});
