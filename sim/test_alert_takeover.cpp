@@ -13,6 +13,9 @@
 #include "../ui/layout_engine.h"
 #include "../ui/model.h"
 #include "scan_fixture.h"
+#include "fontfix.h"
+#include "artfix.h"
+#include "../ui/packassets.h"
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -79,6 +82,133 @@ static bool pipeline(const RiteCase& r, int w, int h) {
         if (panel != full(w, h, e.scene())) { fprintf(stderr, "    %s frame %d: panel != full render\n", r.name, k); return false; }
     }
     return true;
+}
+
+// --- plan 5a: alert cards from the theme's look ---------------------------------------------------------------
+static uint64_t fnv(const std::vector<uint16_t>& v) { uint64_t h = 1469598103934665603ull; for (uint16_t x : v) { h ^= x; h *= 1099511628211ull; } return h; }
+static uieng::BoardLook gLook[2];
+static uieng::LayoutOverride gLo{};
+static void useLook(bool on) { gLo.board[0] = gLo.board[1] = nullptr; gLo.look[0] = &gLook[0]; gLo.look[1] = &gLook[1]; uieng::activeLayout() = on ? &gLo : nullptr; }
+static void clearLook() { gLook[0] = uieng::BoardLook(); gLook[1] = uieng::BoardLook(); gLook[0].any = gLook[1].any = true; }
+static bool onlyInside(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b, int W, int H, uieng::Rect r, int* inside = nullptr) {
+    int in = 0, out = 0;
+    for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) if (a[y * W + x] != b[y * W + x]) {
+        const bool i = x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; (i ? in : out)++; }
+    if (inside) *inside = in;
+    return out == 0;
+}
+static void cardTests() {
+    const int W = 480, H = 320;
+    pal::setTheme(pal::TH_UMBRAVOX);
+    ScanScene base = scanfix::demo(pal::TH_UMBRAVOX); base.animateSweep = true; base.now = 2000;
+    // builtin_card_unchanged: hashes recorded on the code before plan 5a (no look installed).
+    {
+        static const uint64_t PIN[3][3] = {{0xc29ba5c6fb01d92bull, 0x662acfd7e3fb6611ull, 0x816e5fb299152a63ull}, {0x071449e7d2a6384bull, 0x2385fd404a3a9d14ull, 0x7e74260529344125ull}, {0x549334ed94cd3346ull, 0xba510daf2c1f1e3aull, 0xae475db17d4e5809ull}};
+        const uint8_t confs[3] = {ui::CONF_LOW, ui::CONF_MED, ui::CONF_HIGH}; const int ages[3] = {0, 400, 3000};
+        bool same = true;
+        for (int c = 0; c < 3; c++) for (int a = 0; a < 3; a++) {
+            ScanScene sc = base; sc.alert = mk(confs[c], ages[a]);
+            const uint64_t got = fnv(full(W, H, sc));
+            if (PIN[c][a] == 0) printf("    pin[%d][%d] = 0x%016llxull\n", c, a, (unsigned long long)got);
+            same &= got == PIN[c][a];
+        }
+        expect(same, "builtin_card_unchanged (LOW/MED/HIGH at 0, 400, 3000 ms)");
+        clearLook(); useLook(true);
+        same = true;
+        for (int c = 0; c < 3; c++) { ScanScene sc = base; sc.alert = mk(confs[c], 3000); same &= fnv(full(W, H, sc)) == PIN[c][2]; }
+        useLook(false);
+        expect(same, "a look with no card keys draws the built-in cards");
+    }
+    const std::vector<uint16_t> plain = full(W, H, base);
+    // card_rect_used
+    {
+        clearLook(); gLook[0].card[uieng::CARD_LOW].r = {90, 80, 300, 160}; useLook(true);
+        ScanScene sc = base; sc.alert = mk(ui::CONF_LOW, 3000);
+        int in = 0; const bool ok = onlyInside(full(W, H, sc), plain, W, H, gLook[0].card[0].r, &in);
+        useLook(false);
+        char m[120]; snprintf(m, sizeof m, "card_rect_used: LOW card 300x160 at (90,80) draws only there (%d px)", in);
+        expect(ok && in > 300, m);
+    }
+    // low_card_outside_hero: over the count tiles and the header, not the hero
+    {
+        clearLook(); gLook[0].card[uieng::CARD_LOW].r = {0, 0, 300, 130}; useLook(true);
+        ScanScene sc = base; sc.alert = mk(ui::CONF_LOW, 3000);
+        const uieng::Rect card = alertCardRect(W, H, ui::CONF_LOW);
+        int in = 0; const bool ok = onlyInside(full(W, H, sc), plain, W, H, card, &in);
+        useLook(false);
+        expect(card == (uieng::Rect{0, 0, 300, 130}) && ok && in > 300, "low_card_outside_hero: the scene still draws outside the card");
+    }
+    // high_card_partial
+    {
+        clearLook(); gLook[0].card[uieng::CARD_HIGH].r = {40, 40, 400, 240}; useLook(true);
+        ScanScene sc = base; sc.alert = mk(ui::CONF_HIGH, 3000);
+        int in = 0; const bool ok = onlyInside(full(W, H, sc), plain, W, H, {40, 40, 400, 240}, &in);
+        useLook(false);
+        expect(ok && in > 20000, "high_card_partial: HIGH 400x240 leaves the scene visible outside");
+    }
+    // card_font_used / card_font_min_after_fit
+    {
+        static const std::vector<uint8_t> f8 = fontfix::make(8), f7 = fontfix::make(7), f6 = fontfix::make(6);
+        static fontpack::Font F8, F7, F6; const char* why = nullptr;
+        fontpack::parse(f8.data(), f8.size(), F8, &why); fontpack::parse(f7.data(), f7.size(), F7, &why); fontpack::parse(f6.data(), f6.size(), F6, &why);
+        const fontpack::Font* fonts[assets::MAX_FONTS] = {&F8, &F7, &F6};
+        assets::set((uint8_t)pal::TH_UMBRAVOX, fonts, nullptr);
+        ScanScene sc = base; sc.alert = mk(ui::CONF_LOW, 3000); std::snprintf(sc.alert.label, sizeof sc.alert.label, "%s", "AAAA");
+        clearLook(); useLook(true); const std::vector<uint16_t> builtin = full(W, H, sc);
+        gLook[0].card[uieng::CARD_LOW].font = 0; const std::vector<uint16_t> withFont = full(W, H, sc);
+        expect(alertCardFont(W, ui::CONF_LOW) == &F8 && withFont != builtin && onlyInside(withFont, builtin, W, H, alertCardRect(W, H, ui::CONF_LOW)),
+               "card_font_used: the card's words use its font, inside the card");
+        gLook[0].card[uieng::CARD_LOW].font = 1;
+        expect(alertCardFont(W, ui::CONF_LOW) == &F7, "a 7 px card font is used");
+        gLook[0].card[uieng::CARD_LOW].font = -1; gLook[0].card[uieng::CARD_LOW].scale = 2;
+        const std::vector<uint16_t> builtin2 = full(W, H, sc);                     // the built-in 5x7 at the card's scale
+        gLook[0].card[uieng::CARD_LOW].font = 2;
+        expect(alertCardFont(W, ui::CONF_LOW) == nullptr && full(W, H, sc) == builtin2,
+               "card_font_min_after_fit: a 6 px font is refused even at scale 2 (fitting may pick scale 1)");
+        gLook[0].card[uieng::CARD_LOW].font = 1; gLook[0].card[uieng::CARD_LOW].scale = 0;
+        std::snprintf(sc.alert.label, sizeof sc.alert.label, "%s", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        {   // a 30-letter label in a 7 px font: the fitted scale is never below 1, so its line is >= 7 px tall
+            FontScope fs(alertCardFont(W, ui::CONF_LOW), alertCardRect(W, H, ui::CONF_LOW));
+            const int sc1 = fitScale(sc.alert.label, alertCardRect(W, H, ui::CONF_LOW).w - 24, 3);
+            expect(lineH(sc1) >= 7, "card_font_min_after_fit: line height after fitting >= 7");
+        }
+        useLook(false); assets::clear((uint8_t)pal::TH_UMBRAVOX);
+    }
+    // card_regions: a settled LOW alert with a card repaints only inside the card
+    {
+        clearLook(); gLook[0].card[uieng::CARD_LOW].r = {0, 0, 300, 130}; useLook(true);
+        scanpres::Engine e; e.reset(W, H); e.enter();
+        std::vector<uint16_t> front(W * H), back(W * H); framepresent::Frame f; f.begin(front.data(), back.data(), W, H);
+        std::vector<uint16_t> buf(W * 16);
+        bool inside = true; int frames = 0;
+        for (int k = 0; k < 6; k++) {
+            AlertScene a = mk(ui::CONF_LOW, 3000 + k * 120);
+            scanpres::SceneStore& st = e.back(); fill(st, pal::TH_UMBRAVOX, 5000, a); st.animate(false);
+            e.commit();
+            uieng::Rect rg[16]; const int n = e.regions(rg, 16);
+            if (k >= 2) { frames++; for (int i = 0; i < n; i++) inside &= rg[i].x >= 0 && rg[i].y >= 0 && rg[i].x + rg[i].w <= 300 && rg[i].y + rg[i].h <= 130; if (n <= 0) inside = false; }
+            while (e.pending()) { const auto sl = e.nextSlice(20); (void)sl; }
+        }
+        useLook(false);
+        expect(inside && frames == 4, "card_regions: a settled LOW alert repaints only inside its card");
+    }
+    // the dismiss target follows the LOW/MED card; HIGH stays the whole screen
+    {
+        clearLook(); gLook[0].card[uieng::CARD_LOW].r = {0, 0, 300, 130}; useLook(true);
+        uieng::HitCtx c{}; c.alertTakeover = 1; c.alertRect = alertCardRect(W, H, ui::CONF_LOW);
+        const uieng::HitList h = uieng::scanHits(W, H, c);
+        bool dis = false; for (int i = 0; i < h.count; i++) dis |= h.items[i].action == uieng::Action::AlertDismiss && h.items[i].rect == c.alertRect;
+        useLook(false);
+        expect(dis && h.items[0].action == uieng::Action::AlertDismiss, "a LOW card is the dismiss target, ahead of what it covers");
+    }
+    // dirty regions cover every change with cards placed (LOW over the header, HIGH partial)
+    {
+        clearLook(); gLook[0].card[uieng::CARD_LOW].r = {0, 0, 300, 130}; gLook[0].card[uieng::CARD_MED].r = {180, 120, 300, 200};
+        gLook[0].card[uieng::CARD_HIGH].r = {40, 40, 400, 240}; useLook(true);
+        const bool ok = pipeline(kRites[0], W, H) && pipeline(kRites[2], W, H);
+        useLook(false);
+        expect(ok, "cards placed: dirty regions cover every change across on/off/level/age");
+    }
 }
 
 int main() {
@@ -162,5 +292,6 @@ int main() {
     }
     // 5. The engine repaints exactly what changed.
     for (const RiteCase& r : kRites) { char m[96]; snprintf(m, sizeof m, "%s: dirty regions cover every change across on/off/level/age", r.name); expect(pipeline(r, W, H), m); }
+    cardTests();
     printf(fails ? "FAILED\n" : "PASSED\n"); return fails ? 1 : 0;
 }

@@ -128,7 +128,7 @@ inline void alertText(Rc& r, const AlertScene& a, uint16_t edge, int age, const 
         if (age >= lockAt) { const char ch[2] = { a.label[i], 0 }; if (ny + scanr::lineH(ns) > r.s.y0 && ny < r.s.y0 + r.s.h) txt(r.s, gx, ny, ch, ns, pal::BRIGHT); }
         else arune(r, int(anoise(uint32_t(age / 70), uint32_t(i)) % 16), gx + scanr::glyphW(a.label[i], ns) / 2, ny + scanr::lineH(ns) / 2, std::max(1, ns / 2), edge);
     }
-    const int ds = 2, tail = settle + n * b.charMs, step = scanr::lineH(ds) + 5;
+    const int ds = activeFont() ? 1 : 2, tail = settle + n * b.charMs, step = scanr::lineH(ds) + 5;   // a card font draws the details at its own size
     const int y1 = b.hi ? r.Y + r.H - 14 - scanr::lineH(ds) - 2 * step : ny + scanr::lineH(ns) + 8;
     if (age > tail)       centered(r.s, cx, y1, a.why, ds, pal::DIM);
     if (age > tail + 80 && a.name[0]) centered(r.s, cx, y1 + step, a.name, fitScale(a.name, r.W - 16, ds), pal::TEXT);
@@ -263,6 +263,28 @@ inline void riteLockOn(Rc& r, const ScanScene& sc, uint16_t edge, int age, const
 // 0 = no takeover, 1 = hero area (LOW/MED), 2 = whole screen (HIGH).
 inline int alertLevel(const AlertScene& a) { return !a.active ? 0 : a.conf == ui::CONF_HIGH ? 2 : 1; }
 
+// Plan 5a: the card a confidence level uses (uieng::CARD_LOW/MED/HIGH).
+inline int cardIndex(uint8_t conf) { return conf == ui::CONF_HIGH ? uieng::CARD_HIGH : conf == ui::CONF_MED ? uieng::CARD_MED : uieng::CARD_LOW; }
+// The card's rect: the theme's when set, else the built-in (LOW/MED the hero, HIGH the whole screen).
+inline const uieng::AlertCard* alertCard(int W, uint8_t conf) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    return k ? &k->card[cardIndex(conf)] : nullptr;
+}
+inline uieng::Rect alertCardRect(int W, int H, uint8_t conf) {
+    const uieng::AlertCard* c = alertCard(W, conf);
+    if (c && c->r.w > 0) return c->r;
+    return conf == ui::CONF_HIGH ? uieng::Rect{0, 0, W, H} : uieng::scan(W, H).hero;
+}
+inline bool alertCardWhole(const uieng::Rect& r, int W, int H) { return r.x <= 0 && r.y <= 0 && r.x + r.w >= W && r.y + r.h >= H; }
+// The card's font when it is loaded and at least 7 px tall at scale 1, else null (the built-in 5x7). Scale 1 is the
+// test because fitting a long label may drop the scale to 1, whatever the card's scale.
+constexpr int CARD_FONT_MIN_PX = 7;
+inline const fontpack::Font* alertCardFont(int W, uint8_t conf) {
+    const uieng::AlertCard* c = alertCard(W, conf);
+    const fontpack::Font* f = c && c->font >= 0 ? assets::font(c->font) : nullptr;
+    return f && f->h >= CARD_FONT_MIN_PX ? f : nullptr;
+}
+
 // Where the rite lives inside the takeover rectangle (the same numbers drive drawing and the dirty regions).
 struct AlertGeom { int mx, my, R; };
 inline AlertGeom alertGeom(const uieng::Rect& area, bool hi) {
@@ -317,6 +339,17 @@ inline void drawAlertTakeover(S& s, const ScanScene& sc, const uieng::Rect& area
         for (int c = 0; c < 4; c++) { const int x = c & 1 ? area.x + area.w - 10 : area.x + 10, y = c & 2 ? area.y + area.h - 10 : area.y + 10, sx = c & 1 ? -1 : 1, sy = c & 2 ? -1 : 1;
             aline(r, x, y, x + sx * L, y, pal::BRIGHT, 255, 2); aline(r, x, y, x, y + sy * L, pal::BRIGHT, 255, 2); }
     }
+}
+
+// The card for this alert: its rect, and the theme's font and scale for its words while it draws.
+inline void drawAlertCard(S& s, const ScanScene& sc, int W, const uieng::Rect& card) {
+    const uieng::AlertCard* c = alertCard(W, sc.alert.conf);
+    if (!c || (c->font < 0 && !c->scale)) { drawAlertTakeover(s, sc, card); return; }
+    FontScope fs(alertCardFont(W, sc.alert.conf), card);
+    const uint8_t cap = textstate::scaleCap;
+    textstate::scaleCap = c->scale;
+    drawAlertTakeover(s, sc, card);
+    textstate::scaleCap = cap;
 }
 
 }  // namespace scanr

@@ -296,6 +296,7 @@ struct HitCtx {
     const char* const* rowKeys  = nullptr;  // located-device keys, by original row order
     int                nRowKeys = 0;        // a row is emitted ONLY for a valid supplied key
     uint8_t            alertTakeover = 0;   // SCAN only: 1 = an alert covers the hero, 2 = it covers the whole screen (a tap dismisses it)
+    Rect               alertRect;           // SCAN, alertTakeover 1: the card's rect (w 0 = the hero)
 };
 
 static const char* const kThreatDesc =
@@ -329,6 +330,8 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
         h.add("alert", {0, 0, W, H}, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
         return h;
     }
+    const bool card = ctx.alertTakeover == 1 && ctx.alertRect.w > 0;   // a theme's LOW/MED card: drawn on top, so hit first
+    if (card) h.add("alert", ctx.alertRect, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
     addChromeHits(h, W, H);              // shared design-1 header + nav + STOP
     // count tiles
     static const char* const tslot[3] = {"WIFI","5 GHZ","BLE"};
@@ -336,8 +339,9 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
                                          "Open Codex filtered to 5 GHZ",
                                          "Open Codex filtered to BLE"};
     for (int i = 0; i < 3; i++) h.add(tslot[i], s.tiles[i], Action::CodexFilter, i, nullptr, tdesc[i]);
-    if (ctx.alertTakeover == 1)    // the alert covers the hero: a tap on it clears it
-        h.add("alert", s.hero, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
+    if (ctx.alertTakeover == 1) {  // the alert covers the hero: a tap on it clears it
+        if (!card) h.add("alert", s.hero, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
+    }
     else if (validKey(ctx.matchKey))   // threat target only for a real matched device
         h.add("threat", {s.hero.x, s.hero.y, s.hero.w, 44},
               Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);

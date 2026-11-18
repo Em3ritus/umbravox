@@ -10,9 +10,9 @@ namespace fontfix {
 static const uint8_t ROWS_A[8]  = {0x70, 0x88, 0x88, 0xF8, 0x88, 0x88, 0x88, 0x00};
 static const uint8_t ROWS_a[8]  = {0x00, 0x00, 0x60, 0x10, 0x70, 0x90, 0x70, 0x00};
 
-inline std::vector<uint8_t> make() {
-    const int H = 8, COUNT = 95;
-    std::vector<uint8_t> f = {'U', 'V', 'F', 'N', 1, (uint8_t)H, 7, 32, (uint8_t)COUNT, 0, 0, 0};
+inline std::vector<uint8_t> make(int H = 8) {   // H 1..8: the rows of 'A'/'a' are cut to H
+    const int COUNT = 95;
+    std::vector<uint8_t> f = {'U', 'V', 'F', 'N', 1, (uint8_t)H, (uint8_t)(H < 7 ? H : 7), 32, (uint8_t)COUNT, 0, 0, 0};
     std::vector<uint8_t> bits;
     for (int i = 0; i < COUNT; ++i) {
         const char c = (char)(32 + i);

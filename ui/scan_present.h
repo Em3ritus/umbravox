@@ -436,12 +436,16 @@ public:
         const bool wasPending = sched_.pending(), wasWin = win_;
         win_ = false; nreg_ = 0;
         const int lvOld = W_ >= 400 ? scanr::alertLevel(store_[cur_].scene().alert) : 0, lvNew = W_ >= 400 ? scanr::alertLevel(nw.alert) : 0;
+        // The cards on screen before and after (a theme may move them, plan 5a); a whole-screen card owns everything.
+        const uieng::Rect cardOld = lvOld ? scanr::alertCardRect(W_, H_, store_[cur_].scene().alert.conf) : uieng::Rect{},
+                          cardNew = lvNew ? scanr::alertCardRect(W_, H_, nw.alert.conf) : uieng::Rect{};
+        const bool wholeOld = lvOld && scanr::alertCardWhole(cardOld, W_, H_), wholeNew = lvNew && scanr::alertCardWhole(cardNew, W_, H_);
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
-        } else if (lvOld == 2 || lvNew == 2) {
+        } else if (wholeOld || wholeNew) {
             const ScanScene& pa = store_[cur_].scene();
-            if (lvOld == 2 && lvNew == 2 && !wasPending && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
-                uieng::Rect rg[8]; const int n = scanr::alertRegions({0, 0, W_, H_}, nw.alert, nw.theme, rg, 8);      // settled: only the rite square and border move
+            if (wholeOld && wholeNew && !wasPending && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
+                uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8);      // settled: only the rite square and border move
                 for (int i = 0; i < n; i++) { reg_[nreg_++] = rg[i]; sched_.invalidate(rg[i].y, rg[i].y + rg[i].h); }
             } else sched_.invalidateAll();             // a HIGH alert owns the whole screen, header and nav included: repaint it all
         } else if (W_ >= 400 && !wasPending) {
@@ -460,16 +464,17 @@ public:
                 }
                 sched_.invalidate(r.y, r.y + r.h);
             };
-            if (p.alert) {                             // a LOW/MED alert on, off or animating: the hero area, or once settled only what still moves
-                if (lvOld == 1 && lvNew == 1 && sameAlert(pv.alert, nw.alert) && scanr::alertSettled(pv.alert) && scanr::alertSettled(nw.alert)) {
-                    uieng::Rect rg[8]; const int n = scanr::alertRegions(L.hero, nw.alert, nw.theme, rg, 8);
+            if (p.alert) {                             // a card on, off or animating: its rect (old and new), or once settled only what still moves
+                if (lvOld && lvNew && cardOld == cardNew && sameAlert(pv.alert, nw.alert) && scanr::alertSettled(pv.alert) && scanr::alertSettled(nw.alert)) {
+                    uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8);
                     for (int i = 0; i < n; i++) add(rg[i]);
-                } else add(L.hero);
+                } else { add(cardOld); if (!(cardNew == cardOld)) add(cardNew); }
             }
             if (p.status) add({0, B.statusTop, W_, B.statusBottom - B.statusTop});
             if (p.decor) { uieng::Rect dr; if (scanr::animatedDecor(W_, &dr)) add(dr); }
             for (int i = 0; i < 3; i++) if (p.count[i] || p.fxCard[i]) add(L.tiles[i]);
-            const bool covered = lvOld == 1 && lvNew == 1;           // a LOW/MED alert hides the hero, so its radar, channel readout and spectrum need no repaint
+            auto holds = [&](const uieng::Rect& c) { const uieng::Rect& h = L.hero; return c.x <= h.x && c.y <= h.y && c.x + c.w >= h.x + h.w && c.y + c.h >= h.y + h.h; };
+            const bool covered = lvOld && lvNew && holds(cardOld) && holds(cardNew);   // a card over the whole hero hides its radar, channel readout and spectrum: no repaint
             if (p.ch && !covered)   add(scanr::chRect(W_, H_));
             if ((p.chan || p.fxSpec) && !covered) add(scanr::specRect(W_, H_));
             const auto radarBox = scanr::radarBounds(W_, H_);

@@ -1594,17 +1594,17 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     // nav bar + STOP/REC drawn by drawChrome above (shared design-1 chrome).
 }
 
-// The scene, then the alert takeover over it: LOW/MED over the hero, HIGH over everything. Wide panels only.
+// The scene, then the alert card over it: by default LOW/MED over the hero, HIGH over everything; a theme's card
+// rect (plan 5a) moves it. Wide panels only.
 inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
-    resetText();   // the alert words always draw in the built-in 5x7 (alert-card fonts are plan 5's, with a minimum size)
+    resetText();   // the alert words draw in the built-in 5x7 unless the card names a font (drawAlertCard)
     const int lvl = W >= 400 ? alertLevel(sc.alert) : 0;
-    if (lvl == 2) { drawAlertTakeover(s, sc, uieng::Rect{0, 0, W, H}); return; }   // nothing underneath is visible: skip it
-    if (lvl == 1) {
-        const uieng::Rect hero = uieng::scan(W, H).hero;
-        const bool inside = s.lo >= hero.x && s.hi <= hero.x + hero.w && s.y0 >= hero.y && s.y0 + s.h <= hero.y + hero.h;
-        if (!inside) composeStripScene(s, W, H, sc);                 // a window wholly inside the takeover never shows the scene
+    if (lvl) {
+        const uieng::Rect card = alertCardRect(W, H, sc.alert.conf);
+        const bool inside = s.lo >= card.x && s.hi <= card.x + card.w && s.y0 >= card.y && s.y0 + s.h <= card.y + card.h;
+        if (!inside) composeStripScene(s, W, H, sc);                 // a window wholly inside the card never shows the scene
         resetText();                                                 // the scene's look does not reach the alert words
-        drawAlertTakeover(s, sc, hero);
+        drawAlertCard(s, sc, W, card);
         return;
     }
     composeStripScene(s, W, H, sc);
