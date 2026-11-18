@@ -94,8 +94,9 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     // Full 32-byte printable SSID: 2x when it fits, otherwise 1x, never truncated.
     const uieng::Rect hd = L.header;
     const char* name=(sc.name && sc.name[0])?sc.name:"<HIDDEN>";
+    { scanr::RoleScope title(scanr::ROLE_TITLE);
     const int ns=scanr::fitScale(name,hd.w-8,2);
-    txt(s,hd.x+4,hd.y+2,name,ns,pal::BRIGHT);
+    txt(s,hd.x+4,hd.y+2,name,ns,pal::BRIGHT); }
     char address[32]; snprintf(address,sizeof address,"%s %s",sc.band==ui::BAND_BLE?"ADDR":"BSSID",sc.mac?sc.mac:"");
     txt(s,hd.x+4,hd.y+20,address,1,pal::TEXT);
     txt(s,hd.x+4,hd.y+33,sc.bandChan?sc.bandChan:"",1,bc);
@@ -169,7 +170,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     }
     // RSSI history chart: filled bars, reference lines at -50 and -75
     const uieng::Rect ch = L.spark;
-    box(s, ch.x, ch.y, ch.w, ch.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2));
+    scanr::panelFill(s, ch, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2));
     frame(s, ch.x, ch.y, ch.w, ch.h, pal::EDGE);
     const int top = ch.y + 2, hgt = ch.h - 4;
     for (int k = 0; k < 2; k++) { const int ry = rssiToY(k ? -75 : -50, top, hgt);

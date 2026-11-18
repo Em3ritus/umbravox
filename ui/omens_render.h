@@ -77,7 +77,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
     if(sc.detail){
-        txt(s,L.title.x,L.title.y+2,sc.plain?"ALERT DETAIL":"OMEN DETAIL",2,pal::BRIGHT);
+        { scanr::RoleScope title(scanr::ROLE_TITLE); txt(s,L.title.x,L.title.y+2,sc.plain?"ALERT DETAIL":"OMEN DETAIL",2,pal::BRIGHT); }
         int pages=detailPageCount(W,H,sc.detail);if(pages<1)pages=1;
         int page=sc.detailPage;if(page>=pages)page=pages-1;if(page<0)page=0;
         int scale=W>=400?2:1;int per=(L.prev.y-L.body.y-24)/(scale==2?18:11);
@@ -88,7 +88,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
         char pageText[24];snprintf(pageText,sizeof pageText,"%d / %d",page+1,pages);
         centered(s,L.page.x+L.page.w/2,L.page.y+24,pageText,1,pal::DIM);return;
     }
-    txt(s, L.title.x, L.title.y + 2, sc.plain?"ALERTS":"OMENS", 2, pal::BRIGHT);
+    { scanr::RoleScope title(scanr::ROLE_TITLE); txt(s, L.title.x, L.title.y + 2, sc.plain?"ALERTS":"OMENS", 2, pal::BRIGHT); }
     const char* levels[]={"LOW","MEDIUM","HIGH","OFF"};
     char level[24];snprintf(level,sizeof level,"LEVEL %s",levels[sc.level<4?sc.level:3]);
     txt(s,L.title.x+L.title.w-scanr::textW(level,1),L.title.y+4,level,1,sc.level==3?pal::AMBER:pal::DIM);
@@ -102,7 +102,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const OmenScene& sc) {
     txt(s, L.header.x + 4,  L.header.y + 2, "MATCH / SOURCE", 1, pal::EDGE_LIT);
     txt(s, L.header.x + L.header.w - scanr::textW("AGE",1), L.header.y + 2, "AGE", 1, pal::EDGE_LIT);
 
-    box(s, L.list.x, L.list.y, L.list.w, L.list.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
+    scanr::panelFill(s, L.list, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
     if (sc.total == 0) {
         centered(s, L.list.x + L.list.w/2, L.list.y + L.list.h/2 - 6, sc.level==3?"ALERTS DISABLED":"NO MATCHES RECORDED", 1, pal::DIM);
         centered(s, L.list.x + L.list.w/2, L.list.y + L.list.h/2 + 4, sc.level==3?"CHANGE LEVEL IN SETTINGS":"THIS BOOT / FILTERED HISTORY", 1, pal::EDGE_LIT);

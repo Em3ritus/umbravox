@@ -69,8 +69,8 @@ inline void drawControls(scanr::S& s,int W,int H,const AspectScene& sc){
  const char* tabs[]={"DISPLAY","TOUCH","APPEARANCE"};
  for(int i=0;i<3;i++){auto r=l.tabs[i];box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==v.tab?pal::BRIGHT:pal::DIM);if(i==v.tab)box(s,r.x+10,84,r.w-20,2,pal::WITCH_HI);}
  for(int i=0;i<4;i++){auto r=l.cards[i];int id=v.tab*4+i;bool enabled=!((id==6&&v.sensitivity<0)||id==3||id==5||id==7||(id==10&&!sc.alertLive));
-  box(s,r.x,r.y,r.w,r.h,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);txt(s,r.x+8,r.y+7,titles[id],1,pal::DIM);
-  txt(s,r.x+8,r.y+(r.h>=70?30:24),values[id],fitScale(values[id],r.w-16,2),enabled?pal::BRIGHT:pal::DIM);
+  scanr::panelFill(s,r,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);txt(s,r.x+8,r.y+7,titles[id],1,pal::DIM);
+  { scanr::RoleScope numbers(scanr::ROLE_NUMBERS); txt(s,r.x+8,r.y+(r.h>=70?30:24),values[id],fitScale(values[id],r.w-16,2),enabled?pal::BRIGHT:pal::DIM); }
   if(enabled)box(s,r.x+8,r.y+r.h-3,r.w-16,1,pal::WITCH_HI);
  }
 }
@@ -85,7 +85,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const AspectScene& sc) {
 
     // preview: the theme's own artwork, scaled into the preview box
     const uieng::Rect pv = L.preview;
-    box(s, pv.x, pv.y, pv.w, pv.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
+    scanr::panelFill(s, pv, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
     frame(s, pv.x, pv.y, pv.w, pv.h, pal::EDGE);
     const int pcx = pv.x + pv.w / 2, pcy = pv.y + pv.h / 2;
     int pr = (pv.w < pv.h ? pv.w : pv.h) / 2 - 8; if (pr < 0) pr = 0;

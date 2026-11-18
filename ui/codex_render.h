@@ -80,14 +80,14 @@ inline void composeStrip(scanr::S& s, int W, int H, const CodexScene& sc) {
     static const char* const flab[4] = {"WIFI", "5 GHZ", "BLE", "LOCATED"};
     for (int i = 0; i < 4; i++) { const uieng::Rect f = L.filters[i];
         const bool on = (sc.filter == i);
-        box(s, f.x, f.y, f.w, f.h, on ? pal::PANEL : ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2));
-        frame(s, f.x, f.y, f.w, f.h, on ? pal::WITCH_HI : pal::EDGE);
+        if (on) scanr::highlight(s, f, pal::PANEL, pal::WITCH_HI);
+        else { box(s, f.x, f.y, f.w, f.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2)); frame(s, f.x, f.y, f.w, f.h, pal::EDGE); }
         centered(s, f.x + f.w / 2, f.y + 15, flab[i], fitScale(flab[i], f.w - 8, 2), on ? pal::BRIGHT : pal::DIM);
     }
 
     // list body + rows
     const uieng::Rect lst = L.list;
-    box(s, lst.x, lst.y, lst.w, lst.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
+    scanr::panelFill(s, lst, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
     if (sc.listTotal == 0) {
         centered(s, lst.x + lst.w / 2, lst.y + lst.h / 2 - 3, "NOTHING YET", 1, pal::DIM);
     } else {

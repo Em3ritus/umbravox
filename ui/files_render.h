@@ -68,7 +68,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const FilesScene& sc) {
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
     // list region background
-    box(s, L.list.x, L.list.y, L.list.w, L.list.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
+    scanr::panelFill(s, L.list, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
 
     if (sc.confirm) {
         // modal: it owns the list region; YES / NO sit in the bar band
@@ -95,8 +95,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const FilesScene& sc) {
             const uieng::Rect r = L.rows[i];
             const FileRowV& g = sc.rows[i];
             const bool sel = (i == sc.sel);
-            if (sel) { box(s, r.x, r.y, r.w, r.h - 1, ui::Canvas::mix(pal::PANEL, pal::WITCH, 1, 3));
-                       frame(s, r.x, r.y, r.w, r.h - 1, pal::WITCH_HI); }
+            if (sel) scanr::highlight(s, {r.x, r.y, r.w, r.h - 1}, ui::Canvas::mix(pal::PANEL, pal::WITCH, 1, 3), pal::WITCH_HI);
             else if (i) box(s, r.x + 2, r.y, r.w - 4, 1, ui::Canvas::mix(pal::PANEL, pal::EDGE, 1, 2));
             char label[ui::FILE_NAME_MAX+8];fileTitle(g.name?g.name:"",label,sizeof label);
             const int maxChars=(r.w-12)/6;char clipped[64];snprintf(clipped,sizeof clipped,"%.*s",maxChars,label);

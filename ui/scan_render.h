@@ -974,8 +974,10 @@ inline void drawDecor(S& s, int W, uint32_t now) {
     }
 }
 // Role fonts and the screen background from the board's style block (none: the built-in 5x7, no picture).
-inline void applyLook(S& s, int W, int H) {
+inline void applyLook(S& s, int W, int H, bool scan) {
     const uieng::BoardLook* k = uieng::activeLook(W);
+    // Pack-font text on the other screens stays inside the content area (Scan's pieces clip to their own rects).
+    textstate::clip = (k && !scan) ? uieng::chrome(W, H).body : uieng::Rect{0, 0, 0x7FFF, 0x7FFF};
     const fontpack::Font* f[ROLE_N] = {};
     if (k) for (int i = 0; i < ROLE_N; i++) f[i] = assets::font(k->screen.roleFont[i]);
     setRoleFonts(f);
@@ -1016,6 +1018,19 @@ struct PieceScope {
     }
     PieceScope(const PieceScope&) = delete; PieceScope& operator=(const PieceScope&) = delete;
 };
+// The style block's panel: exactly box(fill) for a built-in theme; with a panel picture, that picture nine-sliced over it.
+inline void panelFill(S& s, uieng::Rect r, uint16_t fill) {
+    box(s, r.x, r.y, r.w, r.h, fill);
+    const uieng::BoardLook* k = uieng::activeLook(s.W);
+    if (k && k->screen.panel >= 0) if (const artpack::Art* a = assets::art(k->screen.panel)) nineInto(s, *a, r, k->screen.panelSlice);
+}
+// A selected row or tab: the style block's highlight colours, else the caller's.
+inline void highlight(S& s, uieng::Rect r, uint16_t fill, uint16_t edge) {
+    const uieng::BoardLook* k = uieng::activeLook(s.W);
+    box(s, r.x, r.y, r.w, r.h, k ? resolveColor(k->screen.hiFill, fill) : fill);
+    frame(s, r.x, r.y, r.w, r.h, k ? resolveColor(k->screen.hiEdge, edge) : edge);
+}
+
 // A piece's own background and frame art, and its edge, over its surface.
 inline void pieceArt(S& s, int W, int piece, uieng::Rect r) {
     const uieng::BoardLook* k = uieng::activeLook(W);
@@ -1047,7 +1062,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     // so the built-in layout draws exactly what it always did.
     const uieng::Chrome bc = uieng::builtinChrome(W, H);
     box(s, 0, 0, W, H, pal::VOID);   // the ground every screen's body sits on
-    applyLook(s, W, H);              // a layout theme's role fonts and background picture
+    applyLook(s, W, H, st.scan);      // a layout theme's role fonts, text clip and background picture
     if (st.scan) drawDecor(s, W, st.now);   // under every piece
     if (!uieng::activeBoard(W)) {
         // Built-in: full-width status/nav surfaces and one-pixel dividers.
