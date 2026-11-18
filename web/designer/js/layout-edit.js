@@ -20,6 +20,10 @@ export function toDevice(clientX, clientY, canvasRect, W, H) {
 
 // rects: {name: {x,y,w,h} | null (hidden)}. The topmost visible piece containing (x, y), or null.
 export function pickPiece(rects, x, y) {
+  for (const lv of ['high', 'med', 'low']) {   // plan 5b: an alert card draws over everything, so it is hit first
+    const n = 'alert.card.' + lv, r = rects[n];
+    if (r && r.w > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return n;
+  }
   for (let i = Z_ORDER.length - 1; i >= 0; i--) {
     const r = rects[Z_ORDER[i]];
     if (r && r.w > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return Z_ORDER[i];

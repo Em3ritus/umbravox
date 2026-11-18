@@ -181,6 +181,13 @@
           <button type="button" id="layout-board-cyd" role="tab" data-lb="cyd">CYD 2.8"</button>
         </div>
         <p id="layout-cyd-note" class="tiny muted" hidden>This is the CYD's engine build (320x240). The default CYD release draws the older 160x120 screens and ignores layouts.</p>
+        <div id="layout-modes" class="tabs" role="tablist" aria-label="What the screen shows">
+          <button type="button" id="layout-mode-scan" role="tab" data-lm="scan" aria-selected="true">Scan</button>
+          <button type="button" id="layout-mode-low" role="tab" data-lm="low">Alert LOW</button>
+          <button type="button" id="layout-mode-med" role="tab" data-lm="med">Alert MED</button>
+          <button type="button" id="layout-mode-high" role="tab" data-lm="high">Alert HIGH</button>
+          <button type="button" id="layout-play" class="btn small" hidden>&#9654; Play</button>
+        </div>
         <div class="screen"><canvas id="layout-canvas" width="480" height="320" tabindex="0" aria-label="The device screen: drag a piece to move it, drag a corner to resize it, arrow keys nudge the selected piece"></canvas></div>
         <div id="layout-msg" class="msg" role="status"></div>
         <p class="tiny muted">Click a piece to select it, drag it to move it, pull a corner to resize it; arrow keys move it 1 px (Shift: 8 px). The first board you change is drafted onto the other when you open its tab; check it there.</p>
@@ -199,6 +206,17 @@
           <button type="button" id="layout-hide" class="btn small">Hide</button>
           <button type="button" id="layout-reset" class="btn small">Back to default</button>
         </div>
+        <div id="layout-card" hidden>
+          <h4>Alert card</h4>
+          <p class="tiny muted">Drawn over everything while an alert of this level shows. The words use this font; a picture plays in place of the rite.</p>
+          <div class="row">
+            <label class="field"><span>Font</span><select id="lc-font" data-fontpick></select></label>
+            <label class="field small"><span>Size up to</span><select id="lc-scale"><option value="">auto</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+          </div>
+          <label class="field"><span>Picture (PNG or GIF)</span><input id="lc-pic" type="file" accept="image/png,image/gif"></label>
+          <button type="button" id="lc-builtin" class="btn small">Use the built-in card</button>
+          <div id="lc-warn" class="msg warn" role="status"></div>
+        </div>
         <div id="layout-look" hidden>
           <h4>Look</h4>
           <div class="row">
@@ -215,6 +233,12 @@
             <label class="field small"><span>Frame border (px)</span><input id="ls-slice" type="number" min="0" max="60" value="4"></label>
           </div>
           <label class="field"><span>Background picture</span><input id="ls-bg" type="file" accept="image/png,image/gif"></label>
+          <h4>During an alert</h4>
+          <div class="row">
+            <label class="field small"><span>Effect</span><select id="ls-effect"><option value="none">none</option><option value="flash">flash</option><option value="pulse">pulse</option><option value="shake">shake</option></select></label>
+            <label class="field small"><span>Speed</span><select id="ls-speed"><option value="slow">slow</option><option value="medium" selected>medium</option><option value="fast">fast</option></select></label>
+          </div>
+          <p id="ls-fx-note" class="tiny muted"></p>
           <button type="button" id="ls-clear" class="btn small">Clear the look</button>
         </div>
       </div>

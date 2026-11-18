@@ -55,3 +55,10 @@ test('arrow keys nudge 1 px, Shift 8 px', () => {
   assert.deepEqual(nudge(r, 'ArrowDown', true), { x: 10, y: 18, w: 5, h: 5 });
   assert.equal(nudge(r, 'a', false), null);
 });
+
+test('plan 5b: an alert card is picked first (it draws on top of everything)', () => {
+  const rects = { stop: { x: 380, y: 270, w: 100, h: 50 }, 'alert.card.med': { x: 200, y: 160, w: 280, h: 160 } };
+  assert.equal(pickPiece(rects, 400, 300), 'alert.card.med');
+  assert.equal(pickPiece({ 'alert.card.low': { x: 0, y: 0, w: 240, h: 120 } }, 10, 10), 'alert.card.low');
+  assert.equal(pickPiece({ 'alert.card.low': { x: 0, y: 0, w: 240, h: 120 } }, 300, 200), null);
+});

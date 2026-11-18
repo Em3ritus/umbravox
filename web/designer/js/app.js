@@ -22,7 +22,8 @@ import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSecond
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 import { shareUrl, renameWarning, THEMES_SITE } from './share.js';
 import { themeParam, fetchGalleryTheme } from './gallery.js';
-import { newLayout, setPiece, showPiece, isEmpty, fromJson, rectOf, draftOther, withDrafts, SCREEN, setStyle, setBoardStyle, addDecor, decorNames, isDecor } from './layout.js';
+import { newLayout, setPiece, showPiece, isEmpty, fromJson, rectOf, draftOther, withDrafts, SCREEN, setStyle, setBoardStyle, addDecor, decorNames, isDecor, setCard, cardOf } from './layout.js';
+import { alertFrame, nextMode, editableRects, effectAllowed } from './layout-alert.js';
 import { packMedia } from './layoutmedia.js';
 import { encodeFont, rasteriseFont } from './fontfmt.js';
 import { grabGifArt } from './artfmt.js';
@@ -32,7 +33,7 @@ import { PRESETS, presetJson } from './layout-presets.js';
 const $ = (id) => document.getElementById(id);
 const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '',
   layout: newLayout(), lboard: 'waveshare', lsel: null, presetId: 'standard', lvisited: new Set(),
-  media: { fonts: {}, pictures: {} }, mediaVersion: 0, lscreen: 'scan' };
+  media: { fonts: {}, pictures: {} }, mediaVersion: 0, lscreen: 'scan', lmode: 'scan', lplay: null };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
@@ -318,7 +319,7 @@ function refreshChecks() {
   const rename = renameWarning(t.name, state.basedOnName);
   if (rename) checksNow.push({ level: 'warn', text: rename });
   for (const e of layoutPacked().errors) checksNow.push({ level: 'error', text: 'Layout: ' + e });
-  checksNow.push(...lookChecks(t, state.layout, state.media));
+  checksNow.push(...lookChecks(t, state.layout, state.media, preview ? rules() : null));
   const lt = layoutText();
   if (lt && preview) {
     const v = preview.checkLayout(lt);
@@ -488,7 +489,7 @@ function tick(now) {
   if (!preview || !preview.hasDraft() || (state.view !== 'design' && state.view !== 'layout') || document.hidden || now - lastDraw < 40) return;
   lastDraw = now;
   const ms = now - t0;
-  if (state.view === 'layout') { paintLayout(Math.floor(ms / 20)); return; }
+  if (state.view === 'layout') { paintLayout(ms); return; }
   const frame = state.tab === 'alert' ? Math.floor((ms % 2500) / 20) : Math.floor(ms / 20);
   paint($('preview'), preview.renderDraft(state.tab, frame, { board: previewBoard(), alertConf: state.conf }), previewBoard());
 }
@@ -770,7 +771,8 @@ async function openFromGallery() {
 // defaultRect, checkLayout). This only wires them to the page.
 let layoutRules = null;
 function rules() {
-  if (!layoutRules) layoutRules = { names: preview.pieceNames(), defaultRect: (b, n) => preview.defaultRect(b, n) };
+  if (!layoutRules) layoutRules = { names: preview.pieceNames(), defaultRect: (b, n) => preview.defaultRect(b, n),
+    cardDefault: (b, l) => preview.cardDefault(b, l), fxCap: (b) => preview.fxCap(b) };
   return layoutRules;
 }
 // The layout.json the pack carries: with a board the author never opened drafted from the other (withDrafts).
@@ -802,6 +804,36 @@ function previewMedia() {
   return m;
 }
 const engineBoard = (b) => (b === 'waveshare' ? 'waveshare' : 'cyd-engine');
+// Plan 5b: the alert mode. An alert level shows that alert over the scan; only its card can be selected.
+const isCard = (n) => typeof n === 'string' && n.startsWith('alert.card.');
+const cardLevel = (n) => n.slice('alert.card.'.length);
+function applyMode(m) {
+  state.lmode = m.mode; state.lplay = m.playing ? performance.now() : null;
+  if (state.lsel && (isCard(state.lsel) !== (m.mode !== 'scan'))) state.lsel = null;
+  if (m.mode !== 'scan') state.lsel = 'alert.card.' + m.mode;
+  for (const t of document.querySelectorAll('[data-lm]')) t.setAttribute('aria-selected', String(t.dataset.lm === m.mode));
+  $('layout-play').hidden = m.mode === 'scan';
+  $('layout-play').textContent = state.lplay === null ? '\u25B6 Play' : '\u25A0 Stop';
+}
+for (const t of document.querySelectorAll('[data-lm]')) t.addEventListener('click', () => { applyMode(nextMode(state.lmode, 'mode:' + t.dataset.lm)); syncLayout(); });
+$('layout-play').addEventListener('click', () => {
+  state.lplay = state.lplay === null ? performance.now() : null;
+  $('layout-play').textContent = state.lplay === null ? '\u25B6 Play' : '\u25A0 Stop';
+});
+function editRects(board) {
+  const cr = state.lmode === 'scan' ? null : cardOf(state.layout, board, state.lmode, rules()).rect;
+  return editableRects(state.lmode, boardRects(board), cr);
+}
+// Where the selected thing is now (a piece or this level's card), and moving it.
+function selRect() {
+  const n = state.lsel;
+  if (!n) return null;
+  return isCard(n) ? cardOf(state.layout, state.lboard, cardLevel(n), rules()).rect : rectOf(state.layout, state.lboard, n, rules());
+}
+function placeSel(r) {
+  const n = state.lsel;
+  state.layout = isCard(n) ? setCard(state.layout, state.lboard, cardLevel(n), { rect: r }) : setPiece(state.layout, state.lboard, n, r);
+}
 function boardRects(board) {
   const out = {};
   for (const n of rules().names) out[n] = rectOf(state.layout, board, n, rules());
@@ -833,6 +865,7 @@ function selectBoard(b) {
     changed();
   } else { $('layout-msg').textContent = ''; }
   state.lboard = b; state.lsel = null; state.lvisited.add(b);
+  applyMode(nextMode(state.lmode, 'board'));
   for (const t of document.querySelectorAll('[data-lb]')) t.setAttribute('aria-selected', String(t.dataset.lb === b));
   $('layout-cyd-note').hidden = b !== 'cyd';
   syncLayout();
@@ -840,10 +873,11 @@ function selectBoard(b) {
 for (const t of document.querySelectorAll('[data-lb]')) t.addEventListener('click', () => selectBoard(t.dataset.lb));
 function syncLayout() {
   if (!preview) return;
-  const sel = state.lsel, r = sel ? rectOf(state.layout, state.lboard, sel, rules()) : null;
+  const sel = state.lsel, r = selRect();
   $('layout-piece').textContent = sel ? sel : 'No piece selected';
+  $('layout-modes').hidden = state.lscreen !== 'scan';
   for (const k of ['x', 'y', 'w', 'h']) { const i = $('layout-' + k); i.disabled = !r; i.value = r ? r[k] : ''; }
-  $('layout-hide').disabled = !r; $('layout-reset').disabled = !sel || isDecor(sel);
+  $('layout-hide').disabled = !r || isCard(sel); $('layout-reset').disabled = !sel || isDecor(sel) || isCard(sel);
   $('layout-hide').textContent = sel && isDecor(sel) ? 'Remove' : 'Hide';
   syncLook();
   const tray = $('layout-tray'); clear(tray);
@@ -878,7 +912,8 @@ const roleOptions = () => [['', "The theme's own"], ...ROLES.map((r) => [r, r])]
 function syncLook() {
   if (!preview) return;
   const sel = state.lsel, p = sel ? state.layout.boards[state.lboard][sel] : null;
-  const showLook = !!(sel && !isDecor(sel) && !(p && p.hidden));
+  const showLook = !!(sel && !isDecor(sel) && !isCard(sel) && !(p && p.hidden));
+  syncCard();
   $('layout-look').hidden = !showLook;
   const st = (p && p.style) || {};
   fillSelect($('ls-font'), fontOptions(), st.font);
@@ -888,12 +923,40 @@ function syncLook() {
     if (isHex(st[k])) $('ls-' + k + '-hex').value = st[k].toLowerCase();
   }
   if (st.slice) $('ls-slice').value = st.slice[0];
+  $('ls-effect').value = st.effect || 'none'; $('ls-speed').value = st.speed || 'medium';
+  const cap = rules().fxCap(state.lboard), allowed = !sel || effectAllowed(state.layout, state.lboard, sel, cap);
+  $('ls-effect').disabled = !allowed;
+  $('ls-fx-note').textContent = allowed ? 'Plays only while an alert shows; pick an Alert tab above and press Play to see it.'
+    : `At most ${cap} pieces can have an effect on this board (each repaints every alert frame).`;
   const bs = state.layout.style[state.lboard] || {};
   fillSelect($('lb-title'), fontOptions(), bs.title); fillSelect($('lb-body'), fontOptions(), bs.body); fillSelect($('lb-numbers'), fontOptions(), bs.numbers);
   fillSelect($('lb-hifill'), roleOptions(), bs.highlight?.fill); fillSelect($('lb-hiedge'), roleOptions(), bs.highlight?.edge);
   if (bs.panelSlice) $('lb-slice').value = bs.panelSlice[0];
   $('lb-screen').value = state.lscreen;
 }
+// The selected level's card: font, scale, picture, back to built-in, and its warnings.
+function syncCard() {
+  const sel = state.lsel, on = isCard(sel);
+  $('layout-card').hidden = !on;
+  if (!on) return;
+  const lv = cardLevel(sel), c = cardOf(state.layout, state.lboard, lv, rules());
+  fillSelect($('lc-font'), fontOptions(), c.font);
+  $('lc-scale').value = c.scale ? String(c.scale) : '';
+  $('lc-builtin').disabled = c.builtin;
+  const label = state.lboard === 'waveshare' ? 'Waveshare' : 'CYD';
+  const mine = lookChecks({ colors: {} }, state.layout, state.media, rules())
+    .filter((x) => x.text.includes(`${lv} alert card`) && x.text.includes(label + ' board'));
+  $('lc-warn').textContent = mine.map((x) => x.text).join(' ');
+}
+function cardSel(patch) {
+  const lv = cardLevel(state.lsel), c = cardOf(state.layout, state.lboard, lv, rules());
+  state.layout = setCard(state.layout, state.lboard, lv, { rect: c.rect, ...patch }); layoutChanged();
+}
+$('lc-font').addEventListener('change', async (e) => { try { await useFont(e.target.value); cardSel({ font: e.target.value || null }); } catch (x) { lookMsg(x.message, true); } });
+$('lc-scale').addEventListener('change', (e) => cardSel({ scale: e.target.value ? Number(e.target.value) : null }));
+$('lc-builtin').addEventListener('click', () => { if (!isCard(state.lsel)) return; state.layout = setCard(state.layout, state.lboard, cardLevel(state.lsel), null); layoutChanged(); });
+$('ls-effect').addEventListener('change', (e) => styleSel({ effect: e.target.value }));
+$('ls-speed').addEventListener('change', (e) => styleSel({ speed: e.target.value }));
 // A built-in font's .fnt is fetched the first time it is chosen.
 async function useFont(key) {
   if (!key || state.media.fonts[key]) return;
@@ -939,7 +1002,8 @@ const border = (id) => { const b = Math.max(0, Math.min(60, Math.round(Number($(
 filePick('ls-frame', async ([f]) => styleSel({ frame: await addPicture(f), slice: border('ls-slice') }));
 $('ls-slice').addEventListener('change', () => { const st = state.lsel && state.layout.boards[state.lboard][state.lsel]?.style; if (st && st.frame) styleSel({ slice: border('ls-slice') }); });
 filePick('ls-bg', async ([f]) => styleSel({ bg: await addPicture(f) }));
-$('ls-clear').addEventListener('click', () => styleSel({ font: null, scale: null, ink: null, fill: null, edge: null, frame: null, slice: null, bg: null }));
+filePick('lc-pic', async ([f]) => { if (isCard(state.lsel)) cardSel({ pic: await addPicture(f) }); });
+$('ls-clear').addEventListener('click', () => styleSel({ font: null, scale: null, ink: null, fill: null, edge: null, frame: null, slice: null, bg: null, effect: null, speed: null }));
 filePick('lf-file', async ([f]) => {
   const px = Math.max(6, Math.min(32, Math.round(Number($('lf-px').value) || 12)));
   const face = new FontFace('uv-upload-' + (++uploads), await f.arrayBuffer());
@@ -964,14 +1028,14 @@ filePick('lb-bg', async ([f]) => boardStyle({ bg: await addPicture(f) }));
 filePick('lb-panel', async ([f]) => boardStyle({ panel: await addPicture(f), panelSlice: border('lb-slice') }));
 $('lb-slice').addEventListener('change', () => { if (state.layout.style[state.lboard].panel) boardStyle({ panelSlice: border('lb-slice') }); });
 filePick('lb-icons', async (files) => { const keys = []; for (const f of files.slice(0, 6)) keys.push(await addPicture(f)); boardStyle({ icons: keys }); });
-$('lb-screen').addEventListener('change', (e) => { state.lscreen = e.target.value; });
+$('lb-screen').addEventListener('change', (e) => { state.lscreen = e.target.value; applyMode(nextMode(state.lmode, 'screen')); syncLayout(); });
 $('lb-clear').addEventListener('click', () => boardStyle({ title: null, body: null, numbers: null, bg: null, panel: null, panelSlice: null, highlight: null, icons: null }));
 
 for (const k of ['x', 'y', 'w', 'h']) $('layout-' + k).addEventListener('change', () => {
-  const n = state.lsel; if (!n) return;
-  const r = { ...rectOf(state.layout, state.lboard, n, rules()) };
+  if (!state.lsel) return;
+  const r = { ...selRect() };
   r[k] = Math.round(Number($('layout-' + k).value) || 0);
-  state.layout = setPiece(state.layout, state.lboard, n, r); layoutChanged();
+  placeSel(r); layoutChanged();
 });
 $('layout-hide').addEventListener('click', () => { if (!state.lsel) return; state.layout = setPiece(state.layout, state.lboard, state.lsel, 'hidden'); state.lsel = null; layoutChanged(); });
 $('layout-reset').addEventListener('click', () => { if (!state.lsel) return; state.layout = setPiece(state.layout, state.lboard, state.lsel, null); layoutChanged(); });
@@ -981,11 +1045,11 @@ const canvasL = $('layout-canvas');
 function devicePoint(e) { const S = SCREEN[state.lboard]; return toDevice(e.clientX, e.clientY, canvasL.getBoundingClientRect(), S.w, S.h); }
 canvasL.addEventListener('pointerdown', (e) => {
   if (!preview) return;
-  const p = devicePoint(e), rects = boardRects(state.lboard);
+  const p = devicePoint(e), rects = editRects(state.lboard);
   const selRect = state.lsel ? rects[state.lsel] : null;
   const corner = selRect ? handleAt(selRect, p.x, p.y, 8) : null;
   const name = corner ? state.lsel : pickPiece(rects, p.x, p.y);
-  state.lsel = name;
+  if (name || state.lmode === 'scan') state.lsel = name;   // an alert level keeps its card selected
   drag = name ? { name, mode: corner || 'move', start: p, rect: rects[name] } : null;
   if (drag) canvasL.setPointerCapture(e.pointerId);
   canvasL.focus(); syncLayout();
@@ -993,24 +1057,32 @@ canvasL.addEventListener('pointerdown', (e) => {
 canvasL.addEventListener('pointermove', (e) => {
   if (!drag) return;
   const r = dragTo(drag.rect, drag.start, devicePoint(e), drag.mode, SCREEN[state.lboard], { square: drag.name === 'radar' });
-  state.layout = setPiece(state.layout, state.lboard, drag.name, r);
+  placeSel(r);
   changed(); syncLayout();
 });
 canvasL.addEventListener('pointerup', (e) => { if (drag) { drag = null; canvasL.releasePointerCapture(e.pointerId); layoutChanged(); } });
 canvasL.addEventListener('keydown', (e) => {
   if (!state.lsel) return;
-  const r0 = rectOf(state.layout, state.lboard, state.lsel, rules());
+  const r0 = selRect();
   const r = r0 && nudge(r0, e.key, e.shiftKey);
   if (!r) return;
   e.preventDefault();
-  state.layout = setPiece(state.layout, state.lboard, state.lsel, r); layoutChanged();
+  placeSel(r); layoutChanged();
 });
 // The board's own frame (the device code through wasm), then outlines, the selection and its corner handles.
-function paintLayout(frame) {
-  const b = state.lboard, pb = engineBoard(b);
-  paint(canvasL, preview.renderDraft(state.lscreen, frame, { board: pb }), pb);
+function paintLayout(ms) {
+  const b = state.lboard, pb = engineBoard(b), alert = state.lscreen === 'scan' && state.lmode !== 'scan';
+  // Play's start is a performance.now() time, so an alert's clock is that one; Scan keeps the page's clock (ms).
+  if (alert) paint(canvasL, preview.renderDraft('alert', alertFrame(state.lmode, state.lplay, performance.now()), { board: pb, alertConf: state.lmode }), pb);
+  else paint(canvasL, preview.renderDraft(state.lscreen, alertFrame('scan', null, ms), { board: pb }), pb);
   if (state.lscreen !== 'scan') return;   // the other screens: their style shows, the pieces are edited on Scan
-  const ctx = canvasL.getContext('2d'), rects = boardRects(b);
+  const ctx = canvasL.getContext('2d'), rects = editRects(b);
+  if (alert && state.lplay === null) {    // the scan behind the card is dimmed: only the card is edited here
+    const c = rects['alert.card.' + state.lmode], S = SCREEN[b];
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.fillRect(0, 0, S.w, c.y); ctx.fillRect(0, c.y + c.h, S.w, S.h - c.y - c.h);
+    ctx.fillRect(0, c.y, c.x, c.h); ctx.fillRect(c.x + c.w, c.y, S.w - c.x - c.w, c.h);
+  }
   ctx.lineWidth = 1;
   for (const [n, r] of Object.entries(rects)) {
     if (!r || r.w <= 0) continue;

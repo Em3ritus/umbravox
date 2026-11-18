@@ -58,3 +58,17 @@ test('review fixes: the Install step, Download and the opened-pack path all resp
   assert.match(app, /The device would refuse this layout/, 'the Layout step says why');
   assert.match(app, /withDrafts\(state\.layout, rules\(\), state\.lvisited\)/);
 });
+
+test('plan 5b: the alert mode, the card panel and the effect controls are on the page and wired', () => {
+  for (const id of ['layout-modes', 'layout-mode-scan', 'layout-mode-low', 'layout-mode-med', 'layout-mode-high', 'layout-play',
+    'layout-card', 'lc-font', 'lc-scale', 'lc-pic', 'lc-builtin', 'lc-warn', 'ls-effect', 'ls-speed', 'ls-fx-note'])
+    assert.match(html, new RegExp(`id="${id}"`), id);
+  for (const v of ['none', 'flash', 'pulse', 'shake']) assert.match(html, new RegExp(`<select id="ls-effect"[^]*?<option value="${v}"`), v);
+  for (const v of ['slow', 'medium', 'fast']) assert.match(html, new RegExp(`<select id="ls-speed"[^]*?<option value="${v}"`), v);
+  assert.match(app, /from '\.\/layout-alert\.js'/);
+  assert.match(app, /setCard\(/);
+  assert.match(app, /effectAllowed\(/);
+  assert.match(app, /alertFrame\(/);
+  assert.match(app, /nextMode\(/);
+  assert.match(app, /renderDraft\('alert'/);
+});
