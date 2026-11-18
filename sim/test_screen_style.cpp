@@ -42,8 +42,8 @@ struct FbSink : scanr::Sink {
         }
     }
 };
-enum { CODEX = 1, DOMAIN, MENU, MESH, OMENS, ECHOES, ATTUNE, ASPECT, DETAIL, FILES };
-static const char* NAME[] = {"scan", "codex", "domain", "menu", "mesh", "omens", "echoes", "attune", "aspect", "detail", "files"};
+enum { CODEX = 1, DOMAIN, MENU, MESH, OMENS, ECHOES, ATTUNE, ASPECT, DETAIL, FILES, ASPECT_TABS };
+static const char* NAME[] = {"scan", "codex", "domain", "menu", "mesh", "omens", "echoes", "attune", "aspect", "detail", "files", "aspect controls"};
 static std::vector<uint16_t> render(int screen, uint8_t theme, int W, int H) {
     pal::setTheme(theme);
     FbSink fb(W, H);
@@ -57,6 +57,7 @@ static std::vector<uint16_t> render(int screen, uint8_t theme, int W, int H) {
     case ATTUNE: { static atnr::Compositor c; c.renderFull(W, H, atnfix::demo(theme, W, H), fb); break; }
     case ASPECT: { static aspr::Compositor c; c.renderFull(W, H, aspfix::demo(theme), fb); break; }
     case DETAIL: { static detr::Compositor c; c.renderFull(W, H, detfix::demo(theme), fb); break; }
+    case ASPECT_TABS: { static aspr::Compositor c; auto sc = aspfix::demo(theme); sc.controls = true; c.renderFull(W, H, sc, fb); break; }
     default:     { static flsr::Compositor c; c.renderFull(W, H, flsfix::demo(theme), fb); break; }
     }
     return fb.fb;
@@ -72,11 +73,13 @@ static int loadPack(const char* folder, const char* name, const std::string& sty
     mkdir(d.c_str(), 0755);
     std::string j = std::string("{\"format\":1,\"name\":\"") + name + "\",\"dial\":\"compact\",\"centrepiece\":\"heptagram\","
                     "\"sweeps\":[\"radar\"],\"alert\":\"ward\",\"colors\":{";
-    for (int i = 0; i < 20; i++) j += std::string(i ? "," : "") + "\"" + themepack::ROLE_KEYS[i] + "\":\"" + (i == 0 ? "#000000" : "#C0C0C0") + "\"";
+    for (int i = 0; i < 20; i++) j += std::string(i ? "," : "") + "\"" + themepack::ROLE_KEYS[i] + "\":\"" + (i == 0 ? "#000000" : i == themepack::R_BRIGHT ? "#FFFFFF" : "#C0C0C0") + "\"";
     writeText(d + "/theme.json", j + "}}");
     writeText(d + "/layout.json", "{\"format\":1,\"waveshare\":{\"style\":" + style + "},\"cyd\":{\"style\":" + style + "}}");
     writeFile(d + "/f0.fnt", fontfix::make());
     writeFile(d + "/a4.art", artfix::make(9, 9, 1, false));
+    writeFile(d + "/a5.art", artfix::make(20, 20, 1, false));    // a menu icon that fits a Waveshare tile
+    writeFile(d + "/a6.art", artfix::make(20, 200, 1, false));   // a menu icon no tile has room for
     char why[160];
     const int id = packload::load(d.c_str(), why, sizeof why);
     if (id < 0 || why[0]) printf("  load %s: %d %s\n", folder, id, why);
@@ -100,12 +103,13 @@ int main() {
     pal::clearPacks();
     const int titled = loadPack("titled", "TITLED", "{\"title\":\"f0\"}");
     const int panels = loadPack("panels", "PANELS", "{\"panel\":\"a4\",\"panelSlice\":[3,3,3,3],\"highlight\":{\"fill\":\"#ff00ff\",\"edge\":\"#00ffff\"}}");
-    check("packs load", titled >= 0 && panels >= 0);
-    if (titled < 0 || panels < 0) { printf("FAILED\n"); return 1; }
+    const int icons = loadPack("icons", "ICONS", "{\"icons\":[\"a5\",null,\"a6\"]}");
+    check("packs load", titled >= 0 && panels >= 0 && icons >= 0);
+    if (titled < 0 || panels < 0 || icons < 0) { printf("FAILED\n"); return 1; }
 
     const int BW[2] = {480, 320}, BH[2] = {320, 240};
-    const int PANEL_SCREENS[] = {CODEX, OMENS, ASPECT, DETAIL, FILES};
-    const int TITLE_SCREENS[] = {OMENS, DETAIL};
+    const int PANEL_SCREENS[] = {CODEX, OMENS, ASPECT, DETAIL, FILES, DOMAIN, MESH, MENU, ECHOES, ATTUNE, ASPECT_TABS};
+    const int TITLE_SCREENS[] = {OMENS, DETAIL, DOMAIN, MESH, ECHOES};
     for (int b = 0; b < 2; b++) {
         const int W = BW[b], H = BH[b];
         char label[128];
@@ -119,6 +123,10 @@ int main() {
             int n, out; diff(bare, styled, W, H, body, n, out);
             snprintf(label, sizeof label, "%dx%d %s: the panel picture is drawn (%d px)", W, H, NAME[sc], n); check(label, n > 100);
             snprintf(label, sizeof label, "%dx%d %s: only inside the content area (%d outside)", W, H, NAME[sc], out); check(label, out == 0);
+            if (sc == ASPECT_TABS || sc == MESH) {   // the active tab's underline takes the highlight edge
+                snprintf(label, sizeof label, "%dx%d %s: the highlight edge on the active tab", W, H, NAME[sc]);
+                check(label, count(styled, CYAN) > 0);
+            }
             if (sc == CODEX || sc == FILES) {
                 snprintf(label, sizeof label, "%dx%d %s: the highlight colours", W, H, NAME[sc]);
                 check(label, count(styled, MAG) > 0 && count(styled, CYAN) > 0);
@@ -130,9 +138,34 @@ int main() {
             packload::useMedia(titled);
             const auto styled = render(sc, (uint8_t)titled, W, H);
             int n, out; diff(bare, styled, W, H, body, n, out);
-            snprintf(label, sizeof label, "%dx%d %s: the title font is used", W, H, NAME[sc]); check(label, n > 0);
-            snprintf(label, sizeof label, "%dx%d %s: title text only inside the content area", W, H, NAME[sc]); check(label, out == 0);
+            const uieng::Rect wm = uieng::chrome(W, H).wordmark;   // the wordmark is title text too
+            int outBoth = 0;
+            for (int y = 0; y < H; y++) for (int x = 0; x < W; x++)
+                if (bare[(size_t)y * W + x] != styled[(size_t)y * W + x] && !in(body, x, y) && !in(wm, x, y)) outBoth++;
+            out = outBoth;
+            snprintf(label, sizeof label, "%dx%d %s: the title font is used (%d px, font %p)", W, H, NAME[sc], n, (const void*)assets::font(0)); check(label, n > 0);
+            snprintf(label, sizeof label, "%dx%d %s: title text only inside the content area and the wordmark", W, H, NAME[sc]); check(label, out == 0);
         }
+    }
+    // Menu icons: drawn in a tile with room, never in a tile without, nothing for a null slot.
+    for (int b = 0; b < 2; b++) {
+        const int W = BW[b], H = BH[b];
+        char label[128];
+        pal::setTheme((uint8_t)icons);
+        const uieng::MenuLayout ML = uieng::menu(W, H);
+        assets::clear((uint8_t)icons);
+        const auto bare = render(MENU, (uint8_t)icons, W, H);
+        packload::useMedia(icons);
+        const auto styled = render(MENU, (uint8_t)icons, W, H);
+        int n0, out0, n1, out1, n2, out2;
+        diff(bare, styled, W, H, ML.cells[0], n0, out0);
+        diff(bare, styled, W, H, ML.cells[1], n1, out1);
+        diff(bare, styled, W, H, ML.cells[2], n2, out2);
+        const int in0 = n0 - out0, in1 = n1 - out1, in2 = n2 - out2;   // diff() counts the whole frame; minus outside = inside
+        snprintf(label, sizeof label, "%dx%d menu: icons change nothing outside tile 0", W, H); check(label, out0 == 0);
+        if (W >= 400) { snprintf(label, sizeof label, "480x320 menu: the icon is drawn in tile 0 (%d px)", in0); check(label, in0 > 100); }
+        snprintf(label, sizeof label, "%dx%d menu: a null icon slot draws nothing", W, H); check(label, in1 == 0);
+        snprintf(label, sizeof label, "%dx%d menu: a tile without room draws no icon", W, H); check(label, in2 == 0);
     }
     pal::setTheme(0);
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);

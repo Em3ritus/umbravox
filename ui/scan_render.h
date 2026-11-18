@@ -1031,6 +1031,17 @@ inline void highlight(S& s, uieng::Rect r, uint16_t fill, uint16_t edge) {
     frame(s, r.x, r.y, r.w, r.h, k ? resolveColor(k->screen.hiEdge, edge) : edge);
 }
 
+// The style block's highlight edge (an active tab's underline), else the caller's colour.
+inline uint16_t highlightEdge(int W, uint16_t fallback) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    return k ? resolveColor(k->screen.hiEdge, fallback) : fallback;
+}
+// Menu entry i's icon when the theme has one loaded.
+inline const artpack::Art* menuIcon(int W, int i) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    return (k && i >= 0 && i < uieng::MENU_ICONS && k->screen.icon[i] >= 0) ? assets::art(k->screen.icon[i]) : nullptr;
+}
+
 // A piece's own background and frame art, and its edge, over its surface.
 inline void pieceArt(S& s, int W, int piece, uieng::Rect r) {
     const uieng::BoardLook* k = uieng::activeLook(W);

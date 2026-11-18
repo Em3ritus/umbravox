@@ -59,7 +59,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const EchoScene& sc) {
     // shared design-1 chrome (header + nav, no tab lit) + STOP/REC record control
     scanr::drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, -1);
 
-    txt(s, L.title.x, L.title.y + 2, "PROBES", 2, pal::BRIGHT);
+    { scanr::RoleScope title(scanr::ROLE_TITLE); txt(s, L.title.x, L.title.y + 2, "PROBES", 2, pal::BRIGHT); }
     { char tb[20];
       if (sc.clients) snprintf(tb, sizeof tb, "%d MACS", sc.clients);
       else if (sc.total > sc.nRows) snprintf(tb, sizeof tb, "%d", sc.total);
@@ -67,7 +67,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const EchoScene& sc) {
       if (tb[0]) txt(s, L.title.x + L.title.w - scanr::textW(tb,1), L.title.y + 4, tb, 1, pal::DIM); }
 
     txt(s,L.header.x+3,L.header.y+2,"REQUESTED SSID / OBSERVED STATION",1,pal::EDGE_LIT);
-    box(s,L.list.x,L.list.y,L.list.w,L.list.h,ui::Canvas::mix(pal::VOID,pal::PANEL,1,3));
+    scanr::panelFill(s,L.list,ui::Canvas::mix(pal::VOID,pal::PANEL,1,3));
     if(!sc.available || !sc.total){
         centered(s,L.list.x+L.list.w/2,L.list.y+10,sc.available?"NO PROBES HEARD":"PROBE CAPTURE UNAVAILABLE",1,pal::DIM);
     }

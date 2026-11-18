@@ -67,7 +67,7 @@ inline void drawControls(scanr::S& s,int W,int H,const AspectScene& sc){
   frame(s,l.done.x,l.done.y,l.done.w,l.done.h,pal::EDGE_LIT);centered(s,l.done.x+l.done.w/2,l.done.y+17,"DONE",1,pal::BRIGHT);return;
  }
  const char* tabs[]={"DISPLAY","TOUCH","APPEARANCE"};
- for(int i=0;i<3;i++){auto r=l.tabs[i];box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==v.tab?pal::BRIGHT:pal::DIM);if(i==v.tab)box(s,r.x+10,84,r.w-20,2,pal::WITCH_HI);}
+ for(int i=0;i<3;i++){auto r=l.tabs[i];box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==v.tab?pal::BRIGHT:pal::DIM);if(i==v.tab)box(s,r.x+10,84,r.w-20,2,scanr::highlightEdge(s.W,pal::WITCH_HI));}
  for(int i=0;i<4;i++){auto r=l.cards[i];int id=v.tab*4+i;bool enabled=!((id==6&&v.sensitivity<0)||id==3||id==5||id==7||(id==10&&!sc.alertLive));
   scanr::panelFill(s,r,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);txt(s,r.x+8,r.y+7,titles[id],1,pal::DIM);
   { scanr::RoleScope numbers(scanr::ROLE_NUMBERS); txt(s,r.x+8,r.y+(r.h>=70?30:24),values[id],fitScale(values[id],r.w-16,2),enabled?pal::BRIGHT:pal::DIM); }
