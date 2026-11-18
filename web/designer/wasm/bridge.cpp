@@ -246,6 +246,22 @@ EMSCRIPTEN_KEEPALIVE void uv_layout_default(int board, int piece, int* out) {
     const uieng::Rect r = themelayout::defaultRect((themelayout::Board)board, (themelayout::Piece)piece);
     out[0] = r.x; out[1] = r.y; out[2] = r.w; out[3] = r.h;
 }
+// Plan 5b: how many pieces may carry an alert effect on a board (0 Waveshare, 1 CYD); -1 for a bad board.
+EMSCRIPTEN_KEEPALIVE int uv_fx_cap(int board) {
+    return board >= 0 && board < themelayout::B_N ? themelayout::fxCap((themelayout::Board)board) : -1;
+}
+// The built-in alert card for a board and confidence (ui::CONF_LOW 0, MED 1, HIGH 2): x, y, w, h (int32) to out.
+EMSCRIPTEN_KEEPALIVE void uv_card_default(int board, int conf, int* out) {
+    if (!out) return;
+    out[0] = out[1] = out[2] = out[3] = 0;
+    if (board < 0 || board >= themelayout::B_N || conf < 0 || conf > 2) return;
+    const int W = board == themelayout::B_WAVESHARE ? 480 : 320, H = board == themelayout::B_WAVESHARE ? 320 : 240;
+    const uieng::LayoutOverride* keep = uieng::activeLayout();
+    uieng::activeLayout() = nullptr;               // the built-in card, whatever pack is on the preview
+    const uieng::Rect r = scanr::alertCardRect(W, H, (uint8_t)conf);
+    uieng::activeLayout() = keep;
+    out[0] = r.x; out[1] = r.y; out[2] = r.w; out[3] = r.h;
+}
 // 1 when the device would accept this layout.json on every board it gives; 0 with the reason in uv_error().
 EMSCRIPTEN_KEEPALIVE int uv_layout_check(const char* json, int len) {
     g_err[0] = 0;

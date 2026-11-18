@@ -104,6 +104,22 @@ export function createPreview(M) {
         return { x: v[0], y: v[1], w: v[2], h: v[3] };
       } finally { M._free(p); }
     },
+    // Plan 5b: pieces that may carry an alert effect on a board, and the built-in alert card of a level.
+    fxCap(board) {
+      const b = board === 'waveshare' ? 0 : board === 'cyd' ? 1 : -1;
+      if (b < 0) throw new Error('unknown board ' + board);
+      return M._uv_fx_cap(b);
+    },
+    cardDefault(board, level) {
+      const b = board === 'waveshare' ? 0 : board === 'cyd' ? 1 : -1, c = ALERT_CONFS[level];
+      if (b < 0 || c === undefined) throw new Error(`unknown board or level: ${board} ${level}`);
+      const p = M._malloc(16);
+      try {
+        M._uv_card_default(b, c, p);
+        const v = new Int32Array(M.HEAPU8.buffer.slice(p, p + 16));
+        return { x: v[0], y: v[1], w: v[2], h: v[3] };
+      } finally { M._free(p); }
+    },
     checkLayout(text) {
       const bytes = new TextEncoder().encode(text);
       const ok = withBytes(bytes, (p, l) => M._uv_layout_check(p, l));

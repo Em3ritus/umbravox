@@ -101,3 +101,37 @@ test('the Waveshare Scan tab never flips to a demo alert: that belongs to the Al
   const ref = nav(preview.renderBuiltin(2, 'scan', 10, { board: 'waveshare' }));
   for (const f of [70, 130, 250, 370]) assert.equal(nav(preview.renderBuiltin(2, 'scan', f, { board: 'waveshare' })), ref, `frame ${f}: a demo alert covers the nav bar`);
 });
+
+// Plan 5b: the device's rules the Layout step's alert mode needs.
+test('fxCap: the device caps alert effects at 4 pieces on the Waveshare and 2 on the CYD', () => {
+  assert.equal(preview.fxCap('waveshare'), 4);
+  assert.equal(preview.fxCap('cyd'), 2);
+  assert.throws(() => preview.fxCap('nope'));
+});
+
+test('cardDefault: HIGH is the whole screen, LOW and MED the hero', () => {
+  assert.deepEqual(preview.cardDefault('waveshare', 'high'), { x: 0, y: 0, w: 480, h: 320 });
+  assert.deepEqual(preview.cardDefault('cyd', 'high'), { x: 0, y: 0, w: 320, h: 240 });
+  for (const [b, H] of [['waveshare', 320], ['cyd', 240]]) {
+    const lo = preview.cardDefault(b, 'low');
+    assert.deepEqual(lo, preview.cardDefault(b, 'med'));
+    assert.equal(lo.y, 52, b); assert.equal(lo.h, H - 104, b);
+  }
+  assert.throws(() => preview.cardDefault('nope', 'low'));
+  assert.throws(() => preview.cardDefault('cyd', 'loud'));
+});
+
+test('the device accepts the cards and effects the layout model writes, and refuses a third CYD effect', async () => {
+  const { newLayout, setCard, setStyle, toJson, LEVELS } = await import('../js/layout.js');
+  const names = preview.pieceNames();
+  let L = newLayout();
+  for (const b of ['waveshare', 'cyd']) {
+    for (const lv of LEVELS) L = setCard(L, b, lv, { rect: preview.cardDefault(b, lv), scale: 2 });
+    for (const p of ['stop', 'menu']) L = setStyle(L, b, p, { effect: 'pulse', speed: 'fast' }, preview.defaultRect(b, p));
+  }
+  assert.deepEqual(preview.checkLayout(toJson(L, names)), { ok: true });
+  L = setStyle(L, 'cyd', 'nav.scan', { effect: 'flash' }, preview.defaultRect('cyd', 'nav.scan'));
+  const r = preview.checkLayout(toJson(L, names));
+  assert.equal(r.ok, false);
+  assert.match(r.why, /too many pieces with an effect \(at most 2\)/);
+});
