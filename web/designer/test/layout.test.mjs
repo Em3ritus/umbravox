@@ -204,3 +204,14 @@ test('final review I1: draftOther keeps at most the target board\'s effect cap (
   assert.deepEqual(kept, ['menu', 'nav.scan']);
   assert.equal(fxCount(D, 'waveshare'), 4, 'the source board is untouched');
 });
+
+test('5b minor 3: a malformed alert card is reported as a card, never as a hidden piece', () => {
+  for (const names of [NAMES, null]) {
+    const L = fromJson('{"format":1,"waveshare":{"alert.card.med":"hidden","alert.card.low":{"rect":[1,2,3]}}}', names);
+    assert.deepEqual(L.boards.waveshare['alert.card.med'], undefined);
+    assert.equal(L.cards.waveshare.med, undefined);
+    assert.ok(L.dropped.includes('waveshare: "alert.card.med" needs {"rect": [x, y, w, h]}'), L.dropped.join('\n'));
+    assert.ok(L.dropped.includes('waveshare: "alert.card.low" needs {"rect": [x, y, w, h]}'), L.dropped.join('\n'));
+    assert.equal(L.dropped.some((d) => /is not a piece/.test(d)), false);
+  }
+});

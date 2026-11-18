@@ -241,6 +241,7 @@ export function fromJson(text, names = null) {
         L.cards[b][lv[1]] = c;
         continue;
       }
+      if (lv) { L.dropped.push(`${b}: "${n}" needs {"rect": [x, y, w, h]}`); continue; }   // 5b minor 3
       if (isDecor(n) && PLAIN(v) && isRect(v.rect) && typeof v.art === 'string') { L.boards[b][n] = { rect: toRect(v.rect), hidden: false, pic: file(v.art) }; continue; }
       if (BAD_KEYS.has(n) || (names && !names.includes(n))) { L.dropped.push(`${b}: "${n}" is not a piece`); continue; }
       if (v === 'hidden') L.boards[b][n] = { rect: null, hidden: true };
