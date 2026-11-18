@@ -1602,7 +1602,7 @@ inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
     if (lvl) {
         const uieng::Rect card = alertCardRect(W, H, sc.alert.conf);
         const bool inside = s.lo >= card.x && s.hi <= card.x + card.w && s.y0 >= card.y && s.y0 + s.h <= card.y + card.h;
-        if (!inside) composeStripScene(s, W, H, sc);                 // a window wholly inside the card never shows the scene
+        if (!inside) { composeStripScene(s, W, H, sc); drawEffects(s, W, H, sc.alert); }   // a window wholly inside the card never shows the scene
         resetText();                                                 // the scene's look does not reach the alert words
         drawAlertCard(s, sc, W, card);
         return;

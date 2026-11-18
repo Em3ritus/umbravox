@@ -327,14 +327,19 @@ inline int alertRegions(const uieng::Rect& area, const AlertScene& a, uint8_t th
     return n;
 }
 
+// The alert's colour: its confidence, kept readable on VOID and PANEL (the card's edge, and the effects' tint).
+inline uint16_t alertEdge(uint8_t conf) {
+    return conf == ui::CONF_HIGH ? ui::safeEdge(pal::RED, ui::SAFE_HIGH, pal::VOID, pal::PANEL)
+         : conf == ui::CONF_MED  ? ui::safeEdge(pal::AMBER, ui::SAFE_MED, pal::VOID, pal::PANEL)
+                                 : ui::safeEdge(pal::WITCH, ui::SAFE_LOW, pal::VOID, pal::PANEL);
+}
+
 // Overlay the takeover rectangle `area` onto the strip.
 inline void drawAlertTakeover(S& s, const ScanScene& sc, const uieng::Rect& area) {
     const AlertScene& a = sc.alert;
     if (area.y >= s.y0 + s.h || area.y + area.h <= s.y0) return;
     const bool hi = alertLevel(a) == 2; const Beat b = beatFor(hi); const int age = a.age;
-    const uint16_t edge = a.conf == ui::CONF_HIGH ? ui::safeEdge(pal::RED, ui::SAFE_HIGH, pal::VOID, pal::PANEL)
-                        : a.conf == ui::CONF_MED  ? ui::safeEdge(pal::AMBER, ui::SAFE_MED, pal::VOID, pal::PANEL)
-                                                  : ui::safeEdge(pal::WITCH, ui::SAFE_LOW, pal::VOID, pal::PANEL);
+    const uint16_t edge = alertEdge(a.conf);
     Rc r{ s, area.x, area.y, area.w, area.h };
     const AlertGeom gm = alertGeom(area, hi); const int mx = gm.mx, my = gm.my, R = gm.R;
     const bool strobe = hi && age < 360 && ((age / 60) & 1) == 0;
@@ -356,6 +361,75 @@ inline void drawAlertTakeover(S& s, const ScanScene& sc, const uieng::Rect& area
         const int L = 34;
         for (int c = 0; c < 4; c++) { const int x = c & 1 ? area.x + area.w - 10 : area.x + 10, y = c & 2 ? area.y + area.h - 10 : area.y + 10, sx = c & 1 ? -1 : 1, sy = c & 2 ? -1 : 1;
             aline(r, x, y, x + sx * L, y, pal::BRIGHT, 255, 2); aline(r, x, y, x, y + sy * L, pal::BRIGHT, 255, 2); }
+    }
+}
+
+// --- plan 5a: effects, a post-process on a piece's rect after the scene is composed and before the card ---------
+inline int fxCycleMs(uint8_t speed) { return speed == uieng::SP_SLOW ? 1000 : speed == uieng::SP_FAST ? 250 : 500; }
+inline int fxPhase(uint32_t ageMs, uint8_t speed) { const uint32_t c = (uint32_t)fxCycleMs(speed); return (int)((ageMs % c) * 1024 / c); }
+inline void tintRect(S& s, uieng::Rect r, uint16_t col, int num, int den) {
+    const int x0 = std::max(r.x, s.lo), x1 = std::min(r.x + r.w, s.hi), y0 = std::max(r.y, s.y0), y1 = std::min(r.y + r.h, s.y0 + s.h);
+    for (int y = y0; y < y1; y++) { uint16_t* row = s.px + (y - s.y0) * s.stride - s.lo; for (int x = x0; x < x1; x++) row[x] = ui::Canvas::mix(row[x], col, num, den); }
+}
+// Rows of r shifted by dx (|dx| <= 2); the gap takes the pixel at r's edge. Reads only r, so the strip window must
+// hold r's columns (the presenter widens any region that touches a shaking piece to the piece).
+inline void shakeRect(S& s, uieng::Rect r, int dx) {
+    if (!dx) return;
+    const int x0 = std::max(r.x, s.lo), x1 = std::min(r.x + r.w, s.hi), y0 = std::max(r.y, s.y0), y1 = std::min(r.y + r.h, s.y0 + s.h);
+    if (x1 <= x0) return;
+    for (int y = y0; y < y1; y++) {
+        uint16_t* row = s.px + (y - s.y0) * s.stride - s.lo;
+        if (dx > 0) for (int x = x1 - 1; x >= x0; x--) row[x] = row[std::max(x0, x - dx)];
+        else        for (int x = x0; x < x1; x++)       row[x] = row[std::min(x1 - 1, x - dx)];
+    }
+}
+// Where piece p is on screen now (zero rect when hidden).
+inline uieng::Rect pieceRect(int W, int H, int p) {
+    namespace tl = themelayout;
+    const uieng::Chrome c = uieng::chrome(W, H);
+    const uieng::ScanLayout L = uieng::scan(W, H);
+    switch (p) {
+    case tl::P_MENU: return c.menu;           case tl::P_WORDMARK: return c.wordmark;
+    case tl::P_GPS: return c.statusCells[0];  case tl::P_NODES: return c.statusCells[1];
+    case tl::P_POWER: return c.statusCells[2]; case tl::P_BRIDGE: return c.bridge;   case tl::P_SD: return c.sd;
+    case tl::P_NAV_SCAN: case tl::P_NAV_DOMAIN: case tl::P_NAV_CODEX: case tl::P_NAV_POI: return c.navCells[p - tl::P_NAV_SCAN];
+    case tl::P_STOP: return c.stop;
+    case tl::P_COUNT_WIFI: case tl::P_COUNT_5G: case tl::P_COUNT_BLE: return L.tiles[p - tl::P_COUNT_WIFI];
+    case tl::P_RADAR: return L.radar;         case tl::P_SPECTRUM: return L.spectrum;
+    case tl::P_CHANNEL: return L.channel;     case tl::P_BADGE: return L.badge;
+    default: return {};
+    }
+}
+inline int shakeDx(int phase) { static const int8_t D[8] = {-2, -1, 0, 1, 2, 1, 0, -1}; return D[(phase * 8 / 1024) & 7]; }
+// The rects of the pieces that show an effect during an alert on this board (at most uieng::PIECE_SLOTS).
+inline int effectRects(int W, int H, uieng::Rect* out, bool* shake = nullptr) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k) return 0;
+    int n = 0;
+    for (int p = 0; p < uieng::PIECE_SLOTS; p++) {
+        if (k->piece[p].effect == uieng::FX_NONE) continue;
+        const uieng::Rect r = pieceRect(W, H, p);
+        if (r.w <= 0 || r.h <= 0) continue;
+        if (shake) shake[n] = k->piece[p].effect == uieng::FX_SHAKE;
+        out[n++] = r;
+    }
+    return n;
+}
+inline void drawEffects(S& s, int W, int H, const AlertScene& a) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k || !a.active) return;
+    const uint16_t col = alertEdge(a.conf);
+    for (int p = 0; p < uieng::PIECE_SLOTS; p++) {
+        const uieng::PieceStyle& st = k->piece[p];
+        if (st.effect == uieng::FX_NONE) continue;
+        const uieng::Rect r = pieceRect(W, H, p);
+        if (r.w <= 0 || r.h <= 0 || r.y >= s.y0 + s.h || r.y + r.h <= s.y0) continue;
+        const int ph = fxPhase(a.age, st.speed);
+        switch (st.effect) {
+        case uieng::FX_FLASH: if (ph < 512) tintRect(s, r, col, 1, 2); break;
+        case uieng::FX_PULSE: tintRect(s, r, col, 512 + isin(ph) / 2, 2048); break;
+        default: shakeRect(s, r, shakeDx(ph)); break;
+        }
     }
 }
 

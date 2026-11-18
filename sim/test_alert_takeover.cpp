@@ -18,6 +18,7 @@
 #include "../ui/packassets.h"
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 using namespace scanr;
 
@@ -46,8 +47,13 @@ static void fill(scanpres::SceneStore& st, int theme, uint32_t now, const AlertS
     for (const auto& b : scanfix::BLIPS) st.addBlip(b.bearing, b.dist, b.band, b.lastSeen);
     st.alert(a);
 }
+static uieng::BoardLook gLook[2];
+static uieng::LayoutOverride gLo{};
+static bool gLookOn = false;   // pal::setTheme resets the layout: pipeline() puts the test look back after it
+static void useLook(bool on) { gLookOn = on; gLo.board[0] = gLo.board[1] = nullptr; gLo.look[0] = &gLook[0]; gLo.look[1] = &gLook[1]; uieng::activeLayout() = on ? &gLo : nullptr; }
 static bool pipeline(const RiteCase& r, int w, int h) {
     pal::setTheme(r.theme);
+    if (gLookOn) uieng::activeLayout() = &gLo;
     std::vector<uint16_t> front(w * h), back(w * h), panel(w * h, 0);
     framepresent::Frame f; f.begin(front.data(), back.data(), w, h);
     scanpres::Engine e; e.reset(w, h); e.enter();
@@ -86,9 +92,6 @@ static bool pipeline(const RiteCase& r, int w, int h) {
 
 // --- plan 5a: alert cards from the theme's look ---------------------------------------------------------------
 static uint64_t fnv(const std::vector<uint16_t>& v) { uint64_t h = 1469598103934665603ull; for (uint16_t x : v) { h ^= x; h *= 1099511628211ull; } return h; }
-static uieng::BoardLook gLook[2];
-static uieng::LayoutOverride gLo{};
-static void useLook(bool on) { gLo.board[0] = gLo.board[1] = nullptr; gLo.look[0] = &gLook[0]; gLo.look[1] = &gLook[1]; uieng::activeLayout() = on ? &gLo : nullptr; }
 static void clearLook() { gLook[0] = uieng::BoardLook(); gLook[1] = uieng::BoardLook(); gLook[0].any = gLook[1].any = true; }
 static bool onlyInside(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b, int W, int H, uieng::Rect r, int* inside = nullptr) {
     int in = 0, out = 0;
@@ -286,6 +289,85 @@ static void clipTests() {
     useLook(false); assets::clear((uint8_t)pal::TH_UMBRAVOX);
 }
 
+// Plan 5a Task 4: effects during an alert.
+static void effectTests() {
+    const int W = 480, H = 320;
+    // the primitives
+    expect(fxPhase(0, uieng::SP_MEDIUM) == 0 && fxPhase(250, uieng::SP_MEDIUM) == 512 && fxPhase(500, uieng::SP_MEDIUM) == 0 &&
+           fxPhase(500, uieng::SP_SLOW) == 512 && fxPhase(125, uieng::SP_FAST) == 512, "fxPhase: one cycle is 1000 / 500 / 250 ms");
+    {
+        std::vector<uint16_t> px(40 * 16, 0x0000); S s{px.data(), 40, 0, 16};
+        tintRect(s, {10, 4, 8, 6}, 0xFFFF, 1, 2);
+        int in = 0, out = 0; for (int y = 0; y < 16; y++) for (int x = 0; x < 40; x++) { const bool i = x >= 10 && x < 18 && y >= 4 && y < 10; if (px[y * 40 + x]) (i ? in : out)++; }
+        expect(in == 48 && out == 0 && px[5 * 40 + 12] == ui::Canvas::mix(0, 0xFFFF, 1, 2), "tintRect blends exactly its rect");
+    }
+    {
+        std::vector<uint16_t> px(40 * 16); for (int y = 0; y < 16; y++) for (int x = 0; x < 40; x++) px[y * 40 + x] = (uint16_t)(x + 100 * y);
+        const std::vector<uint16_t> o = px; S s{px.data(), 40, 0, 16};
+        shakeRect(s, {10, 2, 10, 5}, 2);
+        bool ok = true;
+        for (int y = 0; y < 16; y++) for (int x = 0; x < 40; x++) {
+            const bool in = x >= 10 && x < 20 && y >= 2 && y < 7;
+            const uint16_t want = !in ? o[y * 40 + x] : o[y * 40 + std::max(10, x - 2)];
+            ok &= px[y * 40 + x] == want;
+        }
+        expect(ok, "shakeRect shifts the rect's rows by dx and fills the gap with the edge pixel");
+    }
+    pal::setTheme(pal::TH_UMBRAVOX);
+    ScanScene base = scanfix::demo(pal::TH_UMBRAVOX); base.animateSweep = true; base.now = 2000;
+    const uieng::Rect tile = uieng::scan(W, H).tiles[0];
+    const uieng::Rect hero = uieng::scan(W, H).hero;
+    clearLook(); useLook(true);
+    ScanScene low = base; low.alert = mk(ui::CONF_LOW, 3000);              // medium: phase 0 at 3000 ms
+    const std::vector<uint16_t> noFx = full(W, H, low);
+    // flash_tints / effect_only_in_rect
+    gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_FLASH;
+    const std::vector<uint16_t> fl = full(W, H, low);
+    int in = 0; const bool only = onlyInside(fl, noFx, W, H, tile, &in);
+    expect(in > 100, "flash_tints: the piece is tinted in the first half of the cycle");
+    expect(only, "effect_only_in_rect: nothing outside the piece changes");
+    { ScanScene b = low; b.alert.age = 3300; ScanScene c = b; gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_NONE; const auto ref = full(W, H, c);
+      gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_FLASH; expect(full(W, H, b) == ref, "flash: the second half of the cycle is untinted"); }
+    // pulse_tints_by_phase
+    gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_PULSE;
+    { ScanScene a = low; a.alert.age = 3000; ScanScene b = low; b.alert.age = 3125;
+      const auto pa = full(W, H, a), pb = full(W, H, b);
+      int d = 0; for (int y = tile.y; y < tile.y + tile.h; y++) for (int x = tile.x; x < tile.x + tile.w; x++) d += pa[y * W + x] != pb[y * W + x];
+      expect(d > 100 && onlyInside(pa, noFx, W, H, tile), "pulse_tints_by_phase: the tint follows the phase"); }
+    // shake_shifts: 3000 + 62 ms -> step 1 of 8 (dx -1)
+    gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_SHAKE;
+    { ScanScene a = low; a.alert.age = 3000 + 63; ScanScene ref = a; gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_NONE; const auto r0 = full(W, H, ref);
+      gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_SHAKE; const auto sh = full(W, H, a);
+      bool ok = true; for (int y = tile.y; y < tile.y + tile.h; y++) for (int x = tile.x; x < tile.x + tile.w - 1; x++) ok &= sh[y * W + x] == r0[y * W + x + 1];
+      expect(ok && sh != r0, "shake_shifts: the rows move sideways"); }
+    // an effect never draws over the card (a piece under a LOW card in the hero: the radar)
+    gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_NONE;
+    gLook[0].piece[themelayout::P_RADAR].effect = uieng::FX_FLASH;
+    expect(full(W, H, low) == noFx, "an effect under the card is hidden by it");
+    gLook[0].piece[themelayout::P_RADAR].effect = uieng::FX_NONE;
+    // effect_under_high
+    gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_FLASH;
+    { ScanScene hi = base; hi.alert = mk(ui::CONF_HIGH, 3000); const auto a = full(W, H, hi);
+      gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_NONE; const auto b = full(W, H, hi);
+      expect(a == b, "effect_under_high: a whole-screen HIGH card hides every effect"); }
+    // no_alert_no_effect
+    gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_FLASH;
+    { const auto a = full(W, H, base); useLook(false); const auto b = full(W, H, base); useLook(true);
+      expect(a == b, "no_alert_no_effect"); }
+    // effect_clears + effect_regions: the engine repaints the effect pieces every alert frame and once after
+    gLook[0].piece[themelayout::P_COUNT_WIFI].effect = uieng::FX_FLASH;
+    gLook[0].piece[themelayout::P_COUNT_BLE].effect = uieng::FX_SHAKE; gLook[0].piece[themelayout::P_COUNT_BLE].speed = uieng::SP_FAST;
+    gLook[0].piece[themelayout::P_NAV_DOMAIN].effect = uieng::FX_PULSE;   // the nav repaints only on a REC/POI change: the effect must ask
+    gLook[0].card[uieng::CARD_HIGH].r = {40, 60, 400, 200};
+    { ScanScene a = low; a.alert.age = 3000; ScanScene b = low; b.alert.age = 3125; const auto pa = full(W, H, a), pb = full(W, H, b);
+      const uieng::Rect nd = pieceRect(W, H, themelayout::P_NAV_DOMAIN); int d = 0;
+      for (int y = nd.y; y < nd.y + nd.h; y++) for (int x = nd.x; x < nd.x + nd.w; x++) d += pa[y * W + x] != pb[y * W + x];
+      expect(d > 100, "the nav pulse changes the nav button between frames"); }
+    expect(pipeline(kRites[0], W, H) && pipeline(kRites[3], W, H), "effect_clears / effect_regions: dirty regions cover every change");
+    (void)hero;
+    useLook(false);
+}
+
 int main() {
     const int W = 480, H = 320;
     const uieng::Rect hero = uieng::scan(W, H).hero;
@@ -369,5 +451,6 @@ int main() {
     for (const RiteCase& r : kRites) { char m[96]; snprintf(m, sizeof m, "%s: dirty regions cover every change across on/off/level/age", r.name); expect(pipeline(r, W, H), m); }
     cardTests();
     clipTests();
+    effectTests();
     printf(fails ? "FAILED\n" : "PASSED\n"); return fails ? 1 : 0;
 }

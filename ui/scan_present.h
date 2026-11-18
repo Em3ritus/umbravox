@@ -491,6 +491,20 @@ public:
             char ra[16], rb[16];
             scanr::recLabel(pv, ra, 16); scanr::recLabel(nw, rb, 16);
             if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, B.navTop, W_, B.navBottom - B.navTop});   // REC/STOP and POI live on the nav
+            if (lvOld || lvNew) {                      // plan 5a effects: every alert frame, and once after it ends
+                uieng::Rect fx[uieng::PIECE_SLOTS]; bool shake[uieng::PIECE_SLOTS] = {};
+                const int nf = scanr::effectRects(W_, H_, fx, shake);
+                for (int i = 0; i < nf; i++) add(fx[i]);
+                for (int i = 0; i < nf; i++) {         // a shake reads its whole row span: a region touching it takes its columns
+                    if (!shake[i]) continue;
+                    for (int j = 0; j < nreg_; j++) {
+                        uieng::Rect& g = reg_[j];
+                        if (g.x >= fx[i].x + fx[i].w || g.x + g.w <= fx[i].x || g.y >= fx[i].y + fx[i].h || g.y + g.h <= fx[i].y) continue;
+                        const int x0 = std::min(g.x, fx[i].x), x1 = std::max(g.x + g.w, fx[i].x + fx[i].w);
+                        g.x = x0; g.w = x1 - x0;
+                    }
+                }
+            }
         } else {
             bool st = false, bd = false, fieldOnly = false, sweepOnly = false;
             sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly, &sweepOnly);
@@ -520,7 +534,10 @@ public:
             uieng::Rect dr;   // the animated decor: only its rows (the row diff trims the push to what changed)
             const bool decorDirty = sceneParts(W_, H_, pv, nw).decor && scanr::animatedDecor(W_, &dr);
             if (decorDirty) sched_.invalidate(dr.y, dr.y + dr.h);
-            if (!st && bd && fieldOnly && !navDirty && !decorDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
+            uieng::Rect fx[uieng::PIECE_SLOTS];        // plan 5a effects: their rows, every alert frame and once after
+            const int nf = (lvOld || lvNew) ? scanr::effectRects(W_, H_, fx) : 0;
+            for (int i = 0; i < nf; i++) sched_.invalidate(fx[i].y, fx[i].y + fx[i].h);
+            if (!st && bd && fieldOnly && !navDirty && !decorDirty && !nf && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
                 win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;
             }
         }
