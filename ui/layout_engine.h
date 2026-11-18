@@ -140,12 +140,21 @@ struct ChromeOverride {
 // registry for them and draws the built-in look when one is absent. Colours are a theme role or an RGB565 literal.
 constexpr int PIECE_SLOTS = 19, MAX_DECOR = 8, MENU_ICONS = 6;
 struct ColorRef { uint8_t kind = 0; uint16_t v = 0; };   // kind 0 none, 1 role index (themepack::Role), 2 RGB565
+// Plan 5a: an effect a piece shows during an alert, and its cycle (slow 1000 ms, medium 500, fast 250).
+enum Effect : uint8_t { FX_NONE, FX_FLASH, FX_PULSE, FX_SHAKE };
+enum FxSpeed : uint8_t { SP_SLOW, SP_MEDIUM, SP_FAST };
 struct PieceStyle {
     int8_t font = -1; uint8_t scale = 0;                  // scale 0 = the drawing's own choice
     ColorRef ink, fill, edge;
     int8_t frame = -1; uint8_t slice[4] = {0, 0, 0, 0};  // nine-slice frame art and its l,t,r,b insets
     int8_t bg = -1;
+    uint8_t effect = FX_NONE, speed = SP_MEDIUM;
 };
+// An alert card (alert.card.low|med|high): an overlay, not a layout piece. r.w == 0 = the built-in rect.
+// font/clip index f0..f7 / a0..a15 (-1 = built-in 5x7 / the rite); a font under 7 px or a picture over the
+// limits is ignored when drawing (it is checked against the loaded file, which build() does not have).
+struct AlertCard { Rect r; int8_t font = -1; uint8_t scale = 0; int8_t clip = -1; };
+constexpr int CARD_LOW = 0, CARD_MED = 1, CARD_HIGH = 2;
 struct Decor { Rect r; int8_t art = -1; };              // art -1 = no decor at this N
 struct ScreenStyle {
     int8_t roleFont[3] = {-1, -1, -1};                    // indexed by scanr::TextRole: body, title, numbers
@@ -161,6 +170,7 @@ struct BoardLook {
     uint8_t nDecor = 0;
     uint8_t fontsUsed = 0;                                // bit i = fi.fnt referenced
     uint16_t artsUsed = 0;                                // bit i = ai.art referenced
+    AlertCard card[3];                                    // CARD_LOW, CARD_MED, CARD_HIGH
 };
 struct LayoutOverride { const ChromeOverride* board[2]; const BoardLook* look[2] = {nullptr, nullptr}; };
 inline const LayoutOverride*& activeLayout() { static const LayoutOverride* p = nullptr; return p; }

@@ -230,14 +230,23 @@ bool objectKeys(P& p, const char* piece, int depth, const char* const* names, in
     }
 }
 
+// One of a fixed list of words; out = its index.
+bool word(P& p, const char* piece, const char* const* words, int n, const char* what, uint8_t& out) {
+    char v[8]; size_t vl = 0;
+    if (!peek(p, '"')) return failPiece(p, piece, what);
+    if (!str(p, v, 7, &vl)) return false;
+    for (int i = 0; i < n; i++) if (keyIs(v, vl, words[i])) { out = (uint8_t)i; return true; }
+    return failPiece(p, piece, what);
+}
+
 void useFont(uieng::BoardLook& k, int8_t f) { if (f >= 0) k.fontsUsed |= (uint8_t)(1u << f); }
 void useArt(uieng::BoardLook& k, int8_t a) { if (a >= 0) k.artsUsed |= (uint16_t)(1u << a); }
 
 // {"rect":[...], "font":..., "scale":..., "ink":..., "fill":..., "edge":..., "frame":..., "slice":[...], "bg":...}
 bool pieceObject(P& p, const char* piece, int depth, Slot& slot, uieng::PieceStyle& st, uieng::BoardLook& look) {
-    static const char* const K[] = {"rect", "font", "scale", "ink", "fill", "edge", "frame", "slice", "bg"};
+    static const char* const K[] = {"rect", "font", "scale", "ink", "fill", "edge", "frame", "slice", "bg", "effect", "speed"};
     bool hasRect = false, styled = false;
-    const bool ok = objectKeys(p, piece, depth, K, 9, [&](int i) {
+    const bool ok = objectKeys(p, piece, depth, K, 11, [&](int i) {
         int v; int q[4];
         if (i) styled = true;
         switch (i) {
@@ -251,7 +260,11 @@ bool pieceObject(P& p, const char* piece, int depth, Slot& slot, uieng::PieceSty
         case 7: if (!quad(p, piece, "slice must be four numbers 0..255", 0, 255, q)) return false;
                 for (int k = 0; k < 4; k++) st.slice[k] = (uint8_t)q[k];
                 return true;
-        default: if (!ref(p, piece, 'a', st.bg)) return false; useArt(look, st.bg); return true;
+        case 8: if (!ref(p, piece, 'a', st.bg)) return false; useArt(look, st.bg); return true;
+        case 9: { static const char* const E[] = {"none", "flash", "pulse", "shake"};
+                  return word(p, piece, E, 4, "effect must be none, flash, pulse or shake", st.effect); }
+        default: { static const char* const S[] = {"slow", "medium", "fast"};
+                   return word(p, piece, S, 3, "speed must be slow, medium or fast", st.speed); }
         }
     });
     if (!ok) return false;
@@ -322,6 +335,29 @@ bool decorValue(P& p, const char* name, int n, int depth, uieng::BoardLook& look
     return true;
 }
 
+// "alert.card.low|med|high": {"rect":[...], "font":"fN", "scale":1..4, "clip":"aN"}
+bool cardValue(P& p, const char* name, int depth, uieng::AlertCard& c, uieng::BoardLook& look) {
+    static const char* const K[] = {"rect", "font", "scale", "clip"};
+    Slot r{SLOT_DEFAULT, 0, 0, 0, 0};
+    bool hasRect = false;
+    const bool ok = objectKeys(p, name, depth, K, 4, [&](int i) {
+        int v;
+        switch (i) {
+        case 0: hasRect = true; return rectValue(p, name, r);
+        case 1: return ref(p, name, 'f', c.font);
+        case 2: if (!intIn(p, name, 1, 4, "scale must be 1 to 4", v)) return false; c.scale = (uint8_t)v; return true;
+        default: return ref(p, name, 'a', c.clip);
+        }
+    });
+    if (!ok) return false;
+    if (!hasRect) return failPiece(p, name, "needs a rect");
+    c.r = {r.x, r.y, r.w, r.h};
+    useFont(look, c.font);
+    useArt(look, c.clip);
+    look.any = true;
+    return true;
+}
+
 bool slotValue(P& p, const char* piece, Slot& out) {
     ws(p);
     if (peek(p, '"')) {
@@ -342,12 +378,18 @@ bool slotValue(P& p, const char* piece, Slot& out) {
     return true;
 }
 
+const char* const CARD_NAME[3] = {"alert.card.low", "alert.card.med", "alert.card.high"};
+int cardIndex(const char* k, size_t kl) {
+    for (int c = 0; c < 3; c++) if (keyIs(k, kl, CARD_NAME[c])) return c;
+    return -1;
+}
+
 // A board object: piece name -> slot. Unknown pieces are skipped (later formats add some).
 bool board(P& p, Slot (&slots)[P_N], int depth, uieng::BoardLook& look) {
     if (!peek(p, '{')) return fail(p, "a board must be an object");
     if (depth >= MAX_DEPTH) return fail(p, "nested too deep");
     p.i++;
-    bool seen[P_N] = {}, seenStyle = false;
+    bool seen[P_N] = {}, seenStyle = false, seenCard[3] = {};
     if (eat(p, '}')) return true;
     for (;;) {
         char k[16]; size_t kl = 0;
@@ -370,6 +412,11 @@ bool board(P& p, Slot (&slots)[P_N], int depth, uieng::BoardLook& look) {
             if (seenStyle) return fail(p, "duplicate style");
             seenStyle = true;
             if (!styleBlock(p, depth + 1, look)) return false;
+        } else if (cardIndex(k, kl) >= 0) {
+            const int c = cardIndex(k, kl);
+            if (seenCard[c]) return fail(p, "duplicate alert card");
+            seenCard[c] = true;
+            if (!cardValue(p, CARD_NAME[c], depth + 1, look.card[c], look)) return false;
         } else if (kl > 6 && memcmp(k, "decor.", 6) == 0) {
             if (kl != 7 || k[6] < '0' || k[6] >= '0' + uieng::MAX_DECOR) return fail(p, "decor pieces are decor.0 to decor.7");
             const int n = k[6] - '0';
@@ -654,6 +701,20 @@ bool checkLook(const uieng::BoardLook& k, Board b, const uint16_t* colors, char*
         if (d.art < 0) continue;
         if (d.r.x < 0 || d.r.y < 0 || d.r.x + d.r.w > W || d.r.y + d.r.h > H) return say(why, whyCap, "%s is off screen", DECOR[i]);
     }
+    // Alert cards: on screen and big enough to read (plan 5a). Font height and picture size are checked against the
+    // loaded files when drawing (scanr::alertCardFont / the card picture), since build() runs before they load.
+    static const char* const CARD[3] = {"alert.card.low", "alert.card.med", "alert.card.high"};
+    const int minW = b == B_WAVESHARE ? 240 : 160, minH = b == B_WAVESHARE ? 120 : 96;
+    for (int c = 0; c < 3; c++) {
+        const Rect& r = k.card[c].r;
+        if (r.w == 0) continue;
+        if (r.x < 0 || r.y < 0 || r.x + r.w > W || r.y + r.h > H) return say(why, whyCap, "%s is off screen", CARD[c]);
+        if (r.w < minW || r.h < minH) return say(why, whyCap, "%s is too small (at least %s)", CARD[c], b == B_WAVESHARE ? "240x120" : "160x96");
+    }
+    // Effects cost a repaint of the piece every alert frame: capped per board.
+    int fx = 0;
+    for (int p = 0; p < P_N; p++) fx += k.piece[p].effect != uieng::FX_NONE;
+    if (fx > (b == B_WAVESHARE ? 4 : 2)) return say(why, whyCap, "too many pieces with an effect (at most %s)", b == B_WAVESHARE ? "4" : "2");
     // Text on the pieces that have no other route must stay readable against their fill.
     static const int MUST_READ[] = {P_MENU, P_STOP, P_NAV_SCAN, P_NAV_DOMAIN, P_NAV_CODEX, P_NAV_POI, P_BRIDGE};
     for (int p : MUST_READ) {

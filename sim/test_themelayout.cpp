@@ -408,13 +408,14 @@ static void testStyleFuzz() {
         "{\"format\":1,\"waveshare\":{\"menu\":{\"rect\":[0,276,44,44],\"font\":\"f3\",\"ink\":\"#ff00ff\",\"slice\":[1,2,3,4]}}}",
         "{\"format\":1,\"cyd\":{\"style\":{\"title\":\"f0\",\"icons\":[\"a4\",null],\"highlight\":{\"fill\":\"witch\"}}}}",
         "{\"format\":1,\"cyd\":{\"decor.3\":{\"rect\":[0,60,20,20],\"art\":\"a15\"}}}",
+        "{\"format\":1,\"waveshare\":{\"alert.card.med\":{\"rect\":[0,0,240,120],\"font\":\"f2\",\"scale\":2,\"clip\":\"a9\"},\"menu\":{\"rect\":[0,276,44,44],\"effect\":\"pulse\",\"speed\":\"fast\"}}}",
     };
     const char ins[] = "[]{}\",:-0123456789afn#";
     srand(4321);
     long accepted = 0;
     bool invariant = true;
     for (int it = 0; it < 100000; it++) {
-        std::string s = seeds[it % 3];
+        std::string s = seeds[it % 4];
         int muts = 1 + rand() % 4;
         for (int m = 0; m < muts && !s.empty(); m++) {
             size_t at = (size_t)rand() % s.size();
@@ -438,6 +439,14 @@ static void testStyleFuzz() {
                 const uieng::PieceStyle& ps = k.piece[i];
                 if (ps.font < -1 || ps.font > 7 || ps.frame < -1 || ps.frame > 15 || ps.bg < -1 || ps.bg > 15 || ps.scale > 4) invariant = false;
                 if (ps.ink.kind > 2 || (ps.ink.kind == 1 && ps.ink.v >= 20)) invariant = false;
+                if (ps.effect > uieng::FX_SHAKE || ps.speed > uieng::SP_FAST) invariant = false;
+            }
+            for (int c = 0; c < 3; c++) {
+                const uieng::AlertCard& ac = k.card[c];
+                if (ac.font < -1 || ac.font > 7 || ac.clip < -1 || ac.clip > 15 || ac.scale > 4) invariant = false;
+                if (ac.r.w < 0 || ac.r.h < 0 || (ac.r.w == 0) != (ac.r.h == 0)) invariant = false;
+                if (ac.font >= 0 && !(k.fontsUsed & (1u << ac.font))) invariant = false;
+                if (ac.clip >= 0 && !(k.artsUsed & (1u << ac.clip))) invariant = false;
             }
             int n = 0;
             for (int d = 0; d < uieng::MAX_DECOR; d++) if (k.decor[d].art >= 0) { n++; if (k.decor[d].art > 15) invariant = false; }
@@ -449,7 +458,85 @@ static void testStyleFuzz() {
     check("style fuzz invariant holds", invariant);
 }
 
+// Plan 5a: alert cards (board keys alert.card.low|med|high) and piece effects.
+static std::string C1(const std::string& board) { return "{\"format\":1,\"cyd\":{" + board + "}}"; }
+static bool B(const std::string& s, char* why, size_t cap) {
+    themelayout::PackLayout* pl = new themelayout::PackLayout();
+    const bool ok = build(s.data(), s.size(), *pl, why, cap);
+    delete pl;
+    return ok;
+}
+static void testAlertCards() {
+    char why[96];
+    uieng::BoardLook looks[B_N];
+    check("card_parsed", PS(W1("\"alert.card.med\":{\"rect\":[40,50,300,160],\"font\":\"f2\",\"scale\":2,\"clip\":\"a5\"}"), looks) && [&] {
+        const uieng::AlertCard& c = looks[B_WAVESHARE].card[1];
+        return c.r.x == 40 && c.r.y == 50 && c.r.w == 300 && c.r.h == 160 && c.font == 2 && c.scale == 2 && c.clip == 5 &&
+               looks[B_WAVESHARE].card[0].r.w == 0 && looks[B_WAVESHARE].card[2].r.w == 0 && looks[B_WAVESHARE].any;
+    }());
+    check("card_default", PS(W1("\"menu\":[0,276,44,44]"), looks) && [&] {
+        for (int i = 0; i < 3; i++) { const uieng::AlertCard& c = looks[B_WAVESHARE].card[i];
+            if (c.r.w != 0 || c.font != -1 || c.scale != 0 || c.clip != -1) return false; }
+        return true;
+    }());
+    check("card_refs_marked_used", PS(W1("\"alert.card.high\":{\"rect\":[0,0,480,320],\"font\":\"f6\",\"clip\":\"a9\"}"), looks) &&
+          (looks[B_WAVESHARE].fontsUsed & (1u << 6)) && (looks[B_WAVESHARE].artsUsed & (1u << 9)));
+    check("effect_parsed", PS(W1("\"count.ble\":{\"rect\":[320,44,160,60],\"effect\":\"shake\",\"speed\":\"fast\"}"), looks) &&
+          looks[B_WAVESHARE].piece[P_COUNT_BLE].effect == uieng::FX_SHAKE && looks[B_WAVESHARE].piece[P_COUNT_BLE].speed == uieng::SP_FAST &&
+          looks[B_WAVESHARE].any);
+    check("effect speed defaults to medium", PS(W1("\"menu\":{\"rect\":[0,276,44,44],\"effect\":\"pulse\"}"), looks) &&
+          looks[B_WAVESHARE].piece[P_MENU].effect == uieng::FX_PULSE && looks[B_WAVESHARE].piece[P_MENU].speed == uieng::SP_MEDIUM);
+    check("effect none parses", PS(W1("\"menu\":{\"rect\":[0,276,44,44],\"effect\":\"none\",\"speed\":\"slow\"}"), looks) &&
+          looks[B_WAVESHARE].piece[P_MENU].effect == uieng::FX_NONE);
+
+    struct Bad { const char* what; std::string json; const char* reason; };
+    const Bad bad[] = {
+        {"effect_bad_value_refused", W1("\"menu\":{\"rect\":[0,276,44,44],\"effect\":\"spin\"}"), "effect"},
+        {"bad speed refused", W1("\"menu\":{\"rect\":[0,276,44,44],\"effect\":\"flash\",\"speed\":\"warp\"}"), "speed"},
+        {"card without rect", W1("\"alert.card.low\":{\"font\":\"f0\"}"), "rect"},
+        {"card clip not art", W1("\"alert.card.low\":{\"rect\":[0,0,240,120],\"clip\":\"f1\"}"), "art"},
+        {"card scale 5", W1("\"alert.card.low\":{\"rect\":[0,0,240,120],\"scale\":5}"), "scale"},
+        {"duplicate card", W1("\"alert.card.low\":{\"rect\":[0,0,240,120]},\"alert.card.low\":{\"rect\":[0,0,240,120]}"), "duplicate"},
+        {"card not an object", W1("\"alert.card.low\":[0,0,240,120]"), "object"},
+    };
+    for (const Bad& b : bad) {
+        why[0] = 0;
+        const bool ok = PS(b.json, looks, why, sizeof why);
+        char label[160]; snprintf(label, sizeof label, "refused: %s (%s)", b.what, why);
+        check(label, !ok && contains(why, b.reason));
+    }
+    check("unknown alert.* key skipped", PS(W1("\"alert.sound\":{\"x\":1}"), looks));
+
+    // build(): the board checks (checkLook).
+    check("card on screen accepted", B(W1("\"alert.card.low\":{\"rect\":[90,80,300,160]}"), why, sizeof why));
+    check("card_off_screen_refused", !B(W1("\"alert.card.low\":{\"rect\":[300,80,300,160]}"), why, sizeof why) && contains(why, "alert.card.low") && contains(why, "screen"));
+    check("card_too_small_refused (waveshare 239x120)", !B(W1("\"alert.card.med\":{\"rect\":[0,0,239,120]}"), why, sizeof why) && contains(why, "alert.card.med") && contains(why, "small"));
+    check("card_too_small_refused (waveshare 240x119)", !B(W1("\"alert.card.med\":{\"rect\":[0,0,240,119]}"), why, sizeof why) && contains(why, "small"));
+    check("waveshare 240x120 card accepted", B(W1("\"alert.card.med\":{\"rect\":[0,0,240,120]}"), why, sizeof why));
+    check("card_too_small_refused (cyd 159x96)", !B(C1("\"alert.card.high\":{\"rect\":[0,0,159,96]}"), why, sizeof why) && contains(why, "small"));
+    check("cyd 160x96 card accepted", B(C1("\"alert.card.high\":{\"rect\":[0,0,160,96]}"), why, sizeof why));
+    // Effects on pieces at their built-in rects (only the effect is new).
+    auto fxOn = [&](Board bd, const std::vector<Piece>& ps, const char* effect) {
+        std::string s;
+        for (size_t i = 0; i < ps.size(); i++) {
+            const uieng::Rect r = defaultRect(bd, ps[i]);
+            char one[128];
+            snprintf(one, sizeof one, "%s\"%s\":{\"rect\":[%d,%d,%d,%d],\"effect\":\"%s\"}", i ? "," : "", PIECE_NAME[ps[i]], r.x, r.y, r.w, r.h, effect);
+            s += one;
+        }
+        return bd == B_WAVESHARE ? W1(s) : C1(s);
+    };
+    const std::vector<Piece> four = {P_MENU, P_STOP, P_COUNT_WIFI, P_COUNT_5G}, five = {P_MENU, P_STOP, P_COUNT_WIFI, P_COUNT_5G, P_COUNT_BLE};
+    check("4 effects on the waveshare accepted", B(fxOn(B_WAVESHARE, four, "flash"), why, sizeof why));
+    check("too_many_effects_refused (5 on waveshare)", !B(fxOn(B_WAVESHARE, five, "flash"), why, sizeof why) && contains(why, "effect"));
+    check("2 effects on the cyd accepted", B(fxOn(B_CYD, {P_MENU, P_STOP}, "pulse"), why, sizeof why));
+    check("too_many_effects_refused (3 on cyd)", !B(fxOn(B_CYD, {P_MENU, P_STOP, P_SD}, "shake"), why, sizeof why) && contains(why, "effect"));
+    check("effect none does not count", B(fxOn(B_WAVESHARE, five, "none"), why, sizeof why));
+}
+
 int main() {
+    printf("== alert cards and effects\n");
+    testAlertCards();
     testStyles();
     testStyleFuzz();
     printf("== themelayout parse\n");

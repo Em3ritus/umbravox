@@ -245,6 +245,27 @@ Each board may also have a `style` block for every other screen, and up to eight
 - Over USB (`tools/sdput.py`, the designer's USB install) `layout.json`, `f0.fnt`-`f7.fnt` and `a0.art`-`a15.art`
   are sent too.
 
+### Alerts: cards and effects
+
+Each board may place and style the alert card for each level, and give pieces an effect that plays during an alert:
+
+```json
+"alert.card.low":  { "rect": [90, 80, 300, 160], "font": "f2", "scale": 2, "clip": "a6" },
+"alert.card.high": { "rect": [0, 0, 480, 320] },
+"count.ble": { "rect": [320, 44, 160, 60], "effect": "pulse", "speed": "fast" }
+```
+
+- `alert.card.low`, `alert.card.med` and `alert.card.high` are overlays, not pieces: they are drawn on top of
+  everything, may cover other pieces, and a tap anywhere dismisses the alert, as today. `rect` is required; without
+  a card key the built-in card is used (LOW and MED over the radar area, HIGH the whole screen).
+- `font` and `scale` set the card's words. A font shorter than 7 px (its height times `scale`) is not used: the
+  card then draws with the built-in font.
+- `clip` is a picture (`"a0"` to `"a15"`, still or animated) played in place of the alert rite. It is never scaled;
+  it shares the board's picture budget, and it plays only if it fits inside the card and its area is at most
+  25,600 px on the Waveshare (10,000 px on the CYD); otherwise the rite plays.
+- `effect` is `none`, `flash`, `pulse` or `shake`; `speed` is `slow`, `medium` (the default) or `fast`. Effects
+  never draw over the alert card.
+
 What makes the device refuse a layout (it then uses the built-in layout and keeps the rest of the theme; the reason
 is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
 
@@ -260,6 +281,8 @@ is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
   `decor` key other than `decor.0` to `decor.7`, a decor piece off the screen;
 - a `fill` on `menu`, `stop`, `bridge` or a `nav.*` button that its words cannot be read on (under 3:1): its `ink`, or
   else the theme's `text` and `bright`; for `stop` also `red` and `amber`, the colours of its label while recording.
+- an alert card off the screen or smaller than 240x120 on the Waveshare (160x96 on the CYD), an `effect` or `speed`
+  that is not one of its words, or effects on more than 4 pieces on the Waveshare (2 on the CYD).
 
 ## Limits
 
