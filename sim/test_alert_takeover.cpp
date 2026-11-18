@@ -368,6 +368,58 @@ static void effectTests() {
     useLook(false);
 }
 
+// Plan 5a Task 5: the CYD engine build (320x240) gets the takeover.
+static void cydTests() {
+    const int W = 320, H = 240;
+    const uieng::Rect hero = uieng::scan(W, H).hero;
+    for (const RiteCase& r : kRites) {
+        pal::setTheme(r.theme);
+        ScanScene base = scanfix::demo(r.theme); base.animateSweep = true; base.now = 2000;
+        const auto plain = full(W, H, base);
+        ScanScene lo = base; lo.alert = mk(ui::CONF_LOW, 3000, r.style);
+        ScanScene md = base; md.alert = mk(ui::CONF_MED, 3000, r.style);
+        ScanScene hi = base; hi.alert = mk(ui::CONF_HIGH, 3000, r.style);
+        int inL = 0, inM = 0, inH = 0;
+        const bool okL = onlyInside(full(W, H, lo), plain, W, H, hero, &inL), okM = onlyInside(full(W, H, md), plain, W, H, hero, &inM);
+        onlyInside(full(W, H, hi), plain, W, H, {0, 0, W, H}, &inH);
+        char m[140]; snprintf(m, sizeof m, "cyd_takeover_low_med_high %s: LOW %d / MED %d px in the hero only, HIGH %d px", r.name, inL, inM, inH);
+        expect(okL && okM && inL > 300 && inM > 300 && inH > 10000, m);
+    }
+    {   // tap to dismiss: as on the Waveshare
+        uieng::HitCtx c{}; c.alertTakeover = 2; const uieng::HitList h = uieng::scanHits(W, H, c);
+        bool one = h.count == 1 && h.items[0].action == uieng::Action::AlertDismiss && h.items[0].rect == (uieng::Rect{0, 0, W, H});
+        c.alertTakeover = 1; const uieng::HitList g = uieng::scanHits(W, H, c);
+        bool dis = false; for (int i = 0; i < g.count; i++) dis |= g.items[i].action == uieng::Action::AlertDismiss && g.items[i].rect == hero;
+        expect(one && dis, "cyd_tap_dismiss_unchanged: HIGH the whole screen, LOW/MED the hero");
+    }
+    {   // cyd_settled_rows: a settled LOW alert (nothing else moving) repaints only the rows its regions span
+        pal::setTheme(pal::TH_UMBRAVOX);
+        scanpres::Engine e; e.reset(W, H); e.enter();
+        int lo = 1 << 30, hiY = -1; bool ok = true;
+        for (int k = 0; k < 6; k++) {
+            scanpres::SceneStore& st = e.back(); fill(st, pal::TH_UMBRAVOX, 5000, mk(ui::CONF_LOW, 3000 + k * 120)); st.animate(false);
+            e.commit();
+            int y0 = 1 << 30, y1 = -1;
+            while (e.pending()) { const auto sl = e.nextSlice(20); if (sl.y1 > sl.y0) { y0 = std::min(y0, sl.y0); y1 = std::max(y1, sl.y1); } }
+            if (k >= 2) {
+                uieng::Rect rg[8]; const int n = alertRegions(hero, mk(ui::CONF_LOW, 3000 + k * 120), pal::TH_UMBRAVOX, rg, 8, W);
+                lo = 1 << 30; hiY = -1; for (int i = 0; i < n; i++) { lo = std::min(lo, rg[i].y); hiY = std::max(hiY, rg[i].y + rg[i].h); }
+                ok &= y1 > y0 && y0 >= (lo / 16) * 16 && y1 <= ((hiY + 15) / 16) * 16;
+                if (!ok) { printf("    frame %d rows %d..%d, regions %d..%d\n", k, y0, y1, lo, hiY); break; }
+            }
+        }
+        expect(ok, "cyd_settled_rows: a settled alert repaints only its regions' rows");
+    }
+    for (const RiteCase& r : kRites) { char m[96]; snprintf(m, sizeof m, "cyd %s: dirty rows cover every change across on/off/level/age", r.name); expect(pipeline(r, W, H), m); }
+    {   // and with a theme's cards and effects on the CYD
+        clearLook(); gLook[1].card[uieng::CARD_LOW].r = {0, 0, 200, 100}; gLook[1].card[uieng::CARD_HIGH].r = {20, 20, 280, 180};
+        gLook[1].piece[themelayout::P_STOP].effect = uieng::FX_SHAKE; gLook[1].piece[themelayout::P_COUNT_BLE].effect = uieng::FX_FLASH;
+        useLook(true);
+        expect(pipeline(kRites[0], W, H) && pipeline(kRites[2], W, H), "cyd cards + effects: dirty rows cover every change");
+        useLook(false);
+    }
+}
+
 int main() {
     const int W = 480, H = 320;
     const uieng::Rect hero = uieng::scan(W, H).hero;
@@ -418,12 +470,8 @@ int main() {
             expect(full(W, H, early) != img, m);
         }
     }
-    // 4. Compact panels are pinned: an alert changes nothing there.
-    {
-        pal::setTheme(pal::TH_UMBRAVOX);
-        ScanScene a = scanfix::demo(pal::TH_UMBRAVOX); a.animateSweep = true, a.now = 2000; ScanScene b = a; b.alert = mk(ui::CONF_HIGH, 3000);
-        expect(full(320, 240, a) == full(320, 240, b), "320x240 panels ignore alerts");
-    }
+    // 4. The CYD engine build (320x240) has the takeover too (plan 5a).
+    cydTests();
     // 4b. HIGH layout: the threat text sits above and below the rite, never over it (the rite square stays unobstructed).
     for (const RiteCase& r : kRites) {
         pal::setTheme(r.theme);

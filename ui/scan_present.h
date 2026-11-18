@@ -206,7 +206,7 @@ inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b
         for (int k = 0; k < 3; k++) p.fxCard[k] = tick || __builtin_memcmp(a.fx.spark[k], b.fx.spark[k], sizeof a.fx.spark[k]) != 0;
         p.fxSpec = tick || __builtin_memcmp(a.fx.peak, b.fx.peak, sizeof a.fx.peak) != 0;
     } else if (W >= 400 && a.fx.on != b.fx.on) { for (int k = 0; k < 3; k++) p.fxCard[k] = true; p.fxSpec = true; }
-    p.alert = W >= 400 && (a.alert.active != b.alert.active
+    p.alert = (a.alert.active != b.alert.active
               || (b.alert.active && (a.alert.age != b.alert.age || a.alert.conf != b.alert.conf || a.alert.threat != b.alert.threat || a.alert.style != b.alert.style
                                      || __builtin_strcmp(a.alert.label, b.alert.label) || __builtin_strcmp(a.alert.name, b.alert.name) || __builtin_strcmp(a.alert.why, b.alert.why))));
     const uint8_t sa = a.animateSweep ? scanr::liveStyle(a.sweep, W) : uint8_t(ui::SW_RADAR), sb = b.animateSweep ? scanr::liveStyle(b.sweep, W) : uint8_t(ui::SW_RADAR);
@@ -435,7 +435,7 @@ public:
         if (W_ >= 400 && nw.fx.on) fx_.advance(nw, store_[cur_ ^ 1].fxState());   // history first: the diff below compares it
         const bool wasPending = sched_.pending(), wasWin = win_;
         win_ = false; nreg_ = 0;
-        const int lvOld = W_ >= 400 ? scanr::alertLevel(store_[cur_].scene().alert) : 0, lvNew = W_ >= 400 ? scanr::alertLevel(nw.alert) : 0;
+        const int lvOld = scanr::alertLevel(store_[cur_].scene().alert), lvNew = scanr::alertLevel(nw.alert);
         // The cards on screen before and after (a theme may move them, plan 5a); a whole-screen card owns everything.
         const uieng::Rect cardOld = lvOld ? scanr::alertCardRect(W_, H_, store_[cur_].scene().alert.conf) : uieng::Rect{},
                           cardNew = lvNew ? scanr::alertCardRect(W_, H_, nw.alert.conf) : uieng::Rect{};
@@ -507,7 +507,33 @@ public:
             }
         } else {
             bool st = false, bd = false, fieldOnly = false, sweepOnly = false;
-            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly, &sweepOnly);
+            const ScanScene& pa = store_[cur_].scene();
+            const ScanParts sp = sceneParts(W_, H_, pa, nw);
+            // An alert dirties its card's rows (once settled, only its moving regions' rows), not the whole body band;
+            // a card over the whole hero hides the radar, channel readout and spectrum (CYD engine build, plan 5a).
+            const uieng::Rect hero = uieng::scan(W_, H_).hero;
+            auto holds = [&](const uieng::Rect& c) { return c.x <= hero.x && c.y <= hero.y && c.x + c.w >= hero.x + hero.w && c.y + c.h >= hero.y + hero.h; };
+            const bool covered = lvOld && lvNew && holds(cardOld) && holds(cardNew);
+            {
+                ScanParts q = sp; q.alert = false;
+                if (covered) { q.ch = q.chan = q.marks = q.sweep = false; }
+                const bool counts = q.count[0] || q.count[1] || q.count[2];
+                st = q.status;
+                bd = counts || q.ch || q.chan || q.marks || q.sweep;
+                fieldOnly = bd && !counts && !q.ch && !q.chan;
+                sweepOnly = bd && !counts && !q.ch && !q.chan && !q.marks;
+            }
+            bool alertRows = false;
+            if (sp.alert) {
+                alertRows = true;
+                if (lvOld && lvNew && cardOld == cardNew && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
+                    uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8, W_);
+                    for (int i = 0; i < n; i++) sched_.invalidate(rg[i].y, rg[i].y + rg[i].h);
+                } else {
+                    if (lvOld) sched_.invalidate(cardOld.y, cardOld.y + cardOld.h);
+                    if (lvNew) sched_.invalidate(cardNew.y, cardNew.y + cardNew.h);
+                }
+            }
             // Sweep and nothing else: redraw only where the old and new wedge are, not the whole radar.
             const auto radar = scanr::radarBounds(W_, H_);
             uieng::Rect box = radar;
@@ -532,12 +558,12 @@ public:
             const bool navDirty = __builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi;
             if (navDirty) sched_.invalidate(B.navTop, B.navBottom);
             uieng::Rect dr;   // the animated decor: only its rows (the row diff trims the push to what changed)
-            const bool decorDirty = sceneParts(W_, H_, pv, nw).decor && scanr::animatedDecor(W_, &dr);
+            const bool decorDirty = sp.decor && scanr::animatedDecor(W_, &dr);
             if (decorDirty) sched_.invalidate(dr.y, dr.y + dr.h);
             uieng::Rect fx[uieng::PIECE_SLOTS];        // plan 5a effects: their rows, every alert frame and once after
             const int nf = (lvOld || lvNew) ? scanr::effectRects(W_, H_, fx) : 0;
             for (int i = 0; i < nf; i++) sched_.invalidate(fx[i].y, fx[i].y + fx[i].h);
-            if (!st && bd && fieldOnly && !navDirty && !decorDirty && !nf && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
+            if (!st && bd && fieldOnly && !navDirty && !decorDirty && !nf && !alertRows && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
                 win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;
             }
         }
