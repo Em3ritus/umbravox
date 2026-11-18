@@ -94,11 +94,13 @@ public:
             }
         return x1>x0 && y1>y0 ? uieng::Rect{x0,y0,x1-x0,y1-y0} : uieng::Rect{};
     }
-    template<class Sink> void present(bool menu, Sink&& send, int y0=0, int y1=-1) {
+    // Returns the pixels sent to the panel (the speed meter's "pushed").
+    template<class Sink> uint32_t present(bool menu, Sink&& send, int y0=0, int y1=-1) {
+        uint32_t pushed = 0;
         compareY0_ = valid_ ? y0 : 0;
         compareY1_ = valid_ && y1>=0 ? y1 : h_;
         // The whole frame is ready. No application/GPS pass between regions.
-        emit({0,0,w_,44},send);
+        pushed += emit({0,0,w_,44},send);
         if (menu) {
             const auto m = uieng::menu(w_,h_);
             for(int row=0;row<m.rows;++row) for(int col=0;col<m.cols;++col) {
@@ -106,26 +108,28 @@ public:
                 const int x0=col?c.x:0, y0=row?c.y:44;
                 const int x1=col==m.cols-1?w_:m.cells[row*m.cols+col+1].x;
                 const int y1=row==m.rows-1?h_-44:m.cells[(row+1)*m.cols+col].y;
-                emit({x0,y0,x1-x0,y1-y0},send);
+                pushed += emit({x0,y0,x1-x0,y1-y0},send);
             }
-        } else emit({0,44,w_,h_-88},send);
-        emit({0,h_-44,w_,44},send);
+        } else pushed += emit({0,44,w_,h_-88},send);
+        pushed += emit({0,h_-44,w_,44},send);
         for (auto& q : regs_) {                                   // staged regions: one rectangle each
             if (!q.used) continue;
             if (q.hi > q.lo && q.bottom > q.top) {
                 const uieng::Rect r{q.lo, q.top, q.hi - q.lo, q.bottom - q.top};
                 send(r, back_, w_);
+                pushed += (uint32_t)r.w * (uint32_t)r.h;
                 for (int y = r.y; y < r.y + r.h; ++y) std::memcpy(front_ + y*w_ + r.x, back_ + y*w_ + r.x, r.w * sizeof(uint16_t));
             }
             q.used = false;
         }
         valid_=true;
         clearStaged();
+        return pushed;
     }
 private:
-    template<class Sink> void emit(uieng::Rect region, Sink& send) {
+    template<class Sink> uint32_t emit(uieng::Rect region, Sink& send) {
         const int y0=std::max(region.y,compareY0_), y1=std::min(region.y+region.h,compareY1_);
-        if(y1<=y0)return;
+        if(y1<=y0)return 0;
         region.y=y0;region.h=y1-y0;
         uieng::Rect r;
         if (!valid_ || !staged_) r=changed(region);
@@ -139,10 +143,11 @@ private:
             }
             if(hi>lo && bottom>top)r={lo,top,hi-lo,bottom-top};
         }
-        if(!r.w)return;
+        if(!r.w)return 0;
         send(r,back_,w_);
         for(int y=r.y;y<r.y+r.h;++y)
             std::memcpy(front_+y*w_+r.x,back_+y*w_+r.x,r.w*sizeof(uint16_t));
+        return (uint32_t)r.w * (uint32_t)r.h;
     }
     static constexpr int MaxRows=320;
     uint16_t left_[MaxRows]{},right_[MaxRows]{};
