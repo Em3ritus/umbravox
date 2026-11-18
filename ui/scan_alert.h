@@ -121,17 +121,22 @@ inline void alertText(Rc& r, const AlertScene& a, uint16_t edge, int age, const 
     const int ny = r.Y + (b.hi ? r.H * 13 / 100 : r.H * 17 / 100);     // HIGH: the name rides the top, the details ride the bottom, the rite owns the middle
     arune(r, 0, cx, ny - (b.hi ? 18 : 12), b.hi ? 4 : 2, edge);                      // the eye
     int n = 0; while (a.label[n]) n++;
-    const int startX = cx - Font::width(a.label, ns) / 2, settle = b.trace;
-    for (int i = 0; i < n; i++) {
-        const int gx = startX + i * Font::ADV * ns, lockAt = settle + i * b.charMs;
-        if (age >= lockAt) { const char ch[2] = { a.label[i], 0 }; if (ny + Font::H * ns > r.s.y0 && ny < r.s.y0 + r.s.h) txt(r.s, gx, ny, ch, ns, pal::BRIGHT); }
-        else arune(r, int(anoise(uint32_t(age / 70), uint32_t(i)) % 16), gx + Font::W * ns / 2, ny + Font::H * ns / 2, std::max(1, ns / 2), edge);
+    const int startX = cx - scanr::textW(a.label, ns) / 2, settle = b.trace;
+    int gx = startX;
+    for (int i = 0; i < n; gx += scanr::charAdv(a.label[i], ns), i++) {
+        const int lockAt = settle + i * b.charMs;
+        if (age >= lockAt) { const char ch[2] = { a.label[i], 0 }; if (ny + scanr::lineH(ns) > r.s.y0 && ny < r.s.y0 + r.s.h) txt(r.s, gx, ny, ch, ns, pal::BRIGHT); }
+        else arune(r, int(anoise(uint32_t(age / 70), uint32_t(i)) % 16), gx + scanr::glyphW(a.label[i], ns) / 2, ny + scanr::lineH(ns) / 2, std::max(1, ns / 2), edge);
     }
-    const int ds = 2, tail = settle + n * b.charMs, step = Font::H * ds + 5;
-    const int y1 = b.hi ? r.Y + r.H - 14 - Font::H * ds - 2 * step : ny + Font::H * ns + 8;
-    if (age > tail)       centered(r.s, cx, y1, a.why, ds, pal::DIM);
-    if (age > tail + 80 && a.name[0]) centered(r.s, cx, y1 + step, a.name, fitScale(a.name, r.W - 16, ds), pal::TEXT);
-    if (age > tail + 160) centered(r.s, cx, y1 + 2 * step, a.conf == ui::CONF_HIGH ? "HIGH" : a.conf == ui::CONF_MED ? "MED" : "LOW", ds, edge);
+    const int ds = activeFont() ? 1 : 2, tail = settle + n * b.charMs, step = scanr::lineH(ds) + 5;   // a card font draws the details at its own size
+    const int y1 = b.hi ? r.Y + r.H - 14 - scanr::lineH(ds) - 2 * step : ny + scanr::lineH(ns) + 8;
+    // The detail lines fit the card at no more than ds (a card's scale sizes the label only), so they keep `step` apart
+    // and stay inside the card on the narrow CYD hero too.
+    auto fit = [&](const char* t) { return std::min(ds, fitScale(t, r.W - 16, ds)); };
+    const char* confW = a.conf == ui::CONF_HIGH ? "HIGH" : a.conf == ui::CONF_MED ? "MED" : "LOW";
+    if (age > tail)       centered(r.s, cx, y1, a.why, fit(a.why), pal::DIM);
+    if (age > tail + 80 && a.name[0]) centered(r.s, cx, y1 + step, a.name, fit(a.name), pal::TEXT);
+    if (age > tail + 160) centered(r.s, cx, y1 + 2 * step, confW, fit(confW), edge);
 }
 
 inline void riteMotif(Rc& r, uint8_t theme, uint16_t edge, int mx, int my, int rm, int opacity) {
@@ -262,6 +267,28 @@ inline void riteLockOn(Rc& r, const ScanScene& sc, uint16_t edge, int age, const
 // 0 = no takeover, 1 = hero area (LOW/MED), 2 = whole screen (HIGH).
 inline int alertLevel(const AlertScene& a) { return !a.active ? 0 : a.conf == ui::CONF_HIGH ? 2 : 1; }
 
+// Plan 5a: the card a confidence level uses (uieng::CARD_LOW/MED/HIGH).
+inline int cardIndex(uint8_t conf) { return conf == ui::CONF_HIGH ? uieng::CARD_HIGH : conf == ui::CONF_MED ? uieng::CARD_MED : uieng::CARD_LOW; }
+// The card's rect: the theme's when set, else the built-in (LOW/MED the hero, HIGH the whole screen).
+inline const uieng::AlertCard* alertCard(int W, uint8_t conf) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    return k ? &k->card[cardIndex(conf)] : nullptr;
+}
+inline uieng::Rect alertCardRect(int W, int H, uint8_t conf) {
+    const uieng::AlertCard* c = alertCard(W, conf);
+    if (c && c->r.w > 0) return c->r;
+    return conf == ui::CONF_HIGH ? uieng::Rect{0, 0, W, H} : uieng::scan(W, H).hero;
+}
+inline bool alertCardWhole(const uieng::Rect& r, int W, int H) { return r.x <= 0 && r.y <= 0 && r.x + r.w >= W && r.y + r.h >= H; }
+// The card's font when it is loaded and at least 7 px tall at scale 1, else null (the built-in 5x7). Scale 1 is the
+// test because fitting a long label may drop the scale to 1, whatever the card's scale.
+constexpr int CARD_FONT_MIN_PX = 7;
+inline const fontpack::Font* alertCardFont(int W, uint8_t conf) {
+    const uieng::AlertCard* c = alertCard(W, conf);
+    const fontpack::Font* f = c && c->font >= 0 ? assets::font(c->font) : nullptr;
+    return f && f->h >= CARD_FONT_MIN_PX ? f : nullptr;
+}
+
 // Where the rite lives inside the takeover rectangle (the same numbers drive drawing and the dirty regions).
 struct AlertGeom { int mx, my, R; };
 inline AlertGeom alertGeom(const uieng::Rect& area, bool hi) {
@@ -273,15 +300,30 @@ inline bool alertSettled(const AlertScene& a) {
     const Beat b = beatFor(alertLevel(a) == 2); int n = 0; while (a.label[n]) n++;
     return int(a.age) >= std::max(b.trace + 300, b.trace + n * b.charMs + 260);
 }
-// The rectangles that can still change once the alert has settled: the rite square and four border bands.
-inline int alertRegions(const uieng::Rect& area, const AlertScene& a, uint8_t theme, uieng::Rect* out, int cap) {
+// The card's picture (plan 5a), played in place of the rite: loaded, no larger than the card, and its area within
+// the animation cap; else null (the rite plays). Never scaled. Its rect: centred on the rite, kept inside the card.
+inline const artpack::Art* alertClip(int W, uint8_t conf, const uieng::Rect& card) {
+    const uieng::AlertCard* c = alertCard(W, conf);
+    const artpack::Art* a = c && c->clip >= 0 ? assets::art(c->clip) : nullptr;
+    if (!a || a->w > card.w || a->h > card.h || (int)a->w * a->h > animAreaMax(W)) return nullptr;
+    return a;
+}
+inline uieng::Rect alertClipRect(const artpack::Art& a, const uieng::Rect& card, bool hi) {
+    const AlertGeom g = alertGeom(card, hi);
+    const int x = std::max(card.x, std::min(g.mx - a.w / 2, card.x + card.w - a.w)), y = std::max(card.y, std::min(g.my - a.h / 2, card.y + card.h - a.h));
+    return {x, y, a.w, a.h};
+}
+// The rectangles that can still change once the alert has settled: the rite square (or the card's picture) and four
+// border bands. W (0 = unknown) finds the card's picture.
+inline int alertRegions(const uieng::Rect& area, const AlertScene& a, uint8_t theme, uieng::Rect* out, int cap, int W = 0) {
     if (cap < 5) { out[0] = area; return 1; }
     const bool hi = alertLevel(a) == 2; const AlertGeom g = alertGeom(area, hi);
+    const artpack::Art* clipArt = W ? alertClip(W, a.conf, area) : nullptr;
     const int band = riteFor(theme, a.style) == RITE_WARD ? (hi ? 20 : 14) : 6;     // only the ward walks runes along the border; the rest draw a thin frame
     auto clip = [&](int x, int y, int w, int h) { const int x0 = std::max(x, area.x), y0 = std::max(y, area.y), x1 = std::min(x + w, area.x + area.w), y1 = std::min(y + h, area.y + area.h);
         return (x1 > x0 && y1 > y0) ? uieng::Rect{ x0, y0, x1 - x0, y1 - y0 } : uieng::Rect{ 0, 0, 0, 0 }; };
     int n = 0; uieng::Rect r;
-    r = clip(g.mx - g.R - 3, g.my - g.R - 3, 2 * g.R + 7, 2 * g.R + 7); if (r.w) out[n++] = r;
+    r = clipArt ? alertClipRect(*clipArt, area, hi) : clip(g.mx - g.R - 3, g.my - g.R - 3, 2 * g.R + 7, 2 * g.R + 7); if (r.w) out[n++] = r;
     r = clip(area.x, area.y, area.w, band);                              if (r.w) out[n++] = r;
     r = clip(area.x, area.y + area.h - band, area.w, band);              if (r.w) out[n++] = r;
     r = clip(area.x, area.y + band, band, area.h - 2 * band);            if (r.w) out[n++] = r;
@@ -289,19 +331,27 @@ inline int alertRegions(const uieng::Rect& area, const AlertScene& a, uint8_t th
     return n;
 }
 
+// The alert's colour: its confidence, kept readable on VOID and PANEL (the card's edge, and the effects' tint).
+inline uint16_t alertEdge(uint8_t conf) {
+    return conf == ui::CONF_HIGH ? ui::safeEdge(pal::RED, ui::SAFE_HIGH, pal::VOID, pal::PANEL)
+         : conf == ui::CONF_MED  ? ui::safeEdge(pal::AMBER, ui::SAFE_MED, pal::VOID, pal::PANEL)
+                                 : ui::safeEdge(pal::WITCH, ui::SAFE_LOW, pal::VOID, pal::PANEL);
+}
+
 // Overlay the takeover rectangle `area` onto the strip.
 inline void drawAlertTakeover(S& s, const ScanScene& sc, const uieng::Rect& area) {
     const AlertScene& a = sc.alert;
     if (area.y >= s.y0 + s.h || area.y + area.h <= s.y0) return;
     const bool hi = alertLevel(a) == 2; const Beat b = beatFor(hi); const int age = a.age;
-    const uint16_t edge = a.conf == ui::CONF_HIGH ? ui::safeEdge(pal::RED, ui::SAFE_HIGH, pal::VOID, pal::PANEL)
-                        : a.conf == ui::CONF_MED  ? ui::safeEdge(pal::AMBER, ui::SAFE_MED, pal::VOID, pal::PANEL)
-                                                  : ui::safeEdge(pal::WITCH, ui::SAFE_LOW, pal::VOID, pal::PANEL);
+    const uint16_t edge = alertEdge(a.conf);
     Rc r{ s, area.x, area.y, area.w, area.h };
     const AlertGeom gm = alertGeom(area, hi); const int mx = gm.mx, my = gm.my, R = gm.R;
     const bool strobe = hi && age < 360 && ((age / 60) & 1) == 0;
     afill(r, area.x, area.y, area.w, area.h, strobe ? ui::Canvas::mix(pal::VOID, edge, 1, 4) : pal::VOID);
-    switch (riteFor(sc.theme, a.style)) {
+    if (const artpack::Art* pic = alertClip(s.W, a.conf, area)) {     // the theme's picture plays instead of the rite
+        const uieng::Rect pr = alertClipRect(*pic, area, hi);
+        artInto(s, *pic, pr.x, pr.y, decorFrame(*pic, (uint32_t)age, s.W));
+    } else switch (riteFor(sc.theme, a.style)) {
         case RITE_SUMMON: riteSummon(r, sc, edge, age, b, mx, my, R); break;
         case RITE_SUPERNOVA: riteSupernova(r, sc, edge, age, b, mx, my, R); break;
         case RITE_VORTEX: riteVortex(r, sc, edge, age, b, mx, my, R); break;
@@ -316,6 +366,96 @@ inline void drawAlertTakeover(S& s, const ScanScene& sc, const uieng::Rect& area
         for (int c = 0; c < 4; c++) { const int x = c & 1 ? area.x + area.w - 10 : area.x + 10, y = c & 2 ? area.y + area.h - 10 : area.y + 10, sx = c & 1 ? -1 : 1, sy = c & 2 ? -1 : 1;
             aline(r, x, y, x + sx * L, y, pal::BRIGHT, 255, 2); aline(r, x, y, x, y + sy * L, pal::BRIGHT, 255, 2); }
     }
+}
+
+// --- plan 5a: effects, a post-process on a piece's rect after the scene is composed and before the card ---------
+inline int fxCycleMs(uint8_t speed) { return speed == uieng::SP_SLOW ? 1000 : speed == uieng::SP_FAST ? 250 : 500; }
+inline int fxPhase(uint32_t ageMs, uint8_t speed) { const uint32_t c = (uint32_t)fxCycleMs(speed); return (int)((ageMs % c) * 1024 / c); }
+inline void tintRect(S& s, uieng::Rect r, uint16_t col, int num, int den) {
+    const int x0 = std::max(r.x, s.lo), x1 = std::min(r.x + r.w, s.hi), y0 = std::max(r.y, s.y0), y1 = std::min(r.y + r.h, s.y0 + s.h);
+    for (int y = y0; y < y1; y++) { uint16_t* row = s.px + (y - s.y0) * s.stride - s.lo; for (int x = x0; x < x1; x++) row[x] = ui::Canvas::mix(row[x], col, num, den); }
+}
+// Rows of r shifted by dx (|dx| <= 2); the gap takes the pixel at r's edge. Reads only r, so the strip window must
+// hold r's columns (the presenter widens any region that touches a shaking piece to the piece).
+inline void shakeRect(S& s, uieng::Rect r, int dx) {
+    if (!dx) return;
+    const int x0 = std::max(r.x, s.lo), x1 = std::min(r.x + r.w, s.hi), y0 = std::max(r.y, s.y0), y1 = std::min(r.y + r.h, s.y0 + s.h);
+    if (x1 <= x0) return;
+    for (int y = y0; y < y1; y++) {
+        uint16_t* row = s.px + (y - s.y0) * s.stride - s.lo;
+        if (dx > 0) for (int x = x1 - 1; x >= x0; x--) row[x] = row[std::max(x0, x - dx)];
+        else        for (int x = x0; x < x1; x++)       row[x] = row[std::min(x1 - 1, x - dx)];
+    }
+}
+// Where piece p is on screen now (zero rect when hidden).
+inline uieng::Rect pieceRect(int W, int H, int p) {
+    namespace tl = themelayout;
+    const uieng::Chrome c = uieng::chrome(W, H);
+    const uieng::ScanLayout L = uieng::scan(W, H);
+    switch (p) {
+    case tl::P_MENU: return c.menu;           case tl::P_WORDMARK: return c.wordmark;
+    case tl::P_GPS: return c.statusCells[0];  case tl::P_NODES: return c.statusCells[1];
+    case tl::P_POWER: return c.statusCells[2]; case tl::P_BRIDGE: return c.bridge;   case tl::P_SD: return c.sd;
+    case tl::P_NAV_SCAN: case tl::P_NAV_DOMAIN: case tl::P_NAV_CODEX: case tl::P_NAV_POI: return c.navCells[p - tl::P_NAV_SCAN];
+    case tl::P_STOP: return c.stop;
+    case tl::P_COUNT_WIFI: case tl::P_COUNT_5G: case tl::P_COUNT_BLE: return L.tiles[p - tl::P_COUNT_WIFI];
+    case tl::P_RADAR: return L.radar;         case tl::P_SPECTRUM: return L.spectrum;
+    case tl::P_CHANNEL: return L.channel;     case tl::P_BADGE: return L.badge;
+    default: return {};
+    }
+}
+inline int shakeDx(int phase) { static const int8_t D[8] = {-2, -1, 0, 1, 2, 1, 0, -1}; return D[(phase * 8 / 1024) & 7]; }
+// The rects of the pieces that show an effect during an alert on this board (at most uieng::PIECE_SLOTS).
+inline int effectRects(int W, int H, uieng::Rect* out, bool* shake = nullptr) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k) return 0;
+    int n = 0;
+    for (int p = 0; p < uieng::PIECE_SLOTS; p++) {
+        if (k->piece[p].effect == uieng::FX_NONE) continue;
+        const uieng::Rect r = pieceRect(W, H, p);
+        if (r.w <= 0 || r.h <= 0) continue;
+        if (shake) shake[n] = k->piece[p].effect == uieng::FX_SHAKE;
+        out[n++] = r;
+    }
+    return n;
+}
+inline void drawEffects(S& s, int W, int H, const AlertScene& a) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k || !a.active) return;
+    const uint16_t col = alertEdge(a.conf);
+    for (int p = 0; p < uieng::PIECE_SLOTS; p++) {
+        const uieng::PieceStyle& st = k->piece[p];
+        if (st.effect == uieng::FX_NONE) continue;
+        const uieng::Rect r = pieceRect(W, H, p);
+        if (r.w <= 0 || r.h <= 0 || r.y >= s.y0 + s.h || r.y + r.h <= s.y0) continue;
+        const int ph = fxPhase(a.age, st.speed);
+        switch (st.effect) {
+        case uieng::FX_FLASH: if (ph < 512) tintRect(s, r, col, 1, 2); break;
+        case uieng::FX_PULSE: tintRect(s, r, col, 512 + isin(ph) / 2, 2048); break;
+        default: shakeRect(s, r, shakeDx(ph)); break;
+        }
+    }
+}
+
+// The card for this alert: its rect, and the theme's font and scale for its words while it draws.
+inline void drawAlertCard(S& s, const ScanScene& sc, int W, const uieng::Rect& card) {
+    // Nothing the card draws leaves its rect: draw through the strip cut down to the card (every primitive clips to
+    // its strip's window), so a small card or a long reason cannot spill onto the scene.
+    // (Exception: the built-in Waveshare cards keep today's pixels byte-identical, including the opening frame's few
+    // pixels just outside the hero.)
+    const uieng::AlertCard* c = alertCard(W, sc.alert.conf);
+    S v = s;
+    if (W < 400 || (c && c->r.w > 0)) {
+        const int x0 = std::max(s.lo, card.x), x1 = std::min(s.hi, card.x + card.w);
+        const int y0 = std::max(s.y0, card.y), y1 = std::min(s.y0 + s.h, card.y + card.h);
+        if (x1 <= x0 || y1 <= y0) return;
+        v.px = s.px + (y0 - s.y0) * s.stride + (x0 - s.lo); v.y0 = y0; v.h = y1 - y0; v.lo = x0; v.hi = x1;   // stride kept
+    }
+    FontScope fs(c ? alertCardFont(W, sc.alert.conf) : nullptr, card);
+    const uint8_t cap = textstate::scaleCap;
+    textstate::scaleCap = c ? c->scale : 0;
+    drawAlertTakeover(v, sc, card);
+    textstate::scaleCap = cap;
 }
 
 }  // namespace scanr

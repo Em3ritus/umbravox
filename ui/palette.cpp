@@ -1,4 +1,5 @@
 #include "palette.h"
+#include "layout_engine.h"
 #include "layout.h"
 #include "model.h"
 #include "muffinseal.h"
@@ -104,6 +105,7 @@ Row                       PACK_ROWS[themepack::MAX_PACKS];
 const themepack::Emblem*  PACK_EMBLEM[themepack::MAX_PACKS];
 const themepack::Clip*    PACK_CLIP[themepack::MAX_PACKS];
 const themepack::Sound*   PACK_SOUND[themepack::MAX_PACKS];
+const uieng::LayoutOverride* PACK_LAYOUT[themepack::MAX_PACKS];   // set by setPackLayout; null = the built-in layout
 int                       nPacks = 0, nCustom = 0;
 uint8_t PACK_IDS[themepack::MAX_PACKS]{};
 
@@ -121,8 +123,13 @@ inline const Row& row(uint8_t id) {
 
 } // namespace
 
+static uint8_t g_current = 0;
+uint8_t currentTheme() { return g_current; }
+
 void setTheme(uint8_t id) {
+    g_current = id;
     const Row& t = row(id);
+    { const int s = slotOf(id); uieng::activeLayout() = s >= 0 ? PACK_LAYOUT[s] : nullptr; }
     VOID = t.void_;  PANEL = t.panel;  GRID = t.grid;
     EDGE = t.edge;   EDGE_LIT = t.edgeLit;
     DIM = t.dim;     TEXT = t.text;    BRIGHT = t.bright;
@@ -170,6 +177,7 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e, const themepa
     const bool append=slot==nPacks;
     if(append && nPacks>=themepack::MAX_PACKS)return -1;
     themepack::Pack& p = PACKS[slot];
+    PACK_LAYOUT[slot] = nullptr;   // a replaced pack's old layout does not carry over; the loader attaches the new one
     p = in;
 
     // The parser already guarantees all of this; the table does not rely on
@@ -228,8 +236,15 @@ int addPack(const themepack::Pack& in, const themepack::Emblem* e, const themepa
 void clearPacks() {
     memset(PACKS, 0, sizeof PACKS);
     memset(PACK_ROWS, 0, sizeof PACK_ROWS);
-    for (int s = 0; s < themepack::MAX_PACKS; s++) { PACK_EMBLEM[s] = nullptr; PACK_CLIP[s] = nullptr; PACK_SOUND[s] = nullptr; }
+    for (int s = 0; s < themepack::MAX_PACKS; s++) { PACK_EMBLEM[s] = nullptr; PACK_CLIP[s] = nullptr; PACK_SOUND[s] = nullptr; PACK_LAYOUT[s] = nullptr; }
     nPacks = nCustom = 0;
+    uieng::activeLayout() = nullptr;
+}
+
+void setPackLayout(int packId, const uieng::LayoutOverride* lo) {
+    if (packId < 0 || packId > 255) return;
+    const int s = slotOf((uint8_t)packId);
+    if (s >= 0) PACK_LAYOUT[s] = lo;
 }
 
 int findPack(const char* name) {

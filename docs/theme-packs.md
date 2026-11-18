@@ -29,7 +29,8 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
 - No scripting and no custom animation. The format is data only and stays that way
   in this version.
 - No Gaze sweep and no Summon rite. They belong to the Baphomet seal.
-- No custom fonts and no custom screen layout. Layout is two presets (dial sizes).
+- A layout (`layout.json`, the designer's Layout step) moves, resizes, hides and restyles the pieces the device draws
+  on the engine screens, with pixel fonts and pictures, but cannot add new kinds of piece.
 - No hiding or disabling alerts.
 - It cannot use the Baphomet seal bitmap (a pack can choose a heptagram instead).
 
@@ -42,9 +43,10 @@ limit is reached. Older EMBER SD overrides also retain the UMBRAVOX masthead.
     emblem.bin            required only when "centrepiece" is "emblem"
     radar.vid             optional: a looping video for the Waveshare's radar
     alert.snd             optional: your own alert sounds for the Waveshare's speaker (LOW, MED, HIGH)
+    layout.json           optional: where the pieces of the engine screens sit (the designer's Layout step)
 ```
 
-The designer writes only these. Any other file in a pack folder
+The designer writes these files. Any other file in a pack folder
 (a `preview.png`, a readme) is ignored by the device.
 
 ## theme.json
@@ -149,14 +151,15 @@ ignores it. It is a little-endian binary like `emblem.bin`:
 | bytes | content |
 |---|---|
 | 4 | `U` `V` `R` `V` |
-| 1 each | the number 1 or 2 (version), width 102, height 102, fps (1 to 30) |
+| 1 each | the number 1 or 2 (version), width, height (equal: any square from 24 to 102; firmware before theme layouts accepts only 102), fps (1 to 30) |
 | 2 | frame count, little-endian (1 to 150) |
 | 2 | reserved, both 0 |
 | version 2 only: 32 | a palette: 16 colours as RGB565, little-endian |
-| frames x 5,202 | 4-bit pixels, two per byte (high nibble first), row by row. Version 1: grey levels, 0 black to 15 white, painted in the theme's colours. Version 2: an index into the palette, so the clip keeps its own colours |
+| frames x (width x height / 2) | 4-bit pixels, two per byte (high nibble first), row by row. Version 1: grey levels, 0 black to 15 white, painted in the theme's colours. Version 2: an index into the palette, so the clip keeps its own colours |
 
-The file must be exactly the length its header declares (at most 780,312 bytes, so a version 2 clip holds at most 149 frames). The board draws each frame 2x
-inside the radar disc, so 102 pixels fill it. The designer makes this file from any video the browser can play
+The file must be exactly the length its header declares (at most 780,312 bytes and 150 frames, so a 102x102 version 2 clip holds at most 149 frames). The board draws each frame 2x
+inside the radar disc, so a clip as wide as the radar's radius fills it: 102 pixels for the built-in radar, smaller
+for a radar a layout has made smaller (a larger clip is masked to the disc). The designer makes this file from any video the browser can play
 (`tools/video2radar.py` does the same on a command line): it crops a square, shrinks it, keeps 12 frames a second
 and drops the audio. With **Keep colours** on (the default) it picks the best 16 colours for the whole video (median cut,
 with light ordered dithering that does not shimmer between frames) and writes version 2; off, it writes 16 greys as
@@ -167,6 +170,123 @@ bad emblem). The board keeps at most **2** clips in memory (each is up to 780 KB
 is skipped with "no room for another clip". The clip counts in the pack's size for the boot-loop guard, so editing
 it gives a pack that crashed another try. While a clip plays the radar repaints in full 12 times a second: measured
 on a Waveshare the scan screen ran at about 14 frames a second instead of about 25.
+
+## layout.json
+
+`layout.json` moves, resizes or hides the pieces of the shared header and footer, and Scan's three count tiles, on
+the engine screens (the Waveshare 3.5" at 480x320 and the CYD engine build at 320x240). The default CYD release
+draws the older 160x120 screens and ignores this file, as does firmware older than the release that adds it;
+`theme.json` is unchanged, so on those the theme still shows its colours, centrepiece, sweep and alert.
+
+```json
+{ "format": 1,
+  "waveshare": { "stop": [288, 276, 96, 44], "nav.poi": [384, 276, 96, 44], "wordmark": "hidden" },
+  "cyd": { } }
+```
+
+- `format` is required and must be `1`.
+- `waveshare` and `cyd` are each optional. A board the file leaves out keeps the built-in layout.
+- Each piece is `[x, y, width, height]` in that board's pixels, or `"hidden"`. A piece the file leaves out stays
+  where it is built to be. The pieces are `menu`, `wordmark`, `status.gps`, `status.nodes`, `status.power`,
+  `bridge`, `sd`, `nav.scan`, `nav.domain`, `nav.codex`, `nav.poi`, `stop`, `count.wifi`, `count.5g`,
+  `count.ble`, and Scan's radar parts `radar`, `spectrum`, `channel` and `badge`. Other names are ignored (later
+  versions add pieces); a key named `script` is refused.
+- `radar` is the radar's square box, which includes a 2 px margin for the contact markers: radius = (width - 5) / 2.
+  Any size from 53x53 (radius 24) up to the built-in box (209x209 on the Waveshare, 115x115 on the CYD). The rune
+  and star rings show only from radius 42. `spectrum` is at least 42x22; `channel` at least its built-in size
+  (100x24 / 60x16); `badge` at least 24x24 (the emblem is drawn centred, radius = the smaller side / 2 - 4). The four
+  may overlap each other, as the built-in layout's do, but not the header, footer or count tiles.
+- Every screen other than Scan draws in the area the header and footer pieces leave free: the device finds the
+  largest free rectangle and centres the screen in it, at its usual size. Scan's radar and any count tile you do
+  not place move with it.
+
+### Styles, the style block and decor
+
+A piece may also be an object that gives its rect and a style:
+
+```json
+"menu": { "rect": [0, 0, 44, 44], "font": "f0", "scale": 2, "ink": "bright", "fill": "#102030",
+          "edge": "edge", "frame": "a2", "slice": [4, 4, 4, 4], "bg": "a3" }
+```
+
+- `rect` is required; every other key is optional. Keys this firmware does not know are ignored.
+- `font` names a pack font file (`"f0"` to `"f7"` for `f0.fnt` to `f7.fnt`); `scale` is 1 to 4.
+- `ink` (the piece's text), `fill` (its surface) and `edge` (its outline) are a colour role from `theme.json`'s
+  `colors` (`"bright"`, `"panel"`, ...) or `"#rrggbb"`. Status colours (amber, red, the band colours) are never
+  replaced.
+- `frame` is a picture (`"a0"` to `"a15"` for `a0.art` to `a15.art`) drawn as a nine-slice frame over the piece:
+  `slice` gives its left, top, right and bottom borders in pixels, which are kept; the middle is repeated.
+  `bg` is a picture drawn behind the piece at its exact size.
+
+Each board may also have a `style` block for every other screen, and up to eight pictures with no function:
+
+```json
+"style": { "title": "f0", "body": "f1", "numbers": "f2", "bg": "a0", "panel": "a1", "panelSlice": [3, 3, 3, 3],
+           "highlight": { "fill": "witch", "edge": "witchHi" }, "icons": ["a4", null, "a5"] },
+"decor.0": { "rect": [10, 60, 40, 30], "art": "a7" }
+```
+
+- `title`, `body` and `numbers` are the fonts for those kinds of text; `bg` the screen background (the board's
+  full size); `panel` and `panelSlice` the nine-slice frame for panels; `highlight` the colours of a selected row or
+  tab; `icons` up to six pictures, one per Menu entry in order (`null` for none), shown above the label when the
+  tile has room.
+- `decor.0` to `decor.7` are drawn in that order, under every other piece, at exactly their rect's size.
+  Pictures cost drawing time, and the Waveshare redraws the radar and an animated decor every frame. Each picture
+  costs its area wherever that part of the screen is redrawn; the one saving is that where a redraw falls entirely
+  inside an opaque decor, nothing under that decor is drawn there. A transparent picture never saves anything under
+  it. A pack at every art limit at once (`tools/stress-pack.mjs`) runs the Waveshare's Scan screen at about 11
+  frames a second.
+- Fonts and pictures are read from the card when the theme is selected. Until they have loaded, and if one cannot
+  be read, the theme draws with the built-in font and no picture. A font or picture the layout names that is missing
+  from the folder, or over its limit (a font 12,800 bytes, a picture 196,608 bytes, one board's pictures together
+  393,216 bytes), skips the layout. If the device resets while reading them, the pack is skipped from then on until
+  one of `theme.json`, `emblem.bin`, `radar.vid`, `alert.snd` or `layout.json` changes size (fonts and pictures are
+  not measured at boot).
+- Over USB (`tools/sdput.py`, the designer's USB install) `layout.json`, `f0.fnt`-`f7.fnt` and `a0.art`-`a15.art`
+  are sent too.
+
+### Alerts: cards and effects
+
+Each board may place and style the alert card for each level, and give pieces an effect that plays during an alert:
+
+```json
+"alert.card.low":  { "rect": [90, 80, 300, 160], "font": "f2", "scale": 2, "clip": "a6" },
+"alert.card.high": { "rect": [0, 0, 480, 320] },
+"count.ble": { "rect": [320, 44, 160, 60], "effect": "pulse", "speed": "fast" }
+```
+
+- `alert.card.low`, `alert.card.med` and `alert.card.high` are overlays, not pieces: they are drawn on top of
+  everything, may cover other pieces, and a tap anywhere dismisses the alert, as today. `rect` is required; without
+  a card key the built-in card is used (LOW and MED over the radar area, HIGH the whole screen). A card smaller than
+  the screen leaves the rest of Scan visible and live; a HIGH card is still dismissed by a tap anywhere, a LOW or MED
+  card by a tap on it. The CYD engine build shows the alert card too (the release CYD build ignores `layout.json`).
+- `font` and `scale` set the card's words. A font shorter than 7 px (its height times `scale`) is not used: the
+  card then draws with the built-in font.
+- `clip` is a picture (`"a0"` to `"a15"`, still or animated) played in place of the alert rite. It is never scaled;
+  it shares the board's picture budget, and it plays only if it fits inside the card and its area is at most
+  25,600 px on the Waveshare (10,000 px on the CYD); otherwise the rite plays.
+- `effect` is `none`, `flash`, `pulse` or `shake`; `speed` is `slow`, `medium` (the default) or `fast` (one cycle
+  every 1000, 500 or 250 ms). Flash and pulse tint the piece toward the alert's colour, shake moves it sideways by
+  up to 2 px. Effects play only while an alert is on screen, never draw over the alert card, and are capped at 4
+  pieces on the Waveshare and 2 on the CYD: each one repaints its piece every frame of the alert.
+
+What makes the device refuse a layout (it then uses the built-in layout and keeps the rest of the theme; the reason
+is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
+
+- a piece off the screen;
+- a piece you can tap (everything except `wordmark` and `sd`) smaller than 44 px either way;
+- hiding `menu`, `stop`, `bridge`, a `status.*` cell or a `nav.*` button (only `wordmark`, `sd` and the
+  `count.*` tiles can be hidden);
+- two pieces overlapping, or a count tile over the radar;
+- too little room left for the screens (the free area must be at least 464x216 on the Waveshare and 304x136 on the CYD);
+- a file over 16,384 bytes, or one that is not valid layout JSON (duplicate keys, a value that is not four whole
+  numbers, `"hidden"` or a piece object with a `rect`, nesting deeper than four levels);
+- a font or picture reference outside `f0`-`f7` / `a0`-`a15`, a colour that is not a role name or `#rrggbb`, a
+  `decor` key other than `decor.0` to `decor.7`, a decor piece off the screen;
+- a `fill` on `menu`, `stop`, `bridge` or a `nav.*` button that its words cannot be read on (under 3:1): its `ink`, or
+  else the theme's `text` and `bright`; for `stop` also `red` and `amber`, the colours of its label while recording.
+- an alert card off the screen or smaller than 240x120 on the Waveshare (160x96 on the CYD), an `effect` or `speed`
+  that is not one of its words, or effects on more than 4 pieces on the Waveshare (2 on the CYD).
 
 ## Limits
 
@@ -182,8 +302,9 @@ These numbers are the same ones the device and the designer use
 | `header` | 18 characters |
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |
+| `layout.json` | at most 16 KB (16,384 bytes); every tappable piece at least 44x44 px |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
-| `radar.vid` | exactly 102x102, 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
+| `radar.vid` | square, 24x24 to 102x102 (older firmware: exactly 102x102), 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
 | `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; read from the card when the pack's theme is selected (one set in memory at a time) |
 | whole pack | 64 KB (65,536 bytes) is the designer's figure; the per-file limits above (4,096 + 9,728 bytes) are what actually binds, and the device does not check 64 KB |
 | alert edge contrast | 3:1 against the background, or a safe colour is drawn instead |
@@ -196,7 +317,8 @@ These numbers are the same ones the device and the designer use
    the feature tables, not from testing each browser. The page shows a message if
    yours is too old.
 2. Start from a template (UMBRAVOX, BAPH0MAU5 or COSMIC MUFFIN), a blank theme,
-   or open an existing `theme.json`. The BAPH0MAU5 template is a heptagram in the
+   or open an existing `theme.json`. Under the templates, pick a **starting layout**
+   (Standard, Radar left, Big radar, Numbers or Bottom-up); change it later in step 4. The BAPH0MAU5 template is a heptagram in the
    seal's colours, because the seal bitmap is not available to packs.
 3. Edit the identity, the palette (there is a "make a palette from one colour"
    helper), the centrepiece (drop a PNG, or choose the heptagram; two checkboxes hide the
@@ -205,7 +327,15 @@ These numbers are the same ones the device and the designer use
    colours after RGB565 clamping. The checks explain anything that is wrong.
    Pick the board to preview above the screen: **CYD 2.8"** or **Waveshare 3.5"**
    (see *Designing for the Waveshare 3.5"* below).
-4. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**. The
+4. **Layout** (optional): the board's engine screen drawn by the device code, with every piece outlined. Click a
+   piece to select it, drag it to move it, pull a corner to resize it, arrow keys nudge it 1 px (Shift: 8 px); the
+   side panel shows its exact numbers and has **Hide** and **Back to default**; hidden pieces wait in a tray. Two tabs:
+   **Waveshare 3.5"** and **CYD 2.8"** (the CYD's engine build at 320x240). The first board you change is drafted
+   onto the other when you open its tab: check it there. The checks run the device's own layout rules, so the
+   designer never saves a layout the board would refuse. If the theme has a radar video and you made the Waveshare
+   radar smaller, the pack's `radar.vid` is made at the new size when you save (your draft keeps the original).
+   A theme with a layout cannot be shared yet.
+5. Choose **Download pack** (a `.zip` of the folder) or **Install to SD card**. The
    Install page has two routes: write to the card in a card reader, or send the pack
    over the board's USB cable with the card left in the board.
 
@@ -445,9 +575,9 @@ each within its size limit.
   that loads fine but faults later, when drawn, is not covered (see Troubleshooting).
 - The Baphomet seal's own sweeps and rite are not in packs; alerts always show.
 
-## The 18 limitations
+## The 19 limitations
 
-These are the 18 numbered items below. `web/designer/js/limits.json` has 19 entries,
+These are the 19 numbered items below. `web/designer/js/limits.json` has 20 entries,
 because the characters rule (no `"` or `\` in name, header or author) is its own entry
 there but is folded into item 4 here, and the USB route entries appear in both.
 
@@ -465,8 +595,9 @@ there but is folded into item 4 here, and the USB route entries appear in both.
    read escapes and would skip the pack.
 5. **RGB565.** Colours are stored as RGB565, so fine differences between near colours
    disappear. The designer previews the colours the panel will really show.
-6. **Presets only.** Layout comes from two dial sizes. There is no custom screen layout,
-   font or animation yet.
+6. **Built-in pieces.** A layout moves, resizes, hides and restyles the pieces the device draws, and adds pictures
+   with no function; it cannot add new kinds of piece. Fonts are the built-in pixel fonts or a TTF/OTF you upload,
+   turned into pixels at the sizes used (at most 8 fonts and 16 pictures per theme). Only one picture per board moves.
 7. **Built-in sweeps and alerts.** Sweeps and alerts come from the built-in set. Gaze and
    the Summon rite are not available to packs; they belong to the Baphomet seal.
 8. **Alerts stay visible.** A theme cannot hide or disable alerts. Status and alert-edge
@@ -496,7 +627,10 @@ there but is folded into item 4 here, and the USB route entries appear in both.
     Close any serial monitor (Arduino IDE, PlatformIO, screen) before connecting, and
     disconnect here before opening one.
 18. **Sharing.** Sharing needs a GitHub account. Shared themes are public, and you must have
-    the right to share any picture, video or sound in them.
+    the right to share any picture, video or sound in them. A theme with a layout cannot be shared yet.
+19. **Layouts change the engine screens only.** A layout applies to the Waveshare 3.5" and the CYD's engine build.
+    The default CYD release draws its older screens and ignores it, as does firmware older than the release that adds
+    layouts; the theme's colours still show there.
 
 What is tested and what is not. The pure rules are host-tested: the theme.json and
 emblem.bin parsers, pack admission, the boot-loop guard's decisions, the ASPECT drawing
@@ -534,7 +668,7 @@ rule is applied to the last path component and `.` is not a valid folder name.
 | Skipped: duplicate or reserved name | The `name` is already used by an earlier pack or is one of the four reserved names. |
 | Skipped: name, header or author | A double quote, a backslash, or a character outside the allowed set. |
 | Skipped: emblem | `centrepiece` is `emblem` but `emblem.bin` is missing, too big, over 96x96 or over 16 colours. |
-| Skipped: radar.vid | `radar.vid` is over 780,312 bytes. (A clip that is malformed, not 102x102 or the wrong length does not skip the pack: it loads without video, and `/diag.log` says "radar clip not used: ..." when its theme is selected.) |
+| Skipped: radar.vid | `radar.vid` is over 780,312 bytes. (A clip that is malformed, not square from 24 to 102, or the wrong length does not skip the pack: it loads without video, and `/diag.log` says "radar clip not used: ..." when its theme is selected.) |
 | Skipped: missing sweeps or colors | `sweeps` or one of the 20 colours is missing or malformed. |
 | Colours look different from the design | RGB565 rounding, or a status or alert-edge colour was replaced for contrast. |
 | The device went back to UMBRAVOX | The saved pack was renamed, removed or skipped. Select it again. |

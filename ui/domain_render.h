@@ -144,7 +144,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
 
     // --- the map: panel, lattice, N-up radar, track, dots, you, readouts ------
     const uieng::Rect m = L.map;
-    box(s, m.x, m.y, m.w, m.h, pal::PANEL);
+    scanr::panelFill(s, m, pal::PANEL);
     frame(s, m.x, m.y, m.w, m.h, pal::EDGE);
     for (int y = m.y + 2; y < m.y + m.h - 2; y++)                    // ground lattice
         for (int x = m.x + 2; x < m.x + m.w - 2; x++)
@@ -193,9 +193,9 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
 
     // Located observations remain inspectable even with a stale/currently absent fix.
     const uieng::Rect cc = L.contacts;
-    box(s,cc.x,cc.y,cc.w,cc.h,pal::PANEL);
+    scanr::panelFill(s,cc,pal::PANEL);
     frame(s,cc.x,cc.y,cc.w,cc.h,pal::EDGE);
-    txt(s,cc.x+8,cc.y+5,"LOCATED APs",2,pal::BRIGHT);
+    { scanr::RoleScope title(scanr::ROLE_TITLE); txt(s,cc.x+8,cc.y+5,"LOCATED APs",2,pal::BRIGHT); }
     snprintf(buf,sizeof buf,"%d APs  /  BROWSE ALL >",sc.listTotal);
     txt(s,cc.x+8,cc.y+23,buf,1,pal::TEXT);
     txt(s,cc.x+8,cc.y+35,"Tap an AP for full details",1,pal::DIM);
@@ -211,7 +211,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
         char title[40];snprintf(title,sizeof title,"%.*s",split,name);
         txt(s,cc.x+8,ry+4,title,scale,pal::BRIGHT);
         if(name[split])
-            txt(s,cc.x+8,ry+4+7*scale+2,name+split+(name[split]==' '),scale,pal::BRIGHT);
+            txt(s,cc.x+8,ry+4+scanr::lineH(scale)+2,name+split+(name[split]==' '),scale,pal::BRIGHT);
         txt(s,cc.x+8,ry+rh-20,row.mac?row.mac:"",1,pal::DIM);
         snprintf(buf,sizeof buf,"%s CH%d  %d dBm",row.band==1?"5G":"2.4G",row.chan,row.rssi);
         txt(s,cc.x+8,ry+rh-10,buf,1,bandColor(row.band));
@@ -224,7 +224,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
 
 
     // --- range -/+ control at the column foot --------------------------------
-    box(s, L.range.x, L.range.y, L.range.w, 44, pal::PANEL);
+    scanr::panelFill(s, {L.range.x, L.range.y, L.range.w, 44}, pal::PANEL);
     frame(s, L.range.x, L.range.y, L.range.w, 44, pal::EDGE);
     frame(s, L.minus.x, L.minus.y, 44, 44, pal::EDGE);
     frame(s, L.plus.x,  L.plus.y,  44, 44, pal::EDGE);

@@ -23,4 +23,8 @@ mkdir -p "$OUT/js" "$OUT/wasm"
 cp "$SRC/index.html" "$SRC/designer.css" "$OUT"/
 cp "$SRC"/js/* "$OUT/js/"
 cp "$SRC/wasm/uv_preview.js" "$SRC/wasm/uv_preview.wasm" "$OUT/wasm/"
+# The built-in pixel fonts, converted to the device format, with their licences beside them.
+node tools/bdf2fnt.mjs "$SRC/fonts" "$OUT/fonts"
+cp "$SRC/fonts/LICENSES.md" "$OUT/fonts/"
+cp -r "$SRC/fonts/licenses" "$OUT/fonts/"
 echo ">> designer assembled in $OUT/"

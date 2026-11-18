@@ -93,12 +93,12 @@ public:
         if (forceFull_ || !haveFront_) sched_.invalidateAll();
         else { bool st=false,bd=false; sceneDirty(store_[cur_].scene(), nw, st, bd);
             const uieng::FilesLayout L = uieng::files(W_, H_);
-            const int sb = L.statusCells[0].y + L.statusCells[0].h, nt = L.navCells[0].y;
-            if (st) sched_.invalidate(0, sb);
-            if (bd) sched_.invalidate(sb, nt);
+            const uieng::Bands B = uieng::bands(W_, H_);
+            if (st) sched_.invalidate(B.statusTop, B.statusBottom);
+            if (bd) sched_.invalidate(B.bodyTop, B.bodyBottom);
             { scanr::ScanScene za; za.rec = store_[cur_].scene().rec; scanr::ScanScene zb; zb.rec = nw.rec;  // design #1: STOP/REC lives on the nav bar now
               char ra[16], rb[16]; scanr::recLabel(za, ra, 16); scanr::recLabel(zb, rb, 16);
-              if (__builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi) sched_.invalidate(nt, H_); } }
+              if (__builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi) sched_.invalidate(B.navTop, B.navBottom); } }
         cur_ ^= 1; haveFront_ = true; forceFull_ = false;
     }
     StripScheduler::Slice nextSlice(int budget) {

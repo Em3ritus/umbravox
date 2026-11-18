@@ -51,7 +51,8 @@ inline void fxHistory(const ui::State& s, uint32_t now, scanr::Fx& out) {
     }
 }
 
-inline void render(int theme, int screen, int frame, int sweep, int alertStyle, int alertConf, uint16_t* out) {
+// w x h: 480x320 (the Waveshare, the default) or 320x240 (the CYD engine build); out holds w*h pixels.
+inline void render(int theme, int screen, int frame, int sweep, int alertStyle, int alertConf, uint16_t* out, int w = W, int h = H) {
     const uint8_t themeId = (uint8_t)theme;
     pal::setTheme(themeId);
     const uint32_t f = (uint32_t)frame;
@@ -82,22 +83,23 @@ inline void render(int theme, int screen, int frame, int sweep, int alertStyle, 
     c.now = 1000 + f * 20;
     c.pmuOk = true;
 
+    if (w < 1 || h < 1 || w > W) return;    // the strip buffer holds one 480-wide band
     uint16_t band[W * 16];
     auto strips = [&](auto&& compose) {
-        for (int y = 0; y < H; y += 16) {
-            scanr::S st{band, W, y, std::min(16, H - y)};
+        for (int y = 0; y < h; y += 16) {
+            scanr::S st{band, w, y, std::min(16, h - y)};
             compose(st);
-            std::memcpy(out + y * W, band, sizeof(uint16_t) * W * st.h);
+            std::memcpy(out + y * w, band, sizeof(uint16_t) * w * st.h);
         }
     };
     switch (screen) {
-    case MESH: { static mshpres::MeshStore st; uiproj::mesh(st, s, c); strips([&](scanr::S& b) { mshr::composeStrip(b, W, H, st.scene()); }); break; }
-    case MENU: { static menpres::MenuStore st; uiproj::menu(st, s, c); strips([&](scanr::S& b) { menr::composeStrip(b, W, H, st.scene()); }); break; }
-    case ASPECT: { static asppres::AspectStore st; uiproj::aspect(st, s, c); strips([&](scanr::S& b) { aspr::composeStrip(b, W, H, st.scene()); }); break; }
+    case MESH: { static mshpres::MeshStore st; uiproj::mesh(st, s, c); strips([&](scanr::S& b) { mshr::composeStrip(b, w, h, st.scene()); }); break; }
+    case MENU: { static menpres::MenuStore st; uiproj::menu(st, s, c); strips([&](scanr::S& b) { menr::composeStrip(b, w, h, st.scene()); }); break; }
+    case ASPECT: { static asppres::AspectStore st; uiproj::aspect(st, s, c); strips([&](scanr::S& b) { aspr::composeStrip(b, w, h, st.scene()); }); break; }
     default: {
         static scanpres::SceneStore st; uiproj::scan(st, s, c, true); st.animate(true); st.sweep(s.set.sweep);
         st.fx(true); fxHistory(s, c.now, st.fxState());
-        strips([&](scanr::S& b) { scanr::composeStrip(b, W, H, st.scene()); }); break;
+        strips([&](scanr::S& b) { scanr::composeStrip(b, w, h, st.scene()); }); break;
     }
     }
 }

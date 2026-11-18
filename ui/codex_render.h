@@ -80,14 +80,14 @@ inline void composeStrip(scanr::S& s, int W, int H, const CodexScene& sc) {
     static const char* const flab[4] = {"WIFI", "5 GHZ", "BLE", "LOCATED"};
     for (int i = 0; i < 4; i++) { const uieng::Rect f = L.filters[i];
         const bool on = (sc.filter == i);
-        box(s, f.x, f.y, f.w, f.h, on ? pal::PANEL : ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2));
-        frame(s, f.x, f.y, f.w, f.h, on ? pal::WITCH_HI : pal::EDGE);
+        if (on) scanr::highlight(s, f, pal::PANEL, pal::WITCH_HI);
+        else { box(s, f.x, f.y, f.w, f.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 2)); frame(s, f.x, f.y, f.w, f.h, pal::EDGE); }
         centered(s, f.x + f.w / 2, f.y + 15, flab[i], fitScale(flab[i], f.w - 8, 2), on ? pal::BRIGHT : pal::DIM);
     }
 
     // list body + rows
     const uieng::Rect lst = L.list;
-    box(s, lst.x, lst.y, lst.w, lst.h, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
+    scanr::panelFill(s, lst, ui::Canvas::mix(pal::VOID, pal::PANEL, 1, 3));
     if (sc.listTotal == 0) {
         centered(s, lst.x + lst.w / 2, lst.y + lst.h / 2 - 3, "NOTHING YET", 1, pal::DIM);
     } else {
@@ -105,7 +105,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const CodexScene& sc) {
                 txt(s,r.x+10,r.y+6,part,scale,pal::TEXT);
                 if(g.label[split]) {
                     snprintf(part,sizeof part,"%s",g.label+split+(g.label[split]==' '));
-                    txt(s,r.x+10,r.y+8+7*scale,part,scale,pal::TEXT);
+                    txt(s,r.x+10,r.y+8+scanr::lineH(scale),part,scale,pal::TEXT);
                 }
             }
             else                       txt(s, r.x + 10, r.y + 6, "<HIDDEN>", 1, pal::DIM);
@@ -115,7 +115,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const CodexScene& sc) {
                 box(s, bx0 + i * (bw + gap), r.y + r.h - 6 - bh, bw, bh, i < lit ? bc : pal::EDGE); }
             char ch[16];
             if (g.band == 2) snprintf(ch, sizeof ch, "BLE"); else snprintf(ch, sizeof ch, "CH%d", g.chan);
-            txt(s, r.x + r.w - 4 - Font::width(ch, 1), r.y + 6, ch, 1, pal::DIM);
+            txt(s, r.x + r.w - 4 - scanr::textW(ch, 1), r.y + 6, ch, 1, pal::DIM);
             if (g.threat) frame(s, r.x + 1, r.y + 1, r.w - 2, r.h - 2, pal::RED);
         }
     }

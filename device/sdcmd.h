@@ -30,6 +30,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include "themepack.h"
+#include "themelayout.h"   // MAX_JSON for layout.json
+#include "fontpack.h"
+#include "artpack.h"
 
 namespace sdcmd {
 
@@ -189,7 +192,7 @@ struct LineBuf {
 // path uses lower case for both; the folder keeps the case it was given (FAT
 // finds an existing folder in any case). Nothing else: no diag.log, perf.csv,
 // prefs, or any file in the root but a session log.
-enum Kind : uint8_t { K_NONE, K_THEME_JSON, K_EMBLEM, K_CLIP, K_SOUND, K_SESSION };
+enum Kind : uint8_t { K_NONE, K_THEME_JSON, K_EMBLEM, K_CLIP, K_SOUND, K_SESSION, K_LAYOUT, K_FONT, K_ART };
 struct Path {
     Kind kind = K_NONE;
     bool temp = false;                 // a .tmp / .old leftover (delete only)
@@ -220,7 +223,10 @@ inline uint32_t capOf(Kind k) {
     return k == K_THEME_JSON ? (uint32_t)themepack::MAX_JSON
          : k == K_EMBLEM     ? (uint32_t)themepack::MAX_EMBLEM
          : k == K_CLIP       ? (uint32_t)themepack::MAX_CLIP
-         : k == K_SOUND      ? (uint32_t)themepack::MAX_SOUND : 0;
+         : k == K_SOUND      ? (uint32_t)themepack::MAX_SOUND
+         : k == K_LAYOUT     ? (uint32_t)themelayout::MAX_JSON
+         : k == K_FONT       ? (uint32_t)fontpack::MAX_FONT
+         : k == K_ART        ? (uint32_t)artpack::MAX_ART : 0;
 }
 
 // "/themes/<folder>/<file>" where <file> is theme.json or emblem.bin, plus
@@ -249,13 +255,29 @@ inline bool themeFile(const char* path, Path& out, bool allowTemp) {
         base = n - 4;
         out.temp = true;
     }
-    if (ieq(file, base, "theme.json"))      out.kind = K_THEME_JSON;
-    else if (ieq(file, base, "emblem.bin")) out.kind = K_EMBLEM;
-    else if (ieq(file, base, "radar.vid"))  out.kind = K_CLIP;
-    else if (ieq(file, base, "alert.snd"))  out.kind = K_SOUND;
+    char media[8] = "";                      // "f0.fnt".."f7.fnt", "a0.art".."a15.art" (canonical lower case)
+    if (ieq(file, base, "theme.json"))       out.kind = K_THEME_JSON;
+    else if (ieq(file, base, "emblem.bin"))  out.kind = K_EMBLEM;
+    else if (ieq(file, base, "radar.vid"))   out.kind = K_CLIP;
+    else if (ieq(file, base, "alert.snd"))   out.kind = K_SOUND;
+    else if (ieq(file, base, "layout.json")) out.kind = K_LAYOUT;
+    else if ((base == 6 || base == 7) && (lc(file[0]) == 'f' || lc(file[0]) == 'a')) {
+        const bool font = lc(file[0]) == 'f';
+        const size_t digits = base - 5;      // the name is <letter><digits>.<ext>
+        if (!ieq(file + 1 + digits, 4, font ? ".fnt" : ".art")) { out = Path(); return false; }
+        int n = 0;
+        for (size_t i = 1; i <= digits; i++) {
+            if (file[i] < '0' || file[i] > '9') { out = Path(); return false; }
+            n = n * 10 + (file[i] - '0');
+        }
+        if ((digits == 2 && file[1] == '0') || n >= (font ? 8 : 16) || (font && digits != 1)) { out = Path(); return false; }
+        out.kind = font ? K_FONT : K_ART;
+        snprintf(media, sizeof media, "%c%d.%s", font ? 'f' : 'a', n, font ? "fnt" : "art");
+    }
     else { out = Path(); return false; }
     snprintf(out.canon, sizeof out.canon, "/themes/%s/%s%s", out.folder,
-             out.kind == K_THEME_JSON ? "theme.json" : out.kind == K_EMBLEM ? "emblem.bin" : out.kind == K_SOUND ? "alert.snd" : "radar.vid", suffix);
+             media[0] ? media : out.kind == K_THEME_JSON ? "theme.json" : out.kind == K_EMBLEM ? "emblem.bin" : out.kind == K_SOUND ? "alert.snd"
+             : out.kind == K_LAYOUT ? "layout.json" : "radar.vid", suffix);
     return true;
 }
 
@@ -275,6 +297,9 @@ inline const char* putPolicy(const char* path, uint32_t size, Path& out) {
         return out.kind == K_THEME_JSON ? "too large (theme.json max 4096 bytes)"
              : out.kind == K_EMBLEM     ? "too large (emblem.bin max 9728 bytes)"
              : out.kind == K_SOUND      ? "too large (alert.snd max 576020 bytes)"
+             : out.kind == K_LAYOUT     ? "too large (layout.json max 16384 bytes)"
+             : out.kind == K_FONT       ? "too large (a font max 12800 bytes)"
+             : out.kind == K_ART        ? "too large (a picture max 196608 bytes)"
                                         : "too large (radar.vid max 780312 bytes)";
     return nullptr;
 }

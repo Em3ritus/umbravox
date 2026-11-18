@@ -42,3 +42,14 @@ test('the gate passes a good clip and blocks a damaged one', () => {
   assert.equal(r.ok, false);
   assert.match(r.reason, /102/);
 });
+
+test('a layout the device refuses closes the gate (review C1); an accepted one, or no checker, does not', () => {
+  const t = blankTheme(); t.name = 'GATE TEST';
+  const refuse = () => ({ ok: false, why: 'layout.json: nav.poi overlaps stop' });
+  const accept = () => ({ ok: true });
+  const g = installGate(t, null, null, null, '{"format":1}', refuse);
+  assert.equal(g.ok, false);
+  assert.match(g.reason, /Layout: nav\.poi overlaps stop/);
+  assert.equal(installGate(t, null, null, null, '{"format":1}', accept).ok, true);
+  assert.equal(installGate(t, null, null, null, null, refuse).ok, true, 'no layout: nothing to check');
+});

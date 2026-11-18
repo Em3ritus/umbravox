@@ -15,6 +15,9 @@
 #pragma once
 #include "../ui/palette.h"
 #include "../ui/themepack.h"
+#include "../ui/themelayout.h"
+#include "../ui/packassets.h"
+#include <vector>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -43,6 +46,20 @@ inline uint8_t* clipBuf(int i) { static uint8_t b[themepack::MAX_CLIPS][themepac
 inline themepack::Clip* clipSlot(int i) { static themepack::Clip c[themepack::MAX_CLIPS]; return &c[i]; }
 inline int& clipsUsed() { static int n = 0; return n; }
 
+// A pack's resolved layout, by pal pack slot. Lives as long as the program (pal keeps the pointer).
+inline themelayout::PackLayout* layoutSlot(int s) { static themelayout::PackLayout l[themepack::MAX_PACKS]; return &l[s]; }
+
+// A pack's fonts and pictures (only the ones its layout refers to), by pal pack slot. The device reads these when
+// the theme is selected; the host has no selection-time loader, so it reads them with the pack and useMedia()
+// hands them to the registry, as the device's loader does when it finishes.
+struct Media {
+    std::vector<uint8_t> fontBytes[assets::MAX_FONTS], artBytes[assets::MAX_ARTS];
+    fontpack::Font font[assets::MAX_FONTS];
+    artpack::Art art[assets::MAX_ARTS];
+    bool fontOk[assets::MAX_FONTS] = {}, artOk[assets::MAX_ARTS] = {};
+};
+inline Media* mediaSlot(int s) { static Media m[themepack::MAX_PACKS]; return &m[s]; }
+
 inline void fail(char* why, size_t cap, const char* fmt, const char* a = "", unsigned b = 0) {
     if (cap) snprintf(why, cap, fmt, a, b);
 }
@@ -63,7 +80,60 @@ inline bool readAll(const char* path, uint8_t* buf, size_t size) {
     return n == size;
 }
 
+// Reads every font and picture the pack's looks refer to. False (layout to be skipped) when one is missing or over
+// its cap, or one board's pictures add up to more than MAX_ART_TOTAL; a file that does not parse is only absent.
+inline bool loadMedia(const char* dir, const themelayout::PackLayout& L, Media& m, char* why, size_t whyCap) {
+    m = Media();
+    uint8_t fonts = 0; uint16_t arts = 0;
+    for (int b = 0; b < themelayout::B_N; b++) {
+        fonts |= L.look[b].fontsUsed; arts |= L.look[b].artsUsed;
+        unsigned long long total = 0;
+        for (int i = 0; i < assets::MAX_ARTS; i++) {
+            if (!(L.look[b].artsUsed & (1u << i))) continue;
+            char path[460]; snprintf(path, sizeof path, "%s/a%d.art", dir, i);
+            const long long n = fileSize(path);
+            if (n > 0) total += (unsigned long long)n;
+        }
+        if (total > artpack::MAX_ART_TOTAL) {
+            if (whyCap) snprintf(why, whyCap, "layout.json: the %s board's pictures add up to over %u bytes", b ? "cyd" : "waveshare", (unsigned)artpack::MAX_ART_TOTAL);
+            return false;
+        }
+    }
+    for (int k = 0; k < assets::MAX_FONTS + assets::MAX_ARTS; k++) {
+        const bool isFont = k < assets::MAX_FONTS;
+        const int i = isFont ? k : k - assets::MAX_FONTS;
+        if (isFont ? !(fonts & (1u << i)) : !(arts & (1u << i))) continue;
+        char path[460], name[12];
+        snprintf(name, sizeof name, isFont ? "f%d.fnt" : "a%d.art", i);
+        snprintf(path, sizeof path, "%s/%s", dir, name);
+        const long long n = fileSize(path);
+        const size_t cap = isFont ? fontpack::MAX_FONT : artpack::MAX_ART;
+        if (n <= 0) { if (whyCap) snprintf(why, whyCap, "layout.json: %s is missing", name); return false; }
+        if ((unsigned long long)n > cap) { if (whyCap) snprintf(why, whyCap, "layout.json: %s over %u bytes", name, (unsigned)cap); return false; }
+        std::vector<uint8_t>& bytes = isFont ? m.fontBytes[i] : m.artBytes[i];
+        bytes.resize((size_t)n);
+        if (!readAll(path, bytes.data(), bytes.size())) { if (whyCap) snprintf(why, whyCap, "layout.json: %s could not be read", name); return false; }
+        const char* pw = "";
+        if (isFont) m.fontOk[i] = fontpack::parse(bytes.data(), bytes.size(), m.font[i], &pw);
+        else m.artOk[i] = artpack::parse(bytes.data(), bytes.size(), m.art[i], &pw);
+    }
+    return true;
+}
+
 } // namespace detail
+
+// Hands pack `id`'s fonts and pictures to the registry (what the device's loader does once they are read).
+inline bool useMedia(int id) {
+    const int s = pal::packSlot((uint8_t)id);
+    if (s < 0) return false;
+    const detail::Media& m = *detail::mediaSlot(s);
+    const fontpack::Font* fonts[assets::MAX_FONTS] = {};
+    const artpack::Art* arts[assets::MAX_ARTS] = {};
+    for (int i = 0; i < assets::MAX_FONTS; i++) if (m.fontOk[i]) fonts[i] = &m.font[i];
+    for (int i = 0; i < assets::MAX_ARTS; i++) if (m.artOk[i]) arts[i] = &m.art[i];
+    assets::set((uint8_t)id, fonts, arts);
+    return true;
+}
 
 inline int load(const char* folderPath, char* why, size_t whyCap) {
     using namespace themepack;
@@ -80,8 +150,9 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
     const char* folder = slash ? slash + 1 : dir;
     if (!folderNameOk(folder)) { detail::fail(why, whyCap, "%s", admitWhy(ADMIT_BAD_FOLDER)); return ERR; }
 
-    char jsonPath[460], emblemPath[460], clipPath[460];
+    char jsonPath[460], emblemPath[460], clipPath[460], layoutPath[460];
     snprintf(jsonPath, sizeof jsonPath, "%s/theme.json", dir);
+    snprintf(layoutPath, sizeof layoutPath, "%s/layout.json", dir);
     snprintf(emblemPath, sizeof emblemPath, "%s/emblem.bin", dir);
     snprintf(clipPath, sizeof clipPath, "%s/radar.vid", dir);
 
@@ -140,6 +211,23 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
     if (id < 0) { detail::fail(why, whyCap, "%s", admitWhy(ADMIT_FULL)); return ERR; }
     if (em) detail::emblemsUsed()++;      // that buffer now belongs to the pack
     if (clip) detail::clipsUsed()++;
+
+    // layout.json is optional; a bad one skips only the layout (the reason goes in why, the pack stays).
+    const long long ls = detail::fileSize(layoutPath);
+    if (ls >= 0) {
+        const int s = pal::packSlot((uint8_t)id);
+        static uint8_t lbuf[themelayout::MAX_JSON];
+        if (s < 0) {
+            detail::fail(why, whyCap, "layout.json: no pack slot");
+        } else if ((unsigned long long)ls > themelayout::MAX_JSON) {
+            if (whyCap) snprintf(why, whyCap, "layout.json over %u bytes", (unsigned)themelayout::MAX_JSON);
+        } else if (!detail::readAll(layoutPath, lbuf, (size_t)ls)) {
+            detail::fail(why, whyCap, "layout.json could not be read");
+        } else if (themelayout::build((const char*)lbuf, (size_t)ls, *detail::layoutSlot(s), why, whyCap, p.color) &&
+                   detail::loadMedia(dir, *detail::layoutSlot(s), *detail::mediaSlot(s), why, whyCap)) {
+            pal::setPackLayout(id, &detail::layoutSlot(s)->lo);
+        }
+    }
     return id;
 }
 

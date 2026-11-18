@@ -93,7 +93,7 @@ inline void draw(scanr::S& s,int w,int h,const Data& d){
   for(int i=0;i<2;i++){auto r=i?l.done:l.reset;frame(s,r.x,r.y,r.w,r.h,pal::EDGE_LIT);centered(s,r.x+r.w/2,r.y+17,i?"DONE":"DEFAULT",1,pal::BRIGHT);}return;
  }
  const char* tabs[]={"SCANNING","RECORDING","BRIDGE","NODES"};const int tab=std::max(0,std::min(3,d.view.tab));
- for(int i=0;i<4;i++){auto r=tabRect(w,i);box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==tab?pal::BRIGHT:pal::DIM);if(i==tab)box(s,r.x+8,84,r.w-16,2,pal::WITCH_HI);}
+ for(int i=0;i<4;i++){auto r=tabRect(w,i);box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==tab?pal::BRIGHT:pal::DIM);if(i==tab)box(s,r.x+8,84,r.w-16,2,scanr::highlightEdge(s.W,pal::WITCH_HI));}
  for(int i=0;i<4;i++){auto r=l.cards[i];int id=tab*4+i;bool live=validEditor(id)||id==7||id==11||id==14;char v[32];value(d,id,v,sizeof v);
   box(s,r.x,r.y,r.w,r.h,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);txt(s,r.x+8,r.y+7,title(id),1,pal::DIM);
   txt(s,r.x+8,r.y+(r.h>=70?28:24),v,fitScale(v,r.w-16,2),(id==10&&d.settings.bleBridge&&d.pin>=0)||(id==11&&d.forgetArmed)?pal::AMBER:!live?pal::DIM:id==0&&d.settings.activeDiscovery&&!d.paused?pal::AMBER:id==8&&d.settings.bleBridge?pal::GREEN:pal::BRIGHT);

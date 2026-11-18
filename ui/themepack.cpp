@@ -133,10 +133,14 @@ bool colour(P& p, uint16_t& out) {
     return true;
 }
 
+}  // namespace (ROLE_KEYS is shared with themelayout.cpp)
+
 const char* const ROLE_KEYS[N_COLORS] = {
     "void", "panel", "grid", "edge", "edgeLit", "dim", "text", "bright",
     "witch", "witchHi", "bone", "sweep", "sweepHi", "live", "liveHi",
     "magenta", "ice", "green", "amber", "red"};
+
+namespace {
 
 struct SweepName { const char* n; ui::Sweep id; };
 const SweepName SWEEPS[] = {
@@ -432,15 +436,19 @@ static const char* clipCheck(const uint8_t* d, size_t n, Clip& out) {
     if (d[0] != 'U' || d[1] != 'V' || d[2] != 'R' || d[3] != 'V') return "radar.vid is not a UVRV file";
     if (d[4] != 1 && d[4] != 2) return "radar.vid version is not 1 or 2";
     const bool colour = d[4] == 2;
-    if (d[5] != CLIP_W || d[6] != CLIP_H) return "radar.vid must be 102x102";
+    if (d[5] != d[6]) return "radar.vid must be square";
+    if (d[5] < CLIP_MIN) return "radar.vid must be at least 24x24";
+    if (d[5] > CLIP_W) return "radar.vid must be at most 102x102";
+    const size_t fb = clipFrameBytes(d[5]);
     if (d[7] < 1 || d[7] > 30) return "radar.vid fps must be 1 to 30";
     const size_t head = (size_t)CLIP_HDR + (colour ? (size_t)CLIP_PAL_BYTES : 0);
     if (n < head) return "radar.vid is too short";
     const unsigned frames = (unsigned)d[8] | ((unsigned)d[9] << 8);
-    const unsigned most = colour ? (unsigned)((MAX_CLIP - head) / CLIP_FRAME_BYTES) : (unsigned)MAX_CLIP_FRAMES;   // 149 with a palette
-    if (frames < 1 || frames > most) return colour ? "radar.vid frames must be 1 to 149" : "radar.vid frames must be 1 to 150";
+    const unsigned fit = (unsigned)((MAX_CLIP - head) / fb);
+    const unsigned most = fit < (unsigned)MAX_CLIP_FRAMES ? fit : (unsigned)MAX_CLIP_FRAMES;   // 149 for a 102x102 clip with a palette
+    if (frames < 1 || frames > most) return most == 149 ? "radar.vid frames must be 1 to 149" : "radar.vid frames must be 1 to 150";
     if (d[10] || d[11]) return "radar.vid reserved bytes are not zero";
-    if (n != head + (size_t)frames * CLIP_FRAME_BYTES) return "radar.vid length does not match its frames";
+    if (n != head + (size_t)frames * fb) return "radar.vid length does not match its frames";
     out.w = d[5]; out.h = d[6]; out.fps = d[7]; out.frames = (uint16_t)frames; out.px = d + head;
     out.pal = colour ? d + CLIP_HDR : nullptr;
     return nullptr;

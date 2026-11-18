@@ -5,6 +5,7 @@ import { ROLES, isHex, describe, toRgb565, contrastX10, contrastRatio, fmtRatio 
 import { themeJson } from './pack.js';
 import { validateClip } from './radarvideo.js';
 import { validateSounds, hasSounds, soundSeconds, SND_HEADER } from './alertsound.js';
+import { decorNames } from './layout.js';
 
 const ok = (text) => ({ level: 'ok', text });
 const warn = (text) => ({ level: 'warn', text });
@@ -133,5 +134,46 @@ export function runChecks(theme, emblem, clip = null, sounds = null) {
   }
 
   out.push(ok('The device loads at most ' + limits.MAX_PACKS + ' packs (the first ' + limits.MAX_PACKS + ' by folder name).'));
+  return out;
+}
+
+// ---- a layout's look (plan 4): what the device would refuse or quietly limit ----
+const MUST_READ = ['menu', 'stop', 'bridge', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi'];
+const BOARD_LABEL = { waveshare: 'Waveshare', cyd: 'CYD' };
+export const ANIM_AREA_MAX = { waveshare: 25600, cyd: 10000 };   // ui/scan_render.h animAreaMax
+
+export function lookChecks(theme, L, media = null) {
+  const out = [], c = (theme && theme.colors) || {};
+  const hex = (v, role) => (isHex(v) ? v : c[v || role]);
+  for (const b of ['waveshare', 'cyd']) {
+    for (const n of MUST_READ) {
+      const st = L.boards[b][n]?.style;
+      if (!st || (!st.ink && !st.fill)) continue;
+      const fill = hex(st.fill, 'panel');
+      if (!isHex(fill)) continue;
+      // The same words the device checks (ui/themelayout.cpp checkLook): the ink, or TEXT and BRIGHT; STOP also RED and AMBER.
+      const words = st.ink ? [['text', hex(st.ink, 'text')]] : [['text', c.text], ['bright', c.bright]];
+      if (n === 'stop') words.push(['red', c.red], ['amber', c.amber]);
+      for (const [what, ink] of words) {
+        if (!isHex(ink)) continue;
+        const x10 = contrastX10(toRgb565(ink), toRgb565(fill));
+        if (x10 < limits.MIN_EDGE_CONTRAST_X10) {
+          out.push({ level: 'error', text: `${n} on the ${BOARD_LABEL[b]} board: its ${what} words are ${fmtRatio(x10 / 10)} against its fill; the device needs 3:1` });
+          break;
+        }
+      }
+    }
+    let moving = null;
+    for (const d of decorNames(L, b)) {
+      const p = L.boards[b][d], src = media?.pictures?.[p.pic];
+      if (!src || src.frames.length < 2) continue;
+      if (p.rect.w * p.rect.h > ANIM_AREA_MAX[b]) {
+        out.push({ level: 'warn', text: `${d} on the ${BOARD_LABEL[b]} board is too large to move (over ${ANIM_AREA_MAX[b]} pixels): the device shows its first frame` });
+        continue;
+      }
+      if (moving) out.push({ level: 'warn', text: `${d} on the ${BOARD_LABEL[b]} board: only one picture per board moves (${moving} does), so it shows its first frame` });
+      else moving = d;
+    }
+  }
   return out;
 }

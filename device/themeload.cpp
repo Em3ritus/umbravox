@@ -30,7 +30,12 @@
 #include "elog.h"
 #include "palette.h"
 #include "themepack.h"
+#include "themelayout.h"
+#include "ring_gen.h"
 #include "packmedia.h"
+#include "packassets.h"
+#include "fontpack.h"
+#include "artpack.h"
 #include "board.h"
 #include "sound.h"
 
@@ -55,14 +60,15 @@ uint16_t nSeen = 0;                          // valid-named folders listed
 
 // Everything only scan() needs: the folder names and sizes, one theme.json
 // at a time (the guard's scratch is needed only before the first theme.json
-// is read, so the two share storage), and the crash list. About 6.6 KB, so it
+// is read, so the two share storage), and the crash list. About 19 KB (the 16 KB layout.json buffer), so it
 // lives in PSRAM for the length of scan() and is freed after: internal RAM is
 // what Wi-Fi and BLE run out of.
 struct Scratch {
     char     names[MAX_FOLDERS][32];
-    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS], sndSz[MAX_FOLDERS];
+    uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS], sndSz[MAX_FOLDERS], laySz[MAX_FOLDERS];
     union {
         uint8_t      json[MAX_JSON];
+        uint8_t      layout[themelayout::MAX_JSON];   // layout.json is read alone, after theme.json is parsed
         GuardScratch guard;
     } buf;
     BadList  bad;
@@ -79,7 +85,9 @@ uint8_t*    spare = nullptr;
 
 // Where each registered pack's clip and sounds are, by pack slot (pal::packSlot). PSRAM, allocated by scan(): they are
 // read only when a theme is selected.
-struct PackMedia { char folder[32]; uint32_t clipSz, sndSz, total; uint8_t id; };
+// fontSz/artSz: the f0..f7.fnt / a0..a15.art this board's look refers to (0 = not used), measured at boot.
+struct PackMedia { char folder[32]; uint32_t clipSz, sndSz, total; uint8_t id;
+                   uint32_t fontSz[assets::MAX_FONTS], artSz[assets::MAX_ARTS]; };
 PackMedia* media = nullptr;
 packmedia::Controller<MAX_PACKS> ctl;        // which pack's media is resident, and when to swap (host-tested)
 // The one resident pack's media. pal keeps the Clip/Sound POINTERS, and px / pcm point into these buffers, which are
@@ -88,6 +96,17 @@ uint8_t*    clipBuf = nullptr;
 uint8_t*    sndBuf = nullptr;
 Clip        clipNow;
 Sound       sndNow;
+// Fonts and pictures (plan 4), the same way: allocated at the first load that needs them, reused, never freed. Fonts
+// sit at fixed MAX_FONT offsets; pictures are packed one after another (their total is capped at MAX_ART_TOTAL at boot).
+// The registry (assets::) holds POINTERS into these: it is cleared before a load overwrites them.
+uint8_t*        fontBuf = nullptr;
+uint8_t*        artBuf = nullptr;
+struct Parsed { fontpack::Font fonts[assets::MAX_FONTS]; artpack::Art arts[assets::MAX_ARTS]; };
+Parsed*         parsed = nullptr;            // ~1 KB of parsed headers: PSRAM too, not .bss
+
+// Each registered pack's resolved layout.json, by pack slot (pal::packSlot). pal keeps a POINTER into it, so the block
+// lives for the whole program: PSRAM, allocated at the first pack that has a layout, never freed.
+themelayout::PackLayout* layouts = nullptr;
 
 const char* taken[MAX_PACKS];                // admitted names, for admit()
 int         nTaken = 0;
@@ -158,11 +177,12 @@ void measure() {
         S->embSz[i]  = pathOf(path, S->names[i], "emblem.bin") ? sdlog::sizeOf(path) : 0;
         S->clipSz[i] = pathOf(path, S->names[i], "radar.vid")  ? sdlog::sizeOf(path) : 0;
         S->sndSz[i]  = pathOf(path, S->names[i], "alert.snd")  ? sdlog::sizeOf(path) : 0;
+        S->laySz[i]  = pathOf(path, S->names[i], "layout.json") ? sdlog::sizeOf(path) : 0;
     }
 }
 
 uint32_t totalOf(int i) {                    // saturating: a 4 GB file cannot wrap it
-    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i] + S->sndSz[i];   // an edited clip gives the pack another try
+    const uint64_t t = (uint64_t)S->jsonSz[i] + S->embSz[i] + S->clipSz[i] + S->sndSz[i] + S->laySz[i];   // an edited file gives the pack another try
     return t > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)t;
 }
 
@@ -212,19 +232,44 @@ const Emblem* loadEmblem(const char* folder, uint32_t size, char (&why)[WHY_CAP]
 // takes (the SD shares the display's SPI bus, so a slice is also a pause in drawing: keep it short).
 constexpr uint32_t SLICE = 16384;                 // ~35 ms at the card's ~460 KB/s
 
+// The files of one load, in reading order: the clip, the sounds, then the fonts and pictures the board's look uses.
+enum EntryKind : uint8_t { E_CLIP, E_SOUND, E_FONT, E_ART };
+struct Entry { EntryKind kind; uint8_t idx; uint32_t size; uint8_t* dst; };
+
 struct Load {
     bool active = false;
     int  slot = packmedia::NONE;
     packmedia::Progress prog;
+    Entry ent[packmedia::MEDIA_FILES_MAX];
+    int   nEnt = 0;
     bool clipOk = false, sndOk = false;           // file read in full and still wanted
+    bool fontOk[assets::MAX_FONTS] = {}, artOk[assets::MAX_ARTS] = {};
     uint32_t t0 = 0;
-} job;
+};
+// In PSRAM, made by the first load: internal RAM is scarce and this is ~470 bytes used only while a pack loads.
+Load* jobp = nullptr;
+
+void entryName(const Entry& e, char (&out)[12]) {
+    if (e.kind == E_CLIP) snprintf(out, sizeof out, "radar.vid");
+    else if (e.kind == E_SOUND) snprintf(out, sizeof out, "alert.snd");
+    else snprintf(out, sizeof out, e.kind == E_FONT ? "f%u.fnt" : "a%u.art", (unsigned)e.idx);
+}
 
 // Parse a file once it has been read in full; logs why a file is left out.
 void finishFile(const PackMedia& m, int file) {
+    Load& job = *jobp;
     char safe[32], why[WHY_CAP] = "";
     logSafe(safe, m.folder);
-    if (file == 0) {
+    const Entry& e = job.ent[file];
+    if (e.kind == E_FONT || e.kind == E_ART) {
+        const char* pw = "";
+        const bool ok = e.kind == E_FONT ? fontpack::parse(e.dst, e.size, parsed->fonts[e.idx], &pw)
+                                         : artpack::parse(e.dst, e.size, parsed->arts[e.idx], &pw);
+        if (e.kind == E_FONT) job.fontOk[e.idx] = ok; else job.artOk[e.idx] = ok;
+        if (!ok) { char n[12]; entryName(e, n); elog::event(elog::WARN, "theme", "%s: %s not used: %s", safe, n, pw); }
+        return;
+    }
+    if (e.kind == E_CLIP) {
         char cwhy[48];
         if (parseClip(clipBuf, m.clipSz, clipNow, cwhy, capOf(cwhy))) job.clipOk = true;
         else { setWhy(why, "%s", cwhy); elog::event(elog::WARN, "theme", "%s: radar clip not used: %s", safe, why); }
@@ -240,6 +285,11 @@ void finishFile(const PackMedia& m, int file) {
 bool beginLoad(const PackMedia& m, int slot) {
     char safe[32];
     logSafe(safe, m.folder);
+    if (!jobp) {
+        if (void* q = heap_caps_malloc(sizeof(Load), MALLOC_CAP_SPIRAM)) jobp = new (q) Load();
+        if (!jobp) { elog::event(elog::WARN, "theme", "%s: media not loaded, no PSRAM", safe); return false; }
+    }
+    Load& job = *jobp;
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), m.folder, m.total);
     if (!nvs.begin(NS, /*readOnly=*/false)) { elog::event(elog::WARN, "theme", "%s: media not loaded, NVS unavailable", safe); return false; }
@@ -253,24 +303,56 @@ bool beginLoad(const PackMedia& m, int slot) {
     if (ss && !sndBuf)  sndBuf  = (uint8_t*)heap_caps_malloc(MAX_SOUND, MALLOC_CAP_SPIRAM);
     if (cs && !clipBuf) { elog::event(elog::WARN, "theme", "%s: radar clip not used: no PSRAM", safe); cs = 0; }
     if (ss && !sndBuf)  { elog::event(elog::WARN, "theme", "%s: alert sounds not used: no PSRAM", safe); ss = 0; }
-    job.prog.start(cs, ss);
+    // The registry must not point into buffers this load is about to overwrite (UNLOAD cleared the last owner; this
+    // also covers a load that follows a built-in theme).
+    assets::set(m.id, nullptr, nullptr);
+    job.nEnt = 0;
+    auto add = [&](EntryKind k, uint8_t idx, uint32_t size, uint8_t* dst) { if (size) job.ent[job.nEnt++] = Entry{k, idx, size, dst}; };
+    add(E_CLIP, 0, cs, clipBuf);
+    add(E_SOUND, 0, ss, sndBuf);
+    bool fonts = false, arts = false;
+    for (int i = 0; i < assets::MAX_FONTS; i++) fonts |= m.fontSz[i] > 0;
+    for (int i = 0; i < assets::MAX_ARTS; i++) arts |= m.artSz[i] > 0;
+    if ((fonts || arts) && !parsed)
+        if (void* q = heap_caps_malloc(sizeof(Parsed), MALLOC_CAP_SPIRAM)) parsed = new (q) Parsed();
+    if (!parsed && (fonts || arts)) { elog::event(elog::WARN, "theme", "%s: fonts and pictures not used: no PSRAM", safe); fonts = arts = false; }
+    if (fonts && !fontBuf) fontBuf = (uint8_t*)heap_caps_malloc(assets::MAX_FONTS * fontpack::MAX_FONT, MALLOC_CAP_SPIRAM);
+    if (arts && !artBuf)   artBuf  = (uint8_t*)heap_caps_malloc(artpack::MAX_ART_TOTAL, MALLOC_CAP_SPIRAM);
+    if (fonts && !fontBuf) elog::event(elog::WARN, "theme", "%s: fonts not used: no PSRAM", safe);
+    if (arts && !artBuf)   elog::event(elog::WARN, "theme", "%s: pictures not used: no PSRAM", safe);
+    for (int i = 0; fonts && fontBuf && i < assets::MAX_FONTS; i++)
+        if (m.fontSz[i] <= fontpack::MAX_FONT) add(E_FONT, (uint8_t)i, m.fontSz[i], fontBuf + (size_t)i * fontpack::MAX_FONT);
+    uint32_t off = 0;
+    for (int i = 0; arts && artBuf && i < assets::MAX_ARTS; i++) {
+        if (!m.artSz[i] || m.artSz[i] > artpack::MAX_ART || off + m.artSz[i] > artpack::MAX_ART_TOTAL) continue;   // checked at boot; never trusted
+        add(E_ART, (uint8_t)i, m.artSz[i], artBuf + off);
+        off += m.artSz[i];
+    }
+    uint32_t sizes[packmedia::MEDIA_FILES_MAX];
+    for (int i = 0; i < job.nEnt; i++) sizes[i] = job.ent[i].size;
+    job.prog.start(sizes, job.nEnt);
+    for (bool& b : job.fontOk) b = false;
+    for (bool& b : job.artOk) b = false;
     job.active = true; job.slot = slot; job.clipOk = job.sndOk = false; job.t0 = millis();
     return true;
 }
 
 // One slice. True when the load has ended (every file read, or given up on).
 bool stepLoad(const PackMedia& m) {
+    Load& job = *jobp;
     if (job.prog.done()) return true;
     const packmedia::Progress::Slice sl = job.prog.next(SLICE);
-    char path[PATH_CAP];
-    uint8_t* dst = sl.file == 0 ? clipBuf : sndBuf;
-    const uint32_t total = sl.file == 0 ? m.clipSz : m.sndSz;
-    const bool ok = pathOf(path, m.folder, sl.file == 0 ? "radar.vid" : "alert.snd")
+    char path[PATH_CAP], name[12];
+    const Entry& e = job.ent[sl.file];
+    entryName(e, name);
+    uint8_t* dst = e.dst;
+    const uint32_t total = e.size;
+    const bool ok = pathOf(path, m.folder, name)
                  && sdlog::readAt(path, sl.off, dst + sl.off, sl.len) == sl.len;
     if (!ok) {
         char safe[32];
         logSafe(safe, m.folder);
-        elog::event(elog::WARN, "theme", "%s: %s could not be read", safe, sl.file == 0 ? "radar.vid" : "alert.snd");
+        elog::event(elog::WARN, "theme", "%s: %s could not be read", safe, name);
         job.prog.skipFile();
         return job.prog.done();
     }
@@ -279,7 +361,73 @@ bool stepLoad(const PackMedia& m) {
     return job.prog.done();
 }
 
-bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, uint32_t packTotal, char (&why)[WHY_CAP]) {
+// layout.json, read after the pack is registered (theme.json's buffer is free again by then). A bad layout skips the
+// layout only: logged, counted with the skipped packs, and the theme keeps its built-in layout.
+bool loadLayout(const char* folder, uint32_t size, int id, const uint16_t* colors) {
+    char why[WHY_CAP] = "", safe[32];
+    logSafe(safe, folder);
+    const int slot = pal::packSlot((uint8_t)id);
+    char path[PATH_CAP];
+    if (slot < 0) setWhy(why, "layout.json: no pack slot");
+    else if (size > themelayout::MAX_JSON) setWhy(why, "layout.json over %u bytes", (unsigned)themelayout::MAX_JSON);
+    else if (!layouts && !(layouts = (themelayout::PackLayout*)heap_caps_calloc(MAX_PACKS, sizeof(themelayout::PackLayout), MALLOC_CAP_SPIRAM)))
+        setWhy(why, "no PSRAM for layout.json");
+    else {
+        const uint32_t n = pathOf(path, folder, "layout.json") ? sdlog::readFile(path, S->buf.layout, (uint32_t)themelayout::MAX_JSON) : 0;
+        if (n == 0 || n != size) setWhy(why, "layout.json could not be read");
+        else if (themelayout::build((const char*)S->buf.layout, n, layouts[slot], why, capOf(why), colors)) {
+            pal::setPackLayout(id, &layouts[slot].lo);
+            elog::event(elog::INFO, "theme", "%s: layout loaded", safe);
+            return true;
+        }
+    }
+    countSkip();
+    elog::event(elog::WARN, "theme", "%s: layout skipped: %s", safe, why);
+    return false;
+}
+
+// The fonts and pictures this board's look refers to: their sizes, read on selection. A missing one, one over its cap
+// or pictures over MAX_ART_TOTAL skip the layout (the theme keeps its format-1 look). Only the engine UI draws a layout.
+bool measureMedia(const char* folder, int id, PackMedia& m) {
+    for (auto& v : m.fontSz) v = 0;
+    for (auto& v : m.artSz) v = 0;
+#if defined(UMBRAVOX_SCAN_ENGINE)
+    const int slot = pal::packSlot((uint8_t)id);
+    if (!layouts || slot < 0) return true;
+    const uieng::BoardLook* k = layouts[slot].lo.look[themelayout::boardFor(board::PANEL_W)];
+    if (!k) return true;
+    char why[WHY_CAP] = "", path[PATH_CAP], name[12];
+    uint64_t arts = 0;
+    for (int i = 0; i < assets::MAX_FONTS + assets::MAX_ARTS && !why[0]; i++) {
+        const bool font = i < assets::MAX_FONTS;
+        const int idx = font ? i : i - assets::MAX_FONTS;
+        if (font ? !(k->fontsUsed & (1u << idx)) : !(k->artsUsed & (1u << idx))) continue;
+        snprintf(name, sizeof name, font ? "f%d.fnt" : "a%d.art", idx);
+        const uint32_t n = pathOf(path, folder, name) ? sdlog::sizeOf(path) : 0;
+        const uint32_t cap = font ? (uint32_t)fontpack::MAX_FONT : (uint32_t)artpack::MAX_ART;
+        if (n == 0) setWhy(why, "%s is missing", name);
+        else if (n > cap) setWhy(why, "%s over %u bytes", name, (unsigned)cap);
+        else if (font) m.fontSz[idx] = n;
+        else { m.artSz[idx] = n; arts += n; }
+    }
+    if (!why[0] && arts > artpack::MAX_ART_TOTAL) setWhy(why, "pictures over %u bytes", (unsigned)artpack::MAX_ART_TOTAL);
+    if (why[0]) {
+        for (auto& v : m.fontSz) v = 0;
+        for (auto& v : m.artSz) v = 0;
+        pal::setPackLayout(id, nullptr);
+        char safe[32];
+        logSafe(safe, folder);
+        countSkip();
+        elog::event(elog::WARN, "theme", "%s: layout skipped: %s", safe, why);
+        return false;
+    }
+#else
+    (void)folder; (void)id;
+#endif
+    return true;
+}
+
+bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_t ss, uint32_t ls, uint32_t packTotal, char (&why)[WHY_CAP]) {
     static_assert(std::extent<std::remove_reference_t<decltype(std::declval<Scratch&>().buf.json)>>::value
                   == MAX_JSON, "theme.json buffer");
     char path[PATH_CAP];
@@ -305,13 +453,21 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_
     const int id = pal::addPack(p, em);      // no clip or sounds yet: tick() attaches them when this theme is selected
     if (id < 0) { setWhy(why, "%s", admitWhy(ADMIT_FULL)); return false; }
     const int slot = pal::packSlot((uint8_t)id);
-    if (media && slot >= 0 && (cs > 0 || ss > 0)) {
+    taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
+    const bool layoutOk = ls > 0 && loadLayout(folder, ls, id, p.color);
+    if (media && slot >= 0) {
         PackMedia& m = media[slot];
         snprintf(m.folder, sizeof m.folder, "%s", folder);
+        // The guard key stays the boot total (theme.json, emblem, clip, sounds, layout): a reset while reading a font
+        // or picture is matched to this pack at the next boot without measuring media files there.
         m.clipSz = cs; m.sndSz = ss; m.total = packTotal; m.id = (uint8_t)id;
-        ctl.setHasMedia(slot, true);
+        if (layoutOk) measureMedia(folder, id, m);
+        else { for (auto& v : m.fontSz) v = 0; for (auto& v : m.artSz) v = 0; }
+        bool any = cs > 0 || ss > 0;
+        for (uint32_t v : m.fontSz) any |= v > 0;
+        for (uint32_t v : m.artSz) any |= v > 0;
+        ctl.setHasMedia(slot, any);
     }
-    taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
     elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s%s", folder, p.name, id, cs ? " with a radar clip" : "", ss ? " with alert sounds" : "");
     return true;
@@ -334,7 +490,7 @@ void visit(int i) {
     formatLoading(rec, capOf(rec), folder, total);
     if (!guardSet(KV, cur, rec)) { skip(folder, "could not set the boot-loop guard in NVS"); return; }
     char why[WHY_CAP] = "unknown";
-    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], total, why);
+    const bool ok = loadPack(folder, S->jsonSz[i], S->embSz[i], S->clipSz[i], S->sndSz[i], S->laySz[i], total, why);
     guardClear(KV, cur);                     // loaded or cleanly skipped: nothing in flight
     if (!ok) skip(folder, why);
 }
@@ -344,6 +500,15 @@ void visit(int i) {
 void scanWith();
 
 void scan() {
+    // The radar ring cache for radii without a baked table (a theme layout may size the radar freely): ~15 KB, so
+    // PSRAM, once, before any pack can install a layout. Without it an odd radius falls back to slow trig rings.
+    static bool ringsReady = false;
+    if (!ringsReady) {
+        const int cap = radargeometry::detail::kSlots * radargeometry::detail::kSlotCap;
+        auto* rings = (radargeometry::Point*)heap_caps_malloc((size_t)cap * sizeof(radargeometry::Point), MALLOC_CAP_SPIRAM);
+        if (rings) { radargeometry::setRingStorage(rings, cap); ringsReady = true; }
+        else elog::event(elog::WARN, "theme", "no PSRAM for the radar ring cache");
+    }
     if (!sdlog::present()) return;           // no card: nothing loaded, nothing skipped
     void* p = heap_caps_malloc(sizeof(Scratch), MALLOC_CAP_SPIRAM);
     if (!p) {
@@ -397,20 +562,27 @@ uint8_t skipped() { return nSkipped; }
 void tick(uint8_t themeId, uint32_t nowMs, bool immediate) {
     if (!media) return;
     ctl.want(pal::packSlot(themeId), nowMs, immediate);
-    if (job.active) {                                // a load in progress: one more slice (all of them at boot)
+    if (jobp && jobp->active) {                      // a load in progress: one more slice (all of them at boot)
+        Load& job = *jobp;
         const PackMedia& m = media[job.slot];
         bool end = stepLoad(m);
         while (immediate && !end) end = stepLoad(m);
         if (!end) return;
         if (nvs.begin(NS, /*readOnly=*/false)) { guardClear(KV, cur); nvs.end(); }   // read (or cleanly refused): nothing in flight
         job.active = false;
-        const bool ok = job.clipOk || job.sndOk;
+        const fontpack::Font* fonts[assets::MAX_FONTS] = {};
+        const artpack::Art* arts[assets::MAX_ARTS] = {};
+        int nf = 0, na = 0;
+        for (int i = 0; parsed && i < assets::MAX_FONTS; i++) if (job.fontOk[i]) { fonts[i] = &parsed->fonts[i]; nf++; }
+        for (int i = 0; parsed && i < assets::MAX_ARTS; i++) if (job.artOk[i]) { arts[i] = &parsed->arts[i]; na++; }
+        const bool ok = job.clipOk || job.sndOk || nf || na;
         if (ok) {
             pal::setPackMedia(m.id, job.clipOk ? &clipNow : nullptr, job.sndOk ? &sndNow : nullptr);
+            assets::set(m.id, fonts, arts);
             char safe[32];
             logSafe(safe, m.folder);
-            elog::event(elog::INFO, "theme", "%s: media loaded in %u ms (clip %u B, sounds %u B)", safe,
-                        (unsigned)(millis() - job.t0), (unsigned)(job.clipOk ? m.clipSz : 0), (unsigned)(job.sndOk ? m.sndSz : 0));
+            elog::event(elog::INFO, "theme", "%s: media loaded in %u ms (clip %u B, sounds %u B, %d fonts, %d pictures)", safe,
+                        (unsigned)(millis() - job.t0), (unsigned)(job.clipOk ? m.clipSz : 0), (unsigned)(job.sndOk ? m.sndSz : 0), nf, na);
         }
         ctl.done(packmedia::Step{packmedia::Step::LOAD, job.slot}, ok);
         return;
@@ -421,6 +593,7 @@ void tick(uint8_t themeId, uint32_t nowMs, bool immediate) {
         if (sound::playing()) return;                // its samples are in the buffer about to be replaced: next frame
         const PackMedia& m = media[st.slot];
         if (st.kind == packmedia::Step::UNLOAD) {
+            assets::clear(m.id);                     // before any buffer is reused
             pal::setPackMedia(m.id, nullptr, nullptr);
             ctl.done(st, true);
             continue;

@@ -44,7 +44,7 @@ struct AttuneScene {
 
 inline void stepBtn(scanr::S& s, const uieng::Rect& r, const char* g) {
     using scanr::box; using scanr::frame; using scanr::centered;
-    box(s, r.x, r.y + 1, r.w, r.h - 2, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
+    scanr::panelFill(s, {r.x, r.y + 1, r.w, r.h - 2}, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
     frame(s, r.x, r.y + 1, r.w, r.h - 2, pal::EDGE_LIT);
     centered(s, r.x + r.w / 2, r.y + r.h / 2 - 5, g, 2, pal::WITCH_HI);
 }
@@ -66,7 +66,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
         const int vmax = L.minus[i].x - (r.x + 6) - 6;
         if(sc.rows[i].label && !strcmp(sc.rows[i].label,"RAW PCAP"))
             txt(s,r.x+6,r.y+25,v,1,pal::BRIGHT);
-        else txt(s, L.minus[i].x - 6 - Font::width(v, 1), r.y + 8, v, 1, pal::BRIGHT);
+        else txt(s, L.minus[i].x - 6 - scanr::textW(v, 1), r.y + 8, v, 1, pal::BRIGHT);
         (void)vmax;
         stepBtn(s, L.minus[i], "-");
         stepBtn(s, L.plus[i],  "+");
@@ -74,7 +74,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
 
     // footer: PAGE n/m + ATTUNE + CLEAR (CLEAR is the only red: it is destructive)
     char pg[32]; snprintf(pg, sizeof pg, "PG %d/%d", sc.page + 1, sc.nPages);
-    box(s, L.pager.x, L.pager.y + 1, L.pager.w, 42, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
+    scanr::panelFill(s, {L.pager.x, L.pager.y + 1, L.pager.w, 42}, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
     frame(s, L.pager.x, L.pager.y + 1, L.pager.w, 42, pal::EDGE_LIT);
     centered(s, L.pager.x + L.pager.w / 2, L.pager.y + 15, pg, fitScale(pg, L.pager.w - 6, 2), pal::WITCH_HI);
     centered(s, L.footer.x + L.footer.w / 2, L.footer.y + 16, "ATTUNE", 1, pal::DIM);

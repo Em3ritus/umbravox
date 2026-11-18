@@ -59,14 +59,19 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
 
     for(int i=0;i<L.nCells;i++){
         const auto t=L.cells[i];
-        box(s,t.x,t.y,t.w,t.h,pal::PANEL);frame(s,t.x,t.y,t.w,t.h,pal::EDGE);
+        scanr::panelFill(s,t,pal::PANEL);frame(s,t.x,t.y,t.w,t.h,pal::EDGE);
         const char* label=sc.plain?kMenuEntries[i].plain:kMenuEntries[i].brand;
         const int scale=fitScale(label,t.w-12,2);
-        // Center the complete label/subtitle group, not just the heading.
+        // Center the complete label/subtitle group, not just the heading; a theme's icon sits above it when it fits.
         const bool wide=W>=400;
-        const int groupH=7*scale+(wide?17:0),y=t.y+(t.h-groupH)/2;
+        const int textH=scanr::lineH(scale)+(wide?17:0);
+        const artpack::Art* icon=scanr::menuIcon(W,i);
+        if(icon&&(icon->w>t.w-8||icon->h+8+textH>t.h-8))icon=nullptr;   // no room: the label alone
+        const int groupH=textH+(icon?icon->h+8:0);
+        int y=t.y+(t.h-groupH)/2;
+        if(icon){scanr::artInto(s,*icon,t.x+(t.w-icon->w)/2,y,0);y+=icon->h+8;}
         centered(s,t.x+t.w/2,y,label,scale,pal::TEXT);
-        if(wide)centered(s,t.x+t.w/2,y+7*scale+10,kMenuDescriptions[i],1,pal::DIM);
+        if(wide)centered(s,t.x+t.w/2,y+scanr::lineH(scale)+10,kMenuDescriptions[i],1,pal::DIM);
     }
 
 }

@@ -90,18 +90,18 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
     const int selected=uieng::meshPage(sc.page,sc.nRows);
     const bool network=selected==uieng::MESH_NETWORK_PAGE;
     auto button=[&](uieng::Rect r,const char* label,bool active=false){
-        box(s,r.x,r.y,r.w,r.h,pal::PANEL);
+        scanr::panelFill(s,r,pal::PANEL);
         centered(s,r.x+r.w/2,r.y+16,label,fitScale(label,r.w-4, W>=400?2:1),active?pal::BRIGHT:pal::TEXT);
-        if(active)box(s,r.x+4,r.y+r.h-3,r.w-8,2,pal::WITCH_HI);
+        if(active)box(s,r.x+4,r.y+r.h-3,r.w-8,2,scanr::highlightEdge(W,pal::WITCH_HI));
     };
     button(L.previous,"<");button(L.pager,">");
     char name[48],hint[48];
     if(network){snprintf(name,sizeof name,"NETWORK");if(sc.netId)snprintf(hint,sizeof hint,"NET %d",sc.netId);else snprintf(hint,sizeof hint,"NET OPEN");}
     else if(selected==0){snprintf(name,sizeof name,"THIS HANDHELD");handheldHint(sc,hint,sizeof hint);}
     else{const auto& n=sc.rows[(selected-1)/2];snprintf(name,sizeof name,"NODE %02X:%02X:%02X",n.id[0],n.id[1],n.id[2]);snprintf(hint,sizeof hint,"DEVICE %d/%d - %s",(selected+1)/2+1,sc.nRows+1,selected%2?"SCANNING":"CONNECTION");}
-    centered(s,L.title.x+L.title.w/2,L.title.y+5,name,fitScale(name,L.title.w,2),pal::BRIGHT);
+    { scanr::RoleScope title(scanr::ROLE_TITLE); centered(s,L.title.x+L.title.w/2,L.title.y+5,name,fitScale(name,L.title.w,2),pal::BRIGHT); }
     centered(s,L.title.x+L.title.w/2,L.title.y+28,hint,1,pal::DIM);
-    box(s,L.list.x,L.list.y,L.list.w,L.list.h,ui::Canvas::mix(pal::VOID,pal::PANEL,1,3));
+    scanr::panelFill(s,L.list,ui::Canvas::mix(pal::VOID,pal::PANEL,1,3));
     if(network){
         char enroll[24];if(sc.enrollSecs)snprintf(enroll,sizeof enroll,"PAIR %dS",sc.enrollSecs);else snprintf(enroll,sizeof enroll,"ENROLL NODES");
         button(L.enroll,enroll,sc.enrollSecs>0);button(L.reset,"RESET NETWORK");
@@ -146,7 +146,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const MeshScene& sc) {
 
     if(!network && selected>0){button(L.scanning,"SCANNING",selected%2);button(L.connection,"CONNECTION",!(selected%2));}
     else if(!network){auto overview=L.scanning;overview.w=L.connection.x+L.connection.w-overview.x;button(overview,"OVERVIEW",true);}
-    box(s,L.tune.x,L.tune.y,L.tune.w,L.tune.h,pal::PANEL);
+    scanr::panelFill(s,L.tune,pal::PANEL);
     centered(s,L.tune.x+L.tune.w/2,L.tune.y+9,"FLEET",1,pal::TEXT);
     centered(s,L.tune.x+L.tune.w/2,L.tune.y+25,"SETTINGS",1,pal::TEXT);
     button(L.network,"NETWORK",network);

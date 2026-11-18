@@ -171,7 +171,8 @@ private:
 // Which parts of the scene changed (what the panel would SHOW): the header chrome, each count tile, the
 // channel readout, the spectrum, the contacts, and the sweep. Pure.
 struct ScanParts { bool status = false, count[3] = {false, false, false}, ch = false, chan = false, marks = false, sweep = false, alert = false;
-                   bool fxCard[3] = {false, false, false}, fxSpec = false; };   // side-panel texture and motion moved
+                   bool fxCard[3] = {false, false, false}, fxSpec = false;
+                   bool decor = false; };   // the theme's animated decor showed a new frame   // side-panel texture and motion moved
 inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b) {
     ScanParts p;
     char la[16], lb[16];
@@ -205,10 +206,12 @@ inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b
         for (int k = 0; k < 3; k++) p.fxCard[k] = tick || __builtin_memcmp(a.fx.spark[k], b.fx.spark[k], sizeof a.fx.spark[k]) != 0;
         p.fxSpec = tick || __builtin_memcmp(a.fx.peak, b.fx.peak, sizeof a.fx.peak) != 0;
     } else if (W >= 400 && a.fx.on != b.fx.on) { for (int k = 0; k < 3; k++) p.fxCard[k] = true; p.fxSpec = true; }
-    p.alert = W >= 400 && (a.alert.active != b.alert.active
+    p.alert = (a.alert.active != b.alert.active
               || (b.alert.active && (a.alert.age != b.alert.age || a.alert.conf != b.alert.conf || a.alert.threat != b.alert.threat || a.alert.style != b.alert.style
                                      || __builtin_strcmp(a.alert.label, b.alert.label) || __builtin_strcmp(a.alert.name, b.alert.name) || __builtin_strcmp(a.alert.why, b.alert.why))));
     const uint8_t sa = a.animateSweep ? scanr::liveStyle(a.sweep, W) : uint8_t(ui::SW_RADAR), sb = b.animateSweep ? scanr::liveStyle(b.sweep, W) : uint8_t(ui::SW_RADAR);
+    { const artpack::Art* da = nullptr;
+      p.decor = scanr::animatedDecor(W, nullptr, &da) && scanr::decorFrame(*da, a.now, W) != scanr::decorFrame(*da, b.now, W); }
     p.sweep = !(a.animateSweep == b.animateSweep && sa == sb &&
         (!b.animateSweep || (sb == ui::SW_RADAR ? scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now) : a.now == b.now)));
     return p;
@@ -432,13 +435,17 @@ public:
         if (W_ >= 400 && nw.fx.on) fx_.advance(nw, store_[cur_ ^ 1].fxState());   // history first: the diff below compares it
         const bool wasPending = sched_.pending(), wasWin = win_;
         win_ = false; nreg_ = 0;
-        const int lvOld = W_ >= 400 ? scanr::alertLevel(store_[cur_].scene().alert) : 0, lvNew = W_ >= 400 ? scanr::alertLevel(nw.alert) : 0;
+        const int lvOld = scanr::alertLevel(store_[cur_].scene().alert), lvNew = scanr::alertLevel(nw.alert);
+        // The cards on screen before and after (a theme may move them, plan 5a); a whole-screen card owns everything.
+        const uieng::Rect cardOld = lvOld ? scanr::alertCardRect(W_, H_, store_[cur_].scene().alert.conf) : uieng::Rect{},
+                          cardNew = lvNew ? scanr::alertCardRect(W_, H_, nw.alert.conf) : uieng::Rect{};
+        const bool wholeOld = lvOld && scanr::alertCardWhole(cardOld, W_, H_), wholeNew = lvNew && scanr::alertCardWhole(cardNew, W_, H_);
         if (forceFull_ || !haveFront_) {
             sched_.invalidateAll();
-        } else if (lvOld == 2 || lvNew == 2) {
+        } else if (wholeOld || wholeNew) {
             const ScanScene& pa = store_[cur_].scene();
-            if (lvOld == 2 && lvNew == 2 && !wasPending && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
-                uieng::Rect rg[8]; const int n = scanr::alertRegions({0, 0, W_, H_}, nw.alert, nw.theme, rg, 8);      // settled: only the rite square and border move
+            if (wholeOld && wholeNew && !wasPending && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
+                uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8, W_);      // settled: only the rite square and border move
                 for (int i = 0; i < n; i++) { reg_[nreg_++] = rg[i]; sched_.invalidate(rg[i].y, rg[i].y + rg[i].h); }
             } else sched_.invalidateAll();             // a HIGH alert owns the whole screen, header and nav included: repaint it all
         } else if (W_ >= 400 && !wasPending) {
@@ -446,7 +453,7 @@ public:
             const ScanScene& pv = store_[cur_].scene();
             const ScanParts p = sceneParts(W_, H_, pv, nw);
             const uieng::ScanLayout L = uieng::scan(W_, H_);
-            const int statusBottom = L.statusCells[0].y + L.statusCells[0].h, navTop = L.navCells[0].y;
+            const uieng::Bands B = uieng::bands(W_, H_);
             auto add = [&](const uieng::Rect& r) {
                 if (r.w <= 0 || r.h <= 0) return;
                 if (nreg_ < kMaxRegions) reg_[nreg_++] = r;
@@ -457,19 +464,22 @@ public:
                 }
                 sched_.invalidate(r.y, r.y + r.h);
             };
-            if (p.alert) {                             // a LOW/MED alert on, off or animating: the hero area, or once settled only what still moves
-                if (lvOld == 1 && lvNew == 1 && sameAlert(pv.alert, nw.alert) && scanr::alertSettled(pv.alert) && scanr::alertSettled(nw.alert)) {
-                    uieng::Rect rg[8]; const int n = scanr::alertRegions(L.hero, nw.alert, nw.theme, rg, 8);
+            if (p.alert) {                             // a card on, off or animating: its rect (old and new), or once settled only what still moves
+                if (lvOld && lvNew && cardOld == cardNew && sameAlert(pv.alert, nw.alert) && scanr::alertSettled(pv.alert) && scanr::alertSettled(nw.alert)) {
+                    uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8, W_);
                     for (int i = 0; i < n; i++) add(rg[i]);
-                } else add(L.hero);
+                } else { add(cardOld); if (!(cardNew == cardOld)) add(cardNew); }
             }
-            if (p.status) add({0, 0, W_, statusBottom});
+            if (p.status) add({0, B.statusTop, W_, B.statusBottom - B.statusTop});
+            if (p.decor) { uieng::Rect dr; if (scanr::animatedDecor(W_, &dr)) add(dr); }
             for (int i = 0; i < 3; i++) if (p.count[i] || p.fxCard[i]) add(L.tiles[i]);
-            const bool covered = lvOld == 1 && lvNew == 1;           // a LOW/MED alert hides the hero, so its radar, channel readout and spectrum need no repaint
+            auto holds = [&](const uieng::Rect& c) { const uieng::Rect& h = L.hero; return c.x <= h.x && c.y <= h.y && c.x + c.w >= h.x + h.w && c.y + c.h >= h.y + h.h; };
+            const bool covered = lvOld && lvNew && holds(cardOld) && holds(cardNew);   // a card over the whole hero hides its radar, channel readout and spectrum: no repaint
             if (p.ch && !covered)   add(scanr::chRect(W_, H_));
             if ((p.chan || p.fxSpec) && !covered) add(scanr::specRect(W_, H_));
-            if ((p.marks || p.sweep) && !covered) {
-                const auto radar = scanr::radarBounds(W_, H_);
+            const auto radarBox = scanr::radarBounds(W_, H_);
+            if ((p.marks || p.sweep) && !covered && radarBox.w > 0) {   // a hidden radar has nothing to repaint
+                const auto radar = radarBox;
                 uieng::Rect boxes[6]; int nb = 0;
                 if (!p.marks && pv.animateSweep && nw.animateSweep) {      // sweep only: just what moved (old and new wedge, arc, ring band...)
                     const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
@@ -480,25 +490,67 @@ public:
             }
             char ra[16], rb[16];
             scanr::recLabel(pv, ra, 16); scanr::recLabel(nw, rb, 16);
-            if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, navTop, W_, H_ - navTop});   // REC/STOP and POI live on the nav
+            if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, B.navTop, W_, B.navBottom - B.navTop});   // REC/STOP and POI live on the nav
+            if (lvOld || lvNew) {                      // plan 5a effects: every alert frame, and once after it ends
+                uieng::Rect fx[uieng::PIECE_SLOTS]; bool shake[uieng::PIECE_SLOTS] = {};
+                const int nf = scanr::effectRects(W_, H_, fx, shake);
+                for (int i = 0; i < nf; i++) add(fx[i]);
+                for (int i = 0; i < nf; i++) {         // a shake reads its whole row span: a region touching it takes its columns
+                    if (!shake[i]) continue;
+                    for (int j = 0; j < nreg_; j++) {
+                        uieng::Rect& g = reg_[j];
+                        // a region is composed and staged over whole 16-row strips, so test its strip-snapped rows
+                        const int sy0 = (g.y / scanr::Compositor::STRIP_H) * scanr::Compositor::STRIP_H;
+                        const int sy1 = ((g.y + g.h + scanr::Compositor::STRIP_H - 1) / scanr::Compositor::STRIP_H) * scanr::Compositor::STRIP_H;
+                        if (g.x >= fx[i].x + fx[i].w || g.x + g.w <= fx[i].x || sy0 >= fx[i].y + fx[i].h || sy1 <= fx[i].y) continue;
+                        const int x0 = std::min(g.x, fx[i].x), x1 = std::max(g.x + g.w, fx[i].x + fx[i].w);
+                        g.x = x0; g.w = x1 - x0;
+                    }
+                }
+            }
         } else {
             bool st = false, bd = false, fieldOnly = false, sweepOnly = false;
-            sceneDirty(W_, H_, store_[cur_].scene(), nw, st, bd, &fieldOnly, &sweepOnly);
+            const ScanScene& pa = store_[cur_].scene();
+            const ScanParts sp = sceneParts(W_, H_, pa, nw);
+            // An alert dirties its card's rows (once settled, only its moving regions' rows), not the whole body band;
+            // a card over the whole hero hides the radar, channel readout and spectrum (CYD engine build, plan 5a).
+            const uieng::Rect hero = uieng::scan(W_, H_).hero;
+            auto holds = [&](const uieng::Rect& c) { return c.x <= hero.x && c.y <= hero.y && c.x + c.w >= hero.x + hero.w && c.y + c.h >= hero.y + hero.h; };
+            const bool covered = lvOld && lvNew && holds(cardOld) && holds(cardNew);
+            {
+                ScanParts q = sp; q.alert = false;
+                if (covered) { q.ch = q.chan = q.marks = q.sweep = false; }
+                const bool counts = q.count[0] || q.count[1] || q.count[2];
+                st = q.status;
+                bd = counts || q.ch || q.chan || q.marks || q.sweep;
+                fieldOnly = bd && !counts && !q.ch && !q.chan;
+                sweepOnly = bd && !counts && !q.ch && !q.chan && !q.marks;
+            }
+            bool alertRows = false;
+            if (sp.alert) {
+                alertRows = true;
+                if (lvOld && lvNew && cardOld == cardNew && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
+                    uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8, W_);
+                    for (int i = 0; i < n; i++) sched_.invalidate(rg[i].y, rg[i].y + rg[i].h);
+                } else {
+                    if (lvOld) sched_.invalidate(cardOld.y, cardOld.y + cardOld.h);
+                    if (lvNew) sched_.invalidate(cardNew.y, cardNew.y + cardNew.h);
+                }
+            }
             // Sweep and nothing else: redraw only where the old and new wedge are, not the whole radar.
             const auto radar = scanr::radarBounds(W_, H_);
             uieng::Rect box = radar;
             const ScanScene& pv = store_[cur_].scene();
-            if (sweepOnly && !wasPending && pv.animateSweep && nw.animateSweep) {
+            if (radar.w > 0 && sweepOnly && !wasPending && pv.animateSweep && nw.animateSweep) {
                 const uint8_t sv = scanr::liveStyle(pv.sweep, W_), sn = scanr::liveStyle(nw.sweep, W_);
                 box = sv == sn ? scanr::sweepBox(sn, radar, pv.now, nw.now) : radar;
             }
             const uieng::ScanLayout L = uieng::scan(W_, H_);
-            const int statusBottom = L.statusCells[0].y + L.statusCells[0].h;
-            const int navTop       = L.navCells[0].y;
-            if (st) sched_.invalidate(0, statusBottom);
+            const uieng::Bands B = uieng::bands(W_, H_);
+            if (st) sched_.invalidate(B.statusTop, B.statusBottom);
             if (bd) {
                 if (fieldOnly) sched_.invalidate(box.y, box.y + box.h);
-                else sched_.invalidate(statusBottom, navTop);
+                else sched_.invalidate(B.bodyTop, B.bodyBottom);
             }
             // design #1 SCAN carries the REC/STOP control on the NAV bar, which
             // is otherwise static: repaint the nav band only when the recording
@@ -507,8 +559,14 @@ public:
             scanr::recLabel(store_[cur_].scene(), ra, 16);
             scanr::recLabel(nw, rb, 16);
             const bool navDirty = __builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi;
-            if (navDirty) sched_.invalidate(navTop, H_);
-            if (!st && bd && fieldOnly && !navDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
+            if (navDirty) sched_.invalidate(B.navTop, B.navBottom);
+            uieng::Rect dr;   // the animated decor: only its rows (the row diff trims the push to what changed)
+            const bool decorDirty = sp.decor && scanr::animatedDecor(W_, &dr);
+            if (decorDirty) sched_.invalidate(dr.y, dr.y + dr.h);
+            uieng::Rect fx[uieng::PIECE_SLOTS];        // plan 5a effects: their rows, every alert frame and once after
+            const int nf = (lvOld || lvNew) ? scanr::effectRects(W_, H_, fx) : 0;
+            for (int i = 0; i < nf; i++) sched_.invalidate(fx[i].y, fx[i].y + fx[i].h);
+            if (!st && bd && fieldOnly && !navDirty && !decorDirty && !nf && !alertRows && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
                 win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;
             }
         }

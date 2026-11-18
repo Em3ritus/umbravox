@@ -30,7 +30,7 @@ struct Chrome {
     Rect statusCells[4], navCells[4];
     Rect wordmark, stop, bridge, menu, sd;
 };
-inline Chrome chrome(int W, int H) {
+inline Chrome builtinChrome(int W, int H) {   // the built-in geometry; chrome() may override it
     Chrome c;
     c.status={0,0,W,44}; c.nav={0,H-44,W,44}; c.body={8,52,W-16,H-104};
     c.menu={0,0,44,44};
@@ -63,9 +63,40 @@ struct ScanLayout {
     Rect status, nav, body, statusCells[4], navCells[4];
     Rect counts, hero, tiles[3], bridge;
     Rect wordmark, stop;
+    Rect radar, spectrum, channel, badge;   // the hero's parts (radar = its box incl. the 2 px marker margin)
 };
-inline ScanLayout scan(int W, int H) {
-    const Chrome c = chrome(W, H);               // design-1 bands, single-sourced
+
+// The hero's parts as the built-in layout places them in a hero rect: today's formulas
+// (scan_render.h heroSub/radarBounds/chRect/specRect and the badge offsets), moved here
+// so a theme layout can place each part. `wide` is the board (W >= 400).
+struct HeroParts { Rect radar, spectrum, channel, badge; };
+inline HeroParts heroParts(int W, Rect hr) {
+    HeroParts p{};
+    if (W >= 400) {
+        const int r = 102, cx = hr.x + 168, cy = hr.y + hr.h / 2;
+        p.radar = {cx - r - 2, cy - r - 2, 2 * r + 5, 2 * r + 5};
+        const int barMax = 56, barBase = hr.y + hr.h - 14, sx = hr.x + hr.w - 66;
+        const int top = barBase - barMax - 4;
+        p.spectrum = {sx, top, 66, hr.y + hr.h - top};
+        p.channel = {hr.x + hr.w - 100, hr.y, 100, 24};
+        p.badge = {hr.x, hr.y, 2 * 27 + 8, 2 * 27 + 8};
+        return p;
+    }
+    // compact: the field between a 16 px heading and a 26 px spectrum strip
+    const int fx = hr.x + 2, fw = hr.w - 4;
+    const int sw = std::min(140, hr.w - 8);
+    p.spectrum = {hr.x + (hr.w - sw) / 2, hr.y + hr.h - 26, sw, 26};
+    const int barBase = hr.y + hr.h - 11, barMax = 8;
+    const int cx = fx + fw / 2, top = hr.y + 4, bottom = barBase - barMax - 2;
+    const int cy = (top + bottom) / 2 - 2;                      // the accepted optical lift
+    const int r = std::min(fw / 2 - 4, (bottom - top) / 2);
+    p.radar = {cx - r - 2, cy - r - 2, 2 * r + 5, 2 * r + 5};
+    p.channel = {hr.x + hr.w - 60, hr.y, 60, 16};
+    p.badge = {hr.x, hr.y, 2 * 22 + 8, 2 * 22 + 8};
+    return p;
+}
+inline ScanLayout builtinScan(int W, int H) {   // the built-in geometry; scan() may override it
+    const Chrome c = builtinChrome(W, H);               // design-1 bands, single-sourced
     ScanLayout s{};
     const bool wide = (W >= 400);
     const int M = wide ? 16 : 8;                 // design #1 margin: 16 @480, 8 @320
@@ -85,7 +116,113 @@ inline ScanLayout scan(int W, int H) {
     }
     s.bridge = c.bridge;
     s.counts = {s.tiles[0].x, s.tiles[0].y, s.tiles[0].w, H - 104};
+    const HeroParts hp = heroParts(W, s.hero);
+    s.radar = hp.radar; s.spectrum = hp.spectrum; s.channel = hp.channel; s.badge = hp.badge;
     return s;
+}
+
+// --- Theme layout override ----------------------------------------------------
+// A theme's layout.json, resolved for one board by themelayout::resolve (the only
+// producer). Every chrome rect is final: a hidden piece is {0,0,0,0}; c.body is the
+// body every non-Scan screen lays out in. tiles/hero/counts/scanBody are Scan's rects.
+struct ChromeOverride {
+    Chrome c;
+    Rect tiles[3];
+    Rect hero, counts, scanBody;
+    Rect radar, spectrum, channel, badge;   // the hero's parts (hidden = zero rect)
+};
+
+// The active theme's layout, one per board ([0] Waveshare W>=400, [1] CYD). Installed
+// by pal::setTheme; nullptr (or a null board) means the built-in geometry. chrome()
+// and scan() read it, so drawing and hits read the same rects and cannot drift.
+// A layout theme's look (plan 4): per-piece styles, the board's style block for every other screen, and decor.
+// Font and art fields are indices into the pack's f0..f7.fnt and a0..a15.art (-1 = none); drawing asks the asset
+// registry for them and draws the built-in look when one is absent. Colours are a theme role or an RGB565 literal.
+constexpr int PIECE_SLOTS = 19, MAX_DECOR = 8, MENU_ICONS = 6;
+struct ColorRef { uint8_t kind = 0; uint16_t v = 0; };   // kind 0 none, 1 role index (themepack::Role), 2 RGB565
+// Plan 5a: an effect a piece shows during an alert, and its cycle (slow 1000 ms, medium 500, fast 250).
+enum Effect : uint8_t { FX_NONE, FX_FLASH, FX_PULSE, FX_SHAKE };
+enum FxSpeed : uint8_t { SP_SLOW, SP_MEDIUM, SP_FAST };
+struct PieceStyle {
+    int8_t font = -1; uint8_t scale = 0;                  // scale 0 = the drawing's own choice
+    ColorRef ink, fill, edge;
+    int8_t frame = -1; uint8_t slice[4] = {0, 0, 0, 0};  // nine-slice frame art and its l,t,r,b insets
+    int8_t bg = -1;
+    uint8_t effect = FX_NONE, speed = SP_MEDIUM;
+};
+// An alert card (alert.card.low|med|high): an overlay, not a layout piece. r.w == 0 = the built-in rect.
+// font/clip index f0..f7 / a0..a15 (-1 = built-in 5x7 / the rite); a font under 7 px or a picture over the
+// limits is ignored when drawing (it is checked against the loaded file, which build() does not have).
+struct AlertCard { Rect r; int8_t font = -1; uint8_t scale = 0; int8_t clip = -1; };
+constexpr int CARD_LOW = 0, CARD_MED = 1, CARD_HIGH = 2;
+struct Decor { Rect r; int8_t art = -1; };              // art -1 = no decor at this N
+struct ScreenStyle {
+    int8_t roleFont[3] = {-1, -1, -1};                    // indexed by scanr::TextRole: body, title, numbers
+    int8_t bg = -1, panel = -1; uint8_t panelSlice[4] = {0, 0, 0, 0};
+    ColorRef hiFill, hiEdge;
+    int8_t icon[MENU_ICONS] = {-1, -1, -1, -1, -1, -1};
+};
+struct BoardLook {
+    bool any = false;
+    PieceStyle piece[PIECE_SLOTS];
+    ScreenStyle screen;
+    Decor decor[MAX_DECOR];                               // by N; drawn in N order under every functional piece
+    uint8_t nDecor = 0;
+    uint8_t fontsUsed = 0;                                // bit i = fi.fnt referenced
+    uint16_t artsUsed = 0;                                // bit i = ai.art referenced
+    AlertCard card[3];                                    // CARD_LOW, CARD_MED, CARD_HIGH
+};
+struct LayoutOverride { const ChromeOverride* board[2]; const BoardLook* look[2] = {nullptr, nullptr}; };
+inline const LayoutOverride*& activeLayout() { static const LayoutOverride* p = nullptr; return p; }
+inline const ChromeOverride* activeBoard(int W) {
+    const LayoutOverride* l = activeLayout();
+    return l ? l->board[W >= 400 ? 0 : 1] : nullptr;
+}
+inline const BoardLook* activeLook(int W) {
+    const LayoutOverride* l = activeLayout();
+    return l ? l->look[W >= 400 ? 0 : 1] : nullptr;
+}
+
+inline Chrome chrome(int W, int H) {
+    const ChromeOverride* o = activeBoard(W);
+    return o ? o->c : builtinChrome(W, H);
+}
+inline ScanLayout scan(int W, int H) {
+    const ChromeOverride* o = activeBoard(W);
+    if (!o) return builtinScan(W, H);
+    ScanLayout s{};
+    s.status = o->c.status; s.nav = o->c.nav; s.body = o->scanBody;
+    for (int i = 0; i < 4; i++) { s.statusCells[i] = o->c.statusCells[i]; s.navCells[i] = o->c.navCells[i]; }
+    s.counts = o->counts; s.hero = o->hero;
+    for (int i = 0; i < 3; i++) s.tiles[i] = o->tiles[i];
+    s.bridge = o->c.bridge; s.wordmark = o->c.wordmark; s.stop = o->c.stop;
+    s.radar = o->radar; s.spectrum = o->spectrum; s.channel = o->channel; s.badge = o->badge;
+    return s;
+}
+
+// The row ranges a presenter repaints when its status, body or nav changes. Built-in:
+// today's bands, exactly. With a theme layout the header and footer pieces can sit
+// anywhere, so each range is the rows of their bounding box, and the body's range
+// is the body widened by the 8-px gap the built-in layout leaves around it.
+struct Bands { int statusTop, statusBottom, bodyTop, bodyBottom, navTop, navBottom; };
+inline Bands bands(int W, int H) {
+    const Chrome c = chrome(W, H);
+    Bands b;
+    if (!activeBoard(W)) {
+        b.statusTop = 0; b.statusBottom = c.statusCells[0].y + c.statusCells[0].h;
+        b.navTop = c.navCells[0].y; b.navBottom = H;
+        b.bodyTop = b.statusBottom; b.bodyBottom = b.navTop;
+        return b;
+    }
+    b.statusTop = c.status.y; b.statusBottom = c.status.y + c.status.h;
+    b.navTop = c.nav.y; b.navBottom = c.nav.y + c.nav.h;
+    b.bodyTop = std::max(0, c.body.y - 8); b.bodyBottom = std::min(H, c.body.y + c.body.h + 8);
+    // Scan's count tiles and radar parts change with the body but may sit outside its rows: widen the range over them.
+    const ChromeOverride* o = activeBoard(W);
+    const Rect scanParts[] = {o->tiles[0], o->tiles[1], o->tiles[2], o->radar, o->spectrum, o->channel, o->badge};
+    for (const Rect& t : scanParts)
+        if (t.w > 0 && t.h > 0) { b.bodyTop = std::min(b.bodyTop, t.y); b.bodyBottom = std::max(b.bodyBottom, t.y + t.h); }
+    return b;
 }
 
 // --- DOMAIN: rectangular map (radar centered inside) + contacts + range -------
@@ -142,6 +279,7 @@ struct HitList {
     Hit items[22];
     int count = 0;
     void add(const char* slot, Rect r, Action a, int payload, const char* key, const char* desc) {
+        if (r.w <= 0 || r.h <= 0) return;   // a hidden piece has no hit, never a zero-size one at (0,0)
         items[count++] = {slot, r, a, payload, key, desc};
     }
 };
@@ -158,6 +296,7 @@ struct HitCtx {
     const char* const* rowKeys  = nullptr;  // located-device keys, by original row order
     int                nRowKeys = 0;        // a row is emitted ONLY for a valid supplied key
     uint8_t            alertTakeover = 0;   // SCAN only: 1 = an alert covers the hero, 2 = it covers the whole screen (a tap dismisses it)
+    Rect               alertRect;           // SCAN, alertTakeover 1: the card's rect (w 0 = the hero)
 };
 
 static const char* const kThreatDesc =
@@ -191,6 +330,8 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
         h.add("alert", {0, 0, W, H}, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
         return h;
     }
+    const bool card = ctx.alertTakeover == 1 && ctx.alertRect.w > 0;   // a theme's LOW/MED card: drawn on top, so hit first
+    if (card) h.add("alert", ctx.alertRect, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
     addChromeHits(h, W, H);              // shared design-1 header + nav + STOP
     // count tiles
     static const char* const tslot[3] = {"WIFI","5 GHZ","BLE"};
@@ -198,8 +339,9 @@ inline HitList scanHits(int W, int H, const HitCtx& ctx) {
                                          "Open Codex filtered to 5 GHZ",
                                          "Open Codex filtered to BLE"};
     for (int i = 0; i < 3; i++) h.add(tslot[i], s.tiles[i], Action::CodexFilter, i, nullptr, tdesc[i]);
-    if (ctx.alertTakeover == 1)    // the alert covers the hero: a tap on it clears it
-        h.add("alert", s.hero, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
+    if (ctx.alertTakeover == 1) {  // the alert covers the hero: a tap on it clears it
+        if (!card) h.add("alert", s.hero, Action::AlertDismiss, 0, nullptr, "Dismiss the alert");
+    }
     else if (validKey(ctx.matchKey))   // threat target only for a real matched device
         h.add("threat", {s.hero.x, s.hero.y, s.hero.w, 44},
               Action::OpenThreatDetail, 0, ctx.matchKey, kThreatDesc);
@@ -479,7 +621,7 @@ inline HitList echoesHits(int W, int H) {
 static constexpr int attuneKnobIds[]={0,1,2,3,6,8,9,10,11,12};
 static constexpr int kAttuneKnobs = 10;   // radio/recording only; display controls have their own page
 inline int attuneRowsPerPage(int H) {
-    const Chrome c = chrome(320, H);     // body height is width-independent
+    const Chrome c = builtinChrome(320, H);   // body height is width-independent; builtin so a CYD layout cannot leak into the Waveshare's knob count
     int n = (c.body.h - 44) / 44; if (n < 1) n = 1; if (n > 4) n = 4;
     return n;
 }

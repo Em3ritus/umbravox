@@ -10,6 +10,7 @@
 // the cold instrument cyan survives only as ICE, and only ever as *data*.
 #pragma once
 #include <stdint.h>
+namespace uieng { struct LayoutOverride; }
 
 namespace themepack { struct Pack; struct Emblem; struct Clip; struct Sound; }
 
@@ -67,6 +68,7 @@ enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_SLIC
 // back to UMBRAVOX rather than reading off the end of the table -- this is
 // reached from NVS, which can hold anything.
 void setTheme(uint8_t id);
+uint8_t currentTheme();   // the id last passed to setTheme
 const char* themeName(uint8_t id);
 
 // Which sweeps this theme offers, as a bitmask over the Sweep enum. The gaze
@@ -92,6 +94,10 @@ int addPack(const themepack::Pack& p, const themepack::Emblem* e, const themepac
 // tests): the device never calls this -- its packs are loaded once at boot.
 // It does not repaint: the caller runs setTheme before anything draws.
 void clearPacks();
+// Attach a registered pack's resolved layout (or, with nullptr, detach it). The pointer is
+// kept, so what it points at must live as long as the pack. setTheme installs the active
+// theme's layout as uieng::activeLayout() (nullptr for built-ins and layout-less packs).
+void setPackLayout(int packId, const uieng::LayoutOverride* lo);
 
 // The theme id of an SD pack or bundled crew theme with this exact name, or -1.
 // The original three reserved built-in names do not match.

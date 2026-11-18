@@ -17,6 +17,9 @@
 #include "../../../ui/palette.h"
 #include "../../../ui/signatures.h"
 #include "../../../ui/themepack.h"
+#include "../../../ui/themelayout.h"
+#include "../../../ui/packassets.h"
+#include <stdlib.h>
 #include "../../../ui/preview_ws.h"
 #include <emscripten/emscripten.h>
 #include <stdarg.h>
@@ -33,6 +36,8 @@ enum {
     UV_ERR_ADMIT  = -4,   // themepack::admit refused (reserved name, ...)
     UV_ERR_FULL   = -5,   // pal::addPack refused (cannot happen with one draft)
     UV_ERR_CLIP   = -6,   // radar.vid over-size or refused by parseClip
+    UV_ERR_LAYOUT = -7,   // layout.json over-size or refused by themelayout::build (the device would skip the layout)
+    UV_ERR_MEDIA  = -8,   // a font (.fnt) or picture (.art) over-size or refused by its parser
 };
 
 char g_err[128] = "";
@@ -61,6 +66,28 @@ const char* const DRAFT_FOLDER = "draft";
 
 ui::Canvas g_canvas;
 
+// The draft's fonts and pictures (f0..f7.fnt, a0..a15.art), kept as the registry holds pointers into them.
+uint8_t* g_mediaBytes[assets::MAX_FONTS + assets::MAX_ARTS];
+fontpack::Font g_fonts[assets::MAX_FONTS];
+artpack::Art g_arts[assets::MAX_ARTS];
+bool g_fontOk[assets::MAX_FONTS], g_artOk[assets::MAX_ARTS];
+int g_mediaOwner = -1;
+
+void publishMedia() {
+    const fontpack::Font* f[assets::MAX_FONTS] = {};
+    const artpack::Art* a[assets::MAX_ARTS] = {};
+    for (int i = 0; i < assets::MAX_FONTS; i++) if (g_fontOk[i]) f[i] = &g_fonts[i];
+    for (int i = 0; i < assets::MAX_ARTS; i++) if (g_artOk[i]) a[i] = &g_arts[i];
+    if (g_mediaOwner >= 0) assets::set((uint8_t)g_mediaOwner, f, a);
+}
+void clearMedia() {
+    if (g_mediaOwner >= 0) assets::clear((uint8_t)g_mediaOwner);   // before the bytes go
+    for (auto& b : g_mediaBytes) { free(b); b = nullptr; }
+    for (bool& b : g_fontOk) b = false;
+    for (bool& b : g_artOk) b = false;
+    g_mediaOwner = -1;
+}
+
 // sim/png_writer.h's expansion, exactly: what makes byte equality possible.
 inline void rgb565ToRgba(uint16_t c, unsigned char* o) {
     const int r5 = (c >> 11) & 0x1F, g6 = (c >> 5) & 0x3F, b5 = c & 0x1F;
@@ -80,6 +107,7 @@ EMSCRIPTEN_KEEPALIVE const char* uv_error() { return g_err; }
 EMSCRIPTEN_KEEPALIVE int uv_theme_count() { return pal::themeCount(); }
 
 EMSCRIPTEN_KEEPALIVE void uv_clear_packs() {
+    clearMedia();
     pal::clearPacks();
     g_err[0] = 0;
 }
@@ -87,12 +115,16 @@ EMSCRIPTEN_KEEPALIVE void uv_clear_packs() {
 // Parse and admit a draft pack, in sim/packload.h's order and with its rules:
 // sizes -> parse -> emblem (only when the centrepiece is emblem) -> admit ->
 // register. Returns the theme id (>= 0) or a negative UV_ERR_*.
+// The draft's layout.json, as pal keeps it (a pointer): static, and rebuilt in place only once the draft is accepted.
+themelayout::PackLayout g_layout, g_layoutProbe;
+
 EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
                                       const unsigned char* emblem, int emblem_len,
-                                      const unsigned char* clip, int clip_len) {
+                                      const unsigned char* clip, int clip_len,
+                                      const char* layout, int layout_len) {
     using namespace themepack;
     g_err[0] = 0;
-    if (json_len < 0 || emblem_len < 0 || clip_len < 0) return fail(UV_ERR_INPUT, "negative length");
+    if (json_len < 0 || emblem_len < 0 || clip_len < 0 || layout_len < 0) return fail(UV_ERR_INPUT, "negative length");
     if (!json || json_len == 0) return fail(UV_ERR_INPUT, "theme.json is empty");
     if ((size_t)json_len > MAX_JSON) return fail(UV_ERR_INPUT, "theme.json over 4096 bytes");
 
@@ -121,12 +153,20 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
         if (!parseClip(clip, (size_t)clip_len, probe, cwhy, sizeof cwhy)) return fail(UV_ERR_CLIP, "%s", cwhy);
     }
 
+    // layout.json is optional. The device would skip a bad one and keep the theme; the designer refuses the draft so the
+    // author sees why (the same themelayout::build the device runs).
+    if (layout && layout_len > 0) {
+        char lwhy[96];
+        if (!themelayout::build(layout, (size_t)layout_len, g_layoutProbe, lwhy, sizeof lwhy, p.color)) return fail(UV_ERR_LAYOUT, "%s", lwhy);
+    }
+
     // The draft replaces whatever was loaded, so no other pack name is taken.
     const Admit a = admit(DRAFT_FOLDER, p, nullptr, 0);
     if (a != ADMIT_OK) return fail(UV_ERR_ADMIT, "%s", admitWhy(a));
 
-    // Accepted: only now touch the live draft.
+    // Accepted: only now touch the live draft. Its fonts and pictures come after, through uv_load_media.
     const Emblem* em = nullptr;
+    clearMedia();
     pal::clearPacks();
     if (p.centre == CENTRE_EMBLEM) {
         memcpy(g_emblemBuf, g_scratch, (size_t)emblem_len);
@@ -145,7 +185,74 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
     }
     const int id = pal::addPack(p, em, cl);
     if (id < 0) return fail(UV_ERR_FULL, "%s", admitWhy(ADMIT_FULL));
+    if (layout && layout_len > 0) {
+        char lwhy[96];
+        if (!themelayout::build(layout, (size_t)layout_len, g_layout, lwhy, sizeof lwhy, p.color)) return fail(UV_ERR_LAYOUT, "%s", lwhy);   // unreachable: same bytes
+        pal::setPackLayout(id, &g_layout.lo);
+    }
     return id;
+}
+
+// One font (kind 0, slot 0..7 = fN.fnt) or picture (kind 1, slot 0..15 = aN.art) of the draft loaded as theme
+// `theme`. The bytes are copied. 0, or UV_ERR_INPUT / UV_ERR_MEDIA with the reason in uv_error(); a refused file
+// leaves that slot empty, as the device draws without it.
+EMSCRIPTEN_KEEPALIVE int uv_load_media(int theme, int kind, int slot, const unsigned char* data, int len) {
+    g_err[0] = 0;
+    const bool isFont = kind == 0;
+    if ((kind != 0 && kind != 1) || slot < 0 || slot >= (isFont ? assets::MAX_FONTS : assets::MAX_ARTS))
+        return fail(UV_ERR_INPUT, "no such media slot");
+    if (theme < 0 || theme >= pal::themeCount()) return fail(UV_ERR_INPUT, "no such theme");
+    if (g_mediaOwner != theme) { clearMedia(); g_mediaOwner = theme; }
+    const int k = isFont ? slot : assets::MAX_FONTS + slot;
+    if (isFont) g_fontOk[slot] = false; else g_artOk[slot] = false;
+    publishMedia();                                  // the old bytes are no longer reachable
+    free(g_mediaBytes[k]); g_mediaBytes[k] = nullptr;
+    const size_t cap = isFont ? fontpack::MAX_FONT : artpack::MAX_ART;
+    if (!data || len <= 0) return fail(UV_ERR_INPUT, "empty file");
+    if ((size_t)len > cap) return fail(UV_ERR_MEDIA, "%s%d over %u bytes", isFont ? "f" : "a", slot, (unsigned)cap);
+    g_mediaBytes[k] = (uint8_t*)malloc((size_t)len);
+    if (!g_mediaBytes[k]) return fail(UV_ERR_MEDIA, "out of memory");
+    memcpy(g_mediaBytes[k], data, (size_t)len);
+    const char* why = "";
+    const bool ok = isFont ? fontpack::parse(g_mediaBytes[k], (size_t)len, g_fonts[slot], &why)
+                           : artpack::parse(g_mediaBytes[k], (size_t)len, g_arts[slot], &why);
+    if (!ok) { free(g_mediaBytes[k]); g_mediaBytes[k] = nullptr; return fail(UV_ERR_MEDIA, "%s%d: %s", isFont ? "f" : "a", slot, why); }
+    if (isFont) g_fontOk[slot] = true; else g_artOk[slot] = true;
+    publishMedia();
+    return 0;
+}
+
+// 1 when the device would accept these bytes as a pack font (.fnt) or picture (.art); 0 with the reason in uv_error().
+EMSCRIPTEN_KEEPALIVE int uv_font_check(const unsigned char* data, int len) {
+    g_err[0] = 0;
+    fontpack::Font f; const char* why = "";
+    if (!data || len <= 0 || !fontpack::parse(data, (size_t)len, f, &why)) { fail(0, "%s", why[0] ? why : "empty file"); return 0; }
+    return 1;
+}
+EMSCRIPTEN_KEEPALIVE int uv_art_check(const unsigned char* data, int len) {
+    g_err[0] = 0;
+    artpack::Art a; const char* why = "";
+    if (!data || len <= 0 || !artpack::parse(data, (size_t)len, a, &why)) { fail(0, "%s", why[0] ? why : "empty file"); return 0; }
+    return 1;
+}
+
+// The layout rules, for the designer's Layout step: the device's own names, defaults and verdict.
+EMSCRIPTEN_KEEPALIVE int uv_piece_count() { return themelayout::P_N; }
+EMSCRIPTEN_KEEPALIVE const char* uv_piece_name(int i) { return (i >= 0 && i < themelayout::P_N) ? themelayout::PIECE_NAME[i] : ""; }
+// board 0 Waveshare, 1 CYD; writes x, y, w, h (int32) to out.
+EMSCRIPTEN_KEEPALIVE void uv_layout_default(int board, int piece, int* out) {
+    if (!out) return;
+    if (board < 0 || board >= themelayout::B_N || piece < 0 || piece >= themelayout::P_N) { out[0] = out[1] = out[2] = out[3] = 0; return; }
+    const uieng::Rect r = themelayout::defaultRect((themelayout::Board)board, (themelayout::Piece)piece);
+    out[0] = r.x; out[1] = r.y; out[2] = r.w; out[3] = r.h;
+}
+// 1 when the device would accept this layout.json on every board it gives; 0 with the reason in uv_error().
+EMSCRIPTEN_KEEPALIVE int uv_layout_check(const char* json, int len) {
+    g_err[0] = 0;
+    if (!json || len <= 0) return fail(0, "layout.json is empty"), 0;
+    char lwhy[96];
+    if (!themelayout::build(json, (size_t)len, g_layoutProbe, lwhy, sizeof lwhy)) { fail(0, "%s", lwhy); return 0; }
+    return 1;
 }
 
 // Draw one 160x120 frame as RGBA into out (W*H*4 bytes). Builds the State the
@@ -197,6 +304,14 @@ EMSCRIPTEN_KEEPALIVE void uv_render(int theme, int screen, int frame, int sweep,
 
 // The Waveshare 3.5" engine UI (480x320), one frame as RGBA. Same arguments as uv_render plus the alert's confidence
 // (ui::CONF_LOW 0, MED 1, HIGH 2); screen 4 is ASPECT. The drawing is ui/preview_ws.h, shared with the host reference.
+// The engine UI at w x h (480x320 Waveshare or 320x240 CYD engine build): what layout.json changes.
+EMSCRIPTEN_KEEPALIVE void uv_render_engine(int theme, int screen, int frame, int sweep,
+                                           int alert_style, int alert_conf, int w, int h, unsigned char* out) {
+    if (!out || w < 1 || h < 1 || w > prevws::W || h > prevws::H) return;
+    static uint16_t px[prevws::W * prevws::H];
+    prevws::render(theme, screen, frame, sweep, alert_style, alert_conf, px, w, h);
+    for (int i = 0; i < w * h; i++) rgb565ToRgba(px[i], out + 4 * i);
+}
 EMSCRIPTEN_KEEPALIVE int uv_ws_width() { return prevws::W; }
 EMSCRIPTEN_KEEPALIVE int uv_ws_height() { return prevws::H; }
 EMSCRIPTEN_KEEPALIVE void uv_render_ws(int theme, int screen, int frame, int sweep,

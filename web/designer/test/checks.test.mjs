@@ -161,3 +161,42 @@ test('art switches: only on or off are accepted', () => {
   t.heptagram = 'on'; t.contacts = 'nope';
   assert.ok(find(runChecks(t, null), 'error', /Contacts must be on or off/).length === 1);
 });
+
+// ---- plan 4: the layout's look ----
+import { lookChecks } from '../js/checks.js';
+import { newLayout as nl4, setStyle as ss4, addDecor as ad4 } from '../js/layout.js';
+test('lookChecks: text on menu, stop, bridge and nav must be 3:1 against its fill', () => {
+  const theme = { colors: { void: '#000000', panel: '#202020', text: '#E0E0E0', bright: '#FFFFFF', dim: '#808080' } };
+  const r = { x: 0, y: 0, w: 44, h: 44 };
+  let L = ss4(nl4(), 'waveshare', 'menu', { ink: 'panel', fill: 'panel' }, r);
+  let c = lookChecks(theme, L);
+  assert.equal(c.length, 1); assert.equal(c[0].level, 'error'); assert.match(c[0].text, /menu.*3:1/);
+  L = ss4(nl4(), 'cyd', 'stop', { ink: '#111111' }, r);
+  assert.equal(lookChecks(theme, L)[0].level, 'error');   // dark ink on the theme's panel
+  L = ss4(nl4(), 'cyd', 'stop', { ink: 'bright' }, r);
+  assert.deepEqual(lookChecks(theme, L), []);
+  L = ss4(nl4(), 'cyd', 'wordmark', { ink: 'panel', fill: 'panel' }, r);
+  assert.deepEqual(lookChecks(theme, L), [], 'the wordmark is not checked');
+});
+test('lookChecks: one animated picture per board moves on the device, within an area', () => {
+  const pic = (w, h, n) => ({ w, h, delays: new Array(n).fill(100), frames: new Array(n).fill(new Uint8ClampedArray(w * h * 4)) });
+  const media = { pictures: { spin: pic(20, 20, 3), still: pic(20, 20, 1) } };
+  let L = ad4(nl4(), 'cyd', 'spin', { x: 0, y: 60, w: 50, h: 50 }).L;
+  assert.deepEqual(lookChecks({ colors: {} }, L, media), []);
+  L = ad4(L, 'cyd', 'spin', { x: 60, y: 60, w: 50, h: 50 }).L;
+  L = ad4(L, 'cyd', 'still', { x: 120, y: 60, w: 50, h: 50 }).L;
+  let c = lookChecks({ colors: {} }, L, media);
+  assert.equal(c.length, 1); assert.equal(c[0].level, 'warn'); assert.match(c[0].text, /decor\.1.*first frame/);
+  L = ad4(nl4(), 'cyd', 'spin', { x: 0, y: 60, w: 120, h: 100 }).L;
+  c = lookChecks({ colors: {} }, L, media);
+  assert.equal(c[0].level, 'warn'); assert.match(c[0].text, /too large to move/);
+});
+test('lookChecks: STOP\'s fill must read under its red and amber labels, and every must-read fill under BRIGHT', () => {
+  const theme = { colors: { void: '#000000', panel: '#202020', text: '#E0E0E0', bright: '#FFFFFF', red: '#FF0000', amber: '#FFA500' } };
+  const r = { x: 0, y: 0, w: 44, h: 44 };
+  let c = lookChecks(theme, ss4(nl4(), 'waveshare', 'stop', { ink: '#FFFFFF', fill: '#FF0000' }, r));
+  assert.equal(c.length, 1); assert.match(c[0].text, /stop.*red/);
+  assert.deepEqual(lookChecks(theme, ss4(nl4(), 'waveshare', 'stop', { fill: '#000000' }, r)), []);
+  c = lookChecks({ colors: { ...theme.colors, bright: '#202020' } }, ss4(nl4(), 'cyd', 'nav.scan', { fill: 'panel' }, r));
+  assert.equal(c.length, 1); assert.match(c[0].text, /nav\.scan.*bright/);
+});

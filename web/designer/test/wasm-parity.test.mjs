@@ -407,7 +407,7 @@ test('pack clip: the CYD preview never shows it, and a bad clip is refused with 
   const shown = wsWasm(id, 'scan', 5, -1, -1, 2);
   const dir = packWithClip(good);
   const flip = (i, v) => { const x = Uint8Array.from(good); x[i] = v; return x; };
-  for (const [why, bytes, word] of [['wrong magic', flip(0, 0), 'UVRV'], ['wrong size', flip(5, 64), '102'], ['fps 0', flip(7, 0), 'fps'], ['truncated', good.slice(0, good.length - 1), 'length'], ['over-size', new Uint8Array(780313), 'over']]) {
+  for (const [why, bytes, word] of [['wrong magic', flip(0, 0), 'UVRV'], ['not square', flip(5, 64), 'square'], ['fps 0', flip(7, 0), 'fps'], ['truncated', good.slice(0, good.length - 1), 'length'], ['over-size', new Uint8Array(780313), 'over']]) {
     const rc = loadWithClip(dir, bytes);
     assert.equal(rc, -6, why);
     assert.match(err(), new RegExp(word), why);
@@ -434,4 +434,236 @@ test('colour clip: wasm equals the host engine, shows its own colours, and diffe
   const b = wsWasm(id2, 'scan', 3, -1, -1, 2);
   assert.notEqual(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0, 'the palette changes the picture');
   M._uv_clear_packs();
+});
+
+// ---- Plan 3: the layout rules and layout.json through the bridge (the device's own themelayout code) ----
+const PIECES = ['menu', 'wordmark', 'status.gps', 'status.nodes', 'status.power', 'bridge', 'sd', 'nav.scan', 'nav.domain',
+  'nav.codex', 'nav.poi', 'stop', 'count.wifi', 'count.5g', 'count.ble', 'radar', 'spectrum', 'channel', 'badge'];
+
+test('layout: piece names, defaults and the verdict come from the device code', async () => {
+  const { createPreview } = await import('../js/preview.js');
+  const P = createPreview(M);
+  assert.deepEqual(P.pieceNames(), PIECES);
+  assert.deepEqual(P.defaultRect('waveshare', 'stop'), { x: 384, y: 276, w: 96, h: 44 });
+  assert.deepEqual(P.defaultRect('cyd', 'radar'), { x: 151, y: 52, w: 115, h: 115 });
+  const ok = JSON.stringify({ format: 1, waveshare: { wordmark: 'hidden' }, cyd: { wordmark: 'hidden' } });
+  assert.deepEqual(P.checkLayout(ok), { ok: true });
+  const bad = P.checkLayout('{"format":1,"cyd":{"menu":"hidden"}}');
+  assert.equal(bad.ok, false);
+  assert.match(bad.why, /menu cannot be hidden/);
+  assert.match(P.checkLayout('{"format":1,').why, /layout\.json/);
+});
+
+test('layout: a pack with layout.json draws in wasm exactly as the simulator draws it', () => {
+  const dir = path.join(tmp, `layout-pack-${simN++}`, 'lay');
+  fs.mkdirSync(dir, { recursive: true });
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  fs.writeFileSync(path.join(dir, 'theme.json'), json);
+  const layout = Buffer.from(JSON.stringify({ format: 1, waveshare: { stop: [288, 276, 96, 44], 'nav.poi': [384, 276, 96, 44], wordmark: 'hidden' } }));
+  fs.writeFileSync(path.join(dir, 'layout.json'), layout);
+  M._uv_clear_packs();
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(layout), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.ok(id >= 0, M.UTF8ToString(M._uv_error()));
+  for (const frame of [0, 24]) {
+    const out = path.join(tmp, `w${simN++}.rgba`);
+    run(WS_SIM, [String(id), String(WS_SCREEN.scan), String(frame), '-1', '-1', '2', out, '--pack', dir]);
+    wsSame(`layout pack scan frame ${frame}`, wsWasm(id, 'scan', frame, -1, -1, 2), new Uint8Array(fs.readFileSync(out)));
+  }
+  // and the layout really moved STOP: the wasm frame differs from the same pack without it
+  const withLayout = wsWasm(id, 'scan', 24, -1, -1, 2);
+  M._uv_clear_packs();
+  const plain = withBytes(new Uint8Array(json), (jp, jl) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, 0, 0));
+  assert.notDeepEqual(wsWasm(plain, 'scan', 24, -1, -1, 2), withLayout);
+});
+
+test('layout: a refused layout.json refuses the draft with the reason, keeping the last good one', () => {
+  M._uv_clear_packs();
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  const bad = Buffer.from('{"format":1,"cyd":{"stop":"hidden"}}');
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(bad), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.equal(id, -7);
+  assert.match(M.UTF8ToString(M._uv_error()), /layout\.json: stop cannot be hidden/);
+});
+
+// ---- Plan 3 Task 2: the engine UI at 320x240 (the CYD engine build), for the Layout step's CYD tab ----
+const CYD_W = 320, CYD_H = 240;
+function engWasm(theme, screen, frame, conf = 2) {
+  const n = CYD_W * CYD_H * 4;
+  const ptr = M._malloc(n);
+  try {
+    M._uv_render_engine(theme, WS_SCREEN[screen], frame, -1, -1, conf, CYD_W, CYD_H, ptr);
+    return M.HEAPU8.slice(ptr, ptr + n);
+  } finally { M._free(ptr); }
+}
+function engSim(theme, screen, frame, packDir = null, conf = 2) {
+  const out = path.join(tmp, `e${simN++}.rgba`);
+  const args = [String(theme), String(WS_SCREEN[screen]), String(frame), '-1', '-1', String(conf), out, '--size', '320x240'];
+  if (packDir) args.push('--pack', packDir);
+  run(WS_SIM, args);
+  const b = fs.readFileSync(out);
+  assert.equal(b.length, CYD_W * CYD_H * 4);
+  return new Uint8Array(b);
+}
+function engSame(name, a, b) {
+  if (Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0) return;
+  let px = 0;
+  for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) px++;
+  assert.fail(`${name}: ${px} of ${CYD_W * CYD_H} pixels differ`);
+}
+
+test('engine 320x240: every built-in theme draws as the simulator draws it', () => {
+  M._uv_clear_packs();
+  for (let t = 0; t < BUILTIN_COUNT; t++)
+    for (const screen of ['scan', 'menu'])
+      for (const frame of [0, 24]) engSame(`engine 320x240 theme ${t} ${screen} ${frame}`, engWasm(t, screen, frame), engSim(t, screen, frame));
+});
+
+test('engine 320x240: a CYD layout shows in the 320x240 preview', () => {
+  const dir = path.join(tmp, `cyd-layout-${simN++}`, 'lay');
+  fs.mkdirSync(dir, { recursive: true });
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  fs.writeFileSync(path.join(dir, 'theme.json'), json);
+  const layout = Buffer.from(JSON.stringify({ format: 1, cyd: { wordmark: 'hidden', sd: 'hidden' } }));
+  fs.writeFileSync(path.join(dir, 'layout.json'), layout);
+  M._uv_clear_packs();
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(layout), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.ok(id >= 0, M.UTF8ToString(M._uv_error()));
+  const withLayout = engWasm(id, 'scan', 24);
+  engSame('cyd layout pack', withLayout, engSim(id, 'scan', 24, dir));
+  M._uv_clear_packs();
+  const plain = withBytes(new Uint8Array(json), (jp, jl) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, 0, 0));
+  assert.notDeepEqual(engWasm(plain, 'scan', 24), withLayout);
+});
+
+test('engine 320x240: the preview wrapper draws the cyd-engine board', async () => {
+  const { createPreview } = await import('../js/preview.js');
+  const P = createPreview(M);
+  assert.ok(P.hasEngine());
+  M._uv_clear_packs();
+  engSame('wrapper cyd-engine', P.renderBuiltin(0, 'scan', 24, { board: 'cyd-engine' }), engWasm(0, 'scan', 24));
+});
+
+// ---- Plan 3 Task 3: every starting layout, and drafts of them, pass the device's own rules ----
+test('layout presets pass the device rules on both boards; drafts of them are checked too', async () => {
+  const { createPreview } = await import('../js/preview.js');
+  const { PRESETS, presetJson } = await import('../js/layout-presets.js');
+  const { fromJson, draftOther, toJson } = await import('../js/layout.js');
+  const P = createPreview(M);
+  const rules = { names: P.pieceNames(), defaultRect: (b, n) => P.defaultRect(b, n) };
+  assert.ok(PRESETS.length >= 5);
+  const draftVerdicts = [];
+  for (const p of PRESETS) {
+    const text = presetJson(p);
+    if (!text) continue;
+    const v = P.checkLayout(text);
+    assert.equal(v.ok, true, `${p.id}: ${v.why}`);
+    for (const [from, to] of [['waveshare', 'cyd'], ['cyd', 'waveshare']]) {
+      const drafted = draftOther(fromJson(text), from, to, rules);
+      const d = P.checkLayout(toJson(drafted, rules.names));
+      draftVerdicts.push(`${p.id} ${from}->${to}: ${d.ok ? 'ok' : d.why}`);
+    }
+  }
+  // Presets carry both boards, so they never rely on drafting; drafting them is a regression check of the drafting rule.
+  // Radar-left packs the spectrum against the tiles on the smaller screen: a known case the author fixes on that tab.
+  assert.deepEqual(draftVerdicts.filter((v) => !v.endsWith(': ok') && !v.startsWith('radar-left ')), [], 'presets draft onto the other board');
+});
+
+// ---- pack fonts and pictures (plan 4) -----------------------------------------
+// The same bytes as sim/fontfix.h and sim/artfix.h (h=8 font; 4x4 picture, 2 frames).
+function fixtureFont() {
+  const head = [0x55, 0x56, 0x46, 0x4e, 1, 8, 7, 32, 95, 0, 0, 0];
+  const A = [0x70, 0x88, 0x88, 0xf8, 0x88, 0x88, 0x88, 0x00];
+  const table = [], bits = [];
+  for (let i = 0; i < 95; i++) {
+    const c = String.fromCharCode(32 + i);
+    const off = bits.length;
+    if (c === 'A') { table.push(6, 5, off & 0xff, off >> 8); bits.push(...A); }
+    else table.push(c === ' ' ? 3 : 4, 0, off & 0xff, off >> 8);
+  }
+  return Uint8Array.from([...head, ...table, ...bits]);
+}
+function fixtureArt(w, h, frames) {
+  const d = [0x55, 0x56, 0x41, 0x52, 1, 1, w & 0xff, w >> 8, h & 0xff, h >> 8, frames & 0xff, frames >> 8, 4, 0, 0, 0];
+  for (const c of [0x0000, 0xf800, 0x07e0, 0x001f]) d.push(c & 0xff, c >> 8);
+  for (let f = 0; f < frames; f++) { const ms = 100 * (f + 1); d.push(ms & 0xff, ms >> 8); }
+  for (let f = 0; f < frames; f++) {
+    const px = new Array(Math.ceil(w * h / 2)).fill(0);
+    for (let i = 0; i < w * h; i++) {
+      const x = i % w, y = Math.floor(i / w), v = x === 0 ? 0 : ((x + y + f) % 3) + 1;
+      px[i >> 1] |= (i & 1) ? v : v << 4;
+    }
+    d.push(...px);
+  }
+  return Uint8Array.from(d);
+}
+
+test('uv_load_media takes the draft\'s fonts and pictures, and refuses bad ones with a reason', () => {
+  M._uv_clear_packs();
+  const id = loadFixture(PACKS[0]);
+  assert.equal(id, BUILTIN_COUNT);
+  const err = () => M.UTF8ToString(M._uv_error());
+  const media = (kind, slot, bytes) => withBytes(bytes, (p, l) => M._uv_load_media(id, kind, slot, p, l));
+  assert.equal(media(0, 0, fixtureFont()), 0, err());
+  assert.equal(media(1, 15, fixtureArt(4, 4, 2)), 0, err());
+  const bad = fixtureFont(); bad[4] = 9;
+  assert.equal(media(0, 1, bad), -8);
+  assert.match(err(), /f1: .*version/);
+  assert.equal(media(1, 0, Uint8Array.from([1, 2, 3])), -8);
+  assert.match(err(), /a0: /);
+  assert.equal(media(0, 8, fixtureFont()), -1, 'f8 is not a slot');
+  assert.equal(media(1, 16, fixtureArt(4, 4, 1)), -1, 'a16 is not a slot');
+  assert.equal(withBytes(fixtureFont(), (p, l) => M._uv_load_media(999, 0, 0, p, l)), -1, 'no such theme');
+});
+
+test('styles: a pack with fonts, a background and decor draws in wasm exactly as the simulator draws it, on both boards', () => {
+  const dir = path.join(tmp, `styled-${simN++}`, 'sty');
+  fs.mkdirSync(dir, { recursive: true });
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  fs.writeFileSync(path.join(dir, 'theme.json'), json);
+  const layout = Buffer.from(JSON.stringify({ format: 1,
+    waveshare: { wordmark: { rect: [44, 0, 164, 44], fill: '#ff00ff', font: 'f0' }, style: { bg: 'a0' }, 'decor.0': { rect: [200, 120, 30, 30], art: 'a2' } },
+    cyd: { style: { bg: 'a1', title: 'f0' } } }));
+  fs.writeFileSync(path.join(dir, 'layout.json'), layout);
+  const media = { f0: fixtureFont(), a0: fixtureArt(480, 320, 1), a1: fixtureArt(320, 240, 1), a2: fixtureArt(30, 30, 2) };
+  for (const [n, b] of Object.entries(media)) fs.writeFileSync(path.join(dir, n + (n[0] === 'f' ? '.fnt' : '.art')), b);
+  M._uv_clear_packs();
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(layout), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.ok(id >= 0, M.UTF8ToString(M._uv_error()));
+  const bare = { ws: wsWasm(id, 'scan', 24, -1, -1, 2), cyd: engWasm(id, 'scan', 24) };
+  for (const [n, b] of Object.entries(media))
+    assert.equal(withBytes(b, (p, l) => M._uv_load_media(id, n[0] === 'f' ? 0 : 1, Number(n.slice(1)), p, l)), 0, M.UTF8ToString(M._uv_error()));
+  for (const frame of [0, 24]) {
+    const out = path.join(tmp, `w${simN++}.rgba`);
+    run(WS_SIM, [String(id), String(WS_SCREEN.scan), String(frame), '-1', '-1', '2', out, '--pack', dir]);
+    wsSame(`styled pack waveshare frame ${frame}`, wsWasm(id, 'scan', frame, -1, -1, 2), new Uint8Array(fs.readFileSync(out)));
+    engSame(`styled pack cyd frame ${frame}`, engWasm(id, 'scan', frame), engSim(id, 'scan', frame, dir));
+  }
+  // not vacuous: the media changed both boards' pictures
+  assert.notDeepEqual(wsWasm(id, 'scan', 24, -1, -1, 2), bare.ws);
+  assert.notDeepEqual(engWasm(id, 'scan', 24), bare.cyd);
+});
+
+test('uv_font_check accepts every built-in font the designer ships and refuses a damaged one', async () => {
+  const { parseBdf, encodeFont } = await import('../js/fontfmt.js');
+  const dir = path.join(ROOT, 'web/designer/fonts');
+  const check = (b) => withBytes(b, (p, l) => M._uv_font_check(p, l));
+  for (const n of fs.readdirSync(dir).filter((f) => f.endsWith('.bdf'))) {
+    const bin = encodeFont(parseBdf(fs.readFileSync(path.join(dir, n), 'latin1')));
+    assert.equal(check(bin), 1, `${n}: ${M.UTF8ToString(M._uv_error())}`);
+  }
+  const bad = encodeFont(parseBdf(fs.readFileSync(path.join(dir, 'spleen-8x16.bdf'), 'latin1'))).slice(0, 200);
+  assert.equal(check(bad), 0);
+  assert.match(M.UTF8ToString(M._uv_error()), /truncated|past the end/);
+  assert.equal(withBytes(fixtureArt(4, 4, 2), (p, l) => M._uv_art_check(p, l)), 1);
+  assert.equal(withBytes(Uint8Array.from([1, 2]), (p, l) => M._uv_art_check(p, l)), 0);
+});
+
+test('uv_art_check: the device accepts every picture the designer makes (decor, CYD background, frame, animated, transparent)', async () => {
+  const { imageToArt, artToBin } = await import('../js/artfmt.js');
+  const src = new Uint8ClampedArray(64 * 48 * 4).map((_, i) => (i % 4 === 3 ? (i % 7 ? 255 : 0) : (i * 37) & 255));
+  for (const [w, h, frames, transparent] of [[37, 61, 1, false], [320, 240, 1, false], [12, 12, 1, true], [30, 30, 5, true]]) {
+    const a = imageToArt(new Array(frames).fill(src), 64, 48, { w, h, transparent, delays: [80, 90, 100, 110, 120] });
+    const ok = withBytes(artToBin(a), (p, l) => M._uv_art_check(p, l));
+    assert.equal(ok, 1, `${w}x${h}x${frames}: ${M.UTF8ToString(M._uv_error())}`);
+  }
 });

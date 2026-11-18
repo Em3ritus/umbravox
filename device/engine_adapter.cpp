@@ -442,7 +442,9 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     switch (cur_) {
         case uinav::Screen::Scan:
             if (s.alertActive) ctx.matchKey = kAlert;
-            ctx.alertTakeover = (W_ >= 400 && alertShown(s)) ? (s.alertConf == ui::CONF_HIGH ? 2 : 1) : 0;   // an alert on screen: a tap clears it
+            ctx.alertTakeover = alertShown(s) ? (s.alertConf == ui::CONF_HIGH ? 2 : 1) : 0;   // an alert on screen: a tap clears it
+            if (ctx.alertTakeover == 1)                                    // a theme's LOW/MED card (plan 5a) is the dismiss target
+                if (const uieng::AlertCard* c = scanr::alertCard(W_, s.alertConf)) if (c->r.w > 0) ctx.alertRect = c->r;
             h = uieng::scanHits(W_, H_, ctx);
             break;
         case uinav::Screen::Domain:

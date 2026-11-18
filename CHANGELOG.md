@@ -6,6 +6,17 @@ history is in git and the release notes.
 ## Unreleased
 
 ### Added
+- **Theme layouts (first part of the full UI overhaul).** A pack may carry `layout.json`, which moves, resizes or
+  hides the header and footer pieces and Scan's count tiles on the engine screens; every engine screen draws in the
+  space they leave, and taps follow the pieces. A layout that breaks a rule (a piece off screen or under 44 px, a
+  control hidden, pieces overlapping, too little room) is skipped on its own and logged; the theme still loads.
+  The theme designer's new **Layout** step edits it on the live screen: drag, resize, hide, board tabs with the
+  other board drafted, starting layouts, and the device's own rules as checks; a radar video is saved at the placed
+  radar size. Sharing a theme with a layout opens with the next community-repository update. Scan's radar, spectrum, channel readout and badge
+  are pieces too, and the radar can be any square size up to today's: rings for radii without a baked table are
+  generated on the device with integer arithmetic (identical to the baked tables where both exist), and
+  `radar.vid` may be any square from 24 to 102 pixels. Built-in themes draw exactly as before
+  (`sim/test_engine_pixels` fingerprints all 220 built-in engine renders).
 - **Sharing a theme (designer side; the gallery is not live yet).** The designer's Share button saves the pack zip
   and opens a pre-filled submission form on the themes repository; a designer address ending in `?theme=<folder>`
   opens that gallery theme, fetching only a listed theme's four pack files within their size limits.

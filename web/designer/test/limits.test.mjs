@@ -17,7 +17,19 @@ test('numeric limits equal the constexprs in ui/themepack.h', () => {
     assert.equal(limits[k], Number(m[1]), k);
   }
   assert.equal(limits.MAX_FOLDERS_EXAMINED, Number(/constexpr\s+int\s+BAD_MAX\s*=\s*(\d+)/.exec(header)[1]));
+  assert.equal(limits.MAX_LAYOUT_JSON, Number(/constexpr\s+size_t\s+MAX_JSON\s*=\s*(\d+)/.exec(read('ui/themelayout.h'))[1]), 'MAX_LAYOUT_JSON');
   assert.equal(limits.MIN_EDGE_CONTRAST_X10, Number(/MIN_EDGE_CONTRAST_X10\s*=\s*(\d+)/.exec(read('ui/contrast.h'))[1]));
+});
+
+test('the font and picture limits equal ui/fontpack.h, ui/artpack.h, ui/packassets.h and ui/layout_engine.h', () => {
+  const num = (file, k) => Number(new RegExp('\\b' + k + '\\s*=\\s*(\\d+)').exec(read(file))[1]);
+  assert.equal(limits.MAX_FONT, num('ui/fontpack.h', 'MAX_FONT'));
+  assert.equal(limits.MAX_ART, num('ui/artpack.h', 'MAX_ART'));
+  assert.equal(limits.MAX_ART_TOTAL, num('ui/artpack.h', 'MAX_ART_TOTAL'));
+  assert.equal(limits.MAX_ART_FRAMES, num('ui/artpack.h', 'MAX_ART_FRAMES'));
+  assert.equal(limits.MAX_FONTS, num('ui/packassets.h', 'MAX_FONTS'));
+  assert.equal(limits.MAX_ARTS, num('ui/packassets.h', 'MAX_ARTS'));
+  assert.equal(limits.MAX_DECOR, num('ui/layout_engine.h', 'MAX_DECOR'));
 });
 
 test('the radar clip limits equal ui/themepack.h (MAX_CLIP is built from three constants)', () => {
@@ -41,9 +53,9 @@ test('folder rule matches folderNameOk', () => {
   for (const bad of ['', '.', '..', 'a b', 'x'.repeat(32), 'a/b', 'é']) assert.ok(!re.test(bad), bad);
 });
 
-test('limitation texts: 19 entries, each with id, text and where', () => {
+test('limitation texts: 20 entries, each with id, text and where', () => {
   const entries = Object.entries(limits.limitations);
-  assert.equal(entries.length, 19);
+  assert.equal(entries.length, 20);
   for (const [k, v] of entries) {
     assert.equal(v.id, k);
     assert.ok(typeof v.text === 'string' && v.text.length > 20 && v.text.length < 400, k);

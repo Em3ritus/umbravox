@@ -211,7 +211,7 @@ import { clipFile as _clipFile, buildClip as _buildClip, CLIP_SIZE as _SZ } from
     const bad = mk(2); bad[5] = 64;
     const r = openPackFiles([{ name: 'p/theme.json', data: tjson() }, { name: 'p/radar.vid', data: bad }]);
     assert.equal(r.ok, true); assert.equal(r.clip, null);
-    assert.ok(r.warnings.some((w) => /radar\.vid/.test(w) && /102/.test(w)), r.warnings.join('|'));
+    assert.ok(r.warnings.some((w) => /radar\.vid/.test(w) && /square/.test(w)), r.warnings.join('|'));
   });
 
   test('selectPackFiles reads radar.vid only from the theme.json folder, and not when it is over the limit', () => {
@@ -234,4 +234,24 @@ test('art switches: heptagram and contacts parse as on/off, default on, bad valu
   assert.equal(r.theme.heptagram, 'on'); assert.equal(r.theme.contacts, 'on');
   assert.ok(r.warnings.some((w) => /heptagram/.test(w)) && r.warnings.some((w) => /contacts/.test(w)));
   assert.equal(blankTheme().heptagram, 'on'); assert.equal(blankTheme().contacts, 'on');
+});
+
+test('openPackFiles keeps a layout\'s fonts and pictures (f0..f7.fnt, a0..a15.art), decoding pictures back to pixels', async () => {
+  const { openPackFiles: open4 } = await import('../js/model.js');
+  const { imageToArt, artToBin } = await import('../js/artfmt.js');
+  const theme = JSON.stringify({ format: 1, name: 'MEDIA PACK', dial: 'compact', centrepiece: 'heptagram', sweeps: ['radar'], alert: 'ward' });
+  const px = new Uint8ClampedArray(4 * 4 * 4).map((_, i) => (i % 4 === 3 ? 255 : 200));
+  const art = artToBin(imageToArt([px, px], 4, 4, { w: 4, h: 4, delays: [100, 150] }));
+  const { encodeFont } = await import('../js/fontfmt.js');
+  const fnt = encodeFont({ h: 8, ascent: 7, glyphs: Array.from({ length: 95 }, (_, i) => ({ code: 32 + i, adv: 4, w: 0, rows: new Array(8).fill(0) })) });
+  const enc = (s) => new TextEncoder().encode(s);
+  const r = open4([{ name: 'p/theme.json', data: enc(theme) }, { name: 'p/layout.json', data: enc('{"format":1}') },
+    { name: 'p/a3.art', data: art }, { name: 'p/f1.fnt', data: fnt }, { name: 'p/a99.art', data: art }, { name: 'p/a4.art', data: new Uint8Array([1, 2]) }]);
+  assert.ok(r.ok, r.error);
+  assert.deepEqual(Object.keys(r.media.fonts), ['file:f1']);
+  assert.deepEqual(Object.keys(r.media.pictures), ['file:a3']);
+  const p = r.media.pictures['file:a3'];
+  assert.equal(p.w, 4); assert.equal(p.frames.length, 2); assert.deepEqual(p.delays, [100, 150]);
+  assert.equal(p.frames[0].length, 4 * 4 * 4);
+  assert.ok(r.warnings.some((w) => /a4\.art/.test(w)), 'an unreadable picture is a warning');
 });

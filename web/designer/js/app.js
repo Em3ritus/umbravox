@@ -4,7 +4,7 @@
 // go in through textContent.
 import limits from './limits.json' with { type: 'json' };
 import { ROLES, isHex, fromAccent } from './palette.js';
-import { runChecks } from './checks.js';
+import { runChecks, lookChecks } from './checks.js';
 import { buildPack, folderName } from './pack.js';
 import { makeZip } from './zip.js';
 import { imageToEmblem } from './emblem.js';
@@ -22,9 +22,17 @@ import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSecond
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 import { shareUrl, renameWarning, THEMES_SITE } from './share.js';
 import { themeParam, fetchGalleryTheme } from './gallery.js';
+import { newLayout, setPiece, showPiece, isEmpty, fromJson, rectOf, draftOther, withDrafts, SCREEN, setStyle, setBoardStyle, addDecor, decorNames, isDecor } from './layout.js';
+import { packMedia } from './layoutmedia.js';
+import { encodeFont, rasteriseFont } from './fontfmt.js';
+import { grabGifArt } from './artfmt.js';
+import { toDevice, pickPiece, handleAt, dragTo, nudge } from './layout-edit.js';
+import { PRESETS, presetJson } from './layout-presets.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '' };
+const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), tab: 'scan', view: 'start', card: null, lastPack: null, board: 'cyd', conf: 'high', basedOn: '', basedOnName: '',
+  layout: newLayout(), lboard: 'waveshare', lsel: null, presetId: 'standard', lvisited: new Set(),
+  media: { fonts: {}, pictures: {} }, mediaVersion: 0, lscreen: 'scan' };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
@@ -42,7 +50,7 @@ const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
 // ---------------------------------------------------------------- views
 function installBlock() {
   if (!state.theme) return 'Choose a template first.';
-  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds);
+  const g = installGate(currentTheme(), state.emblem, state.clip, state.sounds, layoutText(), preview ? (t) => preview.checkLayout(t) : null);
   return g.ok ? null : g.reason;
 }
 function show(view) {
@@ -59,9 +67,11 @@ function show(view) {
   for (const b of document.querySelectorAll('.step')) {
     if (b.dataset.view === view) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     if (b.dataset.view === 'design') b.disabled = !state.theme;
+    if (b.dataset.view === 'layout') b.disabled = !state.theme || !preview || !preview.hasEngine();
     if (b.dataset.view === 'install') { const why = installBlock(); b.disabled = !!why; b.title = why || ''; }
   }
   if (view === 'install') enterInstall();
+  if (view === 'layout') enterLayout();
 }
 for (const b of document.querySelectorAll('.step')) b.addEventListener('click', () => show(b.dataset.view));
 
@@ -105,6 +115,11 @@ $('btn-blank').addEventListener('click', () => begin(blankTheme(), null));
 function begin(theme, emblem, clip = null, sounds = null, from = null) {
   state.basedOn = from ? from.folder : ''; state.basedOnName = from ? from.name : '';
   state.theme = theme; state.emblem = emblem; state.clip = clip; state.sounds = sounds || emptySounds(); state.card = null;
+  state.media = { fonts: {}, pictures: {} }; state.mediaVersion++;
+  const preset = PRESETS.find((p) => p.id === state.presetId);
+  state.layout = preset && preset.layout ? fromJson(presetJson(preset)) : newLayout();
+  state.layout.raw = null;   // a preset is a starting point, not an opened file
+  state.lsel = null; state.lvisited = new Set();
   $('open-msg').textContent = '';
   for (const k of LEVELS) sndSrc[k] = null;
   vidSrc = null; vidFile = null;
@@ -141,6 +156,8 @@ async function openThese(descs) {
     const r = openPackFiles(read);
     if (!r.ok) { msg.className = 'msg err'; msg.textContent = r.error; return; }
     begin(r.theme, r.emblem, r.clip, r.sounds);
+    state.media = r.media || { fonts: {}, pictures: {} }; state.mediaVersion++;
+    adoptLayout(r.layout);
     if (r.warnings.length) { const m = $('action-msg'); m.className = 'msg warn'; m.textContent = 'Opened with changes: ' + r.warnings.join(' '); }
   } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not read those files: ' + e.message; }
 }
@@ -300,6 +317,17 @@ function refreshChecks() {
   checksNow = runChecks(t, state.emblem, state.clip, state.sounds);
   const rename = renameWarning(t.name, state.basedOnName);
   if (rename) checksNow.push({ level: 'warn', text: rename });
+  for (const e of layoutPacked().errors) checksNow.push({ level: 'error', text: 'Layout: ' + e });
+  checksNow.push(...lookChecks(t, state.layout, state.media));
+  const lt = layoutText();
+  if (lt && preview) {
+    const v = preview.checkLayout(lt);
+    checksNow.push(v.ok ? { level: 'ok', text: 'Layout: the device accepts it on both boards.' } : { level: 'error', text: 'Layout: ' + v.why.replace(/^layout\.json: /, '') });
+    // The Layout step says it too: the board picture there keeps the last layout the device accepted.
+    const lm = $('layout-msg');
+    if (!v.ok) { lm.className = 'msg err'; lm.textContent = 'The device would refuse this layout: ' + v.why.replace(/^layout\.json: /, '') + '. The picture shows the last layout it accepted.'; }
+    else if (lm.className === 'msg err') { lm.className = 'msg'; lm.textContent = ''; }
+  } else if ($('layout-msg').className === 'msg err') { $('layout-msg').className = 'msg'; $('layout-msg').textContent = ''; }
   const ul = $('checks'); clear(ul);
   for (const c of checksNow) {
     ul.append(el('li', { class: c.level }, el('span', { class: 'g', text: c.level === 'ok' ? 'v' : c.level === 'warn' ? '!' : 'x' }), el('span', { text: c.text })));
@@ -311,7 +339,7 @@ function refreshChecks() {
 }
 function refresh() {
   if (!preview || !state.theme) return;
-  const r = preview.loadDraft(currentTheme(), state.emblem, state.clip);
+  const r = preview.loadDraft(currentTheme(), state.emblem, state.clip, layoutText(), previewMedia());
   const m = $('preview-msg');
   if (r.ok) { m.className = 'msg'; m.textContent = ''; }
   else { m.className = 'msg warn'; m.textContent = 'The preview shows the last version the device would accept. This one is rejected: ' + r.error; }
@@ -457,15 +485,16 @@ $('vid-clear').addEventListener('click', () => {
 let t0 = performance.now(), lastDraw = 0;
 function tick(now) {
   requestAnimationFrame(tick);
-  if (!preview || !preview.hasDraft() || state.view !== 'design' || document.hidden || now - lastDraw < 40) return;
+  if (!preview || !preview.hasDraft() || (state.view !== 'design' && state.view !== 'layout') || document.hidden || now - lastDraw < 40) return;
   lastDraw = now;
   const ms = now - t0;
+  if (state.view === 'layout') { paintLayout(Math.floor(ms / 20)); return; }
   const frame = state.tab === 'alert' ? Math.floor((ms % 2500) / 20) : Math.floor(ms / 20);
   paint($('preview'), preview.renderDraft(state.tab, frame, { board: previewBoard(), alertConf: state.conf }), previewBoard());
 }
 
 // ---------------------------------------------------------------- build + download
-function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip, state.sounds); }
+function currentPack() { return buildPack(currentTheme(), state.emblem, state.clip, state.sounds, layoutText(), layoutPacked().files); }
 // Save the pack as <folder>.zip through a temporary link. -> the folder name.
 function saveZip(pack) {
   const folder = pack.files[0].path.split('/')[0];
@@ -477,6 +506,7 @@ function saveZip(pack) {
 }
 function download() {
   const m = $('action-msg');
+  if (checksNow.some((c) => c.level === 'error')) { m.className = 'msg err'; m.textContent = 'Fix the errors in the checks first.'; return; }
   try {
     const folder = saveZip(currentPack());
     m.className = 'msg';
@@ -490,6 +520,11 @@ $('btn-zip2').addEventListener('click', download);
 $('btn-share').addEventListener('click', () => {
   if (checksNow.some((c) => c.level === 'error')) return;
   const m = $('action-msg');
+  if (layoutText()) {   // the community repository accepts layout.json from its next update (plan 6)
+    m.className = 'msg warn';
+    m.textContent = 'Sharing a theme with a layout is not open yet: the community themes repository accepts layouts from its next update. Download the pack and install it yourself for now, or set the layout back to Standard to share.';
+    return;
+  }
   try {
     const folder = saveZip(currentPack());
     window.open(shareUrl(currentTheme(), state.basedOn), '_blank', 'noopener');
@@ -724,8 +759,280 @@ async function openFromGallery() {
   const r = openPackFiles(got.files);
   if (!r.ok) { msg.className = 'msg err'; msg.textContent = 'The gallery theme could not be opened: ' + r.error; return; }
   begin(r.theme, r.emblem, r.clip, r.sounds, { folder, name: String(got.entry.name || r.theme.name) });
+  state.media = r.media || { fonts: {}, pictures: {} }; state.mediaVersion++;
+  adoptLayout(r.layout);
   const m = $('action-msg'); m.className = r.warnings.length ? 'msg warn' : 'msg';
   m.textContent = 'Opened ' + r.theme.name + ' from the gallery.' + (r.warnings.length ? ' Opened with changes: ' + r.warnings.join(' ') : '');
+}
+
+// ---------------------------------------------------------------- the Layout step
+// The model is js/layout.js, the pointer maths js/layout-edit.js, the rules the device's own (preview.pieceNames,
+// defaultRect, checkLayout). This only wires them to the page.
+let layoutRules = null;
+function rules() {
+  if (!layoutRules) layoutRules = { names: preview.pieceNames(), defaultRect: (b, n) => preview.defaultRect(b, n) };
+  return layoutRules;
+}
+// The layout.json the pack carries: with a board the author never opened drafted from the other (withDrafts).
+// The layout.json the pack carries, with its fonts and pictures as pack files (js/layoutmedia.js), worked out once per
+// edit: a board the author never opened is drafted from the other (withDrafts).
+let packedMemo = null;
+function layoutPacked() {
+  const none = { json: null, files: [], errors: [] };
+  if (!preview) return none;
+  const key = [state.layout, state.lvisited.size, state.mediaVersion];
+  if (packedMemo && packedMemo.key.every((v, i) => v === key[i])) return packedMemo.out;
+  const L = withDrafts(state.layout, rules(), state.lvisited);
+  let out = none;
+  if (!isEmpty(L)) {
+    if (L.raw) {   // an opened file, untouched: it goes as it is, with the fonts and pictures that came with it
+      const files = [];
+      for (const [k, v] of Object.entries(state.media.fonts)) if (k.startsWith('file:')) files.push({ name: k.slice(5) + '.fnt', data: v });
+      for (const [k, v] of Object.entries(state.media.rawArt || {})) files.push({ name: k + '.art', data: v });
+      out = { json: L.raw, files, errors: [] };
+    } else out = packMedia(L, rules().names, state.media);
+  }
+  packedMemo = { key, out };
+  return out;
+}
+function layoutText() { return layoutPacked().json; }
+function previewMedia() {
+  const m = { fonts: {}, arts: {} };
+  for (const f of layoutPacked().files) (f.name.endsWith('.fnt') ? m.fonts : m.arts)[f.name.slice(0, -4)] = f.data;
+  return m;
+}
+const engineBoard = (b) => (b === 'waveshare' ? 'waveshare' : 'cyd-engine');
+function boardRects(board) {
+  const out = {};
+  for (const n of rules().names) out[n] = rectOf(state.layout, board, n, rules());
+  for (const n of decorNames(state.layout, board)) out[n] = state.layout.boards[board][n].rect;
+  return out;
+}
+function layoutChanged() { changed(); syncLayout(); }
+// An opened pack's layout.json: kept even when the device would refuse it, so the author can fix it in the Layout step
+// (the checks show why, and Download, Install and Share stay closed until it passes).
+// Opened and gallery packs never take the Start page's preset: they have their own layout.json, or none.
+function adoptLayout(text) {
+  state.layout = newLayout(); state.lsel = null; state.lvisited = new Set();
+  if (text) {
+    const m = $('action-msg');
+    try {
+      state.layout = fromJson(text, preview ? rules().names : null);
+      if (state.layout.dropped.length) { m.className = 'msg warn'; m.textContent = 'layout.json: ' + state.layout.dropped.join('; ') + '. The Layout step shows the rest; any edit saves a fresh file without these.'; }
+    } catch (e) { m.className = 'msg warn'; m.textContent = e.message + ', so the layout was left out.'; }
+  }
+  layoutChanged();
+}
+function enterLayout() { selectBoard(state.lboard); }
+function selectBoard(b) {
+  // The first visit to a board the author has not touched, while the other is laid out: draft it from that one.
+  const L = state.layout;
+  if (L.master && L.master !== b && Object.keys(L.boards[b]).length === 0) {
+    state.layout = draftOther(L, L.master, b, rules());
+    $('layout-msg').className = 'msg'; $('layout-msg').textContent = 'Drafted from the other board. Check it, and drag anything that needs it.';
+    changed();
+  } else { $('layout-msg').textContent = ''; }
+  state.lboard = b; state.lsel = null; state.lvisited.add(b);
+  for (const t of document.querySelectorAll('[data-lb]')) t.setAttribute('aria-selected', String(t.dataset.lb === b));
+  $('layout-cyd-note').hidden = b !== 'cyd';
+  syncLayout();
+}
+for (const t of document.querySelectorAll('[data-lb]')) t.addEventListener('click', () => selectBoard(t.dataset.lb));
+function syncLayout() {
+  if (!preview) return;
+  const sel = state.lsel, r = sel ? rectOf(state.layout, state.lboard, sel, rules()) : null;
+  $('layout-piece').textContent = sel ? sel : 'No piece selected';
+  for (const k of ['x', 'y', 'w', 'h']) { const i = $('layout-' + k); i.disabled = !r; i.value = r ? r[k] : ''; }
+  $('layout-hide').disabled = !r; $('layout-reset').disabled = !sel || isDecor(sel);
+  $('layout-hide').textContent = sel && isDecor(sel) ? 'Remove' : 'Hide';
+  syncLook();
+  const tray = $('layout-tray'); clear(tray);
+  for (const n of rules().names) {
+    const p = state.layout.boards[state.lboard][n];
+    if (!p || !p.hidden) continue;
+    const b = el('button', { type: 'button', text: n });
+    b.addEventListener('click', () => { state.layout = showPiece(state.layout, state.lboard, n); state.lsel = n; layoutChanged(); });
+    tray.append(b);
+  }
+}
+// ---------------------------------------------------------------- the look: fonts, colours and pictures (plan 4)
+let builtinFonts = [];   // fonts/index.json (tools/bdf2fnt.mjs): [{id, name, px, licence, file}]
+fetch('fonts/index.json').then((r) => (r.ok ? r.json() : [])).then((j) => { builtinFonts = Array.isArray(j) ? j : []; syncLook(); }).catch(() => {});
+let uploads = 0;
+const lookMsg = (text, warn = false) => { const m = $('lf-msg'); m.className = warn ? 'msg warn' : 'tiny muted'; m.textContent = text; };
+function fillSelect(sel, opts, value) {
+  const v = value ?? '';
+  if (sel.options.length !== opts.length || [...sel.options].some((o, i) => o.value !== opts[i][0])) {
+    clear(sel);
+    for (const [val, text] of opts) sel.append(el('option', { value: val, text }));
+  }
+  sel.value = opts.some((o) => o[0] === v) ? v : '';
+}
+function fontOptions() {
+  const o = [['', 'The built-in 5x7']];
+  for (const f of builtinFonts) o.push([f.id, `${f.name} (${f.px} px)`]);
+  for (const k of Object.keys(state.media.fonts)) if (!builtinFonts.some((f) => f.id === k)) o.push([k, k.replace(/^upload:|^file:/, '')]);
+  return o;
+}
+const roleOptions = () => [['', "The theme's own"], ...ROLES.map((r) => [r, r])];
+function syncLook() {
+  if (!preview) return;
+  const sel = state.lsel, p = sel ? state.layout.boards[state.lboard][sel] : null;
+  const showLook = !!(sel && !isDecor(sel) && !(p && p.hidden));
+  $('layout-look').hidden = !showLook;
+  const st = (p && p.style) || {};
+  fillSelect($('ls-font'), fontOptions(), st.font);
+  $('ls-scale').value = st.scale ? String(st.scale) : '';
+  for (const k of ['ink', 'fill', 'edge']) {
+    fillSelect($('ls-' + k), roleOptions(), isHex(st[k]) ? '' : st[k]);
+    if (isHex(st[k])) $('ls-' + k + '-hex').value = st[k].toLowerCase();
+  }
+  if (st.slice) $('ls-slice').value = st.slice[0];
+  const bs = state.layout.style[state.lboard] || {};
+  fillSelect($('lb-title'), fontOptions(), bs.title); fillSelect($('lb-body'), fontOptions(), bs.body); fillSelect($('lb-numbers'), fontOptions(), bs.numbers);
+  fillSelect($('lb-hifill'), roleOptions(), bs.highlight?.fill); fillSelect($('lb-hiedge'), roleOptions(), bs.highlight?.edge);
+  if (bs.panelSlice) $('lb-slice').value = bs.panelSlice[0];
+  $('lb-screen').value = state.lscreen;
+}
+// A built-in font's .fnt is fetched the first time it is chosen.
+async function useFont(key) {
+  if (!key || state.media.fonts[key]) return;
+  const f = builtinFonts.find((x) => x.id === key);
+  if (!f) return;
+  const r = await fetch('fonts/' + f.file);
+  if (!r.ok) throw new Error('could not load the font ' + f.name);
+  state.media.fonts[key] = new Uint8Array(await r.arrayBuffer()); state.mediaVersion++;
+}
+// A PNG or GIF at its own size (at most 480x320), as RGBA frames with their delays.
+async function readPicture(file) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, 480 / bmp.width, 320 / bmp.height);
+  const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+  if (isGifFile(file)) { bmp.close(); const g = await grabGifArt(file, { w, h }); return { w, h, frames: g.frames, delays: g.delays }; }
+  const cv = new OffscreenCanvas(w, h), ctx = cv.getContext('2d');
+  ctx.drawImage(bmp, 0, 0, w, h); bmp.close();
+  return { w, h, frames: [Uint8ClampedArray.from(ctx.getImageData(0, 0, w, h).data)], delays: [0] };
+}
+async function addPicture(file) {
+  const key = `pic:${++uploads}:${file.name}`;
+  state.media.pictures[key] = await readPicture(file); state.mediaVersion++;
+  return key;
+}
+function styleSel(patch) {
+  const n = state.lsel;
+  if (!n || isDecor(n)) return;
+  state.layout = setStyle(state.layout, state.lboard, n, patch, rectOf(state.layout, state.lboard, n, rules())); layoutChanged();
+}
+const boardStyle = (patch) => { state.layout = setBoardStyle(state.layout, state.lboard, patch); layoutChanged(); };
+const filePick = (id, fn) => $(id).addEventListener('change', async (e) => {
+  const files = [...e.target.files]; e.target.value = '';
+  if (!files.length) return;
+  try { await fn(files); } catch (x) { lookMsg(x.message || String(x), true); }
+});
+$('ls-font').addEventListener('change', async (e) => { try { await useFont(e.target.value); styleSel({ font: e.target.value }); } catch (x) { lookMsg(x.message, true); } });
+$('ls-scale').addEventListener('change', (e) => styleSel({ scale: e.target.value ? Number(e.target.value) : null }));
+for (const k of ['ink', 'fill', 'edge']) {
+  $('ls-' + k).addEventListener('change', (e) => styleSel({ [k]: e.target.value || null }));
+  $('ls-' + k + '-hex').addEventListener('change', (e) => styleSel({ [k]: e.target.value.toUpperCase() }));
+}
+const border = (id) => { const b = Math.max(0, Math.min(60, Math.round(Number($(id).value) || 0))); return [b, b, b, b]; };
+filePick('ls-frame', async ([f]) => styleSel({ frame: await addPicture(f), slice: border('ls-slice') }));
+$('ls-slice').addEventListener('change', () => { const st = state.lsel && state.layout.boards[state.lboard][state.lsel]?.style; if (st && st.frame) styleSel({ slice: border('ls-slice') }); });
+filePick('ls-bg', async ([f]) => styleSel({ bg: await addPicture(f) }));
+$('ls-clear').addEventListener('click', () => styleSel({ font: null, scale: null, ink: null, fill: null, edge: null, frame: null, slice: null, bg: null }));
+filePick('lf-file', async ([f]) => {
+  const px = Math.max(6, Math.min(32, Math.round(Number($('lf-px').value) || 12)));
+  const face = new FontFace('uv-upload-' + (++uploads), await f.arrayBuffer());
+  const key = `upload:${f.name}@${px}`;
+  state.media.fonts[key] = encodeFont(await rasteriseFont(face, px)); state.mediaVersion++;
+  syncLook(); lookMsg(`${f.name} at ${px} px is in the font lists. Only share fonts you have the right to share.`);
+});
+filePick('ld-file', async ([f]) => {
+  const key = await addPicture(f), src = state.media.pictures[key], S = SCREEN[state.lboard];
+  const k = Math.min(1, 120 / src.w, 120 / src.h), w = Math.max(1, Math.round(src.w * k)), h = Math.max(1, Math.round(src.h * k));
+  const r = addDecor(state.layout, state.lboard, key, { x: Math.round((S.w - w) / 2), y: Math.round((S.h - h) / 2), w, h });
+  state.layout = r.L; state.lsel = r.name; layoutChanged();
+});
+for (const [id, k] of [['lb-title', 'title'], ['lb-body', 'body'], ['lb-numbers', 'numbers']])
+  $(id).addEventListener('change', async (e) => { try { await useFont(e.target.value); boardStyle({ [k]: e.target.value || null }); } catch (x) { lookMsg(x.message, true); } });
+for (const [id, k] of [['lb-hifill', 'fill'], ['lb-hiedge', 'edge']]) $(id).addEventListener('change', (e) => {
+  const h = { ...(state.layout.style[state.lboard].highlight || {}) };
+  if (e.target.value) h[k] = e.target.value; else delete h[k];
+  boardStyle({ highlight: Object.keys(h).length ? h : null });
+});
+filePick('lb-bg', async ([f]) => boardStyle({ bg: await addPicture(f) }));
+filePick('lb-panel', async ([f]) => boardStyle({ panel: await addPicture(f), panelSlice: border('lb-slice') }));
+$('lb-slice').addEventListener('change', () => { if (state.layout.style[state.lboard].panel) boardStyle({ panelSlice: border('lb-slice') }); });
+filePick('lb-icons', async (files) => { const keys = []; for (const f of files.slice(0, 6)) keys.push(await addPicture(f)); boardStyle({ icons: keys }); });
+$('lb-screen').addEventListener('change', (e) => { state.lscreen = e.target.value; });
+$('lb-clear').addEventListener('click', () => boardStyle({ title: null, body: null, numbers: null, bg: null, panel: null, panelSlice: null, highlight: null, icons: null }));
+
+for (const k of ['x', 'y', 'w', 'h']) $('layout-' + k).addEventListener('change', () => {
+  const n = state.lsel; if (!n) return;
+  const r = { ...rectOf(state.layout, state.lboard, n, rules()) };
+  r[k] = Math.round(Number($('layout-' + k).value) || 0);
+  state.layout = setPiece(state.layout, state.lboard, n, r); layoutChanged();
+});
+$('layout-hide').addEventListener('click', () => { if (!state.lsel) return; state.layout = setPiece(state.layout, state.lboard, state.lsel, 'hidden'); state.lsel = null; layoutChanged(); });
+$('layout-reset').addEventListener('click', () => { if (!state.lsel) return; state.layout = setPiece(state.layout, state.lboard, state.lsel, null); layoutChanged(); });
+
+let drag = null;   // {name, mode, start, rect}
+const canvasL = $('layout-canvas');
+function devicePoint(e) { const S = SCREEN[state.lboard]; return toDevice(e.clientX, e.clientY, canvasL.getBoundingClientRect(), S.w, S.h); }
+canvasL.addEventListener('pointerdown', (e) => {
+  if (!preview) return;
+  const p = devicePoint(e), rects = boardRects(state.lboard);
+  const selRect = state.lsel ? rects[state.lsel] : null;
+  const corner = selRect ? handleAt(selRect, p.x, p.y, 8) : null;
+  const name = corner ? state.lsel : pickPiece(rects, p.x, p.y);
+  state.lsel = name;
+  drag = name ? { name, mode: corner || 'move', start: p, rect: rects[name] } : null;
+  if (drag) canvasL.setPointerCapture(e.pointerId);
+  canvasL.focus(); syncLayout();
+});
+canvasL.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const r = dragTo(drag.rect, drag.start, devicePoint(e), drag.mode, SCREEN[state.lboard], { square: drag.name === 'radar' });
+  state.layout = setPiece(state.layout, state.lboard, drag.name, r);
+  changed(); syncLayout();
+});
+canvasL.addEventListener('pointerup', (e) => { if (drag) { drag = null; canvasL.releasePointerCapture(e.pointerId); layoutChanged(); } });
+canvasL.addEventListener('keydown', (e) => {
+  if (!state.lsel) return;
+  const r0 = rectOf(state.layout, state.lboard, state.lsel, rules());
+  const r = r0 && nudge(r0, e.key, e.shiftKey);
+  if (!r) return;
+  e.preventDefault();
+  state.layout = setPiece(state.layout, state.lboard, state.lsel, r); layoutChanged();
+});
+// The board's own frame (the device code through wasm), then outlines, the selection and its corner handles.
+function paintLayout(frame) {
+  const b = state.lboard, pb = engineBoard(b);
+  paint(canvasL, preview.renderDraft(state.lscreen, frame, { board: pb }), pb);
+  if (state.lscreen !== 'scan') return;   // the other screens: their style shows, the pieces are edited on Scan
+  const ctx = canvasL.getContext('2d'), rects = boardRects(b);
+  ctx.lineWidth = 1;
+  for (const [n, r] of Object.entries(rects)) {
+    if (!r || r.w <= 0) continue;
+    ctx.strokeStyle = n === state.lsel ? '#ff4fcf' : 'rgba(180,150,255,.35)';
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    if (state.layout.adjusted[b].includes(n)) { ctx.fillStyle = '#ffd04a'; ctx.fillRect(r.x + r.w - 5, r.y + 1, 4, 4); }
+  }
+  const s = state.lsel && rects[state.lsel];
+  if (s) { ctx.fillStyle = '#ff4fcf'; for (const [x, y] of [[s.x, s.y], [s.x + s.w, s.y], [s.x, s.y + s.h], [s.x + s.w, s.y + s.h]]) ctx.fillRect(x - 3, y - 3, 6, 6); }
+}
+function buildPresets() {
+  const host = $('layout-presets'); clear(host);
+  for (const p of PRESETS) {
+    const b = el('button', { type: 'button', role: 'radio', title: p.description, text: p.name });
+    b.setAttribute('aria-checked', String(p.id === state.presetId));
+    b.addEventListener('click', () => {
+      state.presetId = p.id;
+      for (const c of host.children) c.setAttribute('aria-checked', String(c === b));
+      if (state.theme) { state.layout = p.layout ? fromJson(presetJson(p)) : newLayout(); state.lsel = null; layoutChanged(); }
+    });
+    host.append(b);
+  }
 }
 
 async function boot() {
@@ -736,6 +1043,7 @@ async function boot() {
   catch (e) { preview = null; $('open-msg').textContent = ''; console.warn('preview unavailable', e); }
   recallBoard(); syncTabs();
   buildStart();
+  buildPresets();
   $('gallery-link').href = THEMES_SITE;
   await openFromGallery();
   if (preview && state.theme) refresh();

@@ -97,3 +97,14 @@ test('art switches: written only when off, after centrepiece, and the real parse
   const r = checkPack(writePack(buildPack(both, null)));
   assert.equal(r.status, 0, r.out);
 });
+
+test('buildPack carries the layout\'s font and picture files beside layout.json', () => {
+  const t = theme();
+  const media = [{ name: 'f0.fnt', data: new Uint8Array([1, 2]) }, { name: 'a0.art', data: new Uint8Array([3]) }];
+  const p = buildPack(t, null, null, null, '{"format":1}', media);
+  const names = p.files.map((f) => f.path.split('/')[1]);
+  assert.ok(names.includes('f0.fnt') && names.includes('a0.art') && names.includes('layout.json'));
+  assert.equal(p.bytes, p.files.reduce((n, f) => n + f.data.length, 0));
+  assert.throws(() => buildPack(t, null, null, null, '{"format":1}', [{ name: 'evil/../x.fnt', data: new Uint8Array(1) }]), /media file name/);
+  assert.equal(buildPack(t, null, null, null, null, []).files.some((f) => f.path.endsWith('.fnt')), false);
+});

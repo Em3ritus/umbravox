@@ -24,6 +24,7 @@ constexpr size_t MAX_PACK = 65536;
 constexpr int MAX_EMBLEM_DIM = 96;
 constexpr int MAX_EMBLEM_COLORS = 16;
 constexpr int N_COLORS = 20;
+extern const char* const ROLE_KEYS[N_COLORS];   // theme.json "colors" keys, indexed by Role
 
 // radar.vid, the optional third file: a looping clip for the wide radar. 'U','V','R','V', version 1, w, h, fps,
 // frames (u16 LE), two reserved zero bytes, then `frames` frames of 4-bit grey (two pixels per byte, high nibble
@@ -35,6 +36,10 @@ constexpr int    CLIP_W = 102, CLIP_H = 102, CLIP_HDR = 12, MAX_CLIP_FRAMES = 15
 constexpr size_t CLIP_FRAME_BYTES = (CLIP_W * CLIP_H + 1) / 2;                       // 5202
 constexpr size_t MAX_CLIP = CLIP_HDR + (size_t)MAX_CLIP_FRAMES * CLIP_FRAME_BYTES;   // 780312
 constexpr int    CLIP_PAL_BYTES = 32;     // version 2: 16 RGB565 colours (little-endian) between the header and the frames
+// Any square size from CLIP_MIN to CLIP_W is accepted (a theme layout may make the radar smaller; the clip is made at
+// the placed radius and drawn 2x). Older firmware accepts only 102x102 and leaves any other clip out.
+constexpr int    CLIP_MIN = 24;
+inline constexpr size_t clipFrameBytes(int side) { return ((size_t)side * (size_t)side + 1) / 2; }
 constexpr int    MAX_CLIPS = 2;     // HOST loader (sim/packload.h, the designer preview) only. The device holds ONE clip, read when its theme is selected
 
 enum Dial { DIAL_COMPACT, DIAL_LARGE };

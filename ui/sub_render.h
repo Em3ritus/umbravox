@@ -19,7 +19,7 @@ namespace subr {
 // A framed [-]/[+] stepper button (a >=44px touch target), live or dimmed.
 inline void stepBtn(scanr::S& s, const uieng::Rect& r, const char* glyph, bool live) {
     using scanr::box; using scanr::frame; using scanr::centered;
-    box(s, r.x, r.y + 1, r.w, r.h - 2, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
+    scanr::panelFill(s, {r.x, r.y + 1, r.w, r.h - 2}, ui::Canvas::mix(pal::PANEL, pal::VOID, 1, 3));
     frame(s, r.x, r.y + 1, r.w, r.h - 2, live ? pal::EDGE_LIT : pal::EDGE);
     centered(s, r.x + r.w / 2, r.y + r.h / 2 - 5, glyph, 2, live ? pal::WITCH_HI : pal::DIM);
 }

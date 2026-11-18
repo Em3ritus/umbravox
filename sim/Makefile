@@ -4,7 +4,7 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 
 BIN = umbravox
-SRC = ../ui/oui.cpp main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp
+SRC = ../ui/oui.cpp main_sim.cpp ../ui/palette.cpp ../ui/canvas.cpp ../ui/gnss.cpp ../ui/nav.cpp ../ui/screen_codex.cpp ../ui/screen_attune.cpp ../ui/screen_detail.cpp ../ui/screen_mesh.cpp ../ui/screen_domain.cpp ../ui/screen_omens.cpp ../ui/screen_echoes.cpp ../ui/screen_grimoire.cpp ../ui/signatures.cpp ../ui/wifi_auth.cpp ../ui/demo.cpp ../ui/font5x7.cpp ../ui/runes.cpp ../ui/screen_scan.cpp ../ui/seal.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/themepack.cpp ../ui/sweep.cpp ../ui/screen_aspect.cpp ../ui/screen_files.cpp ../ui/files.cpp ../ui/prevstate.cpp ../ui/framediff.cpp ../ui/draw.cpp ../ui/portrait_chrome.cpp ../ui/portrait_scan.cpp ../ui/portrait_screens.cpp ../ui/themelayout.cpp ../ui/fontpack.cpp ../ui/artpack.cpp ../ui/packassets.cpp
 # nav.cpp reaches every screen, and the screens share chrome and name tables,
 # so this links the same sources as the simulator (minus its main) rather than
 # a hand-picked subset that breaks each time a screen grows a dependency.
@@ -31,14 +31,14 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console snd_check bench_draw *.png
+	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console snd_check bench_draw bench_art *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
 # being built is a test that stops failing, and nobody notices.
 # palette.cpp reaches themepack.cpp (sanitizeStatus) and muffinseal.cpp
 # (muffinEmblem), which reaches motif.cpp (drawEmblem), so any rule linking it links those too.
-PAL_DEPS = ../ui/palette.cpp ../ui/themepack.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/canvas.cpp ../ui/font5x7.cpp
+PAL_DEPS = ../ui/palette.cpp ../ui/themepack.cpp ../ui/muffinseal.cpp ../ui/motif.cpp ../ui/canvas.cpp ../ui/font5x7.cpp ../ui/fontpack.cpp ../ui/artpack.cpp ../ui/packassets.cpp
 UI_CORE = ../ui/runes.cpp $(PAL_DEPS)
 
 test_chanplan: test_chanplan.cpp ../device/chanplan.h ../device/mesh.h ../ui/model.h
@@ -81,10 +81,16 @@ test_ble_ad: test_ble_ad.cpp ../device/ble_ad.h
 
 # theme.json is read off an SD card anyone can write to: sanitizers, as above.
 test_radarclip: test_radarclip.cpp packload.h $(ENGINE_HDR) ../ui/radar_clip.h ../ui/themepack.cpp ../ui/themepack.h ../ui/palette.cpp ../ui/palette.h $(PAL_DEPS)
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_radarclip.cpp $(PAL_DEPS) -lm
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_radarclip.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
 
 test_themepack: test_themepack.cpp ../ui/themepack.cpp ../ui/themepack.h ../ui/model.h ../ui/palette.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themepack.cpp ../ui/themepack.cpp -lm
+
+test_fontpack: test_fontpack.cpp fontfix.h ../ui/fontpack.cpp ../ui/fontpack.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_fontpack.cpp ../ui/fontpack.cpp -lm
+
+test_themelayout: test_themelayout.cpp ../ui/themelayout.cpp ../ui/themelayout.h ../ui/layout_engine.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themelayout.cpp ../ui/themelayout.cpp ../ui/themepack.cpp -lm
 
 test_elog: test_elog.cpp ../device/elog.h
 	$(CXX) $(CXXFLAGS) -o $@ test_elog.cpp -lm
@@ -225,11 +231,44 @@ ENGINE_HDR = ../ui/muffin.h ../ui/muffin_packed.inc ../ui/crew_art.h ../ui/domai
              ../ui/files_render.h ../ui/files_present.h \
              ../ui/router.h ../ui/project.h ../ui/gnss.h ../ui/model.h
 
+test_layout_override: test_layout_override.cpp ../ui/layout_engine.h ../ui/themelayout.h ../ui/themelayout.cpp oracle_hits.inc
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_layout_override.cpp ../ui/themelayout.cpp ../ui/themepack.cpp -lm
+
+test_engine_pixels: test_engine_pixels.cpp $(wildcard engine_pixels.inc) $(wildcard *_fixture.h) $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_engine_pixels.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+
+test_layout_pack: test_layout_pack.cpp packload.h fontfix.h artfix.h ../ui/themelayout.h ../ui/themelayout.cpp ../ui/layout_engine.h $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_layout_pack.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+
+test_ring_gen: test_ring_gen.cpp ../ui/ring_gen.h ../ui/radar_geometry.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_ring_gen.cpp -lm
+
 test_layout_engine: test_layout_engine.cpp ../ui/layout_engine.h oracle_hits.inc
 	$(CXX) $(CXXFLAGS) -o $@ test_layout_engine.cpp -lm
 
 test_scan_present: test_scan_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ test_scan_present.cpp $(PAL_DEPS) -lm
+
+test_art_draw: test_art_draw.cpp packload.h scan_fixture.h artfix.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/artpack.cpp ../ui/artpack.h ../ui/themelayout.h ../ui/themelayout.cpp
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_art_draw.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+test_artpack: test_artpack.cpp artfix.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/artpack.cpp ../ui/artpack.h
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_artpack.cpp $(PAL_DEPS) -lm
+
+test_packassets: test_packassets.cpp fontfix.h artfix.h ../ui/packassets.h ../ui/packassets.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_packassets.cpp $(PAL_DEPS) -lm
+
+test_style_render: test_style_render.cpp packload.h scan_fixture.h fontfix.h artfix.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_style_render.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+
+# Art draw-time benchmark (not part of `test`): bench_art PACK_DIR, the pack from tools/stress-pack.mjs.
+bench_art: bench_art.cpp packload.h scan_fixture.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ bench_art.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+
+test_screen_style: test_screen_style.cpp packload.h $(wildcard *_fixture.h) fontfix.h artfix.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_screen_style.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+
+test_text_font: test_text_font.cpp fontfix.h $(ENGINE_HDR) $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_text_font.cpp $(PAL_DEPS) -lm
 
 test_scan_render: test_scan_render.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ test_scan_render.cpp $(PAL_DEPS) -lm
@@ -355,7 +394,7 @@ test_bundled_themes: test_bundled_themes.cpp $(HDR) $(PAL_DEPS)
 test_node_queue: test_node_queue.cpp ../device/node_queue.h ../device/mesh.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_node_queue.cpp
 
-TESTS = test_art_switches test_cosmic_clip test_cvlt_clip test_packmedia test_soundpack test_alert_tone test_radarclip test_radar_video test_scan_fx test_alert_takeover test_alert_gate test_sweep_styles test_theme_art test_scan_layout test_radar_window test_sweep_tail test_mesh_timing_queue test_node_queue test_bundled_themes test_ws28_touch test_clean_radar test_oui_registry test_alert_history test_storage_paths test_settings_controls test_display_controls test_evidence_csv test_probe_ui test_probe_evidence test_client_ui test_clients test_gpx test_mesh_telemetry test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_discoverypolicy test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
+TESTS = test_fontpack test_screen_style test_style_render test_packassets test_art_draw test_artpack test_text_font test_art_switches test_cosmic_clip test_cvlt_clip test_packmedia test_soundpack test_alert_tone test_radarclip test_radar_video test_scan_fx test_alert_takeover test_alert_gate test_sweep_styles test_theme_art test_scan_layout test_radar_window test_sweep_tail test_mesh_timing_queue test_node_queue test_bundled_themes test_ws28_touch test_clean_radar test_oui_registry test_alert_history test_storage_paths test_settings_controls test_display_controls test_evidence_csv test_probe_ui test_probe_evidence test_client_ui test_clients test_gpx test_mesh_telemetry test_pcap test_ap_info test_active_discovery test_poi test_header test_ble_bridge test_sight_order test_scan_latency test_input_presentation test_canvas test_portrait test_touchmap test_files test_sdcmd test_dedup test_twinbudget test_meshlive test_blerecycle test_discoverypolicy test_applog test_wiglerow test_plotproj test_footer test_chanplan test_gnss test_gpshint test_signatures test_wifi_auth test_settings test_nav test_csv test_wigle test_logging test_mesh test_phase test_cluster test_rehome test_ble_ad test_themepack test_themelayout test_elog test_palette test_muffin test_motif test_sweep test_enrollwin test_autolog test_idlemode test_perflog test_trig test_contrast test_pack_parity test_layout_engine test_layout_override test_engine_pixels test_layout_pack test_ring_gen test_scan_present test_scan_render test_scan_engine test_domain_present test_domain_render test_domain_engine test_codex_present test_codex_render test_codex_engine test_menu_present test_menu_render test_menu_engine test_mesh_present test_mesh_render test_mesh_engine test_omens_present test_omens_render test_omens_engine test_echoes_present test_echoes_render test_echoes_engine test_attune_present test_attune_render test_attune_engine test_aspect_present test_aspect_render test_aspect_engine test_detail_present test_detail_render test_detail_engine test_files_present test_files_render test_files_engine test_router test_project
 
 # The committed cosmic-clone emblem must be what the converter makes of ui/muffin.h.
 emblem-check:
@@ -436,6 +475,9 @@ test_input_presentation: test_input_presentation.cpp ../device/i2c_budget.h ../u
 # Exact raster parity and animated-field restoration at both native profiles.
 test_scan_latency: test_scan_latency.cpp scan_fixture.h ../ui/frame_present.h $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_scan_latency.cpp $(PAL_DEPS) -lm
+
+bench_radar: bench_radar.cpp scan_fixture.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ bench_radar.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
 
 bench_scan: bench_scan.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ bench_scan.cpp $(PAL_DEPS) -lm
@@ -554,5 +596,5 @@ test_sweep_styles: test_sweep_styles.cpp scan_fixture.h $(ENGINE_HDR) ../ui/fram
 test_alert_gate: test_alert_gate.cpp ../ui/alert_gate.h
 	$(CXX) $(CXXFLAGS) -o $@ test_alert_gate.cpp -lm
 
-test_alert_takeover: test_alert_takeover.cpp scan_fixture.h $(ENGINE_HDR) ../ui/frame_present.h $(PAL_DEPS)
-	$(CXX) $(CXXFLAGS) -o $@ test_alert_takeover.cpp $(PAL_DEPS) -lm
+test_alert_takeover: test_alert_takeover.cpp scan_fixture.h fontfix.h artfix.h $(ENGINE_HDR) ../ui/frame_present.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ test_alert_takeover.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm

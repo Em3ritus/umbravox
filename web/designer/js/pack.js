@@ -2,7 +2,7 @@
 import limits from './limits.json' with { type: 'json' };
 import { ROLES, isHex, describe } from './palette.js';
 import { emblemToBin } from './emblem.js';
-import { clipFile } from './radarvideo.js';
+import { clipFile, resizeClip, CLIP_SIZE } from './radarvideo.js';
 import { soundFile, hasSounds } from './alertsound.js';
 
 // Strings are never escaped: the device rejects escapes, so refuse instead.
@@ -36,6 +36,15 @@ export function themeJson(t) {
   return '{\n' + lines.join(',\n') + '\n}\n';
 }
 
+// The clip at the Waveshare radar's placed radius (the layout's radar box is 2r+5 square), so the board fills the disc
+// without scaling; the CYD draws no clip. No layout, or the built-in radar size: the clip as it is.
+function clipForLayout(clip, layout) {
+  if (!layout) return clip;
+  let r = null;
+  try { const box = JSON.parse(layout).waveshare?.radar; if (Array.isArray(box)) r = Math.floor((box[2] - 5) / 2); } catch (e) { return clip; }
+  return r && r < CLIP_SIZE && r >= 24 ? resizeClip(clip, r) : clip;
+}
+
 // A folder name the device accepts, derived from the theme name.
 export function folderName(name) {
   const f = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 31).replace(/-+$/, '');
@@ -43,15 +52,21 @@ export function folderName(name) {
 }
 
 // clip: an optional radar clip (js/radarvideo.js buildClip), written as radar.vid. sounds: optional alert sounds
-// ({low, med, high}, js/alertsound.js), written as alert.snd.
-export function buildPack(theme, emblem, clip = null, sounds = null) {
+// ({low, med, high}, js/alertsound.js), written as alert.snd. layout: optional layout.json text (js/layout.js toJson).
+// media: the layout's font and picture files, [{ name: 'f0.fnt' | 'a3.art', data }] (js/layoutmedia.js packMedia).
+export function buildPack(theme, emblem, clip = null, sounds = null, layout = null, media = []) {
   const dir = folderName(theme.name);
   const files = [{ path: dir + '/theme.json', data: new TextEncoder().encode(themeJson(theme)) }];
   if (theme.centrepiece === 'emblem') {
     if (!emblem) throw new Error('the emblem centrepiece needs a picture');
     files.push({ path: dir + '/emblem.bin', data: emblemToBin(emblem) });
   }
-  if (clip) files.push({ path: dir + '/radar.vid', data: clipFile(clip) });
+  if (clip) files.push({ path: dir + '/radar.vid', data: clipFile(clipForLayout(clip, layout)) });
   if (hasSounds(sounds)) files.push({ path: dir + '/alert.snd', data: soundFile(sounds) });
+  for (const m of media || []) {
+    if (!/^(f[0-7]\.fnt|a([0-9]|1[0-5])\.art)$/.test(m.name)) throw new Error('bad media file name: ' + m.name);
+    files.push({ path: dir + '/' + m.name, data: m.data });
+  }
+  if (layout) files.push({ path: dir + '/layout.json', data: new TextEncoder().encode(layout) });
   return { files, bytes: files.reduce((n, f) => n + f.data.length, 0) };
 }

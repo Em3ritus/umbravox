@@ -75,7 +75,7 @@ test('radar.vid round-trips, and a damaged file is refused with a reason', () =>
   const bad = (mut) => { const x = Uint8Array.from(f); mut(x); return x; };
   assert.throws(() => readClipFile(bad(x => { x[0] = 0; })), /UVRV/);
   assert.throws(() => readClipFile(bad(x => { x[4] = 3; })), /version/);
-  assert.throws(() => readClipFile(bad(x => { x[5] = 64; })), /102/);
+  assert.throws(() => readClipFile(bad(x => { x[5] = 64; })), /square/);
   assert.throws(() => readClipFile(bad(x => { x[7] = 31; })), /fps/);
   assert.throws(() => readClipFile(bad(x => { x[8] = 0; x[9] = 0; })), /frames/);
   assert.throws(() => readClipFile(bad(x => { x[10] = 1; })), /reserved/);
