@@ -403,7 +403,7 @@ void applyKnobStep(Settings& st, int knob, int dir) {
         case 11: st.nodeDwellMs = (uint16_t)(dir<0?(st.nodeDwellMs<=110?100:st.nodeDwellMs-10):(st.nodeDwellMs>=590?600:st.nodeDwellMs+10)); break;
         case 7: flipOrient(st); break;                     // ORIENT
         case 14: st.sound = (uint16_t)(dir < 0 ? (st.sound > 0 ? st.sound - 1 : 0) : (st.sound < 3 ? st.sound + 1 : 3)); break;   // ALERT SOUND
-        case 15: st.alertRepeat = (uint16_t)(dir < 0 ? (st.alertRepeat > 0 ? st.alertRepeat - 1 : 0) : (st.alertRepeat < 3 ? st.alertRepeat + 1 : 3)); break;   // ALERT REPEAT
+        case 15: st.alertRepeat = (uint16_t)((st.alertRepeat % 4 + (dir < 0 ? 3 : 1)) % 4); break;   // ALERT REPEAT: wraps both ways
         default: adjust(st, knob, dir); break;             // 0..5 map 1:1 to adjust()
     }
 }

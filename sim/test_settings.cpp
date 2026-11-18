@@ -105,8 +105,9 @@ int main() {
             r.alertRepeat = 9; clampSettings(r); check("ALERT REPEAT junk clamps to 10 MIN", r.alertRepeat == 1);
             r.alertRepeat = 3; clampSettings(r); check("ALERT REPEAT keeps UNTIL REBOOT", r.alertRepeat == 3);
             Settings k; applyKnobStep(k, 15, 1); applyKnobStep(k, 15, 1); check("knob 15 steps up to 3", k.alertRepeat == 3);
-            applyKnobStep(k, 15, 1); check("knob 15 stops at 3", k.alertRepeat == 3);
-            Settings j; applyKnobStep(j, 15, -1); applyKnobStep(j, 15, -1); check("knob 15 stops at 0", j.alertRepeat == 0);
+            applyKnobStep(k, 15, 1); check("knob 15 wraps UNTIL REBOOT -> 1 MIN", k.alertRepeat == 0);
+            applyKnobStep(k, 15, -1); check("knob 15 wraps 1 MIN -> UNTIL REBOOT", k.alertRepeat == 3);
+            Settings j; applyKnobStep(j, 15, -1); check("knob 15 steps down to 0", j.alertRepeat == 0);
             Settings a2, b2; b2.alertRepeat = 2; check("settingsEqual sees ALERT REPEAT", !settingsEqual(a2, b2)); }
 
         int missed = 0;
