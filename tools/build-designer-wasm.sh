@@ -50,7 +50,7 @@ SRC="$SRC $ROOT/web/designer/wasm/bridge.cpp"
 
 # The exported C surface, and the two runtime helpers the JS side needs
 # (HEAPU8 to move bytes in and out, UTF8ToString for uv_error()).
-EXPORTS='_uv_load_pack,_uv_clear_packs,_uv_theme_count,_uv_render,_uv_render_ws,_uv_render_engine,_uv_ws_width,_uv_ws_height,_uv_width,_uv_height,_uv_error,_uv_piece_count,_uv_piece_name,_uv_layout_default,_uv_layout_check,_uv_load_media,_malloc,_free'
+EXPORTS='_uv_load_pack,_uv_clear_packs,_uv_theme_count,_uv_render,_uv_render_ws,_uv_render_engine,_uv_ws_width,_uv_ws_height,_uv_width,_uv_height,_uv_error,_uv_piece_count,_uv_piece_name,_uv_layout_default,_uv_layout_check,_uv_load_media,_uv_font_check,_uv_art_check,_malloc,_free'
 
 exec make -s --no-print-directory -f - \
     ROOT="$ROOT" SRC="$SRC" EXPORTS="$EXPORTS" <<'MAKEFILE'

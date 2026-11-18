@@ -222,6 +222,20 @@ EMSCRIPTEN_KEEPALIVE int uv_load_media(int theme, int kind, int slot, const unsi
     return 0;
 }
 
+// 1 when the device would accept these bytes as a pack font (.fnt) or picture (.art); 0 with the reason in uv_error().
+EMSCRIPTEN_KEEPALIVE int uv_font_check(const unsigned char* data, int len) {
+    g_err[0] = 0;
+    fontpack::Font f; const char* why = "";
+    if (!data || len <= 0 || !fontpack::parse(data, (size_t)len, f, &why)) { fail(0, "%s", why[0] ? why : "empty file"); return 0; }
+    return 1;
+}
+EMSCRIPTEN_KEEPALIVE int uv_art_check(const unsigned char* data, int len) {
+    g_err[0] = 0;
+    artpack::Art a; const char* why = "";
+    if (!data || len <= 0 || !artpack::parse(data, (size_t)len, a, &why)) { fail(0, "%s", why[0] ? why : "empty file"); return 0; }
+    return 1;
+}
+
 // The layout rules, for the designer's Layout step: the device's own names, defaults and verdict.
 EMSCRIPTEN_KEEPALIVE int uv_piece_count() { return themelayout::P_N; }
 EMSCRIPTEN_KEEPALIVE const char* uv_piece_name(int i) { return (i >= 0 && i < themelayout::P_N) ? themelayout::PIECE_NAME[i] : ""; }

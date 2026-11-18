@@ -642,3 +642,18 @@ test('styles: a pack with fonts, a background and decor draws in wasm exactly as
   assert.notDeepEqual(wsWasm(id, 'scan', 24, -1, -1, 2), bare.ws);
   assert.notDeepEqual(engWasm(id, 'scan', 24), bare.cyd);
 });
+
+test('uv_font_check accepts every built-in font the designer ships and refuses a damaged one', async () => {
+  const { parseBdf, encodeFont } = await import('../js/fontfmt.js');
+  const dir = path.join(ROOT, 'web/designer/fonts');
+  const check = (b) => withBytes(b, (p, l) => M._uv_font_check(p, l));
+  for (const n of fs.readdirSync(dir).filter((f) => f.endsWith('.bdf'))) {
+    const bin = encodeFont(parseBdf(fs.readFileSync(path.join(dir, n), 'latin1')));
+    assert.equal(check(bin), 1, `${n}: ${M.UTF8ToString(M._uv_error())}`);
+  }
+  const bad = encodeFont(parseBdf(fs.readFileSync(path.join(dir, 'spleen-8x16.bdf'), 'latin1'))).slice(0, 200);
+  assert.equal(check(bad), 0);
+  assert.match(M.UTF8ToString(M._uv_error()), /truncated|past the end/);
+  assert.equal(withBytes(fixtureArt(4, 4, 2), (p, l) => M._uv_art_check(p, l)), 1);
+  assert.equal(withBytes(Uint8Array.from([1, 2]), (p, l) => M._uv_art_check(p, l)), 0);
+});
