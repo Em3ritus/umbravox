@@ -157,8 +157,7 @@ class Cb : public BLEAdvertisedDeviceCallbacks {
 
         portENTER_CRITICAL(&mux);
         nAdverts++;
-        if (sig.threat != ui::TH_NONE &&
-            (sig.conf >= alert_.conf || (millis() - alert_.atMs) > 6000)) {
+        if (alertrepeat::replaces(alert_, sig.threat, sig.conf, millis())) {   // a follow alert keeps the slot 6 s
             alert_.threat = sig.threat;
             alert_.conf   = sig.conf;
             alert_.why    = sig.why;

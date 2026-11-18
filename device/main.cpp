@@ -1931,6 +1931,7 @@ void loop() {
         alertrepeat::Table* const table = &staticTable;
 #endif
         if (nc) { historyAlert = cand[0]; haveHistoryAlert = true; }
+        alertrepeat::prioritise(cand, nc);   // a follow alert (6 s) first, so a refreshed camera cannot mask it
         // Stop at the first one shown: asking the table about the other would mark it shown (its cooldown would run
         // although it never reached the screen) and make it the one a tap dismisses.
         for (int i = 0; i < nc && !s.alertActive; i++) {

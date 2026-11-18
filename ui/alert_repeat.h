@@ -16,7 +16,7 @@
 namespace alertrepeat {
 
 constexpr uint32_t EPISODE_GAP_MS = 6000;     // the device's ALERT_MS: no hit for this long ends an episode
-constexpr uint32_t FOLLOW_MS = 600000;        // a tracker travelling with you: at most every 10 min
+constexpr uint32_t FOLLOW_MS = 600000;        // a tracker travelling with you: at most every 10 min (blescan's clock)
 constexpr uint32_t DRONE_MS = 1200000;        // a drone: at most every 20 min
 constexpr int SLOTS = 16;
 
@@ -25,8 +25,11 @@ inline uint32_t repeatMs(uint16_t setting) {
     switch (setting) { case 0: return 60000; case 2: return 3600000; case 3: return UINT32_MAX; default: return 600000; }
 }
 
+// TH_FOLLOW has no cooldown here: blescan raises it only every FOLLOW_MS (followDue), so every new follow episode is a
+// due re-alert. A second clock here would drift from blescan's (a dismiss or a late first sighting moves it) and
+// silently swallow the next re-alert.
 inline uint32_t cooldown(uint8_t threat, uint16_t setting) {
-    return threat == ui::TH_FOLLOW ? FOLLOW_MS : threat == ui::TH_DRONE ? DRONE_MS : repeatMs(setting);
+    return threat == ui::TH_FOLLOW ? 0 : threat == ui::TH_DRONE ? DRONE_MS : repeatMs(setting);
 }
 
 // show: the takeover is on for this sighting. episode: changes exactly when a new shown episode starts (the tone and
@@ -41,6 +44,23 @@ inline void reason(char* out, int n, uint8_t threat, uint32_t minutes) {
     if (!out || n < 1) return;
     if (minutes > 999) minutes = 999;
     std::snprintf(out, (size_t)n, threat == ui::TH_FOLLOW ? "WITH YOU %u MIN" : "STILL HERE %u MIN", (unsigned)minutes);
+}
+
+// The main loop's candidates (newest first) with any TH_FOLLOW moved to the front: a follow alert lasts only 6 s and
+// must not be masked by a newer, continuously refreshed alert from the other radio. Otherwise the order is unchanged.
+inline void prioritise(ui::AlertRec* c, int n) {
+    for (int i = 1; i < n; i++)
+        if (c[i].threat == ui::TH_FOLLOW && c[0].threat != ui::TH_FOLLOW) { const ui::AlertRec t = c[i]; for (int k = i; k > 0; k--) c[k] = c[k - 1]; c[0] = t; return; }
+}
+
+// blescan's single alert slot: may a hit (threat, conf) overwrite what it holds? As before, a hit of equal or higher
+// confidence, or any hit once the held alert is over 6 s old; and a follow alert keeps the slot for its 6 s against
+// every other kind (the tracker's own next advert would otherwise wipe it within a second).
+inline bool replaces(const ui::AlertRec& held, uint8_t threat, uint8_t conf, uint32_t nowMs) {
+    if (threat == ui::TH_NONE) return false;
+    const bool old = (uint32_t)(nowMs - held.atMs) > EPISODE_GAP_MS;
+    if (held.threat == ui::TH_FOLLOW && threat != ui::TH_FOLLOW && !old) return false;
+    return conf >= held.conf || old;
 }
 
 struct Table {
@@ -78,7 +98,7 @@ struct Table {
         const uint32_t cd = cooldown(a.threat, repeatSetting);
         const bool elapsed = cd != UINT32_MAX && (uint32_t)(nowMs - e.lastShownMs) >= cd;
         if ((int32_t)gap > (int32_t)EPISODE_GAP_MS) {                      // it left and came back: a new episode
-            const bool fresh = cd != UINT32_MAX && gap > cd;
+            const bool fresh = cd != UINT32_MAX && cd != 0 && gap > cd;   // no cooldown (follow): never a fresh stay
             if (fresh) e.firstMs = nowMs;
             if (a.conf > e.shownConf || elapsed) start_(e, a.conf, nowMs, !fresh);
             else e.showing = false;

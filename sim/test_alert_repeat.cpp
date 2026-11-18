@@ -41,12 +41,17 @@ int main() {
         expect(!t.see(hi, 16000, 1).show, "the same higher confidence again is quiet"); }
     {   Table t; const auto f = rec(ui::TH_FOLLOW, ui::CONF_HIGH, 2, "DD:EE:02 0.5KM");
         expect(t.see(f, 0, 1).show, "follow: first shows");
-        expect(!t.see(f, 6 * MIN, 1).show, "follow: quiet at 6 min");
         const Verdict v = t.see(f, 10 * MIN, 1);
         expect(v.show && v.repeat, "follow_every_10_min"); }
     {   Table t; const auto f = rec(ui::TH_FOLLOW, ui::CONF_HIGH, 2, "DD:EE:02 0.5KM");
         t.see(f, 0, 3);
         expect(t.see(f, 10 * MIN, 3).show, "follow_ignores_setting"); }
+    {   Table t; const auto f = rec(ui::TH_FOLLOW, ui::CONF_HIGH, 2, "DD:EE:02 0.5KM");
+        t.see(f, 1000, 1); t.dismissCurrent(4000);                    // tapped 3 s into the follow alert
+        expect(t.see(f, 10 * MIN, 1).show, "follow: a dismiss does not cost the next 10-min re-alert (blescan paces it)"); }
+    {   Table t; const auto f = rec(ui::TH_FOLLOW, ui::CONF_HIGH, 2, "DD:EE:02 0.5KM");
+        t.see(f, 2000, 1);                                            // the loop saw the first raise 2 s late
+        expect(t.see(f, 10 * MIN + 500, 1).show, "follow: a late first sighting does not delay the next re-alert"); }
     {   Table t; const auto d = rec(ui::TH_DRONE, ui::CONF_HIGH, 3, "DRONE-1");
         const Verdict first = t.see(d, 0, 1);
         bool allShown = true; uint32_t now = 3000; Verdict v{};
@@ -62,8 +67,8 @@ int main() {
         expect(!t.see(cam, 4000, 1).show, "dismiss_starts_cooldown: hidden for the rest of the episode");
         expect(!t.see(cam, 3000 + 10 * MIN - 1000, 1).show, "dismiss: still quiet just before the cooldown from the dismiss");
         expect(t.see(cam, 3000 + 10 * MIN + 7000, 1).show, "dismiss: back after the cooldown"); }
-    {   Table t; t.see(rec(ui::TH_FOLLOW, ui::CONF_HIGH, 2, "AA 0.5KM"), 0, 1);
-        expect(!t.see(rec(ui::TH_FOLLOW, ui::CONF_HIGH, 2, "AA 1.2KM"), 7000, 1).show, "key_is_address_not_name"); }
+    {   Table t; t.see(rec(ui::TH_CAMERA, ui::CONF_MED, 2, "AA 0.5KM"), 0, 1);
+        expect(!t.see(rec(ui::TH_CAMERA, ui::CONF_MED, 2, "AA 1.2KM"), 7000, 1).show, "key_is_address_not_name"); }
     {   Table t; t.see(rec(ui::TH_CAMERA, ui::CONF_MED, -1, "RING-A"), 0, 1);
         expect(t.see(rec(ui::TH_CAMERA, ui::CONF_MED, -1, "RING-B"), 7000, 1).show, "name_key_without_address");
         expect(!t.see(rec(ui::TH_CAMERA, ui::CONF_MED, -1, "RING-A"), 14000, 1).show, "name key: the first is still quiet"); }
@@ -86,6 +91,23 @@ int main() {
         expect(followDue(0, 10 * MIN), "follow_due: at 10 min");
         expect(followDue(0xFFFFFFFFu - 1000, 10 * MIN), "follow_due: across the wrap"); }
     {   expect(repeatMs(0) == MIN && repeatMs(1) == 10 * MIN && repeatMs(2) == 60 * MIN && repeatMs(3) == UINT32_MAX && repeatMs(9) == 10 * MIN, "repeatMs choices"); }
+    {   // A follow alert is never masked by a newer alert from the other radio (it lasts only 6 s).
+        ui::AlertRec c[2] = {rec(ui::TH_CAMERA, ui::CONF_HIGH, 5, "CAM"), rec(ui::TH_FOLLOW, ui::CONF_HIGH, 6, "AA 1KM")};
+        prioritise(c, 2);
+        expect(c[0].threat == ui::TH_FOLLOW && c[1].threat == ui::TH_CAMERA, "prioritise: follow goes first");
+        ui::AlertRec d[2] = {rec(ui::TH_CAMERA, ui::CONF_MED, 5, "CAM"), rec(ui::TH_DRONE, ui::CONF_HIGH, 6, "D")};
+        prioritise(d, 2);
+        expect(d[0].threat == ui::TH_CAMERA, "prioritise: otherwise newest first, unchanged"); }
+    {   // blescan's single alert slot: a follow alert holds it for its 6 s against other BLE hits.
+        ui::AlertRec held = rec(ui::TH_FOLLOW, ui::CONF_HIGH, 6, "AA 1KM"); held.atMs = 100000;
+        expect(!replaces(held, ui::TH_TRACKER, ui::CONF_HIGH, 101000), "replaces: the tracker's own advert does not overwrite its follow alert");
+        expect(replaces(held, ui::TH_TRACKER, ui::CONF_HIGH, 106001), "replaces: after 6 s it may");
+        expect(replaces(held, ui::TH_FOLLOW, ui::CONF_HIGH, 101000), "replaces: another follow alert may");
+        ui::AlertRec cam = rec(ui::TH_CAMERA, ui::CONF_MED, 7, "C"); cam.atMs = 100000;
+        expect(replaces(cam, ui::TH_TRACKER, ui::CONF_HIGH, 101000), "replaces: higher or equal confidence overwrites (as before)");
+        expect(!replaces(cam, ui::TH_TRACKER, ui::CONF_LOW, 101000), "replaces: lower confidence waits 6 s (as before)");
+        expect(replaces(cam, ui::TH_TRACKER, ui::CONF_LOW, 106001), "replaces: ...then overwrites");
+        expect(!replaces(cam, ui::TH_NONE, ui::CONF_HIGH, 200000), "replaces: no threat, no write"); }
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;
 }
