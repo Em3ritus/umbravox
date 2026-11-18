@@ -1,6 +1,11 @@
 // test_art_draw: the row-run picture paths (artpack::blitRun, scanr::artInto, scanr::nineInto) draw exactly what the
-// per-pixel code they replaced drew, kept here as refArtInto / refNineInto.
+// per-pixel code they replaced drew, kept here as refArtInto / refNineInto; and scanr::firstLayer skips only layers an
+// opaque decor or background really covers.
+#include "packload.h"
 #include "scan_fixture.h"
+#include "artfix.h"
+#include <string>
+#include <sys/stat.h>
 #include "../ui/artpack.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -85,6 +90,97 @@ static bool sameNine(const artpack::Art& a, uieng::Rect r, const uint8_t sl[4], 
     return p.px == q.px;
 }
 
+// --- firstLayer: packs written to a temp folder, loaded through sim/packload.h ----------------------------------
+static std::string root;
+static void writeFile(const std::string& path, const std::vector<uint8_t>& b) {
+    FILE* f = fopen(path.c_str(), "wb"); fwrite(b.data(), 1, b.size(), f); fclose(f);
+}
+static void writeText(const std::string& path, const std::string& t) { writeFile(path, std::vector<uint8_t>(t.begin(), t.end())); }
+static std::string themeJson(const char* name) {
+    std::string t = std::string("{\"format\":1,\"name\":\"") + name + "\",\"header\":\"AAAA\",\"dial\":\"compact\",\"centrepiece\":\"heptagram\","
+                    "\"sweeps\":[\"radar\"],\"alert\":\"ward\",\"colors\":{";
+    for (int i = 0; i < 20; i++) t += std::string(i ? "," : "") + "\"" + themepack::ROLE_KEYS[i] + "\":\"" + (i == 0 ? "#000000" : "#C0C0C0") + "\"";
+    return t + "}}";
+}
+// A Waveshare look: optional full-screen bg (a0, opaque), decor.0 240x240 at (100,60) (a1, opaque or transparent),
+// decor.1 40x40 at (400,200) (a2, opaque). Returns the theme id, media installed.
+static int pack(const char* folder, const char* name, bool bg, bool d0Transparent) {
+    const std::string d = root + "/" + folder;
+    mkdir(d.c_str(), 0755);
+    writeText(d + "/theme.json", themeJson(name));
+    std::string ws = "\"waveshare\":{";
+    if (bg) ws += "\"style\":{\"bg\":\"a0\"},";
+    ws += "\"decor.0\":{\"rect\":[100,60,240,240],\"art\":\"a1\"},\"decor.1\":{\"rect\":[400,200,40,40],\"art\":\"a2\"}}";
+    writeText(d + "/layout.json", "{\"format\":1," + ws + "}");
+    if (bg) writeFile(d + "/a0.art", artfix::make(480, 320, 1, false));
+    writeFile(d + "/a1.art", artfix::make(240, 240, 1, d0Transparent));
+    writeFile(d + "/a2.art", artfix::make(40, 40, 1, false));
+    char why[160] = "";
+    const int id = packload::load(d.c_str(), why, sizeof why);
+    if (id < 0 || why[0]) printf("  load %s: %d %s\n", folder, id, why);
+    pal::setTheme((uint8_t)id);
+    packload::useMedia(id);
+    return id;
+}
+// The region r composed as the presenter does it (16-row strips, column window), as one buffer.
+static std::vector<uint16_t> compose(const scanr::ScanScene& sc, uieng::Rect r) {
+    std::vector<uint16_t> out, buf((size_t)r.w * 16);
+    for (int y = r.y; y < r.y + r.h; y += 16) {
+        const int h = std::min(16, r.y + r.h - y);
+        scanr::S st(buf.data(), 480, y, h, r.x, r.x + r.w);
+        scanr::composeStrip(st, 480, 320, sc);
+        out.insert(out.end(), buf.begin(), buf.begin() + (size_t)h * r.w);
+    }
+    return out;
+}
+static uint32_t blitsFor(const scanr::ScanScene& sc, uieng::Rect r) {
+    scanr::artBlits() = 0; compose(sc, r); return scanr::artBlits();
+}
+// Composed with skipping and with every layer drawn, the region is the same.
+static bool identical(const scanr::ScanScene& sc, uieng::Rect r) {
+    scanr::coverEnabled() = true;  const auto a = compose(sc, r);
+    scanr::coverEnabled() = false; const auto b = compose(sc, r);
+    scanr::coverEnabled() = true;
+    return a == b;
+}
+static void layers() {
+    char tmpl[] = "/tmp/test_art_draw_XXXXXX";
+    root = mkdtemp(tmpl);
+    const uieng::Rect in0{110, 64, 220, 16}, in1{404, 208, 32, 16}, wide0{99, 64, 220, 16}, full{0, 0, 480, 320};
+    auto win = [](uieng::Rect r) { return scanr::S(nullptr, 480, r.y, r.h, r.x, r.x + r.w); };
+    {
+        const int id = pack("cov", "COV", true, false);
+        const auto sc = scanfix::demo((uint8_t)id);
+        check("cover_skips decor.0 covers", scanr::firstLayer(480, 320, win(in0), true) == 2);
+        check("cover_skips decor.1 covers", scanr::firstLayer(480, 320, win(in1), true) == 3);
+        check("partial_not_cover: bg is the top cover", scanr::firstLayer(480, 320, win(wide0), true) == 1);
+        check("not_scan: decor ignored", scanr::firstLayer(480, 320, win(in0), false) == 1);
+        scanr::coverEnabled() = false; const uint32_t all0 = blitsFor(sc, in0), all1 = blitsFor(sc, in1);
+        scanr::coverEnabled() = true;  const uint32_t cut0 = blitsFor(sc, in0), cut1 = blitsFor(sc, in1);
+        check("cover_skips: the background is not drawn under decor.0", all0 - cut0 == 1);
+        check("cover_skips: bg and decor.0 are not drawn under decor.1", all1 - cut1 == 2);
+        check("frame_identical cov full", identical(sc, full));
+        check("frame_identical cov radar", identical(sc, scanr::radarBounds(480, 320)));
+        check("frame_identical cov windows", identical(sc, in0) && identical(sc, in1) && identical(sc, wide0));
+        assets::clear((uint8_t)id);
+        check("unloaded_not_cover", scanr::firstLayer(480, 320, win(in0), true) == 0);
+        check("frame_identical cov unloaded", identical(sc, full));
+    }
+    {
+        const int id = pack("trn", "TRN", true, true);
+        const auto sc = scanfix::demo((uint8_t)id);
+        check("transparent_not_cover", scanr::firstLayer(480, 320, win(in0), true) == 1);
+        check("frame_identical trn", identical(sc, full) && identical(sc, in0));
+    }
+    {
+        const int id = pack("nobg", "NOBG", false, false);
+        const auto sc = scanfix::demo((uint8_t)id);
+        check("nobg: decor.0 covers the VOID fill", scanr::firstLayer(480, 320, win(in0), true) == 2);
+        check("nobg: nothing covers outside the decor", scanr::firstLayer(480, 320, win(wide0), true) == 0);
+        check("frame_identical nobg", identical(sc, full) && identical(sc, in0) && identical(sc, wide0));
+    }
+}
+
 int main() {
     // blitRun_basic: every start column and length of every row of a 7x3 picture, against artpack::index.
     for (bool tr : {false, true}) {
@@ -145,6 +241,7 @@ int main() {
         const uint8_t sl[4] = {30, 30, 30, 30}, sl2[4] = {15, 0, 15, 0};
         check("nine_borders_exceed", sameNine(p.a, {4, 4, 10, 10}, sl, 0, 16, 0, 480) && sameNine(p.a, {4, 4, 25, 10}, sl2, 0, 16, 0, 480));
     }
+    layers();
     printf("%s  %d/%d checks passed\n", fails ? "FAILED" : "PASSED", checks - fails, checks);
     return fails ? 1 : 0;
 }

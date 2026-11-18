@@ -470,8 +470,20 @@ inline int isqrt(int v) {                        // floor(sqrt(v)), bitwise: at 
     return int(r);
 }
 // --- pack art (.art, artpack.h): placed at its exact size, never scaled -------------------------------
+// Host tests only (no RAM on the device): artBlits counts artInto calls; coverEnabled false draws every layer
+// (firstLayer always 0), so a test can compare skipping against drawing everything.
+#if defined(ARDUINO)
+inline void countArtBlit() {}
+inline bool coverOn() { return true; }
+#else
+inline uint32_t& artBlits() { static uint32_t n = 0; return n; }
+inline bool& coverEnabled() { static bool on = true; return on; }
+inline void countArtBlit() { ++artBlits(); }
+inline bool coverOn() { return coverEnabled(); }
+#endif
 // One frame of `a` with its top-left at (x,y); index 0 is skipped when the art is transparent.
 inline void artInto(S& s, const artpack::Art& a, int x, int y, uint16_t frame) {
+    countArtBlit();
     if (!a.px || a.w == 0) return;
     if (frame >= a.frames) frame = 0;
     const int y0 = std::max(y, s.y0), y1 = std::min(y + (int)a.h, s.y0 + s.h);
@@ -985,12 +997,33 @@ inline bool animatedDecor(int W, uieng::Rect* r, const artpack::Art** art = null
     }
     return false;
 }
-inline void drawDecor(S& s, int W, uint32_t now) {
+// The lowest layer this strip must draw: 0 the VOID fill, 1 the screen background, 2 + i decor i. It is the highest
+// layer whose picture is loaded at its rect's size, is opaque and covers the whole strip window (everything under it
+// would be painted over); none: 0. Decor count only on Scan. Read from the live look every strip, nothing kept.
+inline bool coversWindow(const uieng::Rect& r, const S& s) {
+    return r.x <= s.lo && r.y <= s.y0 && r.x + r.w >= s.hi && r.y + r.h >= s.y0 + s.h;
+}
+inline int firstLayer(int W, int H, const S& s, bool scan) {
+    if (!coverOn()) return 0;
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k) return 0;
+    if (scan)
+        for (int i = uieng::MAX_DECOR - 1; i >= 0; i--) {
+            const uieng::Decor& d = k->decor[i];
+            if (d.art < 0 || !coversWindow(d.r, s)) continue;
+            const artpack::Art* a = sizedArt(d.art, d.r.w, d.r.h);
+            if (a && !a->transparent) return 2 + i;
+        }
+    if (k->screen.bg >= 0 && coversWindow({0, 0, W, H}, s))
+        if (const artpack::Art* a = sizedArt(k->screen.bg, W, H)) if (!a->transparent) return 1;
+    return 0;
+}
+inline void drawDecor(S& s, int W, uint32_t now, int from = 0) {   // from: the first decor to draw (firstLayer - 2)
     const uieng::BoardLook* k = uieng::activeLook(W);
     if (!k) return;
     int anim = -1;
     animatedDecor(W, nullptr, nullptr, &anim);
-    for (int i = 0; i < uieng::MAX_DECOR; i++) {
+    for (int i = from; i < uieng::MAX_DECOR; i++) {
         const uieng::Decor& d = k->decor[i];
         if (d.art < 0) continue;
         const artpack::Art* a = sizedArt(d.art, d.r.w, d.r.h);
@@ -998,14 +1031,14 @@ inline void drawDecor(S& s, int W, uint32_t now) {
     }
 }
 // Role fonts and the screen background from the board's style block (none: the built-in 5x7, no picture).
-inline void applyLook(S& s, int W, int H, bool scan) {
+inline void applyLook(S& s, int W, int H, bool scan, bool drawBg = true) {
     const uieng::BoardLook* k = uieng::activeLook(W);
     // Pack-font text on the other screens stays inside the content area (Scan's pieces clip to their own rects).
     textstate::clip = (k && !scan) ? uieng::chrome(W, H).body : uieng::Rect{0, 0, 0x7FFF, 0x7FFF};
     const fontpack::Font* f[ROLE_N] = {};
     if (k) for (int i = 0; i < ROLE_N; i++) f[i] = assets::font(k->screen.roleFont[i]);
     setRoleFonts(f);
-    if (k && k->screen.bg >= 0) if (const artpack::Art* a = sizedArt(k->screen.bg, W, H)) artInto(s, *a, 0, 0, 0);
+    if (drawBg && k && k->screen.bg >= 0) if (const artpack::Art* a = sizedArt(k->screen.bg, W, H)) artInto(s, *a, 0, 0, 0);
 }
 inline TextRole roleOf(int piece) {
     if (piece == themelayout::P_COUNT_WIFI || piece == themelayout::P_COUNT_5G || piece == themelayout::P_COUNT_BLE) return ROLE_NUMBERS;
@@ -1096,10 +1129,11 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     // The offsets are today's numbers measured from today's rects (builtinChrome),
     // so the built-in layout draws exactly what it always did.
     const uieng::Chrome bc = uieng::builtinChrome(W, H);
-    box(s, 0, 0, W, H, pal::VOID);   // the ground every screen's body sits on
+    const int cover = firstLayer(W, H, s, st.scan);   // layers an opaque picture covers here are not drawn
+    if (cover == 0) box(s, 0, 0, W, H, pal::VOID);   // the ground every screen's body sits on
     resetText();                     // then this frame's look, read from the registry afresh (no pointer kept between frames)
-    applyLook(s, W, H, st.scan);      // a layout theme's role fonts, text clip and background picture
-    if (st.scan) drawDecor(s, W, st.now);   // under every piece
+    applyLook(s, W, H, st.scan, cover <= 1);   // a layout theme's role fonts, text clip and background picture
+    if (st.scan) drawDecor(s, W, st.now, cover > 2 ? cover - 2 : 0);   // under every piece
     if (!uieng::activeBoard(W)) {
         // Built-in: full-width status/nav surfaces and one-pixel dividers.
         box(s, 0, 0, W, 44, pal::PANEL);

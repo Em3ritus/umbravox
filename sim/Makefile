@@ -249,8 +249,8 @@ test_layout_engine: test_layout_engine.cpp ../ui/layout_engine.h oracle_hits.inc
 test_scan_present: test_scan_present.cpp $(ENGINE_HDR) $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ test_scan_present.cpp $(PAL_DEPS) -lm
 
-test_art_draw: test_art_draw.cpp scan_fixture.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/artpack.cpp ../ui/artpack.h
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_art_draw.cpp $(PAL_DEPS) -lm
+test_art_draw: test_art_draw.cpp packload.h scan_fixture.h artfix.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/artpack.cpp ../ui/artpack.h ../ui/themelayout.h ../ui/themelayout.cpp
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_art_draw.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
 test_artpack: test_artpack.cpp artfix.h $(ENGINE_HDR) $(PAL_DEPS) ../ui/artpack.cpp ../ui/artpack.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_artpack.cpp $(PAL_DEPS) -lm
 
