@@ -151,6 +151,31 @@ int main() {
         uieng::Rect r;
         check(L("the animated decor rect"), scanr::animatedDecor(W, &r) && r == dr);
     }
+    // Two decor showing the same picture (the designer packs them as one aN): only decor.0 moves; decor.1 stays on frame 0.
+    {
+        const std::string d = root + "/twin-decor";
+        mkdir(d.c_str(), 0755);
+        writeText(d + "/theme.json", themeJson("TWIN DECOR"));
+        writeText(d + "/layout.json", "{\"format\":1,\"waveshare\":{\"decor.0\":{\"rect\":[100,100,30,30],\"art\":\"a0\"},"
+                                      "\"decor.1\":{\"rect\":[300,100,30,30],\"art\":\"a0\"}},\"cyd\":{}}");
+        writeFile(d + "/a0.art", artfix::make(30, 30, 2, false));
+        char why[160];
+        const int id = packload::load(d.c_str(), why, sizeof why);
+        check("twin decor pack loads", id >= 0 && !why[0]);
+        if (id >= 0) {
+            pal::setTheme((uint8_t)id); packload::useMedia(id);
+            scanr::ScanScene a = scanfix::demo((uint8_t)id, 0), b = scanfix::demo((uint8_t)id, 150);   // frame 0, then frame 1
+            a.animateSweep = b.animateSweep = false;
+            const auto fa = render(480, 320, a, 16), fb = render(480, 320, b, 16);
+            int d0 = 0, d1 = 0;
+            for (int y = 100; y < 130; y++) for (int x = 0; x < 30; x++) {
+                d0 += fa[(size_t)y * 480 + 100 + x] != fb[(size_t)y * 480 + 100 + x];
+                d1 += fa[(size_t)y * 480 + 300 + x] != fb[(size_t)y * 480 + 300 + x];
+            }
+            check("the first decor animates", d0 > 0);
+            check("the second decor with the same picture stays still (one moves per board)", d1 == 0);
+        }
+    }
     // Decor over the radar: every pixel the radar inks without the decor is the same with it (decor is under every piece).
     {
         const uieng::Rect rr = themelayout::defaultRect(themelayout::B_WAVESHARE, themelayout::P_RADAR);

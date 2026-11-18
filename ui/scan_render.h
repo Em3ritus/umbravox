@@ -958,15 +958,18 @@ inline uint16_t decorFrame(const artpack::Art& a, uint32_t now, int W) {   // fr
     return 0;
 }
 // The one decor that animates on this board: the first (by N) whose loaded art has frames and fits the area cap.
-inline bool animatedDecor(int W, uieng::Rect* r, const artpack::Art** art = nullptr) {
+// (By index, not by picture: two decor may show the same picture, and only one of them moves.)
+inline bool animatedDecor(int W, uieng::Rect* r, const artpack::Art** art = nullptr, int* index = nullptr) {
     const uieng::BoardLook* k = uieng::activeLook(W);
     if (!k) return false;
-    for (const uieng::Decor& d : k->decor) {
+    for (int i = 0; i < uieng::MAX_DECOR; i++) {
+        const uieng::Decor& d = k->decor[i];
         if (d.art < 0) continue;
         const artpack::Art* a = sizedArt(d.art, d.r.w, d.r.h);
         if (!a || !artpack::animated(*a) || d.r.w * d.r.h > animAreaMax(W)) continue;
         if (r) *r = d.r;
         if (art) *art = a;
+        if (index) *index = i;
         return true;
     }
     return false;
@@ -974,12 +977,13 @@ inline bool animatedDecor(int W, uieng::Rect* r, const artpack::Art** art = null
 inline void drawDecor(S& s, int W, uint32_t now) {
     const uieng::BoardLook* k = uieng::activeLook(W);
     if (!k) return;
-    uieng::Rect ar; const artpack::Art* anim = nullptr;
-    animatedDecor(W, &ar, &anim);
-    for (const uieng::Decor& d : k->decor) {
+    int anim = -1;
+    animatedDecor(W, nullptr, nullptr, &anim);
+    for (int i = 0; i < uieng::MAX_DECOR; i++) {
+        const uieng::Decor& d = k->decor[i];
         if (d.art < 0) continue;
         const artpack::Art* a = sizedArt(d.art, d.r.w, d.r.h);
-        if (a) artInto(s, *a, d.r.x, d.r.y, a == anim ? decorFrame(*a, now, W) : 0);
+        if (a) artInto(s, *a, d.r.x, d.r.y, i == anim ? decorFrame(*a, now, W) : 0);
     }
 }
 // Role fonts and the screen background from the board's style block (none: the built-in 5x7, no picture).
