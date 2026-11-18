@@ -245,7 +245,9 @@ struct Load {
     bool clipOk = false, sndOk = false;           // file read in full and still wanted
     bool fontOk[assets::MAX_FONTS] = {}, artOk[assets::MAX_ARTS] = {};
     uint32_t t0 = 0;
-} job;
+};
+// In PSRAM, made by the first load: internal RAM is scarce and this is ~470 bytes used only while a pack loads.
+Load* jobp = nullptr;
 
 void entryName(const Entry& e, char (&out)[12]) {
     if (e.kind == E_CLIP) snprintf(out, sizeof out, "radar.vid");
@@ -255,6 +257,7 @@ void entryName(const Entry& e, char (&out)[12]) {
 
 // Parse a file once it has been read in full; logs why a file is left out.
 void finishFile(const PackMedia& m, int file) {
+    Load& job = *jobp;
     char safe[32], why[WHY_CAP] = "";
     logSafe(safe, m.folder);
     const Entry& e = job.ent[file];
@@ -282,6 +285,11 @@ void finishFile(const PackMedia& m, int file) {
 bool beginLoad(const PackMedia& m, int slot) {
     char safe[32];
     logSafe(safe, m.folder);
+    if (!jobp) {
+        if (void* q = heap_caps_malloc(sizeof(Load), MALLOC_CAP_SPIRAM)) jobp = new (q) Load();
+        if (!jobp) { elog::event(elog::WARN, "theme", "%s: media not loaded, no PSRAM", safe); return false; }
+    }
+    Load& job = *jobp;
     char rec[BAD_REC];
     formatLoading(rec, capOf(rec), m.folder, m.total);
     if (!nvs.begin(NS, /*readOnly=*/false)) { elog::event(elog::WARN, "theme", "%s: media not loaded, NVS unavailable", safe); return false; }
@@ -331,6 +339,7 @@ bool beginLoad(const PackMedia& m, int slot) {
 
 // One slice. True when the load has ended (every file read, or given up on).
 bool stepLoad(const PackMedia& m) {
+    Load& job = *jobp;
     if (job.prog.done()) return true;
     const packmedia::Progress::Slice sl = job.prog.next(SLICE);
     char path[PATH_CAP], name[12];
@@ -553,7 +562,8 @@ uint8_t skipped() { return nSkipped; }
 void tick(uint8_t themeId, uint32_t nowMs, bool immediate) {
     if (!media) return;
     ctl.want(pal::packSlot(themeId), nowMs, immediate);
-    if (job.active) {                                // a load in progress: one more slice (all of them at boot)
+    if (jobp && jobp->active) {                      // a load in progress: one more slice (all of them at boot)
+        Load& job = *jobp;
         const PackMedia& m = media[job.slot];
         bool end = stepLoad(m);
         while (immediate && !end) end = stepLoad(m);
