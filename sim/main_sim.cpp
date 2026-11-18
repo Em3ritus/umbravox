@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
         const int id = packload::load(packDir, why, sizeof why);
         if (id < 0) { fprintf(stderr, "umbravox: pack %s: %s\n", packDir, why); return 1; }
         themeId = (uint8_t)id;
+        packload::useMedia(id);   // its fonts and pictures, as the device has them once the theme is selected
     }
 
     // Nothing may draw before the palette points somewhere.

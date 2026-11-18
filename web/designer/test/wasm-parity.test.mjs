@@ -614,3 +614,31 @@ test('uv_load_media takes the draft\'s fonts and pictures, and refuses bad ones 
   assert.equal(media(1, 16, fixtureArt(4, 4, 1)), -1, 'a16 is not a slot');
   assert.equal(withBytes(fixtureFont(), (p, l) => M._uv_load_media(999, 0, 0, p, l)), -1, 'no such theme');
 });
+
+test('styles: a pack with fonts, a background and decor draws in wasm exactly as the simulator draws it, on both boards', () => {
+  const dir = path.join(tmp, `styled-${simN++}`, 'sty');
+  fs.mkdirSync(dir, { recursive: true });
+  const json = fs.readFileSync(path.join(ROOT, 'sim/packs/umbravox-clone/theme.json'));
+  fs.writeFileSync(path.join(dir, 'theme.json'), json);
+  const layout = Buffer.from(JSON.stringify({ format: 1,
+    waveshare: { wordmark: { rect: [44, 0, 164, 44], fill: '#ff00ff', font: 'f0' }, style: { bg: 'a0' }, 'decor.0': { rect: [200, 120, 30, 30], art: 'a2' } },
+    cyd: { style: { bg: 'a1', title: 'f0' } } }));
+  fs.writeFileSync(path.join(dir, 'layout.json'), layout);
+  const media = { f0: fixtureFont(), a0: fixtureArt(480, 320, 1), a1: fixtureArt(320, 240, 1), a2: fixtureArt(30, 30, 2) };
+  for (const [n, b] of Object.entries(media)) fs.writeFileSync(path.join(dir, n + (n[0] === 'f' ? '.fnt' : '.art')), b);
+  M._uv_clear_packs();
+  const id = withBytes(new Uint8Array(json), (jp, jl) => withBytes(new Uint8Array(layout), (lp, ll) => M._uv_load_pack(jp, jl, 0, 0, 0, 0, lp, ll)));
+  assert.ok(id >= 0, M.UTF8ToString(M._uv_error()));
+  const bare = { ws: wsWasm(id, 'scan', 24, -1, -1, 2), cyd: engWasm(id, 'scan', 24) };
+  for (const [n, b] of Object.entries(media))
+    assert.equal(withBytes(b, (p, l) => M._uv_load_media(id, n[0] === 'f' ? 0 : 1, Number(n.slice(1)), p, l)), 0, M.UTF8ToString(M._uv_error()));
+  for (const frame of [0, 24]) {
+    const out = path.join(tmp, `w${simN++}.rgba`);
+    run(WS_SIM, [String(id), String(WS_SCREEN.scan), String(frame), '-1', '-1', '2', out, '--pack', dir]);
+    wsSame(`styled pack waveshare frame ${frame}`, wsWasm(id, 'scan', frame, -1, -1, 2), new Uint8Array(fs.readFileSync(out)));
+    engSame(`styled pack cyd frame ${frame}`, engWasm(id, 'scan', frame), engSim(id, 'scan', frame, dir));
+  }
+  // not vacuous: the media changed both boards' pictures
+  assert.notDeepEqual(wsWasm(id, 'scan', 24, -1, -1, 2), bare.ws);
+  assert.notDeepEqual(engWasm(id, 'scan', 24), bare.cyd);
+});

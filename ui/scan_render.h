@@ -20,8 +20,11 @@
 #include "font5x7.h"
 #include "fontpack.h"
 #include "artpack.h"
+#include "packassets.h"
+#include "themelayout.h"
 #include "gnss.h"
 #include <algorithm>
+#include <optional>
 #include "canvas.h"
 #include <cmath>
 #include <cstdint>
@@ -219,6 +222,7 @@ inline const fontpack::Font* roleFont[ROLE_N] = {};
 inline TextRole role = ROLE_BODY;
 inline const fontpack::Font* scopeFont = nullptr;
 inline uieng::Rect clip{0, 0, 0x7FFF, 0x7FFF};
+inline uint8_t scaleCap = 0;   // a piece style's scale: fitScale's upper bound while it is set
 }
 inline void setRoleFonts(const fontpack::Font* const fonts[ROLE_N]) {
     for (int i = 0; i < ROLE_N; ++i) textstate::roleFont[i] = fonts ? fonts[i] : nullptr;
@@ -296,6 +300,7 @@ inline void fmtCount(long v, char* out, int n) {
     else { const long t = v / 100000; snprintf(out, n, "%ld.%ldM", t / 10, t % 10); }
 }
 inline int  fitScale(const char* t, int maxW, int hi) {         // largest scale <= hi that fits
+    if (textstate::scaleCap) hi = textstate::scaleCap;
     for (int s=hi; s>1; --s) if (textW(t,s) <= maxW) return s; return 1;
 }
 inline void centered(S& s, int cx, int gy, const char* t, int sc, uint16_t c) {
@@ -903,6 +908,124 @@ inline uint32_t sweepPhase(uint32_t now) { return uint32_t(sweepAngle(now)) * 72
 // at the far right. Regions come from uieng::chrome(W,H); `body` (passed per
 // screen) drives ONLY the inset dividers, so SCAN keeps its 16px body margin
 // while the sub-screens keep 8px. Single-sourced so a chrome fix lands once.
+// --- a layout theme's look (plan 4): piece styles, the style block, decor ---------------------------------------
+// Every helper here does nothing when no layout theme is active, so built-in themes draw exactly as before.
+inline uint16_t roleColor(int r) {
+    switch (r) {
+    case themepack::R_VOID: return pal::VOID;       case themepack::R_PANEL: return pal::PANEL;
+    case themepack::R_GRID: return pal::GRID;       case themepack::R_EDGE: return pal::EDGE;
+    case themepack::R_EDGELIT: return pal::EDGE_LIT; case themepack::R_DIM: return pal::DIM;
+    case themepack::R_TEXT: return pal::TEXT;       case themepack::R_BRIGHT: return pal::BRIGHT;
+    case themepack::R_WITCH: return pal::WITCH;     case themepack::R_WITCHHI: return pal::WITCH_HI;
+    case themepack::R_BONE: return pal::BONE;       case themepack::R_SWEEP: return pal::SWEEP;
+    case themepack::R_SWEEPHI: return pal::SWEEP_HI; case themepack::R_LIVE: return pal::LIVE;
+    case themepack::R_LIVEHI: return pal::LIVE_HI;  case themepack::R_MAGENTA: return pal::MAGENTA;
+    case themepack::R_ICE: return pal::ICE;         case themepack::R_GREEN: return pal::GREEN;
+    case themepack::R_AMBER: return pal::AMBER;     default: return pal::RED;
+    }
+}
+inline uint16_t resolveColor(const uieng::ColorRef& c, uint16_t fallback) {
+    return c.kind == 2 ? c.v : c.kind == 1 ? roleColor(c.v) : fallback;
+}
+// The piece's art when it is loaded and exactly the piece's size (the device never scales art).
+inline const artpack::Art* sizedArt(int idx, int w, int h) {
+    const artpack::Art* a = assets::art(idx);
+    return (a && a->w == w && a->h == h) ? a : nullptr;
+}
+// Animated decor limits (conservative until the plan-5 hardware calibration): one per board, area and frame rate capped.
+inline int animAreaMax(int W) { return W >= 400 ? 25600 : 10000; }
+inline int artMinDelay(int W) { return W >= 400 ? 50 : 100; }
+inline uint16_t decorFrame(const artpack::Art& a, uint32_t now, int W) {   // frameAt with every delay floored to artMinDelay
+    if (a.frames <= 1) return 0;
+    const uint32_t floor = (uint32_t)artMinDelay(W);
+    uint32_t cycle = 0;
+    for (int i = 0; i < a.frames; i++) { const uint32_t d = a.delays[i * 2] | (a.delays[i * 2 + 1] << 8); cycle += d < floor ? floor : d; }
+    uint32_t t = now % cycle;
+    for (uint16_t i = 0; i < a.frames; i++) {
+        uint32_t d = a.delays[i * 2] | (a.delays[i * 2 + 1] << 8); if (d < floor) d = floor;
+        if (t < d) return i;
+        t -= d;
+    }
+    return 0;
+}
+// The one decor that animates on this board: the first (by N) whose loaded art has frames and fits the area cap.
+inline bool animatedDecor(int W, uieng::Rect* r, const artpack::Art** art = nullptr) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k) return false;
+    for (const uieng::Decor& d : k->decor) {
+        if (d.art < 0) continue;
+        const artpack::Art* a = sizedArt(d.art, d.r.w, d.r.h);
+        if (!a || !artpack::animated(*a) || d.r.w * d.r.h > animAreaMax(W)) continue;
+        if (r) *r = d.r;
+        if (art) *art = a;
+        return true;
+    }
+    return false;
+}
+inline void drawDecor(S& s, int W, uint32_t now) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k) return;
+    uieng::Rect ar; const artpack::Art* anim = nullptr;
+    animatedDecor(W, &ar, &anim);
+    for (const uieng::Decor& d : k->decor) {
+        if (d.art < 0) continue;
+        const artpack::Art* a = sizedArt(d.art, d.r.w, d.r.h);
+        if (a) artInto(s, *a, d.r.x, d.r.y, a == anim ? decorFrame(*a, now, W) : 0);
+    }
+}
+// Role fonts and the screen background from the board's style block (none: the built-in 5x7, no picture).
+inline void applyLook(S& s, int W, int H) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    const fontpack::Font* f[ROLE_N] = {};
+    if (k) for (int i = 0; i < ROLE_N; i++) f[i] = assets::font(k->screen.roleFont[i]);
+    setRoleFonts(f);
+    if (k && k->screen.bg >= 0) if (const artpack::Art* a = sizedArt(k->screen.bg, W, H)) artInto(s, *a, 0, 0, 0);
+}
+inline TextRole roleOf(int piece) {
+    if (piece == themelayout::P_COUNT_WIFI || piece == themelayout::P_COUNT_5G || piece == themelayout::P_COUNT_BLE) return ROLE_NUMBERS;
+    return piece == themelayout::P_WORDMARK ? ROLE_TITLE : ROLE_BODY;
+}
+// While alive: the piece's text role, its font (clipped to the piece) and scale cap, and its ink/fill/edge colours in
+// place of TEXT+BRIGHT / PANEL / EDGE+EDGE_LIT. Restores everything on exit.
+struct PieceScope {
+    bool on = false;
+    uint16_t saved[5] = {};
+    uint8_t savedScale = 0;
+    std::optional<RoleScope> role;
+    std::optional<FontScope> font;
+    PieceScope(int W, int piece, uieng::Rect r) {
+        const uieng::BoardLook* k = uieng::activeLook(W);
+        if (!k || piece < 0 || piece >= uieng::PIECE_SLOTS) return;
+        const uieng::PieceStyle& st = k->piece[piece];
+        on = true;
+        saved[0] = pal::TEXT; saved[1] = pal::BRIGHT; saved[2] = pal::PANEL; saved[3] = pal::EDGE; saved[4] = pal::EDGE_LIT;
+        savedScale = textstate::scaleCap;
+        const uint16_t ink = resolveColor(st.ink, 0), fill = resolveColor(st.fill, 0), edge = resolveColor(st.edge, 0);
+        if (st.ink.kind) { pal::TEXT = ink; pal::BRIGHT = ink; }
+        if (st.fill.kind) pal::PANEL = fill;
+        if (st.edge.kind) { pal::EDGE = edge; pal::EDGE_LIT = edge; }
+        if (st.scale) textstate::scaleCap = st.scale;
+        role.emplace(roleOf(piece));
+        font.emplace(assets::font(st.font), r);
+    }
+    ~PieceScope() {
+        if (!on) return;
+        font.reset(); role.reset();
+        pal::TEXT = saved[0]; pal::BRIGHT = saved[1]; pal::PANEL = saved[2]; pal::EDGE = saved[3]; pal::EDGE_LIT = saved[4];
+        textstate::scaleCap = savedScale;
+    }
+    PieceScope(const PieceScope&) = delete; PieceScope& operator=(const PieceScope&) = delete;
+};
+// A piece's own background and frame art, and its edge, over its surface.
+inline void pieceArt(S& s, int W, int piece, uieng::Rect r) {
+    const uieng::BoardLook* k = uieng::activeLook(W);
+    if (!k || piece < 0 || piece >= uieng::PIECE_SLOTS || r.w <= 0 || r.h <= 0) return;
+    const uieng::PieceStyle& st = k->piece[piece];
+    if (st.bg >= 0) if (const artpack::Art* a = sizedArt(st.bg, r.w, r.h)) artInto(s, *a, r.x, r.y, 0);
+    if (st.frame >= 0) if (const artpack::Art* a = assets::art(st.frame)) nineInto(s, *a, r, st.slice);
+    if (st.edge.kind) frame(s, r.x, r.y, r.w, r.h, resolveColor(st.edge, pal::EDGE));
+}
+
 struct ChromeState {
     GnssFix gps;
     int     nodes   = 0;
@@ -913,6 +1036,8 @@ struct ChromeState {
     bool bridgeOn = false, pmuOk = false, charging = false;
     ui::PoiStatus poi = ui::PoiStatus::Ready;
     ui::StorageState sd=ui::StorageState::Missing;
+    uint32_t now = 0;     // Scan only: the clock for animated decor
+    bool scan = false;    // Scan draws the theme's decor; other screens do not
 };
 inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
                        const ChromeState& st, int activeTab) {
@@ -922,6 +1047,8 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     // so the built-in layout draws exactly what it always did.
     const uieng::Chrome bc = uieng::builtinChrome(W, H);
     box(s, 0, 0, W, H, pal::VOID);   // the ground every screen's body sits on
+    applyLook(s, W, H);              // a layout theme's role fonts and background picture
+    if (st.scan) drawDecor(s, W, st.now);   // under every piece
     if (!uieng::activeBoard(W)) {
         // Built-in: full-width status/nav surfaces and one-pixel dividers.
         box(s, 0, 0, W, 44, pal::PANEL);
@@ -932,13 +1059,20 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
         // A theme layout: each visible piece is its own surface; no bands.
         const uieng::Rect surf[] = {c.menu, c.wordmark, c.statusCells[0], c.statusCells[1], c.statusCells[2], c.bridge, c.sd,
                                     c.navCells[0], c.navCells[1], c.navCells[2], c.navCells[3], c.stop};
-        for (const uieng::Rect& r : surf) if (r.w > 0 && r.h > 0) box(s, r.x, r.y, r.w, r.h, pal::PANEL);
+        for (int p = 0; p < 12; p++) {   // surf[] is in themelayout piece order, menu..stop
+            const uieng::Rect& r = surf[p];
+            if (r.w <= 0 || r.h <= 0) continue;
+            PieceScope ps(W, p, r);
+            box(s, r.x, r.y, r.w, r.h, pal::PANEL);
+            pieceArt(s, W, p, r);
+        }
     }
 
     const auto mn=c.menu;
+    { PieceScope ps(W, themelayout::P_MENU, mn);
     for(int y:{8,13,18})box(s,mn.x+14,mn.y+y,16,2,activeTab==3?pal::BRIGHT:pal::TEXT);
     centered(s,mn.x+22,mn.y+28,"MENU",1,activeTab==3?pal::BRIGHT:pal::TEXT);
-    if(activeTab==3)box(s,mn.x+10,mn.y+39,24,2,pal::WITCH_HI);
+    if(activeTab==3)box(s,mn.x+10,mn.y+39,24,2,pal::WITCH_HI); }
     // Fixed title box: theme names fit without moving any controls.
     const char* name=pal::header(st.theme);
     const char* second=nullptr;
@@ -946,6 +1080,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     if (!strcmp(name,"CVLT OF BAPH0MAU5")){first="CVLT OF";second="BAPH0MAU5";}
     if (!strcmp(name,"COSMIC MUFFIN") || !strcmp(name,"COSMIC MVFFIN")){first="COSMIC";second="MUFFIN";}
     const auto wm=c.wordmark;
+    { PieceScope wmScope(W, themelayout::P_WORDMARK, wm);
     if(wm.w<=0||wm.h<=0){}   // hidden by the theme's layout
     else if(second){centered(s,wm.x+wm.w/2,wm.y+11,first,1,pal::BRIGHT);centered(s,wm.x+wm.w/2,wm.y+25,second,1,pal::BRIGHT);}
     else {
@@ -958,30 +1093,34 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
       const int x=c.wordmark.x+(c.wordmark.w-textW(name,scale)-badge)/2;
       if(badge)diamondInto(s,x+7,wm.y+21,7,pal::WITCH);
       txt(s,x+badge,wm.y+(wm.h-lineH(scale))/2,name,scale,pal::BRIGHT);
-    }
+    } }
     char hb[24];
     const GpsState gst = gpsState(st.gps);
     const uint16_t gcol = gst==GpsState::Fresh ? pal::GREEN : gst==GpsState::Stale ? pal::AMBER : pal::DIM;
     const char* fix=gst==GpsState::Fresh ? (st.gps.mode==3?"3D":st.gps.mode==2?"2D":"FIX") : gst==GpsState::Stale?"STALE":"ACQ";
     const auto gc=c.statusCells[0];
+    { PieceScope ps(W, themelayout::P_GPS, gc);
     centered(s,gc.x+gc.w/2,gc.y+10,"GPS",1,pal::DIM);
-    centered(s,gc.x+gc.w/2,gc.y+26,fix,1,gcol);
+    centered(s,gc.x+gc.w/2,gc.y+26,fix,1,gcol); }
     if(c.statusCells[1].w) {
         const auto nd=c.statusCells[1];
+        PieceScope ps(W, themelayout::P_NODES, nd);
         centered(s,nd.x+nd.w/2,nd.y+10,"NODES",1,pal::DIM);
         snprintf(hb,sizeof hb,"%d",st.nodes);
         centered(s,nd.x+nd.w/2,nd.y+26,hb,1,pal::TEXT);
     }
     const auto bt=c.bridge;
+    { PieceScope ps(W, themelayout::P_BRIDGE, bt);
     centered(s,bt.x+bt.w/2,bt.y+10,"BRIDGE",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
     centered(s,bt.x+bt.w/2,bt.y+26,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
     if(st.bridgeOn) {
         const int width=textW("BRIDGE",1);
         box(s,bt.x+(bt.w-width)/2,bt.y+37,width,2,pal::WITCH_HI);
-    }
+    } }
     // The SD icon draws in the sd piece, the battery in the power piece. Their x offsets
     // are today's (equal gaps across the built-in sd + power area), measured per piece.
     const auto sdr=c.sd, pw=c.statusCells[2];
+    { PieceScope ps(W, themelayout::P_POWER, pw);   // the battery's ink (the SD icon draws in status colours only)
     const bool sdShown=sdr.w>0&&sdr.h>0;
     // Read-only storage icon; adjacent battery keeps its own >=44px hit.
     const uint16_t sdInk=st.sd==ui::StorageState::Ready?pal::GREEN:st.sd==ui::StorageState::Error?pal::AMBER:pal::DIM;
@@ -1040,11 +1179,13 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
         if(st.charging){box(s,bx-5,by+bh/2,3,1,bi);box(s,bx-4,by+bh/2-1,1,3,bi);}
     }
     }
+    }
 
     // Three destinations, POI action, recording action. Header MENU opens the hub.
     static const char* const nav[3]={"SCAN","DOMAIN","CODEX"};
     for(int i=0;i<3;++i){
         const auto r=c.navCells[i];
+        PieceScope ps(W, themelayout::P_NAV_SCAN + i, r);
         const int ns=fitScale(nav[i],r.w-8,2), width=textW(nav[i],ns);
         const int lx=r.x+(r.w-width)/2;
         const bool on=activeTab==i;
@@ -1055,10 +1196,12 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     const bool feedback=st.poi!=ui::PoiStatus::Ready;
     const uint16_t poiInk=st.poi==ui::PoiStatus::Saved?pal::GREEN:pal::AMBER;
     const int mb=mark.y+mark.h;   // offsets from the piece's bottom edge, as today's from H
+    { PieceScope ps(W, themelayout::P_NAV_POI, mark);
     centered(s,mark.x+mark.w/2,mb-(feedback?36:30),"POI",2,feedback?poiInk:pal::TEXT);
-    if(feedback)centered(s,mark.x+mark.w/2,mb-16,ui::poiLabel(st.poi),1,poiInk);
+    if(feedback)centered(s,mark.x+mark.w/2,mb-16,ui::poiLabel(st.poi),1,poiInk); }
 
     const auto record=c.stop;
+    PieceScope stopScope(W, themelayout::P_STOP, record);
     ScanScene tmp;tmp.rec=st.rec;
     char label[16];recLabel(tmp,label,sizeof label);
     if(st.rec==Rec::Off)snprintf(label,sizeof label,"REC");
@@ -1156,7 +1299,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
 
     // shared design-1 chrome: header (wordmark + GPS/MESH/BAT) + nav (SCAN lit)
     // + the STOP/REC record control. SCAN passes its own 16px body for the dividers.
-    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd}, 0);
+    drawChrome(s, W, H, L.body, {sc.gps, sc.nodes, sc.hasCell, sc.battPct, sc.rec, sc.theme, sc.bridgeOn, sc.pmuOk, sc.charging, sc.poi, sc.sd, sc.now, true}, 0);
 
     // count tiles
     static const char* const tlab[3] = {"WIFI","5 GHZ","BLE"};
@@ -1164,7 +1307,9 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     const bool fx = W >= 400 && sc.fx.on;                              // side-panel texture and motion
     for (int i=0;i<3;i++){ const uieng::Rect t=L.tiles[i];
         if (t.w <= 0 || t.h <= 0) continue;   // hidden by the theme's layout
+        PieceScope ps(W, themelayout::P_COUNT_WIFI + i, t);
         box(s, t.x, t.y, t.w, t.h, pal::PANEL);
+        pieceArt(s, W, themelayout::P_COUNT_WIFI + i, t);
         if (fx) fxCard(s, t, band[i], sc.now, i, sc.fx.spark[i]);
         box(s, t.x, t.y, 3, t.h, band[i]);
         frame(s, t.x, t.y, t.w, t.h, pal::EDGE);
@@ -1185,8 +1330,9 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
         if(headingEmblem)emblemInto(s,*headingEmblem,bg.x+bg.w/2,bg.y+bg.h/2,badgeR,true,pal::artOpacity(sc.theme),false,true);
     }
     const int channelScale = W>=400 ? 2 : 1;
-    if (chr.w > 0 && chr.h > 0)
-        txt(s, chr.x + chr.w - 4 - textW(sc.ch,channelScale), chr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
+    if (chr.w > 0 && chr.h > 0) {
+        PieceScope ps(W, themelayout::P_CHANNEL, chr);
+        txt(s, chr.x + chr.w - 4 - textW(sc.ch,channelScale), chr.y+4, sc.ch, channelScale, pal::BRIGHT); }  // channel, right
 
     // Center between the top inset and spectrum; retain the approved radar sizes.
     const auto radar = radarBounds(W,H);

@@ -16,6 +16,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--pack")) {
             char why[96] = ""; theme = packload::load(argv[i + 1], why, sizeof why);
             if (theme < 0) { std::fprintf(stderr, "pack refused: %s\n", why); return 3; }
+            packload::useMedia(theme);   // its fonts and pictures, as the device has them once the theme is selected
         }
     }
     std::vector<uint16_t> px((size_t)w * h);

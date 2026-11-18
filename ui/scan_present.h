@@ -171,7 +171,8 @@ private:
 // Which parts of the scene changed (what the panel would SHOW): the header chrome, each count tile, the
 // channel readout, the spectrum, the contacts, and the sweep. Pure.
 struct ScanParts { bool status = false, count[3] = {false, false, false}, ch = false, chan = false, marks = false, sweep = false, alert = false;
-                   bool fxCard[3] = {false, false, false}, fxSpec = false; };   // side-panel texture and motion moved
+                   bool fxCard[3] = {false, false, false}, fxSpec = false;
+                   bool decor = false; };   // the theme's animated decor showed a new frame   // side-panel texture and motion moved
 inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b) {
     ScanParts p;
     char la[16], lb[16];
@@ -209,6 +210,8 @@ inline ScanParts sceneParts(int W, int H, const ScanScene& a, const ScanScene& b
               || (b.alert.active && (a.alert.age != b.alert.age || a.alert.conf != b.alert.conf || a.alert.threat != b.alert.threat || a.alert.style != b.alert.style
                                      || __builtin_strcmp(a.alert.label, b.alert.label) || __builtin_strcmp(a.alert.name, b.alert.name) || __builtin_strcmp(a.alert.why, b.alert.why))));
     const uint8_t sa = a.animateSweep ? scanr::liveStyle(a.sweep, W) : uint8_t(ui::SW_RADAR), sb = b.animateSweep ? scanr::liveStyle(b.sweep, W) : uint8_t(ui::SW_RADAR);
+    { const artpack::Art* da = nullptr;
+      p.decor = scanr::animatedDecor(W, nullptr, &da) && scanr::decorFrame(*da, a.now, W) != scanr::decorFrame(*da, b.now, W); }
     p.sweep = !(a.animateSweep == b.animateSweep && sa == sb &&
         (!b.animateSweep || (sb == ui::SW_RADAR ? scanr::sweepAngle(a.now) == scanr::sweepAngle(b.now) : a.now == b.now)));
     return p;
@@ -464,6 +467,7 @@ public:
                 } else add(L.hero);
             }
             if (p.status) add({0, B.statusTop, W_, B.statusBottom - B.statusTop});
+            if (p.decor) { uieng::Rect dr; if (scanr::animatedDecor(W_, &dr)) add(dr); }
             for (int i = 0; i < 3; i++) if (p.count[i] || p.fxCard[i]) add(L.tiles[i]);
             const bool covered = lvOld == 1 && lvNew == 1;           // a LOW/MED alert hides the hero, so its radar, channel readout and spectrum need no repaint
             if (p.ch && !covered)   add(scanr::chRect(W_, H_));
@@ -508,7 +512,10 @@ public:
             scanr::recLabel(nw, rb, 16);
             const bool navDirty = __builtin_strcmp(ra, rb) || store_[cur_].scene().poi != nw.poi;
             if (navDirty) sched_.invalidate(B.navTop, B.navBottom);
-            if (!st && bd && fieldOnly && !navDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
+            uieng::Rect dr;   // the animated decor: only its rows (the row diff trims the push to what changed)
+            const bool decorDirty = sceneParts(W_, H_, pv, nw).decor && scanr::animatedDecor(W_, &dr);
+            if (decorDirty) sched_.invalidate(dr.y, dr.y + dr.h);
+            if (!st && bd && fieldOnly && !navDirty && !decorDirty && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
                 win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;
             }
         }
