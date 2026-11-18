@@ -199,6 +199,55 @@
           <button type="button" id="layout-hide" class="btn small">Hide</button>
           <button type="button" id="layout-reset" class="btn small">Back to default</button>
         </div>
+        <div id="layout-look" hidden>
+          <h4>Look</h4>
+          <div class="row">
+            <label class="field"><span>Font</span><select id="ls-font" data-fontpick></select></label>
+            <label class="field small"><span>Size up to</span><select id="ls-scale"><option value="">auto</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+          </div>
+          <div class="row">
+            <label class="field small"><span>Text</span><select id="ls-ink" data-rolepick></select><input id="ls-ink-hex" type="color" aria-label="Text colour"></label>
+            <label class="field small"><span>Fill</span><select id="ls-fill" data-rolepick></select><input id="ls-fill-hex" type="color" aria-label="Fill colour"></label>
+            <label class="field small"><span>Edge</span><select id="ls-edge" data-rolepick></select><input id="ls-edge-hex" type="color" aria-label="Edge colour"></label>
+          </div>
+          <div class="row">
+            <label class="field"><span>Frame picture</span><input id="ls-frame" type="file" accept="image/png,image/gif"></label>
+            <label class="field small"><span>Frame border (px)</span><input id="ls-slice" type="number" min="0" max="60" value="4"></label>
+          </div>
+          <label class="field"><span>Background picture</span><input id="ls-bg" type="file" accept="image/png,image/gif"></label>
+          <button type="button" id="ls-clear" class="btn small">Clear the look</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Fonts and pictures</h3>
+        <div class="row">
+          <label class="field"><span>Upload a font (TTF/OTF)</span><input id="lf-file" type="file" accept=".ttf,.otf,font/ttf,font/otf"></label>
+          <label class="field small"><span>at px</span><input id="lf-px" type="number" min="6" max="32" value="12"></label>
+        </div>
+        <label class="field"><span>Add a picture to this board (PNG or GIF)</span><input id="ld-file" type="file" accept="image/png,image/gif"></label>
+        <p id="lf-msg" class="tiny muted">Pictures sit under every piece and are drawn at exactly the size you give them. One per board may move (an animated GIF).</p>
+      </div>
+      <div class="card">
+        <h3>Other screens</h3>
+        <div class="row">
+          <label class="field"><span>Titles</span><select id="lb-title" data-fontpick></select></label>
+          <label class="field"><span>Text</span><select id="lb-body" data-fontpick></select></label>
+          <label class="field"><span>Numbers</span><select id="lb-numbers" data-fontpick></select></label>
+        </div>
+        <div class="row">
+          <label class="field small"><span>Highlight fill</span><select id="lb-hifill" data-rolepick></select></label>
+          <label class="field small"><span>Highlight edge</span><select id="lb-hiedge" data-rolepick></select></label>
+        </div>
+        <label class="field"><span>Background picture</span><input id="lb-bg" type="file" accept="image/png,image/gif"></label>
+        <div class="row">
+          <label class="field"><span>Panel picture</span><input id="lb-panel" type="file" accept="image/png,image/gif"></label>
+          <label class="field small"><span>Panel border (px)</span><input id="lb-slice" type="number" min="0" max="30" value="4"></label>
+        </div>
+        <label class="field"><span>Menu icons (up to six, in menu order)</span><input id="lb-icons" type="file" accept="image/png,image/gif" multiple></label>
+        <div class="row">
+          <label class="field"><span>Preview</span><select id="lb-screen"><option value="scan">Scan</option><option value="mesh">Mesh</option><option value="menu">Menu</option><option value="aspect">Aspect</option></select></label>
+          <button type="button" id="lb-clear" class="btn small">Clear this board's screen style</button>
+        </div>
       </div>
       <div class="card">
         <h3>Hidden pieces</h3>

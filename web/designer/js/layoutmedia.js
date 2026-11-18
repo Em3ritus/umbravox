@@ -9,6 +9,9 @@ import { imageToArt, artToBin, ART_MIN_DELAY_MS, MAX_ART_W, MAX_ART_H } from './
 
 export const MAX_FONTS = 8, MAX_ARTS = 16, MAX_ART_TOTAL = 393216;
 const PANEL_MAX = 64, ICON_MAX = 40;   // a panel frame's or a menu icon's largest side (designer's choice)
+// Converted pictures, per source picture object then per size/board/transparency: a drag re-packs the layout on every
+// move, and converting a full-screen background each time would stall the page.
+const converted = new WeakMap();
 
 export function packMedia(L, names, media) {
   const fonts = new Map(), pics = new Map(), files = [], errors = [], total = { waveshare: 0, cyd: 0 };
@@ -39,10 +42,15 @@ export function packMedia(L, names, media) {
       const id = `${key}|${board}|${w}x${h}|${transparent}`;
       if (pics.has(id)) return pics.get(id);
       if (pics.size >= MAX_ARTS) { err(`a theme can use at most ${MAX_ARTS} pictures (each picture at each size on each board counts once)`); return 'a0'; }
-      let data;
-      try {
-        data = artToBin(imageToArt(src.frames, src.w, src.h, { w, h, delays: src.delays, transparent, minDelay: ART_MIN_DELAY_MS[board] }));
-      } catch (e) { err(`${key} at ${w}x${h}: ${e.message}`); return 'a0'; }
+      let byId = converted.get(src);
+      if (!byId) { byId = new Map(); converted.set(src, byId); }
+      let data = byId.get(id);
+      if (!data) {
+        try {
+          data = artToBin(imageToArt(src.frames, src.w, src.h, { w, h, delays: src.delays, transparent, minDelay: ART_MIN_DELAY_MS[board] }));
+        } catch (e) { err(`${key} at ${w}x${h}: ${e.message}`); return 'a0'; }
+        byId.set(id, data);
+      }
       const stem = 'a' + pics.size;
       pics.set(id, stem);
       files.push({ name: stem + '.art', data });

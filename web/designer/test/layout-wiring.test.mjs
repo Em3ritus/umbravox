@@ -23,7 +23,7 @@ test('app.js uses the layout model, the pointer maths and the presets', () => {
   assert.match(app, /from '\.\/layout-edit\.js'/);
   assert.match(app, /from '\.\/layout-presets\.js'/);
   assert.match(app, /draftOther\(/);
-  assert.match(app, /toJson\(L, rules\(\)\.names\)/);
+  assert.match(app, /packMedia\(L, rules\(\)\.names, state\.media\)/);   // layout.json with its fonts and pictures (plan 4)
 });
 
 test('the preview takes pointer and keyboard input', () => {
@@ -42,7 +42,7 @@ test('the layout draws on the engine preview for the active board', () => {
 });
 
 test('the loaded draft carries the layout, and a refused layout is an error in the checks', () => {
-  assert.match(app, /loadDraft\(currentTheme\(\), state\.emblem, state\.clip, layoutText\(\)\)/);
+  assert.match(app, /loadDraft\(currentTheme\(\), state\.emblem, state\.clip, layoutText\(\), previewMedia\(\)\)/);
   assert.match(app, /checkLayout\(/);
 });
 

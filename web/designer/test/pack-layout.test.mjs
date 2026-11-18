@@ -49,7 +49,7 @@ test('USB install sends layout.json before theme.json', () => {
 });
 
 test('a folder install removes a stale layout.json the new pack does not have', () => {
-  assert.match(read('web/designer/js/install.js'), /\['emblem\.bin', 'radar\.vid', 'alert\.snd', 'layout\.json'\]/);
+  assert.match(read('web/designer/js/install.js'), /\['emblem\.bin', 'radar\.vid', 'alert\.snd', 'layout\.json', \.\.\.media\]/);
 });
 
 test('Share is refused, with a message, while the theme has a layout', () => {

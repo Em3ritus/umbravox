@@ -151,6 +151,37 @@ int main() {
         uieng::Rect r;
         check(L("the animated decor rect"), scanr::animatedDecor(W, &r) && r == dr);
     }
+    // Decor over the radar: every pixel the radar inks without the decor is the same with it (decor is under every piece).
+    {
+        const uieng::Rect rr = themelayout::defaultRect(themelayout::B_WAVESHARE, themelayout::P_RADAR);
+        const uieng::Rect dr{rr.x + 4, rr.y + rr.h / 2 - 15, 40, 30};   // across the radar's left rim
+        const std::string d = root + "/radar-decor";
+        mkdir(d.c_str(), 0755);
+        writeText(d + "/theme.json", themeJson("RADAR DECOR"));
+        writeText(d + "/layout.json", "{\"format\":1,\"waveshare\":{\"decor.0\":{\"rect\":" + rj(dr) + ",\"art\":\"a0\"}},\"cyd\":{}}");
+        writeFile(d + "/a0.art", artfix::make(40, 30, 1, false));
+        char why[160];
+        const int id = packload::load(d.c_str(), why, sizeof why);
+        check("radar decor pack loads", id >= 0 && !why[0]);
+        if (id >= 0) {
+            pal::setTheme((uint8_t)id);
+            scanr::ScanScene sc = scanfix::demo((uint8_t)id); sc.animateSweep = false;
+            assets::clear((uint8_t)id);
+            const auto bare = render(480, 320, sc, 16);
+            packload::useMedia(id);
+            const auto with = render(480, 320, sc, 16);
+            const uint16_t ground = pal::VOID;
+            int radarInk = 0, covered = 0;
+            for (int y = dr.y; y < dr.y + dr.h; y++) for (int x = dr.x; x < dr.x + dr.w; x++) {
+                const size_t i = (size_t)y * 480 + x;
+                // The radar draws AFTER the decor and blends with what is under it, so a radar pixel over the decor is
+                // neither the bare colour nor the decor's: covered means the decor's colour shows where the radar inks.
+                if (bare[i] != ground) { radarInk++; if (with[i] == artfix::PAL[artfix::indexAt(x - dr.x, y - dr.y, 0)]) covered++; }
+            }
+            char label[96]; snprintf(label, sizeof label, "decor stays under the radar (%d of %d radar pixels show plain decor)", covered, radarInk);
+            check(label, radarInk > 0 && covered == 0);
+        }
+    }
     pal::setTheme(0);
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;
