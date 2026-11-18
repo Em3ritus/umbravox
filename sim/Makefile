@@ -31,7 +31,7 @@ sheet: $(BIN)
 	./$(BIN) sheet.png --sheet 6
 
 clean:
-	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console snd_check bench_draw *.png
+	rm -f $(BIN) ws_preview_png $(TESTS) sdcmd_console snd_check bench_draw bench_art *.png
 
 # The host tests each carry their own main(), so each links as its own
 # binary. They are listed explicitly rather than globbed: a test that stops
@@ -257,6 +257,10 @@ test_packassets: test_packassets.cpp fontfix.h artfix.h ../ui/packassets.h ../ui
 
 test_style_render: test_style_render.cpp packload.h scan_fixture.h fontfix.h artfix.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_style_render.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
+
+# Art draw-time benchmark (not part of `test`): bench_art PACK_DIR, the pack from tools/stress-pack.mjs.
+bench_art: bench_art.cpp packload.h scan_fixture.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
+	$(CXX) $(CXXFLAGS) -o $@ bench_art.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm
 
 test_screen_style: test_screen_style.cpp packload.h $(wildcard *_fixture.h) fontfix.h artfix.h $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ test_screen_style.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm

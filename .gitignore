@@ -127,6 +127,7 @@ sim/test_input_presentation
 
 sim/test_scan_latency
 sim/bench_scan
+sim/bench_art
 
 sim/test_sight_order
 
