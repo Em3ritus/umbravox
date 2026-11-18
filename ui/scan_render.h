@@ -476,14 +476,9 @@ inline void artInto(S& s, const artpack::Art& a, int x, int y, uint16_t frame) {
     if (frame >= a.frames) frame = 0;
     const int y0 = std::max(y, s.y0), y1 = std::min(y + (int)a.h, s.y0 + s.h);
     const int x0 = std::max(x, s.lo), x1 = std::min(x + (int)a.w, s.hi);
-    for (int yy = y0; yy < y1; ++yy) {
-        uint16_t* row = s.px + (yy - s.y0) * s.stride;
-        for (int xx = x0; xx < x1; ++xx) {
-            const uint8_t ix = artpack::index(a, frame, xx - x, yy - y);
-            if (ix == 0 && a.transparent) continue;
-            row[xx - s.lo] = a.pal[ix];
-        }
-    }
+    if (x1 <= x0) return;
+    for (int yy = y0; yy < y1; ++yy)
+        artpack::blitRun(a, frame, x0 - x, yy - y, x1 - x0, s.px + (yy - s.y0) * s.stride + (x0 - s.lo));
 }
 // Nine-slice: frame 0 of `a` stretched over `r` by repeating (not scaling) its edges and centre. slice = l,t,r,b.
 inline int nineSrc(int d, int dn, int sn, int lo, int hi) {   // destination offset -> source offset on one axis
@@ -496,9 +491,25 @@ inline void nineInto(S& s, const artpack::Art& a, uieng::Rect r, const uint8_t s
     if (!a.px || a.w == 0 || r.w <= 0 || r.h <= 0) return;
     const int y0 = std::max(r.y, s.y0), y1 = std::min(r.y + r.h, s.y0 + s.h);
     const int x0 = std::max(r.x, s.lo), x1 = std::min(r.x + r.w, s.hi);
+    if (x1 <= x0) return;
+    // Borders that fit (mid > 0, left + right <= the rect's width): each row is up to three kinds of run where the
+    // source column steps by one -- the left border, the repeated middle (split where it wraps), the right border.
+    const int L = slice[0], R = slice[2], mid = (int)a.w - L - R;
+    const bool runs = mid > 0 && L + R <= r.w;
     for (int yy = y0; yy < y1; ++yy) {
         const int sy = nineSrc(yy - r.y, r.h, a.h, slice[1], slice[3]);
         uint16_t* row = s.px + (yy - s.y0) * s.stride;
+        if (runs) {
+            for (int d = x0 - r.x, d1 = x1 - r.x; d < d1;) {
+                int sx, n;
+                if (d < L)              { sx = d;                      n = std::min(d1, L) - d; }
+                else if (d < r.w - R)   { sx = L + (d - L) % mid;      n = std::min(std::min(d1, r.w - R) - d, L + mid - sx); }
+                else                    { sx = (int)a.w - (r.w - d);   n = d1 - d; }
+                artpack::blitRun(a, 0, sx, sy, n, row + (r.x + d - s.lo));
+                d += n;
+            }
+            continue;
+        }
         for (int xx = x0; xx < x1; ++xx) {
             const int sx = nineSrc(xx - r.x, r.w, a.w, slice[0], slice[2]);
             const uint8_t ix = artpack::index(a, 0, sx, sy);

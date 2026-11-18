@@ -41,4 +41,25 @@ inline uint8_t index(const Art& a, uint16_t frame, int x, int y) {   // caller k
     return (p & 1) ? (b & 0x0F) : (b >> 4);
 }
 
+// n pixels of source row sy from column sx to dst[0..n), skipping index 0 when the art is transparent; one byte
+// pointer walked along the row (the caller keeps 0 <= sx, sx + n <= w, 0 <= sy < h, frame < frames).
+inline void blitRun(const Art& a, uint16_t frame, int sx, int sy, int n, uint16_t* dst) {
+    if (n <= 0) return;
+    const uint32_t p = (uint32_t)sy * a.w + (uint32_t)sx;
+    const uint8_t* b = a.px + (size_t)frame * a.frameBytes + p / 2;
+    const uint16_t* pal = a.pal;
+    int i = 0;
+    if (p & 1) { const uint8_t ix = *b++ & 0x0F; if (ix || !a.transparent) dst[0] = pal[ix]; i = 1; }
+    if (a.transparent) {
+        for (; i + 1 < n; i += 2, ++b) {
+            const uint8_t v = *b, hi = v >> 4, lo = v & 0x0F;
+            if (hi) dst[i] = pal[hi];
+            if (lo) dst[i + 1] = pal[lo];
+        }
+    } else {
+        for (; i + 1 < n; i += 2, ++b) { const uint8_t v = *b; dst[i] = pal[v >> 4]; dst[i + 1] = pal[v & 0x0F]; }
+    }
+    if (i < n) { const uint8_t ix = *b >> 4; if (ix || !a.transparent) dst[i] = pal[ix]; }
+}
+
 }  // namespace artpack
