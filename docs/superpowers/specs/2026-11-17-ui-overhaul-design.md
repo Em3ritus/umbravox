@@ -252,6 +252,8 @@ can add it without a format 3. More screens get layouts by adding their piece na
 - Board tabs: Waveshare 3.5" / CYD 2.8". The first board laid out is the master; the other shows the draft with
   an "adjusted" mark on pieces the author has moved.
 - Alert preview: buttons for low / medium / high play the alert on the preview.
+- Card over a control: a LOW or MED card may cover STOP, MENU or the nav (the device allows it, as HIGH covers
+  everything); the designer warns that while the alert shows, a tap there dismisses it first (owner, 2026-11-18).
 - Speed meter always visible; checks list (as today) includes every rule in "Check on the device too".
 - Start page: the starting layouts, alongside today's templates.
 - Every new limitation goes into `limits.json` and the docs, as the theme-packs spec requires.
