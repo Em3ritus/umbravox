@@ -1931,11 +1931,13 @@ void loop() {
         alertrepeat::Table* const table = &staticTable;
 #endif
         if (nc) { historyAlert = cand[0]; haveHistoryAlert = true; }
-        for (int i = 0; i < nc; i++) {
+        // Stop at the first one shown: asking the table about the other would mark it shown (its cooldown would run
+        // although it never reached the screen) and make it the one a tap dismisses.
+        for (int i = 0; i < nc && !s.alertActive; i++) {
             alertrepeat::Verdict v;
             if (table) v = table->see(cand[i], now, set.alertRepeat);
             else { v.show = true; }
-            if (!v.show || s.alertActive) continue;
+            if (!v.show) continue;
             const ui::AlertRec& best = cand[i];
             s.alertActive = true;
             s.alertThreat = best.threat;
