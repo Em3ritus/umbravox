@@ -4,6 +4,7 @@
 // legacy targets carry none of it.
 #include "sound.h"
 #include "engine_adapter.h"
+#include <new>
 
 #if defined(UMBRAVOX_SCAN_ENGINE)
 
@@ -194,6 +195,7 @@ struct ScanStage {
 // FRAMELOG's accumulators live in PSRAM just past the end of the back frame (begin() allocates them with it), so
 // they cost no internal RAM: the ws-c5-35-engine .dram0.bss is at its cap. Null when there is no PSRAM frame.
 struct FrameLogState { bool on; uint32_t drawn, us, lastAt; bool have; FrameRec rec; };
+static_assert(alignof(alertrepeat::Table) <= alignof(FrameLogState), "the repeat table sits right after FRAMELOG's state");
 FrameLogState* flogState() { return buffered_ ? reinterpret_cast<FrameLogState*>(frame_.rows(H_)) : nullptr; }
 
 void renderScan(int y0, int y1) {
@@ -231,9 +233,9 @@ void begin(Arduino_TFT* gfx, int W, int H) {
         touch::setHoldTarget(chip.x, chip.y, chip.w, chip.h);
     }
     auto* front = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
-    auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2 + sizeof(FrameLogState), MALLOC_CAP_SPIRAM));   // + FRAMELOG's state
+    auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2 + sizeof(FrameLogState) + sizeof(alertrepeat::Table), MALLOC_CAP_SPIRAM));   // + FRAMELOG's state + the alert repeat table
     buffered_ = front && back;
-    if (buffered_) { frame_.begin(front, back, W, H); *flogState() = FrameLogState{}; }
+    if (buffered_) { frame_.begin(front, back, W, H); *flogState() = FrameLogState{}; new (flogState() + 1) alertrepeat::Table(); }
     else { free(front); free(back); Serial.println("ui: frame allocation failed; progressive fallback"); }
     eScan_.reset(W, H); eDomain_.reset(W, H); eCodex_.reset(W, H); eMenu_.reset(W, H);
     eMesh_.reset(W, H); eOmens_.reset(W, H); eEchoes_.reset(W, H); eAttune_.reset(W, H);
@@ -433,6 +435,9 @@ bool service(int budgetStrips) {
     return done;
 }
 
+void alertNewEpisode() { alertGate_.dismissed = false; }
+alertrepeat::Table* alertRepeatTable() { return buffered_ ? reinterpret_cast<alertrepeat::Table*>(flogState() + 1) : nullptr; }
+
 bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
     router_.setScreen(toNav(nav.screen));
     cur_ = toNav(nav.screen);
@@ -513,8 +518,8 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
             case uieng::Action::Nav:
                 display_.editor=-1;display_.count=0;settings_.editor=-1;
                 if(nav.screen==ui::SCR_FILES)ui::filesEnter(nav);
-                if(hit.slot && !strcmp(hit.slot,"node-tune"))settings_.tab=3;
-                if(hit.slot && !strcmp(hit.slot,"bridge-hold"))settings_.tab=2;   // ATTUNE > BRIDGE
+                if(hit.slot && !strcmp(hit.slot,"node-tune"))settings_.tab=4;   // ATTUNE > NODES
+                if(hit.slot && !strcmp(hit.slot,"bridge-hold"))settings_.tab=3;   // ATTUNE > BRIDGE (tab 3 since the ALERTS tab)
                 break;
             case uieng::Action::MeshPage: nav.meshPage=uieng::meshNavigate(nav.meshPage,s.nNodes,hit.payload);break;
             case uieng::Action::DetailPage: nav.detailPage=(nav.detailPage+1)%(s.detail.band==ui::BAND_BLE?2:3); break;
@@ -588,7 +593,7 @@ bool dispatchTouch(ui::Nav& nav, ui::Settings& set, const ui::State& s) {
                 alertDetailOpen_=alertlog::find(id,millis(),alertDetail_);alertDetailPage_=0;cancelInput();break;
             }
             case uieng::Action::AlertClose:alertDetailOpen_=false;cancelInput();break;
-            case uieng::Action::AlertDismiss:alertGate_.dismiss(s.alertThreat,s.alertName);cancelInput();break;
+            case uieng::Action::AlertDismiss:alertGate_.dismiss(s.alertThreat,s.alertName);if(auto* t=alertRepeatTable())t->dismissCurrent(millis());cancelInput();break;
             case uieng::Action::AlertPage: {if(alertDetailOpen_){
                 int pages=omnr::detailPageCount(W_,H_,eOmens_.scene().detail);
                 alertDetailPage_+=hit.payload<0?-1:1;if(alertDetailPage_<0)alertDetailPage_=0;if(alertDetailPage_>=pages)alertDetailPage_=pages>0?pages-1:0;

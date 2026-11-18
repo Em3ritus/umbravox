@@ -118,6 +118,9 @@ struct Settings {
     uint16_t bleBridge = 0;   // 0 OFF, 1 WarDriveGo, 2 Biscuit; fills aligned extension
     // Alert beep volume on a board with a speaker (Waveshare 3.5"): 0 OFF, 1 QUIET, 2 NORMAL, 3 LOUD. ATTUNE > recording > ALERT SOUND.
     uint16_t sound = 2;
+    // How long the same device stays quiet after it alerted (ui/alert_repeat.h): 0 1 MIN, 1 10 MIN, 2 1 HOUR,
+    // 3 UNTIL REBOOT. Trackers travelling with you and drones keep their own clocks. ATTUNE > ALERTS > ALERT REPEAT.
+    uint16_t alertRepeat = 1;
 };
 
 // Settings.orient. Unknown values clamp to LANDSCAPE.

@@ -171,6 +171,7 @@ sim/bridge_png
 
 /sim/test_alert_history
 /sim/test_alert_gate
+/sim/test_alert_repeat
 
 /sim/test_oui_registry
 

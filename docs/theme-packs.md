@@ -134,7 +134,7 @@ The length must match the counts exactly. A file that fails any check is not use
 sounds, and `/diag.log` says why when its theme is selected ("alert sounds not used: ..."); `sim/umbravox --check-pack`
 reports the same problem up front. The sounds are read from the card when the pack's theme is selected, not at boot, so
 any number of packs may carry them; the file's size counts in the boot-loop guard's total. The ALERT SOUND setting (Settings,
-recording tab: OFF, QUIET, NORMAL, LOUD) scales a pack's sounds as it scales the built-in beeps; NORMAL plays the
+alerts tab: OFF, QUIET, NORMAL, LOUD) scales a pack's sounds as it scales the built-in beeps; NORMAL plays the
 samples as stored, so the designer normalizes each sound to 70% of full scale.
 
 The designer makes the file: on the Waveshare board a card under the preview takes any audio file per level

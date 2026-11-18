@@ -66,7 +66,8 @@ int main() {
     // byte, as model.h asked the next setting to. No padding was added and
     // none removed; the next setting after orient widens the struct.
     // Bridge state and remembered app keep the struct padding-free at 18 bytes.
-    static_assert(sizeof(Settings) == 28,
+    // 28 -> 30 with alertRepeat (a uint16_t after sound: still no padding).
+    static_assert(sizeof(Settings) == 30,
                   "Settings changed size -- see the padding note above, and "
                   "confirm every field has a default member initializer");
 
@@ -100,6 +101,13 @@ int main() {
         for (size_t off = 0; off < sizeof(Settings); off++)
             if (z[off] != f[off]) padBytes++;
         check("no padding, no uninitialised field", padBytes == 0);
+        {   Settings r; check("ALERT REPEAT defaults to 10 MIN", r.alertRepeat == 1);
+            r.alertRepeat = 9; clampSettings(r); check("ALERT REPEAT junk clamps to 10 MIN", r.alertRepeat == 1);
+            r.alertRepeat = 3; clampSettings(r); check("ALERT REPEAT keeps UNTIL REBOOT", r.alertRepeat == 3);
+            Settings k; applyKnobStep(k, 15, 1); applyKnobStep(k, 15, 1); check("knob 15 steps up to 3", k.alertRepeat == 3);
+            applyKnobStep(k, 15, 1); check("knob 15 stops at 3", k.alertRepeat == 3);
+            Settings j; applyKnobStep(j, 15, -1); applyKnobStep(j, 15, -1); check("knob 15 stops at 0", j.alertRepeat == 0);
+            Settings a2, b2; b2.alertRepeat = 2; check("settingsEqual sees ALERT REPEAT", !settingsEqual(a2, b2)); }
 
         int missed = 0;
         for (int th = 0; th < pal::themeCount(); th++) {
@@ -109,6 +117,7 @@ int main() {
             base.pcapEnabled=1;base.activeDiscovery=1; base.meshProfile=1; base.nodeDwellMs=150;
             base.bleBridge = 1; // high-byte corruption clamps to OFF, a detectable change
             base.sound = 1;     // likewise: a corrupt high byte clamps to NORMAL (2), which differs from 1
+            base.alertRepeat = 2; // likewise: a corrupt high byte clamps to 10 MIN (1), which differs from 2
             clampSettings(base);
             for (size_t off = 0; off < sizeof(Settings); off++) {
                 if (z[off] != f[off]) continue;     // padding, not a field
