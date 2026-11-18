@@ -106,3 +106,14 @@ test('moving a styled piece or a decor keeps its style and picture; decor is pic
   assert.equal(pickPiece(rects, 55, 300), 'decor.0');
   assert.equal(toJson(newLayout(), NAMES), null);
 });
+
+// ---- plan 5b: a card's picture is fitted to its card and to the board's moving-picture area ----
+import { setCard } from '../js/layout.js';
+test('a card picture is fitted to the card and the CYD area cap', () => {
+  const L = setCard(newLayout(), 'cyd', 'low', { rect: { x: 0, y: 0, w: 200, h: 120 }, pic: 'pic:ghost' });
+  const { json, files, errors } = packMedia(L, NAMES, { fonts: {}, pictures: { 'pic:ghost': pic(300, 300, 2) } });
+  assert.deepEqual(errors, []);
+  assert.equal(JSON.parse(json).cyd['alert.card.low'].clip, 'a0');
+  const a = readArt(files.find((f) => f.name === 'a0.art').data);
+  assert.ok(a.w <= 200 && a.h <= 120 && a.w * a.h <= 10000, `${a.w}x${a.h}`);
+});

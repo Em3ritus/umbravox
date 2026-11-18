@@ -25,6 +25,7 @@ const clone = (L) => ({
   master: L.master,
   adjusted: { waveshare: [...L.adjusted.waveshare], cyd: [...L.adjusted.cyd] },
   style: { waveshare: { ...(L.style?.waveshare || {}) }, cyd: { ...(L.style?.cyd || {}) } },
+  cards: { waveshare: { ...(L.cards?.waveshare || {}) }, cyd: { ...(L.cards?.cyd || {}) } },
 });
 
 export const MAX_DECOR = 8;
@@ -32,8 +33,37 @@ export const isDecor = (name) => /^decor\.[0-7]$/.test(name);
 export const decorNames = (L, board) => Object.keys(L.boards[board]).filter(isDecor).sort();
 
 export function newLayout() {
-  return { boards: { waveshare: {}, cyd: {} }, master: null, adjusted: { waveshare: [], cyd: [] }, style: { waveshare: {}, cyd: {} } };
+  return { boards: { waveshare: {}, cyd: {} }, master: null, adjusted: { waveshare: [], cyd: [] }, style: { waveshare: {}, cyd: {} },
+    cards: { waveshare: {}, cyd: {} } };
 }
+
+// ---- plan 5b: alert cards (overlays, one per level and board) and piece effects ----
+// L.cards[board][level] = { rect: {x,y,w,h}, font?, scale?, pic? } (font and pic are source keys, as for pieces).
+// No card for a level = the device's built-in card. Cards are not pieces: no hidden state, no tray, no z-order.
+export const LEVELS = ['low', 'med', 'high'];
+const CARD_MIN = { waveshare: { w: 240, h: 120 }, cyd: { w: 160, h: 96 } };   // ui/themelayout.cpp checkLook
+// Merge `patch` (rect, font, scale, pic; null or '' removes a key) into a card; patch null removes the card.
+export function setCard(L, board, level, patch) {
+  if (!SCREEN[board]) throw new Error('unknown board ' + board);
+  if (!LEVELS.includes(level)) throw new Error('unknown alert level ' + level);
+  const n = clone(L), cards = n.cards[board];
+  if (patch === null) delete cards[level];
+  else {
+    const c = { ...(cards[level] || {}) };
+    for (const [k, v] of Object.entries(patch)) { if (v === null || v === undefined || v === '') delete c[k]; else c[k] = k === 'rect' ? { x: Math.round(v.x), y: Math.round(v.y), w: Math.round(v.w), h: Math.round(v.h) } : v; }
+    if (!c.rect) throw new Error(`alert.card.${level} needs a rect`);
+    cards[level] = c;
+  }
+  if (!n.master) n.master = board;
+  return n;
+}
+// The card a level shows: the theme's, or the built-in one (rules.cardDefault, from the device code).
+export function cardOf(L, board, level, rules) {
+  const c = L.cards?.[board]?.[level];
+  return c ? { ...c, builtin: false } : { rect: rules.cardDefault(board, level), builtin: true };
+}
+// Pieces on a board that carry an alert effect (a hidden piece draws nothing, so it does not count).
+export const fxCount = (L, board) => Object.values(L.boards[board]).filter((p) => p && !p.hidden && p.style?.effect).length;
 
 // Merge `patch` into a piece's style (a key set to null, undefined or '' is removed). A piece the author never placed
 // is placed at `rect` (its default) so the style has a rect to go with.
@@ -42,7 +72,10 @@ export function setStyle(L, board, name, patch, rect) {
   if (!b) throw new Error('unknown board ' + board);
   const cur = b[name] || { rect: rect ? { ...rect } : null, hidden: false };
   const style = { ...(cur.style || {}) };
-  for (const [k, v] of Object.entries(patch)) { if (v === null || v === undefined || v === '') delete style[k]; else style[k] = v; }
+  for (const [k, v] of Object.entries(patch)) {
+    // 'none' and 'medium' are the device's defaults: not written
+    if (v === null || v === undefined || v === '' || (k === 'effect' && v === 'none') || (k === 'speed' && v === 'medium')) delete style[k]; else style[k] = v;
+  }
   b[name] = { ...cur, style };
   if (!b[name].rect && !b[name].hidden) throw new Error(`${name} needs a rect to carry a style`);
   if (!n.master) n.master = board;
@@ -94,7 +127,8 @@ export function showPiece(L, board, name) {
   return p.rect ? setPiece(L, board, name, p.rect) : setPiece(L, board, name, null);
 }
 
-export const isEmpty = (L) => !L.raw && BOARD_NAMES.every((b) => Object.keys(L.boards[b]).length === 0 && Object.keys(L.style?.[b] || {}).length === 0);
+export const isEmpty = (L) => !L.raw && BOARD_NAMES.every((b) => Object.keys(L.boards[b]).length === 0 && Object.keys(L.style?.[b] || {}).length === 0 &&
+  Object.keys(L.cards?.[b] || {}).length === 0);
 
 // Where a piece is on a board: its placed rect, null when hidden, or the default.
 export function rectOf(L, board, name, rules) {
@@ -117,6 +151,8 @@ function pieceStyleOut(st, r, b, refs) {
   for (const k of ['ink', 'fill', 'edge']) if (st[k]) o[k] = st[k];
   if (st.frame) { o.frame = refs.pic(st.frame, b, null, null, { frameFor: r }); o.slice = st.slice || [4, 4, 4, 4]; }
   if (st.bg) o.bg = refs.pic(st.bg, b, r.w, r.h, { transparent: false });
+  if (st.effect) o.effect = st.effect;
+  if (st.speed) o.speed = st.speed;
   return o;
 }
 function boardStyleOut(st, b, refs) {
@@ -151,6 +187,15 @@ export function toJson(L, names, refs = null) {
     for (const d of decorNames(L, b)) {
       const p = L.boards[b][d];
       o[d] = { rect: rectArr(p.rect), art: R.pic(p.pic, b, p.rect.w, p.rect.h, { transparent: true, decor: true }) };
+    }
+    for (const lv of LEVELS) {
+      const c = L.cards?.[b]?.[lv];
+      if (!c) continue;
+      const co = { rect: rectArr(c.rect) };
+      if (c.font) co.font = R.font(c.font);
+      if (c.scale) co.scale = c.scale;
+      if (c.pic) co.clip = R.pic(c.pic, b, null, null, { cardFor: c.rect });
+      o['alert.card.' + lv] = co;
     }
     out[b] = o;
   }
@@ -187,6 +232,15 @@ export function fromJson(text, names = null) {
         L.style[b] = st;
         continue;
       }
+      const lv = /^alert\.card\.(low|med|high)$/.exec(n);
+      if (lv && PLAIN(v) && isRect(v.rect)) {
+        const c = { rect: toRect(v.rect) };
+        if (typeof v.font === 'string') c.font = file(v.font);
+        if (Number.isInteger(v.scale)) c.scale = v.scale;
+        if (typeof v.clip === 'string') c.pic = file(v.clip);
+        L.cards[b][lv[1]] = c;
+        continue;
+      }
       if (isDecor(n) && PLAIN(v) && isRect(v.rect) && typeof v.art === 'string') { L.boards[b][n] = { rect: toRect(v.rect), hidden: false, pic: file(v.art) }; continue; }
       if (BAD_KEYS.has(n) || (names && !names.includes(n))) { L.dropped.push(`${b}: "${n}" is not a piece`); continue; }
       if (v === 'hidden') L.boards[b][n] = { rect: null, hidden: true };
@@ -198,6 +252,7 @@ export function fromJson(text, names = null) {
         for (const k of ['ink', 'fill', 'edge']) if (typeof v[k] === 'string') st[k] = v[k];
         if (typeof v.frame === 'string') { st.frame = file(v.frame); if (Array.isArray(v.slice)) st.slice = v.slice.slice(0, 4); }
         if (typeof v.bg === 'string') st.bg = file(v.bg);
+        for (const k of ['effect', 'speed']) if (typeof v[k] === 'string') st[k] = v[k];
         L.boards[b][n] = { rect: toRect(v.rect), hidden: false, ...(Object.keys(st).length ? { style: st } : {}) };
       }
       else L.dropped.push(`${b}: ${n} is not [x, y, w, h] or "hidden"`);
@@ -270,6 +325,17 @@ export function draftOther(L, from, to, rules) {
     n.boards[to][name] = { rect: { x, y, w, h }, hidden: false, pic: p.pic };
   }
   if (!Object.keys(n.style[to]).length) n.style[to] = { ...(L.style?.[from] || {}) };
+  // Alert cards: scaled and anchored like a piece, then grown to the target board's minimum and kept on screen.
+  n.cards[to] = {};
+  for (const lv of LEVELS) {
+    const c = L.cards?.[from]?.[lv];
+    if (!c) continue;
+    const r = c.rect, m = CARD_MIN[to];
+    const w = Math.min(T.w, Math.max(m.w, Math.round(r.w * k))), h = Math.min(T.h, Math.max(m.h, Math.round(r.h * k)));
+    const x = Math.max(0, Math.min(T.w - w, anchor(r.x, r.w, w, F.w, T.w, k)));
+    const y = Math.max(0, Math.min(T.h - h, anchor(r.y, r.h, h, F.h, T.h, k)));
+    n.cards[to][lv] = { ...c, rect: { x, y, w, h } };
+  }
   // Nudge apart pieces that the scaling pushed together.
   for (let tries = 0; tries < 3; tries++) {
     let moved = false;

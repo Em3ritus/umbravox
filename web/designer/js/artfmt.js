@@ -7,6 +7,7 @@ import { quantizeColour } from './radarvideo.js';
 
 export const MAX_ART = 196608, MAX_ART_FRAMES = 64, MAX_ART_W = 480, MAX_ART_H = 320, HEADER = 16;
 export const ART_MIN_DELAY_MS = { waveshare: 50, cyd: 100 };   // ui/scan_render.h artMinDelay
+export const ANIM_AREA_MAX = { waveshare: 25600, cyd: 10000 };   // ui/scan_render.h animAreaMax
 
 export const artBytes = (w, h, frames, ncol) => HEADER + ncol * 2 + frames * 2 + frames * Math.ceil(w * h / 2);
 

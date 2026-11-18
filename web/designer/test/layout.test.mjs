@@ -121,3 +121,74 @@ test('before saving, a board the author never opened is drafted from the other (
   assert.equal(visited.boards.cyd.stop, undefined, 'a board the author opened (and left default) is not drafted over');
   assert.equal(withDrafts(newLayout(), rules, new Set()).master, null);
 });
+
+// ---- plan 5b: alert cards and effects ----
+import { setCard, cardOf, fxCount, LEVELS, setStyle } from '../js/layout.js';
+const CARD = { waveshare: { low: { x: 124, y: 52, w: 348, h: 216 }, high: { x: 0, y: 0, w: 480, h: 320 } },
+  cyd: { low: { x: 104, y: 52, w: 208, h: 136 }, high: { x: 0, y: 0, w: 320, h: 240 } } };
+const crules = { ...rules, cardDefault: (b, l) => CARD[b][l === 'med' ? 'low' : l] };
+
+test('LEVELS are the three confidence levels', () => assert.deepEqual(LEVELS, ['low', 'med', 'high']));
+
+test('a card round-trips through layout.json', () => {
+  const L = setCard(newLayout(), 'waveshare', 'med', { rect: { x: 90, y: 80, w: 300, h: 160 }, font: 'f2' });
+  const t = toJson(L, NAMES);
+  assert.ok(t.includes('"alert.card.med":{"rect":[90,80,300,160],"font":"f2"}'), t);
+  const back = fromJson(t, NAMES);
+  assert.deepEqual(back.cards.waveshare.med.rect, { x: 90, y: 80, w: 300, h: 160 });
+  assert.equal(back.cards.waveshare.med.font, 'file:f2');
+  assert.deepEqual(back.dropped, []);
+});
+
+test('setCard(null) brings back the built-in card; cardOf says which', () => {
+  let L = setCard(newLayout(), 'cyd', 'high', { rect: { x: 10, y: 10, w: 200, h: 120 }, scale: 2 });
+  assert.equal(cardOf(L, 'cyd', 'high', crules).builtin, false);
+  assert.equal(cardOf(L, 'cyd', 'high', crules).scale, 2);
+  L = setCard(L, 'cyd', 'high', null);
+  assert.deepEqual(cardOf(L, 'cyd', 'high', crules), { rect: CARD.cyd.high, builtin: true });
+  assert.ok(isEmpty(L));
+  assert.throws(() => setCard(newLayout(), 'cyd', 'low', { font: 'f0' }), /rect/);
+  assert.throws(() => setCard(newLayout(), 'cyd', 'loud', { rect: CARD.cyd.low }));
+});
+
+test('a card alone makes a layout that is not empty and has a master', () => {
+  const L = setCard(newLayout(), 'cyd', 'low', { rect: CARD.cyd.low });
+  assert.equal(isEmpty(L), false); assert.equal(L.master, 'cyd');
+});
+
+test('effect and speed are written and read; medium and none are not written', () => {
+  let L = setStyle(newLayout(), 'waveshare', 'stop', { effect: 'pulse', speed: 'fast' }, DEF.waveshare.stop);
+  L = setStyle(L, 'waveshare', 'menu', { effect: 'flash', speed: 'medium' }, DEF.waveshare.menu);
+  const j = JSON.parse(toJson(L, NAMES));
+  assert.deepEqual(j.waveshare.stop, { rect: [384, 276, 96, 44], effect: 'pulse', speed: 'fast' });
+  assert.deepEqual(j.waveshare.menu, { rect: [0, 0, 44, 44], effect: 'flash' });
+  const back = fromJson(JSON.stringify(j), NAMES);
+  assert.deepEqual(back.boards.waveshare.stop.style, { effect: 'pulse', speed: 'fast' });
+  L = setStyle(L, 'waveshare', 'stop', { effect: 'none' });
+  assert.equal(JSON.parse(toJson(L, NAMES)).waveshare.stop.effect, undefined);
+});
+
+test('fxCount counts placed pieces with an effect and ignores hidden ones', () => {
+  let L = setStyle(newLayout(), 'cyd', 'stop', { effect: 'pulse' }, DEF.cyd.stop);
+  L = setStyle(L, 'cyd', 'menu', { effect: 'shake' }, DEF.cyd.menu);
+  assert.equal(fxCount(L, 'cyd'), 2); assert.equal(fxCount(L, 'waveshare'), 0);
+  L = setPiece(L, 'cyd', 'menu', 'hidden');
+  assert.equal(fxCount(L, 'cyd'), 1);
+});
+
+test('an opened pack with cards and effects keeps them through an unrelated edit', () => {
+  const t = JSON.stringify({ format: 1, waveshare: { 'alert.card.low': { rect: [90, 80, 300, 160], font: 'f1', scale: 2, clip: 'a3' },
+    stop: { rect: [384, 276, 96, 44], effect: 'shake', speed: 'slow' } }, cyd: {} });
+  const L = fromJson(t, NAMES);
+  assert.equal(toJson(L, NAMES), t, 'untouched: the file as opened');
+  const j = JSON.parse(toJson(setPiece(L, 'waveshare', 'menu', { x: 0, y: 0, w: 50, h: 50 }), NAMES));
+  assert.deepEqual(j.waveshare['alert.card.low'], { rect: [90, 80, 300, 160], font: 'file:f1', scale: 2, clip: 'file:a3' });
+  assert.deepEqual(j.waveshare.stop, { rect: [384, 276, 96, 44], effect: 'shake', speed: 'slow' });
+});
+
+test('draftOther gives the CYD a card at least 160x96 and on screen', () => {
+  const L = setCard(newLayout(), 'waveshare', 'med', { rect: { x: 0, y: 200, w: 240, h: 120 } });
+  const c = draftOther(L, 'waveshare', 'cyd', crules).cards.cyd.med.rect;
+  assert.ok(c.w >= 160 && c.h >= 96, JSON.stringify(c));
+  assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.w <= 320 && c.y + c.h <= 240, JSON.stringify(c));
+});

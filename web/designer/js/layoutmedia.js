@@ -5,7 +5,7 @@
 //
 // media = { fonts: { key: Uint8Array (.fnt) }, pictures: { key: { w, h, frames: [RGBA], delays: [ms] } } }
 import { toJson } from './layout.js';
-import { imageToArt, artToBin, ART_MIN_DELAY_MS, MAX_ART_W, MAX_ART_H } from './artfmt.js';
+import { imageToArt, artToBin, ART_MIN_DELAY_MS, MAX_ART_W, MAX_ART_H, ANIM_AREA_MAX } from './artfmt.js';
 
 export const MAX_FONTS = 8, MAX_ARTS = 16, MAX_ART_TOTAL = 393216;
 const PANEL_MAX = 64, ICON_MAX = 40;   // a panel frame's or a menu icon's largest side (designer's choice)
@@ -37,6 +37,11 @@ export function packMedia(L, names, media) {
       if (opts.frameFor) [w, h] = fit(src, opts.frameFor.w, opts.frameFor.h);
       else if (opts.panel) [w, h] = fit(src, PANEL_MAX, PANEL_MAX);
       else if (opts.icon) [w, h] = fit(src, ICON_MAX, ICON_MAX);
+      else if (opts.cardFor) {   // an alert card's picture: inside the card, and small enough to move (else the device plays the rite)
+        [w, h] = fit(src, opts.cardFor.w, opts.cardFor.h);
+        const k = Math.sqrt(ANIM_AREA_MAX[board] / (w * h));
+        if (k < 1) { w = Math.max(1, Math.floor(w * k)); h = Math.max(1, Math.floor(h * k)); }
+      }
       w = Math.min(w, MAX_ART_W); h = Math.min(h, MAX_ART_H);
       const transparent = opts.transparent !== false;
       const id = `${key}|${board}|${w}x${h}|${transparent}`;
