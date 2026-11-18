@@ -149,11 +149,19 @@ export function lookChecks(theme, L, media = null) {
     for (const n of MUST_READ) {
       const st = L.boards[b][n]?.style;
       if (!st || (!st.ink && !st.fill)) continue;
-      const ink = hex(st.ink, 'text'), fill = hex(st.fill, 'panel');
-      if (!isHex(ink) || !isHex(fill)) continue;
-      const x10 = contrastX10(toRgb565(ink), toRgb565(fill));
-      if (x10 < limits.MIN_EDGE_CONTRAST_X10)
-        out.push({ level: 'error', text: `${n} on the ${BOARD_LABEL[b]} board: its text is ${fmtRatio(x10 / 10)} against its fill; the device needs 3:1` });
+      const fill = hex(st.fill, 'panel');
+      if (!isHex(fill)) continue;
+      // The same words the device checks (ui/themelayout.cpp checkLook): the ink, or TEXT and BRIGHT; STOP also RED and AMBER.
+      const words = st.ink ? [['text', hex(st.ink, 'text')]] : [['text', c.text], ['bright', c.bright]];
+      if (n === 'stop') words.push(['red', c.red], ['amber', c.amber]);
+      for (const [what, ink] of words) {
+        if (!isHex(ink)) continue;
+        const x10 = contrastX10(toRgb565(ink), toRgb565(fill));
+        if (x10 < limits.MIN_EDGE_CONTRAST_X10) {
+          out.push({ level: 'error', text: `${n} on the ${BOARD_LABEL[b]} board: its ${what} words are ${fmtRatio(x10 / 10)} against its fill; the device needs 3:1` });
+          break;
+        }
+      }
     }
     let moving = null;
     for (const d of decorNames(L, b)) {

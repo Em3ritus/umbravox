@@ -253,7 +253,8 @@ is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
   numbers, `"hidden"` or a piece object with a `rect`, nesting deeper than four levels);
 - a font or picture reference outside `f0`-`f7` / `a0`-`a15`, a colour that is not a role name or `#rrggbb`, a
   `decor` key other than `decor.0` to `decor.7`, a decor piece off the screen;
-- text on `menu`, `stop`, `bridge` or a `nav.*` button whose `ink` and `fill` contrast under 3:1.
+- a `fill` on `menu`, `stop`, `bridge` or a `nav.*` button that its words cannot be read on (under 3:1): its `ink`, or
+  else the theme's `text` and `bright`; for `stop` also `red` and `amber`, the colours of its label while recording.
 
 ## Limits
 

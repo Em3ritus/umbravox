@@ -665,10 +665,22 @@ bool checkLook(const uieng::BoardLook& k, Board b, const uint16_t* colors, char*
             if (!colors) { known = false; return 0; }
             return colors[r];
         };
+        // The words this piece can show against its fill: its ink, or else both TEXT and BRIGHT (the active tab and an
+        // open MENU draw in BRIGHT); STOP's label is also RED while recording and AMBER on a warning. (The idle DIM
+        // label, REC and BRIDGE OFF, is not held to 3:1: built-in themes put DIM on their panel at about that.)
+        struct Need { int role; const char* name; };
+        const Need inks[] = {{themepack::R_TEXT, "text"}, {themepack::R_BRIGHT, "bright"}, {themepack::R_RED, "red"}, {themepack::R_AMBER, "amber"}};
+        const int nInks = p == P_STOP ? 4 : 2;
         bool known = true;
-        const uint16_t ink = value(s.ink, themepack::R_TEXT, known), fill = value(s.fill, themepack::R_PANEL, known);
-        if (known && ui::contrastX10(ink, fill) < ui::MIN_EDGE_CONTRAST_X10)
-            return say(why, whyCap, "%s: text and fill contrast under 3:1", PIECE_NAME[p]);
+        const uint16_t fill = value(s.fill, themepack::R_PANEL, known);
+        for (int i = 0; i < nInks && known; i++) {
+            const bool own = i < 2 && s.ink.kind;                 // a piece's own ink stands in for TEXT and BRIGHT
+            if (own && i == 1) continue;                          // ... once
+            uieng::ColorRef role; role.kind = 1; role.v = (uint16_t)inks[i].role;
+            const uint16_t ink = value(own ? s.ink : role, inks[i].role, known);
+            if (known && ui::contrastX10(ink, fill) < ui::MIN_EDGE_CONTRAST_X10)
+                return say(why, whyCap, "%s: its %s words contrast under 3:1 with its fill", PIECE_NAME[p], own ? "text" : inks[i].name);
+        }
     }
     if (why && whyCap) why[0] = 0;
     return true;

@@ -191,3 +191,12 @@ test('lookChecks: one animated picture per board moves on the device, within an 
   c = lookChecks({ colors: {} }, L, media);
   assert.equal(c[0].level, 'warn'); assert.match(c[0].text, /too large to move/);
 });
+test('lookChecks: STOP\'s fill must read under its red and amber labels, and every must-read fill under BRIGHT', () => {
+  const theme = { colors: { void: '#000000', panel: '#202020', text: '#E0E0E0', bright: '#FFFFFF', red: '#FF0000', amber: '#FFA500' } };
+  const r = { x: 0, y: 0, w: 44, h: 44 };
+  let c = lookChecks(theme, ss4(nl4(), 'waveshare', 'stop', { ink: '#FFFFFF', fill: '#FF0000' }, r));
+  assert.equal(c.length, 1); assert.match(c[0].text, /stop.*red/);
+  assert.deepEqual(lookChecks(theme, ss4(nl4(), 'waveshare', 'stop', { fill: '#000000' }, r)), []);
+  c = lookChecks({ colors: { ...theme.colors, bright: '#202020' } }, ss4(nl4(), 'cyd', 'nav.scan', { fill: 'panel' }, r));
+  assert.equal(c.length, 1); assert.match(c[0].text, /nav\.scan.*bright/);
+});

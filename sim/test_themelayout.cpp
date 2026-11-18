@@ -376,6 +376,17 @@ static void testStyles() {
     check("stop hex ink on hex fill under 3:1 refused", !build(stopHex.data(), stopHex.size(), *pl, why, sizeof why, colors) && contains(why, "stop"));
     const std::string wordmarkLow = W1("\"wordmark\":{\"rect\":[44,0,164,44],\"ink\":\"panel\",\"fill\":\"panel\"}");
     check("wordmark is not contrast-checked", build(wordmarkLow.data(), wordmarkLow.size(), *pl, why, sizeof why, colors));
+    // STOP's label is RED while recording and AMBER on a warning: its fill must read against both; and every
+    // must-read piece's fill against BRIGHT (active tab, MENU when open) as well as TEXT.
+    colors[18] = 0xFD20; colors[19] = 0xF800;   // amber, red
+    const std::string redStop = W1("\"stop\":{\"rect\":[384,276,96,44],\"ink\":\"#ffffff\",\"fill\":\"#ff0000\"}");
+    check("a red STOP fill is refused (the recording label is red)", !build(redStop.data(), redStop.size(), *pl, why, sizeof why, colors) && contains(why, "stop") && contains(why, "red"));
+    const std::string darkStop = W1("\"stop\":{\"rect\":[384,276,96,44],\"fill\":\"#000000\"}");
+    check("a black STOP fill with white text, red and amber labels is accepted", build(darkStop.data(), darkStop.size(), *pl, why, sizeof why, colors));
+    colors[7] = 0x2104;   // bright == panel grey
+    const std::string brightLow = W1("\"nav.scan\":{\"rect\":[0,276,96,44],\"fill\":\"panel\"}");
+    check("a nav fill that BRIGHT cannot read on is refused", !build(brightLow.data(), brightLow.size(), *pl, why, sizeof why, colors) && contains(why, "nav.scan"));
+    colors[7] = 0xFFFF;
     const std::string decorOff = W1("\"decor.0\":{\"rect\":[470,60,20,20],\"art\":\"a0\"}");
     check("decor off screen refused", !build(decorOff.data(), decorOff.size(), *pl, why, sizeof why, colors) && contains(why, "decor.0"));
     const std::string noStyle = W1("\"menu\":[0,0,44,44]");
