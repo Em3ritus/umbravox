@@ -223,3 +223,10 @@ test('5b minor 4: a piece nudged apart while drafting keeps its style', () => {
   const D = draftOther(L, 'waveshare', 'cyd', rules);
   for (const n of ['nav.scan', 'nav.domain']) assert.equal(D.boards.cyd[n].style?.ink, '#123456', n);
 });
+
+test('5b minor 5: a card that owns the whole screen still owns it on the other board', () => {
+  const L = setCard(newLayout(), 'waveshare', 'high', { rect: { x: 0, y: 0, w: 480, h: 320 } });
+  assert.deepEqual(draftOther(L, 'waveshare', 'cyd', crules).cards.cyd.high.rect, { x: 0, y: 0, w: 320, h: 240 });
+  const M = setCard(newLayout(), 'cyd', 'low', { rect: { x: 0, y: 0, w: 320, h: 240 } });
+  assert.deepEqual(draftOther(M, 'cyd', 'waveshare', crules).cards.waveshare.low.rect, { x: 0, y: 0, w: 480, h: 320 });
+});

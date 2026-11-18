@@ -332,6 +332,7 @@ export function draftOther(L, from, to, rules) {
     const c = L.cards?.[from]?.[lv];
     if (!c) continue;
     const r = c.rect, m = CARD_MIN[to];
+    if (r.x === 0 && r.y === 0 && r.w === F.w && r.h === F.h) { n.cards[to][lv] = { ...c, rect: { x: 0, y: 0, w: T.w, h: T.h } }; continue; }   // a whole card stays whole (5b minor 5)
     const w = Math.min(T.w, Math.max(m.w, Math.round(r.w * k))), h = Math.min(T.h, Math.max(m.h, Math.round(r.h * k)));
     const x = Math.max(0, Math.min(T.w - w, anchor(r.x, r.w, w, F.w, T.w, k)));
     const y = Math.max(0, Math.min(T.h - h, anchor(r.y, r.h, h, F.h, T.h, k)));
