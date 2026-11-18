@@ -19,6 +19,7 @@
 #include "themepack.h"
 #include "font5x7.h"
 #include "fontpack.h"
+#include "artpack.h"
 #include "gnss.h"
 #include <algorithm>
 #include "canvas.h"
@@ -454,6 +455,45 @@ inline int isqrt(int v) {                        // floor(sqrt(v)), bitwise: at 
     while (bit) { if (x >= r + bit) { x -= r + bit; r = (r >> 1) + bit; } else r >>= 1; bit >>= 2; }
     return int(r);
 }
+// --- pack art (.art, artpack.h): placed at its exact size, never scaled -------------------------------
+// One frame of `a` with its top-left at (x,y); index 0 is skipped when the art is transparent.
+inline void artInto(S& s, const artpack::Art& a, int x, int y, uint16_t frame) {
+    if (!a.px || a.w == 0) return;
+    if (frame >= a.frames) frame = 0;
+    const int y0 = std::max(y, s.y0), y1 = std::min(y + (int)a.h, s.y0 + s.h);
+    const int x0 = std::max(x, s.lo), x1 = std::min(x + (int)a.w, s.hi);
+    for (int yy = y0; yy < y1; ++yy) {
+        uint16_t* row = s.px + (yy - s.y0) * s.stride;
+        for (int xx = x0; xx < x1; ++xx) {
+            const uint8_t ix = artpack::index(a, frame, xx - x, yy - y);
+            if (ix == 0 && a.transparent) continue;
+            row[xx - s.lo] = a.pal[ix];
+        }
+    }
+}
+// Nine-slice: frame 0 of `a` stretched over `r` by repeating (not scaling) its edges and centre. slice = l,t,r,b.
+inline int nineSrc(int d, int dn, int sn, int lo, int hi) {   // destination offset -> source offset on one axis
+    if (d < lo) return d < sn ? d : sn - 1;
+    if (d >= dn - hi) { const int v = sn - (dn - d); return v < 0 ? 0 : v; }
+    const int mid = sn - lo - hi;
+    return mid > 0 ? lo + (d - lo) % mid : (lo < sn ? lo : sn - 1);
+}
+inline void nineInto(S& s, const artpack::Art& a, uieng::Rect r, const uint8_t slice[4]) {
+    if (!a.px || a.w == 0 || r.w <= 0 || r.h <= 0) return;
+    const int y0 = std::max(r.y, s.y0), y1 = std::min(r.y + r.h, s.y0 + s.h);
+    const int x0 = std::max(r.x, s.lo), x1 = std::min(r.x + r.w, s.hi);
+    for (int yy = y0; yy < y1; ++yy) {
+        const int sy = nineSrc(yy - r.y, r.h, a.h, slice[1], slice[3]);
+        uint16_t* row = s.px + (yy - s.y0) * s.stride;
+        for (int xx = x0; xx < x1; ++xx) {
+            const int sx = nineSrc(xx - r.x, r.w, a.w, slice[0], slice[2]);
+            const uint8_t ix = artpack::index(a, 0, sx, sy);
+            if (ix == 0 && a.transparent) continue;
+            row[xx - s.lo] = a.pal[ix];
+        }
+    }
+}
+
 inline void emblemInto(S& s, const themepack::Emblem& e, int cx, int cy, int r, bool transparentBlack=false, int opacity=100, bool circular=true, bool smooth=false) {   // same mask/scale as motif::drawEmblem
     if (r<=0 || !e.w || !e.h || !e.px || !e.ncol || e.ncol>16) return;
     if (cx + r < s.lo || cx - r >= s.hi) return;      // outside the column window
