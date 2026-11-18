@@ -63,13 +63,14 @@ export function meterRows(fit, measured) {
     if (!m) continue;
     const f = fit && fit.boards && fit.boards[b];
     const cost = (k, fr) => k.a * fr.drawn + k.b * fr.pushed + k.c;
-    const judge = (k, list, from) => (f ? p95((list || []).slice(from).map((fr) => cost(k, fr))) : 0);
+    // null when there is no fit or no frame to judge: such a row reads "not calibrated", never "~0 ms" (5c minor 3).
+    const judge = (k, list, from) => { const xs = (list || []).slice(from); return f && xs.length ? p95(xs.map((fr) => cost(k, fr))) : null; };
     const scanMs = judge(f && f.scan, m.scan, SKIP_SCAN);
-    let level = 'low', alertMs = -1;
-    for (const l of ['low', 'med', 'high']) { const w = judge(f && f.alert, m[l], 0); if (w > alertMs) { alertMs = w; level = l; } }
+    let level = 'low', alertMs = null;
+    for (const l of ['low', 'med', 'high']) { const w = judge(f && f.alert, m[l], 0); if (w !== null && (alertMs === null || w > alertMs)) { alertMs = w; level = l; } }
     for (const [kind, ms, lv] of [['scan', scanMs, null], ['alert', alertMs, level]]) {
       const rough = kind === 'alert';
-      if (!f) { rows.push({ board: b, kind, level: lv, ms: null, limit: null, pct: null, state: 'uncalibrated', rough }); continue; }
+      if (!f || ms === null) { rows.push({ board: b, kind, level: lv, ms: null, limit: null, pct: null, state: 'uncalibrated', rough }); continue; }
       const limit = kind === 'scan' ? f.limits.scanMs : f.limits.alertMs;
       const pct = (ms / limit) * 100;
       const state = pct > 100 && !rough ? 'over' : pct >= AMBER ? 'amber' : 'ok';

@@ -59,6 +59,7 @@ function installBlock() {
 }
 function show(view) {
   if (view === 'install') {
+    meterNow();
     const why = installBlock();
     if (why) {
       const m = state.view === 'start' ? $('open-msg') : $('action-msg');
@@ -358,7 +359,11 @@ fetch('js/meter-fit.json').then((r) => (r.ok ? r.json() : null)).then((j) => {
   scheduleMeter();
 }).catch(() => { meter.fitNote = 'The boards\' measurements could not be read. The meter shows no times and blocks nothing.'; syncMeter(); });
 function scheduleMeter() { clearTimeout(meter.timer); meter.timer = setTimeout(runMeter, 400); }
+// Download, Share and the Install view must not act on the verdict of an older draft (5c minor 1): a measurement
+// still waiting for its 400 ms runs now.
+function meterNow() { if (meter.timer) { clearTimeout(meter.timer); runMeter(); } }
 function runMeter() {
+  meter.timer = 0;
   if (!preview || !state.theme || typeof preview.measure !== 'function') { syncMeter(); return; }
   try {
     meter.verdict = meterRows(meter.fit, measureAll((b, mode, n, ms) => preview.measure(b, mode, n, ms), meter.fit));
@@ -536,6 +541,7 @@ function saveZip(pack) {
   return folder;
 }
 function download() {
+  meterNow();
   const m = $('action-msg');
   if (checksNow.some((c) => c.level === 'error')) { m.className = 'msg err'; m.textContent = 'Fix the errors in the checks first.'; return; }
   if (meter.verdict && meter.verdict.over) { m.className = 'msg err'; m.textContent = meter.verdict.reason; return; }
@@ -550,6 +556,7 @@ $('btn-zip2').addEventListener('click', download);
 // Share: save the same zip as Download pack, then open the themes repository's submission form with the fields
 // filled. The page cannot attach the zip to the form; the person drags it in.
 $('btn-share').addEventListener('click', () => {
+  meterNow();
   if (checksNow.some((c) => c.level === 'error')) return;
   const m = $('action-msg');
   if (meter.verdict && meter.verdict.over) { m.className = 'msg err'; m.textContent = meter.verdict.reason; return; }
