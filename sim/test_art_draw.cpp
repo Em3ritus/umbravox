@@ -240,6 +240,12 @@ int main() {
         Pic p = makePic(20, 20, 1, false, 31);
         const uint8_t sl[4] = {30, 30, 30, 30}, sl2[4] = {15, 0, 15, 0};
         check("nine_borders_exceed", sameNine(p.a, {4, 4, 10, 10}, sl, 0, 16, 0, 480) && sameNine(p.a, {4, 4, 25, 10}, sl2, 0, 16, 0, 480));
+        // nine_borders_fill_rect: L + R == the rect width with a middle in the picture (the run path's edge),
+        // and one pixel either side of it (L + R == w - 1 runs, w + 1 falls back).
+        const uint8_t e[4] = {6, 2, 4, 2};
+        bool ok = true;
+        for (int rw : {9, 10, 11}) for (int lo : {0, 7}) ok = ok && sameNine(p.a, {3, 1, rw, 12}, e, 0, 16, lo, lo + 40);
+        check("nine_borders_fill_rect", ok);
     }
     layers();
     printf("%s  %d/%d checks passed\n", fails ? "FAILED" : "PASSED", checks - fails, checks);
