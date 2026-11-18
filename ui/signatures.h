@@ -58,6 +58,7 @@ struct AlertRec {
     uint32_t    atMs   = 0;
     uint8_t mac[6]{};
     AlertAddress address = AlertAddress::Missing;
+    uint16_t minutes = 0;   // TH_FOLLOW: minutes the tracker has been with you (the main loop shows it)
 };
 
 const char* threatName(uint8_t t);

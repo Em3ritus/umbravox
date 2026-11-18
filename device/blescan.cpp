@@ -6,6 +6,7 @@
 #include <BLEAdvertisedDevice.h>
 #include "signatures.h"
 #include "ble_ad.h"
+#include "alert_repeat.h"
 #include <esp_heap_caps.h>
 #include <Print.h>
 #include "csv.h"
@@ -51,6 +52,7 @@ struct Extra {
     int8_t   bestRssi;
     uint8_t  threat, conf;
     bool     located, hasFirst, following;
+    uint32_t followAlertMs;           // when it last raised TRAVELLED WITH YOU (again every 10 min while it stays)
     bool publicAddress=false;
 };
 
@@ -495,13 +497,15 @@ void tick(uint32_t nowMs) {
         if (moved < FOLLOW_MIN_M) continue;
 
         following++;
-        if (e.following) continue;                   // already reported
+        if (e.following && !alertrepeat::followDue(e.followAlertMs, nowMs)) continue;   // reported, not due again yet
         e.following = true;
+        e.followAlertMs = nowMs;
 
         portENTER_CRITICAL(&mux);
         alert_.threat = ui::TH_FOLLOW;
         alert_.conf   = ui::CONF_HIGH;
         alert_.why    = "TRAVELLED WITH YOU";
+        { const uint32_t m = (nowMs - e.firstMs) / 60000u; alert_.minutes = (uint16_t)(m > 999 ? 999 : m); }
         memcpy(alert_.mac,addrs[slot],6);alert_.address=e.publicAddress?ui::AlertAddress::BlePublic:ui::AlertAddress::BleRandom;
         if (e.name[0]) {
             int k = 0;
