@@ -79,6 +79,13 @@ static void run(int W, int H) {
 }
 
 int main() {
+    {   // the FRAMELOG line tools/meterprobe.py parses
+        char b[64];
+        scanframe::formatFrm(b, sizeof b, 153600, 4800, 31250, 41, -1);
+        expect(!strcmp(b, "[frm] d 153600 p 4800 us 31250 gap 41 a -1"), "formatFrm scan line");
+        scanframe::formatFrm(b, sizeof b, 1, 2, 3, 4, 2);
+        expect(!strcmp(b, "[frm] d 1 p 2 us 3 gap 4 a 2"), "formatFrm alert line");
+    }
     run(480, 320);
     run(320, 240);
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);

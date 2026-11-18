@@ -191,12 +191,18 @@ struct ScanStage {
     }
 };
 
+// FRAMELOG's accumulators live in PSRAM just past the end of the back frame (begin() allocates them with it), so
+// they cost no internal RAM: the ws-c5-35-engine .dram0.bss is at its cap. Null when there is no PSRAM frame.
+struct FrameLogState { bool on; uint32_t drawn, us, lastAt; bool have; FrameRec rec; };
+FrameLogState* flogState() { return buffered_ ? reinterpret_cast<FrameLogState*>(frame_.rows(H_)) : nullptr; }
+
 void renderScan(int y0, int y1) {
     if(y0<stagedY0_)stagedY0_=y0;
     if(y1>stagedY1_)stagedY1_=y1;
     ScanStage st;
     uimeter::Count n;               // counted for FRAMELOG (plan 5c); no static state: the ws .bss is at its cap
     scanframe::slice(eScan_, eScan_.scene(), W_, H_, y0, y1, buf_, !buffered_ || frame_.valid(), st, n);
+    if (FrameLogState* fl = flogState(); fl && fl->on) fl->drawn += n.drawn;
 }
 
 // Bind taps to the rows actually presented, not the next live collection.
@@ -225,9 +231,9 @@ void begin(Arduino_TFT* gfx, int W, int H) {
         touch::setHoldTarget(chip.x, chip.y, chip.w, chip.h);
     }
     auto* front = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
-    auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2, MALLOC_CAP_SPIRAM));
+    auto* back = static_cast<uint16_t*>(heap_caps_malloc(W*H*2 + sizeof(FrameLogState), MALLOC_CAP_SPIRAM));   // + FRAMELOG's state
     buffered_ = front && back;
-    if (buffered_) frame_.begin(front, back, W, H);
+    if (buffered_) { frame_.begin(front, back, W, H); *flogState() = FrameLogState{}; }
     else { free(front); free(back); Serial.println("ui: frame allocation failed; progressive fallback"); }
     eScan_.reset(W, H); eDomain_.reset(W, H); eCodex_.reset(W, H); eMenu_.reset(W, H);
     eMesh_.reset(W, H); eOmens_.reset(W, H); eEchoes_.reset(W, H); eAttune_.reset(W, H);
@@ -381,8 +387,9 @@ bool service(int budgetStrips) {
     const uint32_t compose = total > other ? total - other : 0;
     const uint32_t presentationStart=micros();
     const uint32_t earlyTransfer=sliceTransferUs_;
+    uint32_t pushedNow = 0;
     if (done && buffered_) {
-        frame_.present(cur_ == uinav::Screen::Menu, [](uieng::Rect r, const uint16_t* px, int stride) {
+        pushedNow = frame_.present(cur_ == uinav::Screen::Menu, [](uieng::Rect r, const uint16_t* px, int stride) {
             const uint32_t t = micros();
             gfx_->startWrite();
             gfx_->writeAddrWindow(r.x, r.y, r.w, r.h);
@@ -399,6 +406,8 @@ bool service(int budgetStrips) {
         },stagedY0_,stagedY1_);
     }
     const uint32_t diff=sliceCompareUs_+micros()-presentationStart-(sliceTransferUs_-earlyTransfer);
+    FrameLogState* const fl = flogState();
+    if (fl && fl->on && !done && cur_ == uinav::Screen::Scan) fl->us += micros() - t0;
     metrics_.work(compose,diff,sliceTransferUs_);
     if (done) {
         saveVisibleRows();
@@ -409,6 +418,17 @@ bool service(int budgetStrips) {
             entryTiming_=false;
         }
         metrics_.frameDone(); burst_ = false;
+        if (fl && fl->on) {
+            if (cur_ == uinav::Screen::Scan) {
+                const uint32_t now = millis();
+                const auto& a = eScan_.scene().alert;
+                fl->rec = FrameRec{ fl->drawn, buffered_ ? pushedNow : fl->drawn, fl->us + (micros() - t0),
+                                       fl->lastAt ? (uint32_t)(int32_t)(now - fl->lastAt) : 0,
+                                       (int8_t)(a.active ? a.conf : -1) };
+                fl->have = true; fl->lastAt = now;
+            }
+            fl->drawn = fl->us = 0;
+        }
     }   // interaction repaint delivered; back to steady slices
     return done;
 }
@@ -613,6 +633,17 @@ void serviceSettings(){
 }
 
 void sampleCapture(uint32_t frames, uint32_t uniques, uint32_t ble) { metrics_.capture(frames,uniques,ble); }
+void frameLog(bool on) {
+    if (FrameLogState* f = flogState()) { *f = FrameLogState{}; f->on = on; }
+}
+bool frameLogOn() { const FrameLogState* f = flogState(); return f && f->on; }
+bool takeFrame(FrameRec& out) {
+    FrameLogState* f = flogState();
+    if (!f || !f->on || !f->have) return false;
+    out = f->rec; f->have = false;
+    return true;
+}
+
 const scanpres::PresentMetrics& metrics() { return metrics_; }
 void clearMetrics() { metrics_.clear(); }
 

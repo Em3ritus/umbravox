@@ -48,4 +48,11 @@ void sampleCapture(uint32_t capFrames, uint32_t capUniq, uint32_t bleReports);
 const scanpres::PresentMetrics& metrics();
 void clearMetrics();
 
+// FRAMELOG (plan 5c, the designer's speed meter calibration): one record per finished SCAN frame. Off by default;
+// the accumulators live in PSRAM next to the back frame (no internal RAM). Unavailable without the PSRAM frames.
+struct FrameRec { uint32_t drawn, pushed, us, gapMs; int8_t alert; };   // alert: shown conf, -1 none
+void frameLog(bool on);            // no effect without the PSRAM frames (frameLogOn() stays false)
+bool frameLogOn();
+bool takeFrame(FrameRec& out);     // true once per finished frame while on
+
 }  // namespace engineadapter

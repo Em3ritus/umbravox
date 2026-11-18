@@ -59,4 +59,12 @@ void slice(const scanpres::Engine& e, const scanr::ScanScene& sc, int W, int H, 
     }
 }
 
+// One finished frame as the board's FRAMELOG console line (parsed by tools/meterprobe.py): pixels drawn and pushed,
+// the frame's compose+compare+transfer time in us, the ms since the previous frame, and the shown alert's
+// confidence (-1: none).
+inline int formatFrm(char* out, size_t n, uint32_t d, uint32_t p, uint32_t us, uint32_t gap, int a) {
+    return std::snprintf(out, n, "[frm] d %lu p %lu us %lu gap %lu a %d", (unsigned long)d, (unsigned long)p,
+                         (unsigned long)us, (unsigned long)gap, a);
+}
+
 } // namespace scanframe
