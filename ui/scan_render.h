@@ -227,6 +227,15 @@ inline uint8_t scaleCap = 0;   // a piece style's scale: fitScale's upper bound 
 inline void setRoleFonts(const fontpack::Font* const fonts[ROLE_N]) {
     for (int i = 0; i < ROLE_N; ++i) textstate::roleFont[i] = fonts ? fonts[i] : nullptr;
 }
+// Back to the built-in 5x7, no clip, no scale cap. Every strip starts here, so nothing a theme's look set (font
+// pointers into media the loader may since have replaced, a content-area clip) carries over to the next frame.
+inline void resetText() {
+    for (auto& f : textstate::roleFont) f = nullptr;
+    textstate::role = ROLE_BODY;
+    textstate::scopeFont = nullptr;
+    textstate::clip = uieng::Rect{0, 0, 0x7FFF, 0x7FFF};
+    textstate::scaleCap = 0;
+}
 inline const fontpack::Font* activeFont() {
     return textstate::scopeFont ? textstate::scopeFont : textstate::roleFont[textstate::role];
 }
@@ -1073,6 +1082,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     // so the built-in layout draws exactly what it always did.
     const uieng::Chrome bc = uieng::builtinChrome(W, H);
     box(s, 0, 0, W, H, pal::VOID);   // the ground every screen's body sits on
+    resetText();                     // then this frame's look, read from the registry afresh (no pointer kept between frames)
     applyLook(s, W, H, st.scan);      // a layout theme's role fonts, text clip and background picture
     if (st.scan) drawDecor(s, W, st.now);   // under every piece
     if (!uieng::activeBoard(W)) {
@@ -1537,12 +1547,14 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
 
 // The scene, then the alert takeover over it: LOW/MED over the hero, HIGH over everything. Wide panels only.
 inline void composeStrip(S& s, int W, int H, const ScanScene& sc) {
+    resetText();   // the alert words always draw in the built-in 5x7 (alert-card fonts are plan 5's, with a minimum size)
     const int lvl = W >= 400 ? alertLevel(sc.alert) : 0;
     if (lvl == 2) { drawAlertTakeover(s, sc, uieng::Rect{0, 0, W, H}); return; }   // nothing underneath is visible: skip it
     if (lvl == 1) {
         const uieng::Rect hero = uieng::scan(W, H).hero;
         const bool inside = s.lo >= hero.x && s.hi <= hero.x + hero.w && s.y0 >= hero.y && s.y0 + s.h <= hero.y + hero.h;
         if (!inside) composeStripScene(s, W, H, sc);                 // a window wholly inside the takeover never shows the scene
+        resetText();                                                 // the scene's look does not reach the alert words
         drawAlertTakeover(s, sc, hero);
         return;
     }

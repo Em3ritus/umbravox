@@ -22,6 +22,8 @@
 #include "aspect_fixture.h"
 #include "detail_fixture.h"
 #include "files_fixture.h"
+#include "scan_fixture.h"
+#include "../ui/scan_render.h"
 #include "fontfix.h"
 #include "artfix.h"
 #include <stdio.h>
@@ -166,6 +168,30 @@ int main() {
         if (W >= 400) { snprintf(label, sizeof label, "480x320 menu: the icon is drawn in tile 0 (%d px)", in0); check(label, in0 > 100); }
         snprintf(label, sizeof label, "%dx%d menu: a null icon slot draws nothing", W, H); check(label, in1 == 0);
         snprintf(label, sizeof label, "%dx%d menu: a tile without room draws no icon", W, H); check(label, in2 == 0);
+    }
+    // A HIGH alert after a styled screen draws exactly as after a fresh start, in the built-in 5x7 (no stale role font,
+    // no clip left over from the other screen's content area, no font pointer kept across frames).
+    {
+        const int bodied = loadPack("bodied", "BODIED", "{\"body\":\"f0\",\"title\":\"f0\"}");
+        check("body-font pack loads", bodied >= 0);
+        if (bodied >= 0) {
+            pal::setTheme((uint8_t)bodied); packload::useMedia(bodied);
+            scanr::ScanScene al = scanfix::demo((uint8_t)bodied);
+            al.alert.active = true; al.alert.conf = ui::CONF_HIGH; al.alert.age = 4000;
+            snprintf(al.alert.label, sizeof al.alert.label, "DRONE"); snprintf(al.alert.name, sizeof al.alert.name, "Aa Aa");
+            snprintf(al.alert.why, sizeof al.alert.why, "Aa");
+            auto takeover = [&]() { FbSink fb(480, 320); static scanr::Compositor c; c.renderFull(480, 320, al, fb); return fb.fb; };
+            assets::clear((uint8_t)bodied);
+            const auto plain = takeover();                 // no pack font anywhere: the built-in 5x7
+            packload::useMedia(bodied);
+            (void)render(MENU, (uint8_t)bodied, 480, 320);   // a styled screen leaves its fonts and clip behind
+            const auto afterMenu = takeover();
+            check("HIGH alert after a styled screen equals the alert with no pack font", afterMenu == plain);
+            (void)render(OMENS, (uint8_t)bodied, 480, 320);
+            assets::clear((uint8_t)bodied);                 // the device clears the registry when the theme's media goes
+            const auto afterClear = takeover();
+            check("HIGH alert after the registry is cleared draws the same", afterClear == plain);
+        }
     }
     pal::setTheme(0);
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
