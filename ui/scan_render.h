@@ -1380,7 +1380,7 @@ namespace scanr {
 inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     const uieng::ScanLayout L = uieng::scan(W, H);
     const uint16_t band[3] = { pal::MAGENTA, pal::ICE, pal::GREEN };
-    box(s, 0, 0, W, H, pal::VOID);                                   // body
+    // No VOID fill here: drawChrome lays the ground (or skips it where an opaque picture covers the strip).
 
     // shared design-1 chrome: header (wordmark + GPS/MESH/BAT) + nav (SCAN lit)
     // + the STOP/REC record control. SCAN passes its own 16px body for the dividers.
