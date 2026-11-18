@@ -17,6 +17,7 @@ test('numeric limits equal the constexprs in ui/themepack.h', () => {
     assert.equal(limits[k], Number(m[1]), k);
   }
   assert.equal(limits.MAX_FOLDERS_EXAMINED, Number(/constexpr\s+int\s+BAD_MAX\s*=\s*(\d+)/.exec(header)[1]));
+  assert.equal(limits.MAX_LAYOUT_JSON, Number(/constexpr\s+size_t\s+MAX_JSON\s*=\s*(\d+)/.exec(read('ui/themelayout.h'))[1]), 'MAX_LAYOUT_JSON');
   assert.equal(limits.MIN_EDGE_CONTRAST_X10, Number(/MIN_EDGE_CONTRAST_X10\s*=\s*(\d+)/.exec(read('ui/contrast.h'))[1]));
 });
 

@@ -57,7 +57,7 @@ uint16_t nSeen = 0;                          // valid-named folders listed
 
 // Everything only scan() needs: the folder names and sizes, one theme.json
 // at a time (the guard's scratch is needed only before the first theme.json
-// is read, so the two share storage), and the crash list. About 6.6 KB, so it
+// is read, so the two share storage), and the crash list. About 19 KB (the 16 KB layout.json buffer), so it
 // lives in PSRAM for the length of scan() and is freed after: internal RAM is
 // what Wi-Fi and BLE run out of.
 struct Scratch {
@@ -65,6 +65,7 @@ struct Scratch {
     uint32_t jsonSz[MAX_FOLDERS], embSz[MAX_FOLDERS], clipSz[MAX_FOLDERS], sndSz[MAX_FOLDERS], laySz[MAX_FOLDERS];
     union {
         uint8_t      json[MAX_JSON];
+        uint8_t      layout[themelayout::MAX_JSON];   // layout.json is read alone, after theme.json is parsed
         GuardScratch guard;
     } buf;
     BadList  bad;
@@ -288,7 +289,7 @@ bool stepLoad(const PackMedia& m) {
 
 // layout.json, read after the pack is registered (theme.json's buffer is free again by then). A bad layout skips the
 // layout only: logged, counted with the skipped packs, and the theme keeps its built-in layout.
-void loadLayout(const char* folder, uint32_t size, int id) {
+void loadLayout(const char* folder, uint32_t size, int id, const uint16_t* colors) {
     char why[WHY_CAP] = "", safe[32];
     logSafe(safe, folder);
     const int slot = pal::packSlot((uint8_t)id);
@@ -298,9 +299,9 @@ void loadLayout(const char* folder, uint32_t size, int id) {
     else if (!layouts && !(layouts = (themelayout::PackLayout*)heap_caps_calloc(MAX_PACKS, sizeof(themelayout::PackLayout), MALLOC_CAP_SPIRAM)))
         setWhy(why, "no PSRAM for layout.json");
     else {
-        const uint32_t n = pathOf(path, folder, "layout.json") ? sdlog::readFile(path, S->buf.json, (uint32_t)MAX_JSON) : 0;
+        const uint32_t n = pathOf(path, folder, "layout.json") ? sdlog::readFile(path, S->buf.layout, (uint32_t)themelayout::MAX_JSON) : 0;
         if (n == 0 || n != size) setWhy(why, "layout.json could not be read");
-        else if (themelayout::build((const char*)S->buf.json, n, layouts[slot], why, capOf(why))) {
+        else if (themelayout::build((const char*)S->buf.layout, n, layouts[slot], why, capOf(why), colors)) {
             pal::setPackLayout(id, &layouts[slot].lo);
             elog::event(elog::INFO, "theme", "%s: layout loaded", safe);
             return;
@@ -343,7 +344,7 @@ bool loadPack(const char* folder, uint32_t js, uint32_t es, uint32_t cs, uint32_
         ctl.setHasMedia(slot, true);
     }
     taken[nTaken++] = pal::themeName((uint8_t)id);   // static storage in palette.cpp
-    if (ls > 0) loadLayout(folder, ls, id);
+    if (ls > 0) loadLayout(folder, ls, id, p.color);
     if (em) spare = nullptr;                 // that buffer now belongs to the pack
     elog::event(elog::INFO, "theme", "%s: loaded \"%s\" as theme %d%s%s", folder, p.name, id, cs ? " with a radar clip" : "", ss ? " with alert sounds" : "");
     return true;

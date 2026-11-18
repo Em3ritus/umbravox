@@ -133,10 +133,14 @@ bool colour(P& p, uint16_t& out) {
     return true;
 }
 
+}  // namespace (ROLE_KEYS is shared with themelayout.cpp)
+
 const char* const ROLE_KEYS[N_COLORS] = {
     "void", "panel", "grid", "edge", "edgeLit", "dim", "text", "bright",
     "witch", "witchHi", "bone", "sweep", "sweepHi", "live", "liveHi",
     "magenta", "ice", "green", "amber", "red"};
+
+namespace {
 
 struct SweepName { const char* n; ui::Sweep id; };
 const SweepName SWEEPS[] = {

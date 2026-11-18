@@ -2,6 +2,8 @@
 // Follows ui/themepack.cpp's reader on purpose (same limits and failure style)
 // but keeps its own copy, so the shipped theme.json parser is left untouched.
 #include "themelayout.h"
+#include "themepack.h"
+#include "contrast.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -15,7 +17,7 @@ const char* const PIECE_NAME[P_N] = {
 
 namespace {
 
-constexpr int MAX_DEPTH = 3;   // the top object, a board object, a rect array
+constexpr int MAX_DEPTH = 4;   // the top object, a board object, a piece/style object, a rect/slice array
 
 struct P {
     const char* s;
@@ -134,6 +136,192 @@ bool int16v(P& p, int16_t& out) {
     return true;
 }
 
+// "f3" / "a12": a pack file reference. prefix 'f' (max MAX_FONT_REFS) or 'a' (max MAX_ART_REFS).
+bool ref(P& p, const char* piece, char prefix, int8_t& out) {
+    char v[8]; size_t vl = 0;
+    const int max = prefix == 'f' ? MAX_FONT_REFS : MAX_ART_REFS;
+    const char* what = prefix == 'f' ? "bad font reference (f0..f7)" : "bad art reference (a0..a15)";
+    if (!peek(p, '"')) return failPiece(p, piece, what);
+    if (!str(p, v, 7, &vl)) return false;
+    if (vl < 2 || vl > 3 || v[0] != prefix) return failPiece(p, piece, what);
+    int n = 0;
+    for (size_t i = 1; i < vl; i++) {
+        if (v[i] < '0' || v[i] > '9') return failPiece(p, piece, what);
+        n = n * 10 + (v[i] - '0');
+    }
+    if ((vl == 3 && v[1] == '0') || n >= max) return failPiece(p, piece, what);
+    out = (int8_t)n;
+    return true;
+}
+int hexDigit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+// A theme colour role ("bright") or "#rrggbb".
+bool colour(P& p, const char* piece, uieng::ColorRef& out) {
+    char v[16]; size_t vl = 0;
+    if (!peek(p, '"')) return failPiece(p, piece, "bad colour (a role name or #rrggbb)");
+    if (!str(p, v, 15, &vl)) return false;
+    if (vl == 7 && v[0] == '#') {
+        int c[6];
+        for (int i = 0; i < 6; i++) if ((c[i] = hexDigit(v[1 + i])) < 0) return failPiece(p, piece, "bad colour (a role name or #rrggbb)");
+        const int r = c[0] * 16 + c[1], g = c[2] * 16 + c[3], b = c[4] * 16 + c[5];
+        out.kind = 2; out.v = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        return true;
+    }
+    if (vl <= 15)
+        for (int i = 0; i < themepack::N_COLORS; i++)
+            if (strcmp(v, themepack::ROLE_KEYS[i]) == 0) { out.kind = 1; out.v = (uint16_t)i; return true; }
+    return failPiece(p, piece, "bad colour (a role name or #rrggbb)");
+}
+bool intIn(P& p, const char* piece, int lo, int hi, const char* what, int& out) {
+    int16_t v;
+    if (!int16v(p, v)) return false;
+    if (v < lo || v > hi) return failPiece(p, piece, what);
+    out = v;
+    return true;
+}
+bool quad(P& p, const char* piece, const char* what, int lo, int hi, int out[4]) {   // [a,b,c,d]
+    if (!eat(p, '[')) return failPiece(p, piece, what);
+    for (int k = 0; k < 4; k++) {
+        if (k && !eat(p, ',')) return failPiece(p, piece, what);
+        if (!intIn(p, piece, lo, hi, what, out[k])) return false;
+    }
+    if (!eat(p, ']')) return failPiece(p, piece, what);
+    return true;
+}
+bool rectValue(P& p, const char* piece, Slot& out) {
+    int v[4];
+    if (!quad(p, piece, "expected four numbers", -32768, 32767, v)) return false;
+    if (v[2] <= 0 || v[3] <= 0) return failPiece(p, piece, "width and height must be positive");
+    out.how = SLOT_PLACED; out.x = (int16_t)v[0]; out.y = (int16_t)v[1]; out.w = (int16_t)v[2]; out.h = (int16_t)v[3];
+    return true;
+}
+bool keyIs(const char* k, size_t kl, const char* name) { return kl == strlen(name) && memcmp(k, name, kl) == 0; }
+
+// Iterates an object's keys: fn(key, len, index-of-known-key) handles each value; unknown keys (index -1) are
+// skipped; a key seen twice fails. names lists the known keys (at most 16).
+template <class Fn>
+bool objectKeys(P& p, const char* piece, int depth, const char* const* names, int nNames, Fn fn) {
+    if (!peek(p, '{')) return failPiece(p, piece, "expected an object");
+    if (depth >= MAX_DEPTH) return fail(p, "nested too deep");
+    p.i++;
+    bool seen[16] = {};
+    if (eat(p, '}')) return true;
+    for (;;) {
+        char k[16]; size_t kl = 0;
+        if (!str(p, k, 15, &kl)) return false;
+        if (!eat(p, ':')) return fail(p, "expected ':'");
+        if (isScript(k, kl)) return fail(p, "script pieces are not supported");
+        int idx = -1;
+        for (int i = 0; i < nNames; i++) if (keyIs(k, kl, names[i])) { idx = i; break; }
+        if (idx >= 0) {
+            if (seen[idx]) return failPiece(p, piece, "duplicate key");
+            seen[idx] = true;
+            if (!fn(idx)) return false;
+        } else if (!skipValue(p, depth + 1)) {
+            return false;
+        }
+        if (eat(p, ',')) continue;
+        if (eat(p, '}')) return true;
+        return fail(p, "expected ',' or end");
+    }
+}
+
+void useFont(uieng::BoardLook& k, int8_t f) { if (f >= 0) k.fontsUsed |= (uint8_t)(1u << f); }
+void useArt(uieng::BoardLook& k, int8_t a) { if (a >= 0) k.artsUsed |= (uint16_t)(1u << a); }
+
+// {"rect":[...], "font":..., "scale":..., "ink":..., "fill":..., "edge":..., "frame":..., "slice":[...], "bg":...}
+bool pieceObject(P& p, const char* piece, int depth, Slot& slot, uieng::PieceStyle& st, uieng::BoardLook& look) {
+    static const char* const K[] = {"rect", "font", "scale", "ink", "fill", "edge", "frame", "slice", "bg"};
+    bool hasRect = false, styled = false;
+    const bool ok = objectKeys(p, piece, depth, K, 9, [&](int i) {
+        int v; int q[4];
+        if (i) styled = true;
+        switch (i) {
+        case 0: hasRect = true; return rectValue(p, piece, slot);
+        case 1: if (!ref(p, piece, 'f', st.font)) return false; useFont(look, st.font); return true;
+        case 2: if (!intIn(p, piece, 1, 4, "scale must be 1 to 4", v)) return false; st.scale = (uint8_t)v; return true;
+        case 3: return colour(p, piece, st.ink);
+        case 4: return colour(p, piece, st.fill);
+        case 5: return colour(p, piece, st.edge);
+        case 6: if (!ref(p, piece, 'a', st.frame)) return false; useArt(look, st.frame); return true;
+        case 7: if (!quad(p, piece, "slice must be four numbers 0..255", 0, 255, q)) return false;
+                for (int k = 0; k < 4; k++) st.slice[k] = (uint8_t)q[k];
+                return true;
+        default: if (!ref(p, piece, 'a', st.bg)) return false; useArt(look, st.bg); return true;
+        }
+    });
+    if (!ok) return false;
+    if (!hasRect) return failPiece(p, piece, "needs a rect");
+    if (styled) look.any = true;
+    return true;
+}
+
+// "style": {"title","body","numbers","bg","panel","panelSlice","highlight":{"fill","edge"},"icons":[...]}
+bool styleBlock(P& p, int depth, uieng::BoardLook& look) {
+    static const char* const K[] = {"title", "body", "numbers", "bg", "panel", "panelSlice", "highlight", "icons"};
+    uieng::ScreenStyle& s = look.screen;
+    const char* piece = "style";
+    look.any = true;
+    return objectKeys(p, piece, depth, K, 8, [&](int i) {
+        int q[4];
+        switch (i) {
+        case 0: if (!ref(p, piece, 'f', s.roleFont[1])) return false; useFont(look, s.roleFont[1]); return true;   // ROLE_TITLE
+        case 1: if (!ref(p, piece, 'f', s.roleFont[0])) return false; useFont(look, s.roleFont[0]); return true;   // ROLE_BODY
+        case 2: if (!ref(p, piece, 'f', s.roleFont[2])) return false; useFont(look, s.roleFont[2]); return true;   // ROLE_NUMBERS
+        case 3: if (!ref(p, piece, 'a', s.bg)) return false; useArt(look, s.bg); return true;
+        case 4: if (!ref(p, piece, 'a', s.panel)) return false; useArt(look, s.panel); return true;
+        case 5: if (!quad(p, piece, "panelSlice must be four numbers 0..255", 0, 255, q)) return false;
+                for (int k = 0; k < 4; k++) s.panelSlice[k] = (uint8_t)q[k];
+                return true;
+        case 6: {
+            static const char* const H[] = {"fill", "edge"};
+            return objectKeys(p, "highlight", depth + 1, H, 2, [&](int j) {
+                return colour(p, "highlight", j == 0 ? s.hiFill : s.hiEdge);
+            });
+        }
+        default: {
+            if (!eat(p, '[')) return failPiece(p, piece, "icons must be a list of art references");
+            if (eat(p, ']')) return true;
+            for (int n = 0;; n++) {
+                if (n >= uieng::MENU_ICONS) return failPiece(p, piece, "icons holds at most 6 entries");
+                ws(p);
+                if (p.n - p.i >= 4 && memcmp(p.s + p.i, "null", 4) == 0) { p.i += 4; s.icon[n] = -1; }
+                else if (!ref(p, "icons", 'a', s.icon[n])) return false;
+                else useArt(look, s.icon[n]);
+                if (eat(p, ',')) continue;
+                if (eat(p, ']')) return true;
+                return failPiece(p, piece, "icons must be a list of art references");
+            }
+        }
+        }
+    });
+}
+
+// "decor.N": {"rect":[...], "art":"aN"}
+bool decorValue(P& p, const char* name, int n, int depth, uieng::BoardLook& look) {
+    static const char* const K[] = {"rect", "art"};
+    Slot r{SLOT_DEFAULT, 0, 0, 0, 0};
+    int8_t art = -1;
+    bool hasRect = false;
+    const bool ok = objectKeys(p, name, depth, K, 2, [&](int i) {
+        if (i == 0) { hasRect = true; return rectValue(p, name, r); }
+        return ref(p, name, 'a', art);
+    });
+    if (!ok) return false;
+    if (!hasRect) return failPiece(p, name, "needs a rect");
+    if (art < 0) return failPiece(p, name, "needs an art reference");
+    look.decor[n].r = {r.x, r.y, r.w, r.h};
+    look.decor[n].art = art;
+    look.nDecor++;
+    useArt(look, art);
+    look.any = true;
+    return true;
+}
+
 bool slotValue(P& p, const char* piece, Slot& out) {
     ws(p);
     if (peek(p, '"')) {
@@ -155,11 +343,11 @@ bool slotValue(P& p, const char* piece, Slot& out) {
 }
 
 // A board object: piece name -> slot. Unknown pieces are skipped (later formats add some).
-bool board(P& p, Slot (&slots)[P_N], int depth) {
+bool board(P& p, Slot (&slots)[P_N], int depth, uieng::BoardLook& look) {
     if (!peek(p, '{')) return fail(p, "a board must be an object");
     if (depth >= MAX_DEPTH) return fail(p, "nested too deep");
     p.i++;
-    bool seen[P_N] = {};
+    bool seen[P_N] = {}, seenStyle = false;
     if (eat(p, '}')) return true;
     for (;;) {
         char k[16]; size_t kl = 0;
@@ -173,7 +361,20 @@ bool board(P& p, Slot (&slots)[P_N], int depth) {
         if (piece >= 0) {
             if (seen[piece]) return fail(p, "duplicate piece");
             seen[piece] = true;
-            if (!slotValue(p, PIECE_NAME[piece], slots[piece])) return false;
+            if (peek(p, '{')) {
+                if (!pieceObject(p, PIECE_NAME[piece], depth + 1, slots[piece], look.piece[piece], look)) return false;
+            } else if (!slotValue(p, PIECE_NAME[piece], slots[piece])) {
+                return false;
+            }
+        } else if (keyIs(k, kl, "style")) {
+            if (seenStyle) return fail(p, "duplicate style");
+            seenStyle = true;
+            if (!styleBlock(p, depth + 1, look)) return false;
+        } else if (kl > 6 && memcmp(k, "decor.", 6) == 0) {
+            if (kl != 7 || k[6] < '0' || k[6] >= '0' + uieng::MAX_DECOR) return fail(p, "decor pieces are decor.0 to decor.7");
+            const int n = k[6] - '0';
+            if (look.decor[n].art >= 0) return fail(p, "duplicate decor piece");
+            if (!decorValue(p, k, n, depth + 1, look)) return false;
         } else if (!skipValue(p, depth + 1)) {
             return false;
         }
@@ -183,8 +384,9 @@ bool board(P& p, Slot (&slots)[P_N], int depth) {
     }
 }
 
-bool parseObject(P& p, Layout& out) {
+bool parseObject(P& p, Layout& out, uieng::BoardLook* looks) {
     memset(&out, 0, sizeof out);
+    uieng::BoardLook scratch;
     bool seenFormat = false;
     if (!eat(p, '{')) return fail(p, "not a JSON object");
     if (!eat(p, '}')) {
@@ -206,7 +408,7 @@ bool parseObject(P& p, Layout& out) {
             } else if (b >= 0) {
                 if (out.has[b]) return fail(p, "duplicate board");
                 out.has[b] = true;
-                if (!board(p, out.slot[b], 1)) return false;
+                if (!board(p, out.slot[b], 1, looks ? looks[b] : (scratch = uieng::BoardLook(), scratch))) return false;
             } else if (!skipValue(p, 1)) {
                 return false;
             }
@@ -222,11 +424,16 @@ bool parseObject(P& p, Layout& out) {
 }  // namespace
 
 bool parse(const char* json, size_t n, Layout& out, char* why, size_t whyCap) {
+    return parse(json, n, out, nullptr, why, whyCap);
+}
+
+bool parse(const char* json, size_t n, Layout& out, uieng::BoardLook* looks, char* why, size_t whyCap) {
+    if (looks) for (int b = 0; b < B_N; b++) looks[b] = uieng::BoardLook();
     P p{json, n, 0, nullptr, {0}};
     bool ok = false;
     if (!json || n == 0) fail(p, "empty file");
     else if (n > MAX_JSON) fail(p, "layout.json too large");
-    else if (parseObject(p, out)) {
+    else if (parseObject(p, out, looks)) {
         ws(p);
         if (p.i != p.n) fail(p, "trailing data after JSON");
         else ok = true;
@@ -438,26 +645,58 @@ bool resolve(const Layout& L, Board b, uieng::ChromeOverride& out, char* why, si
     return true;
 }
 
-bool build(const char* json, size_t n, PackLayout& out, char* why, size_t whyCap) {
+bool checkLook(const uieng::BoardLook& k, Board b, const uint16_t* colors, char* why, size_t whyCap) {
+    if (b >= B_N) return say(why, whyCap, "bad board");
+    const int W = BOARD_W[b], H = BOARD_H[b];
+    static const char* const DECOR[uieng::MAX_DECOR] = {"decor.0", "decor.1", "decor.2", "decor.3", "decor.4", "decor.5", "decor.6", "decor.7"};
+    for (int i = 0; i < uieng::MAX_DECOR; i++) {
+        const uieng::Decor& d = k.decor[i];
+        if (d.art < 0) continue;
+        if (d.r.x < 0 || d.r.y < 0 || d.r.x + d.r.w > W || d.r.y + d.r.h > H) return say(why, whyCap, "%s is off screen", DECOR[i]);
+    }
+    // Text on the pieces that have no other route must stay readable against their fill.
+    static const int MUST_READ[] = {P_MENU, P_STOP, P_NAV_SCAN, P_NAV_DOMAIN, P_NAV_CODEX, P_NAV_POI, P_BRIDGE};
+    for (int p : MUST_READ) {
+        const uieng::PieceStyle& s = k.piece[p];
+        if (!s.ink.kind && !s.fill.kind) continue;
+        auto value = [&](const uieng::ColorRef& c, int role, bool& known) -> uint16_t {
+            if (c.kind == 2) return c.v;
+            const int r = c.kind == 1 ? c.v : role;
+            if (!colors) { known = false; return 0; }
+            return colors[r];
+        };
+        bool known = true;
+        const uint16_t ink = value(s.ink, themepack::R_TEXT, known), fill = value(s.fill, themepack::R_PANEL, known);
+        if (known && ui::contrastX10(ink, fill) < ui::MIN_EDGE_CONTRAST_X10)
+            return say(why, whyCap, "%s: text and fill contrast under 3:1", PIECE_NAME[p]);
+    }
+    if (why && whyCap) why[0] = 0;
+    return true;
+}
+
+bool build(const char* json, size_t n, PackLayout& out, char* why, size_t whyCap, const uint16_t* colors) {
     out.lo.board[0] = out.lo.board[1] = nullptr;
+    out.lo.look[0] = out.lo.look[1] = nullptr;
     if (n > MAX_JSON) {
         if (why && whyCap) snprintf(why, whyCap, "layout.json over %u bytes", (unsigned)MAX_JSON);
         return false;
     }
     Layout L;   // ~300 bytes on the loader task's stack: never in .bss (internal RAM is scarce)
     char r[80];
-    if (!parse(json, n, L, r, sizeof r)) {
+    if (!parse(json, n, L, out.look, r, sizeof r)) {
         if (why && whyCap) snprintf(why, whyCap, "layout.json: %s", r);
         return false;
     }
     for (int b = 0; b < B_N; b++) {
         if (!L.has[b]) continue;
-        if (!resolve(L, (Board)b, out.ov[b], r, sizeof r)) {
+        if (!resolve(L, (Board)b, out.ov[b], r, sizeof r) || !checkLook(out.look[b], (Board)b, colors, r, sizeof r)) {
             if (why && whyCap) snprintf(why, whyCap, "layout.json: %s", r);
             out.lo.board[0] = out.lo.board[1] = nullptr;
+            out.lo.look[0] = out.lo.look[1] = nullptr;
             return false;
         }
         out.lo.board[b] = &out.ov[b];
+        if (out.look[b].any) out.lo.look[b] = &out.look[b];
     }
     if (why && whyCap) why[0] = 0;
     return true;

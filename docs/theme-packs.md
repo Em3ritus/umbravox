@@ -200,6 +200,40 @@ draws the older 160x120 screens and ignores this file, as does firmware older th
   largest free rectangle and centres the screen in it, at its usual size. Scan's radar and any count tile you do
   not place move with it.
 
+### Styles, the style block and decor
+
+A piece may also be an object that gives its rect and a style:
+
+```json
+"menu": { "rect": [0, 0, 44, 44], "font": "f0", "scale": 2, "ink": "bright", "fill": "#102030",
+          "edge": "edge", "frame": "a2", "slice": [4, 4, 4, 4], "bg": "a3" }
+```
+
+- `rect` is required; every other key is optional. Keys this firmware does not know are ignored.
+- `font` names a pack font file (`"f0"` to `"f7"` for `f0.fnt` to `f7.fnt`); `scale` is 1 to 4.
+- `ink` (the piece's text), `fill` (its surface) and `edge` (its outline) are a colour role from `theme.json`'s
+  `colors` (`"bright"`, `"panel"`, ...) or `"#rrggbb"`. Status colours (amber, red, the band colours) are never
+  replaced.
+- `frame` is a picture (`"a0"` to `"a15"` for `a0.art` to `a15.art`) drawn as a nine-slice frame over the piece:
+  `slice` gives its left, top, right and bottom borders in pixels, which are kept; the middle is repeated.
+  `bg` is a picture drawn behind the piece at its exact size.
+
+Each board may also have a `style` block for every other screen, and up to eight pictures with no function:
+
+```json
+"style": { "title": "f0", "body": "f1", "numbers": "f2", "bg": "a0", "panel": "a1", "panelSlice": [3, 3, 3, 3],
+           "highlight": { "fill": "witch", "edge": "witchHi" }, "icons": ["a4", null, "a5"] },
+"decor.0": { "rect": [10, 60, 40, 30], "art": "a7" }
+```
+
+- `title`, `body` and `numbers` are the fonts for those kinds of text; `bg` the screen background (the board's
+  full size); `panel` and `panelSlice` the nine-slice frame for panels; `highlight` the colours of a selected row or
+  tab; `icons` up to six pictures, one per Menu entry in order (`null` for none), shown above the label when the
+  tile has room.
+- `decor.0` to `decor.7` are drawn in that order, under every other piece, at exactly their rect's size.
+- Fonts and pictures are read from the card when the theme is selected. Until they have loaded, and if one cannot
+  be read, the theme draws with the built-in font and no picture.
+
 What makes the device refuse a layout (it then uses the built-in layout and keeps the rest of the theme; the reason
 is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
 
@@ -209,8 +243,11 @@ is in `/diag.log` and counts toward the skipped number on the ASPECT screen):
   `count.*` tiles can be hidden);
 - two pieces overlapping, or a count tile over the radar;
 - too little room left for the screens (the free area must be at least 464x216 on the Waveshare and 304x136 on the CYD);
-- a file over 4,096 bytes, or one that is not valid layout JSON (duplicate keys, a value that is not four whole
-  numbers or `"hidden"`, nesting deeper than three levels).
+- a file over 16,384 bytes, or one that is not valid layout JSON (duplicate keys, a value that is not four whole
+  numbers, `"hidden"` or a piece object with a `rect`, nesting deeper than four levels);
+- a font or picture reference outside `f0`-`f7` / `a0`-`a15`, a colour that is not a role name or `#rrggbb`, a
+  `decor` key other than `decor.0` to `decor.7`, a decor piece off the screen;
+- text on `menu`, `stop`, `bridge` or a `nav.*` button whose `ink` and `fill` contrast under 3:1.
 
 ## Limits
 
@@ -226,7 +263,7 @@ These numbers are the same ones the device and the designer use
 | `header` | 18 characters |
 | `author` | 24 characters |
 | `theme.json` | at most 4 KB (4,096 bytes) |
-| `layout.json` | at most 4 KB (4,096 bytes); every tappable piece at least 44x44 px |
+| `layout.json` | at most 16 KB (16,384 bytes); every tappable piece at least 44x44 px |
 | `emblem.bin` | at most 96x96 pixels, 16 colours, 9.5 KB (9,728 bytes) |
 | `radar.vid` | square, 24x24 to 102x102 (older firmware: exactly 102x102), 1 to 30 fps, 1 to 150 frames, at most 780,312 bytes; read from the card when the pack's theme is selected (one clip in memory at a time) |
 | `alert.snd` | 16 kHz mono 16-bit, at most 96,000 samples (6 s) per level, at most 576,020 bytes; read from the card when the pack's theme is selected (one set in memory at a time) |

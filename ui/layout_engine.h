@@ -135,11 +135,42 @@ struct ChromeOverride {
 // The active theme's layout, one per board ([0] Waveshare W>=400, [1] CYD). Installed
 // by pal::setTheme; nullptr (or a null board) means the built-in geometry. chrome()
 // and scan() read it, so drawing and hits read the same rects and cannot drift.
-struct LayoutOverride { const ChromeOverride* board[2]; };
+// A layout theme's look (plan 4): per-piece styles, the board's style block for every other screen, and decor.
+// Font and art fields are indices into the pack's f0..f7.fnt and a0..a15.art (-1 = none); drawing asks the asset
+// registry for them and draws the built-in look when one is absent. Colours are a theme role or an RGB565 literal.
+constexpr int PIECE_SLOTS = 19, MAX_DECOR = 8, MENU_ICONS = 6;
+struct ColorRef { uint8_t kind = 0; uint16_t v = 0; };   // kind 0 none, 1 role index (themepack::Role), 2 RGB565
+struct PieceStyle {
+    int8_t font = -1; uint8_t scale = 0;                  // scale 0 = the drawing's own choice
+    ColorRef ink, fill, edge;
+    int8_t frame = -1; uint8_t slice[4] = {0, 0, 0, 0};  // nine-slice frame art and its l,t,r,b insets
+    int8_t bg = -1;
+};
+struct Decor { Rect r; int8_t art = -1; };              // art -1 = no decor at this N
+struct ScreenStyle {
+    int8_t roleFont[3] = {-1, -1, -1};                    // indexed by scanr::TextRole: body, title, numbers
+    int8_t bg = -1, panel = -1; uint8_t panelSlice[4] = {0, 0, 0, 0};
+    ColorRef hiFill, hiEdge;
+    int8_t icon[MENU_ICONS] = {-1, -1, -1, -1, -1, -1};
+};
+struct BoardLook {
+    bool any = false;
+    PieceStyle piece[PIECE_SLOTS];
+    ScreenStyle screen;
+    Decor decor[MAX_DECOR];                               // by N; drawn in N order under every functional piece
+    uint8_t nDecor = 0;
+    uint8_t fontsUsed = 0;                                // bit i = fi.fnt referenced
+    uint16_t artsUsed = 0;                                // bit i = ai.art referenced
+};
+struct LayoutOverride { const ChromeOverride* board[2]; const BoardLook* look[2] = {nullptr, nullptr}; };
 inline const LayoutOverride*& activeLayout() { static const LayoutOverride* p = nullptr; return p; }
 inline const ChromeOverride* activeBoard(int W) {
     const LayoutOverride* l = activeLayout();
     return l ? l->board[W >= 400 ? 0 : 1] : nullptr;
+}
+inline const BoardLook* activeLook(int W) {
+    const LayoutOverride* l = activeLayout();
+    return l ? l->look[W >= 400 ? 0 : 1] : nullptr;
 }
 
 inline Chrome chrome(int W, int H) {

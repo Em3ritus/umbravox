@@ -24,6 +24,7 @@ constexpr size_t MAX_PACK = 65536;
 constexpr int MAX_EMBLEM_DIM = 96;
 constexpr int MAX_EMBLEM_COLORS = 16;
 constexpr int N_COLORS = 20;
+extern const char* const ROLE_KEYS[N_COLORS];   // theme.json "colors" keys, indexed by Role
 
 // radar.vid, the optional third file: a looping clip for the wide radar. 'U','V','R','V', version 1, w, h, fps,
 // frames (u16 LE), two reserved zero bytes, then `frames` frames of 4-bit grey (two pixels per byte, high nibble

@@ -68,10 +68,10 @@ int main() {
     check("bad layout reason", strstr(why, "layout.json: menu cannot be hidden") != nullptr);
     if (bad >= 0) { pal::setTheme((uint8_t)bad); check("bad layout installs nothing", uieng::activeLayout() == nullptr); }
 
-    const std::string big = "{\"format\":1,\"note\":\"" + std::string(4096, 'a') + "\"}";
+    const std::string big = "{\"format\":1,\"note\":\"" + std::string(themelayout::MAX_JSON, 'a') + "\"}";
     const int over = packload::load(pack("layout-big", "LAYOUT BIG", big.c_str()).c_str(), why, sizeof why);
     check("oversize layout.json: the theme loads", over >= 0);
-    check("oversize layout.json reason", strstr(why, "layout.json over 4096 bytes") != nullptr);
+    check("oversize layout.json reason", strstr(why, "layout.json over 16384 bytes") != nullptr);
 
     const int junk = packload::load(pack("layout-junk", "LAYOUT JUNK", "{\"format\":1,").c_str(), why, sizeof why);
     check("unparsable layout.json: the theme loads, layout skipped", junk >= 0 && strstr(why, "layout.json: ") != nullptr);

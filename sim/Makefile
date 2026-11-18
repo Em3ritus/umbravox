@@ -90,7 +90,7 @@ test_fontpack: test_fontpack.cpp fontfix.h ../ui/fontpack.cpp ../ui/fontpack.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_fontpack.cpp ../ui/fontpack.cpp -lm
 
 test_themelayout: test_themelayout.cpp ../ui/themelayout.cpp ../ui/themelayout.h ../ui/layout_engine.h
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themelayout.cpp ../ui/themelayout.cpp -lm
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ test_themelayout.cpp ../ui/themelayout.cpp ../ui/themepack.cpp -lm
 
 test_elog: test_elog.cpp ../device/elog.h
 	$(CXX) $(CXXFLAGS) -o $@ test_elog.cpp -lm
@@ -232,7 +232,7 @@ ENGINE_HDR = ../ui/muffin.h ../ui/muffin_packed.inc ../ui/crew_art.h ../ui/domai
              ../ui/router.h ../ui/project.h ../ui/gnss.h ../ui/model.h
 
 test_layout_override: test_layout_override.cpp ../ui/layout_engine.h ../ui/themelayout.h ../ui/themelayout.cpp oracle_hits.inc
-	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_layout_override.cpp ../ui/themelayout.cpp -lm
+	$(CXX) $(CXXFLAGS) -fsanitize=address,undefined -o $@ test_layout_override.cpp ../ui/themelayout.cpp ../ui/themepack.cpp -lm
 
 test_engine_pixels: test_engine_pixels.cpp $(wildcard engine_pixels.inc) $(wildcard *_fixture.h) $(ENGINE_HDR) ../ui/themelayout.h ../ui/themelayout.cpp $(PAL_DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ test_engine_pixels.cpp ../ui/themelayout.cpp $(PAL_DEPS) -lm

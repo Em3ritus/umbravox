@@ -131,7 +131,7 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
     // author sees why (the same themelayout::build the device runs).
     if (layout && layout_len > 0) {
         char lwhy[96];
-        if (!themelayout::build(layout, (size_t)layout_len, g_layoutProbe, lwhy, sizeof lwhy)) return fail(UV_ERR_LAYOUT, "%s", lwhy);
+        if (!themelayout::build(layout, (size_t)layout_len, g_layoutProbe, lwhy, sizeof lwhy, p.color)) return fail(UV_ERR_LAYOUT, "%s", lwhy);
     }
 
     // The draft replaces whatever was loaded, so no other pack name is taken.
@@ -160,7 +160,7 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
     if (id < 0) return fail(UV_ERR_FULL, "%s", admitWhy(ADMIT_FULL));
     if (layout && layout_len > 0) {
         char lwhy[96];
-        if (!themelayout::build(layout, (size_t)layout_len, g_layout, lwhy, sizeof lwhy)) return fail(UV_ERR_LAYOUT, "%s", lwhy);   // unreachable: same bytes
+        if (!themelayout::build(layout, (size_t)layout_len, g_layout, lwhy, sizeof lwhy, p.color)) return fail(UV_ERR_LAYOUT, "%s", lwhy);   // unreachable: same bytes
         pal::setPackLayout(id, &g_layout.lo);
     }
     return id;

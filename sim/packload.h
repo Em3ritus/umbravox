@@ -157,7 +157,7 @@ inline int load(const char* folderPath, char* why, size_t whyCap) {
             if (whyCap) snprintf(why, whyCap, "layout.json over %u bytes", (unsigned)themelayout::MAX_JSON);
         } else if (!detail::readAll(layoutPath, lbuf, (size_t)ls)) {
             detail::fail(why, whyCap, "layout.json could not be read");
-        } else if (themelayout::build((const char*)lbuf, (size_t)ls, *detail::layoutSlot(s), why, whyCap)) {
+        } else if (themelayout::build((const char*)lbuf, (size_t)ls, *detail::layoutSlot(s), why, whyCap, p.color)) {
             pal::setPackLayout(id, &detail::layoutSlot(s)->lo);
         }
     }
