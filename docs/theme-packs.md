@@ -257,14 +257,18 @@ Each board may place and style the alert card for each level, and give pieces an
 
 - `alert.card.low`, `alert.card.med` and `alert.card.high` are overlays, not pieces: they are drawn on top of
   everything, may cover other pieces, and a tap anywhere dismisses the alert, as today. `rect` is required; without
-  a card key the built-in card is used (LOW and MED over the radar area, HIGH the whole screen).
+  a card key the built-in card is used (LOW and MED over the radar area, HIGH the whole screen). A card smaller than
+  the screen leaves the rest of Scan visible and live; a HIGH card is still dismissed by a tap anywhere, a LOW or MED
+  card by a tap on it. The CYD engine build shows the alert card too (the release CYD build ignores `layout.json`).
 - `font` and `scale` set the card's words. A font shorter than 7 px (its height times `scale`) is not used: the
   card then draws with the built-in font.
 - `clip` is a picture (`"a0"` to `"a15"`, still or animated) played in place of the alert rite. It is never scaled;
   it shares the board's picture budget, and it plays only if it fits inside the card and its area is at most
   25,600 px on the Waveshare (10,000 px on the CYD); otherwise the rite plays.
-- `effect` is `none`, `flash`, `pulse` or `shake`; `speed` is `slow`, `medium` (the default) or `fast`. Effects
-  never draw over the alert card.
+- `effect` is `none`, `flash`, `pulse` or `shake`; `speed` is `slow`, `medium` (the default) or `fast` (one cycle
+  every 1000, 500 or 250 ms). Flash and pulse tint the piece toward the alert's colour, shake moves it sideways by
+  up to 2 px. Effects play only while an alert is on screen, never draw over the alert card, and are capped at 4
+  pieces on the Waveshare and 2 on the CYD: each one repaints its piece every frame of the alert.
 
 What makes the device refuse a layout (it then uses the built-in layout and keeps the rest of the theme; the reason
 is in `/diag.log` and counts toward the skipped number on the ASPECT screen):

@@ -230,6 +230,14 @@ MUFFIN has a choice -- Supernova, Vortex, Comet Strike or Lock-On -- stored as
 `Settings.alertStyle`. Confidence still owns the card's border colour in every
 rite.
 
+**Theme alert cards and effects (plan 5a).** A layout theme may move and size each level's card, give it a font and
+play a picture in place of the rite; the CYD engine build shows the takeover too. Effects (flash, pulse, shake) are a
+post-process on a piece's rect: the scene is composed, the effect rewrites that rect's pixels, then the card is drawn
+on top, so no piece's drawing code knows about effects and an effect can never cover the card. The cost is bounded by
+the loader (at most 4 pieces on the Waveshare, 2 on the CYD) and by the presenter, which repaints only the effect
+rects each alert frame; a shake reads its whole row span, so any dirty region touching a shaking piece is widened to
+its columns. The edge colour and its contrast rule are the card's, so an effect cannot make the alert less readable.
+
 **COSMIC MUFFIN** is the third theme: a neon deep-space palette, and a
 centrepiece that is a full-colour bitmap rather than a drawn figure or a
 4-level ramp. `tools/gen_muffin.py` crops the committed pixel art in
