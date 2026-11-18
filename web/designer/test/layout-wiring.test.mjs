@@ -81,4 +81,6 @@ test('plan 5c: the speed meter is on the Layout step and over a limit closes Dow
   assert.match(app, /\$\('btn-share'\)\.addEventListener\('click', \(\) => \{[^]*?meter\.verdict && meter\.verdict\.over[^]*?shareUrl/, 'Share refuses it too');
   assert.match(app, /\$\(id\)\.disabled = bad \|\| slow/);
   assert.match(app, /meterText\(r\)/, 'the rows use meterText (the alert row says it is rough)');
+  assert.match(html, /Speed on the boards <span class="muted">\(p95 frame\)<\/span>/, 'the heading says p95, not worst');
+  assert.match(app, /function runMeter\(\) \{[^]*?meter\.runError = null[^]*?\}/, 'a run that works clears an earlier error');
 });

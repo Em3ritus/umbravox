@@ -119,6 +119,12 @@ class FitTests(unittest.TestCase):
         self.assertIn("alert", r.stderr)
         self.assertIsNone(j)
 
+    def test_refuses_an_empty_input_and_writes_nothing(self):
+        r, j = run([])
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("no frames", r.stderr)
+        self.assertIsNone(j)
+
     def test_refuses_when_both_slopes_are_negative(self):
         r, j = run(rows("waveshare", alert=(-0.0002, -0.0001, 400.0)))
         self.assertEqual(r.returncode, 2)

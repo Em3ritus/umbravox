@@ -37,7 +37,7 @@ const state = { theme: null, emblem: null, clip: null, sounds: emptySounds(), ta
   media: { fonts: {}, pictures: {} }, mediaVersion: 0, lscreen: 'scan', lmode: 'scan', lplay: null };
 let preview = null;       // null until the wasm loads (or if it cannot)
 // The speed meter's state (plan 5c; see "the speed meter" below): the boards' fit, its note, the last verdict.
-const meter = { fit: null, fitNote: 'Loading the boards\' measurements...', verdict: null, timer: 0 };
+const meter = { fit: null, fitNote: 'Loading the boards\' measurements...', runError: null, verdict: null, timer: 0 };
 // The board the preview can really draw: an older wasm may lack the Waveshare, and the install picker does not need it.
 function previewBoard() { return preview && preview.boards().includes(state.board) ? state.board : 'cyd'; }
 
@@ -362,7 +362,8 @@ function runMeter() {
   if (!preview || !state.theme || typeof preview.measure !== 'function') { syncMeter(); return; }
   try {
     meter.verdict = meterRows(meter.fit, measureAll((b, mode, n, ms) => preview.measure(b, mode, n, ms), meter.fit));
-  } catch (e) { meter.verdict = null; meter.fitNote = 'The meter could not run: ' + e.message; }
+    meter.runError = null;
+  } catch (e) { meter.verdict = null; meter.runError = 'The meter could not run: ' + e.message; }
   syncMeter();
   refreshChecks();
 }
@@ -371,7 +372,8 @@ function syncMeter() {
   for (const r of (meter.verdict ? meter.verdict.rows : [])) {
     ul.append(el('li', { class: r.state, text: meterText(r) }));
   }
-  $('meter-note').textContent = meter.verdict && meter.verdict.over ? meter.verdict.reason + ' ' + meter.fitNote : meter.fitNote;
+  const note = meter.runError || meter.fitNote;
+  $('meter-note').textContent = meter.verdict && meter.verdict.over ? meter.verdict.reason + ' ' + note : note;
 }
 for (const b of $('tabs').children) b.addEventListener('click', () => { state.tab = b.dataset.v; syncTabs(); t0 = performance.now(); });
 // The board being previewed (remembered per browser; the CYD until the person picks another).

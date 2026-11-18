@@ -63,3 +63,9 @@ test('meter-crosscheck compares steady frames: a huge transition frame on the bo
   const r = xcheck(csvFor(20000, 90000, 10));
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
+
+test('meter-crosscheck reads a CSV with CRLF line endings', () => {
+  const r = xcheck(csvFor(22000).replace(/\n/g, '\r\n'));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /builtin scan p95: board 22\.0 ms/);
+});

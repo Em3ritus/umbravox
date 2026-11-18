@@ -7,15 +7,16 @@ Per board, two least-squares fits ms ~ a*drawn + b*pushed + c: one over the scan
 (LOW, MED, HIGH). An alert pixel costs 2-2.5x a scan pixel (the rite, cards, text), so one model over both cannot
 work. The first frame after every change of pack or mode is left out: on the board MED and LOW appear over the
 previous card, which the designer's replay cannot reproduce. A negative slope is clamped to 0 and the other term
-refitted alone (pixels cannot cost negative time); both negative refuses the board.
+refitted alone (pixels cannot cost negative time); if that term's slope is negative too, the board is refused. When
+both slopes come out negative, drawn is the term kept.
 
 The designer (web/designer/js/meter.js) applies the fits to the counts its wasm replay (ui/meter.h) produces and
 judges the p95 frame (nearest rank) against the board's limits: alerts 400 ms on both boards (the alert row only
 warns); scan is written here as the built-in theme's MEASURED scan p95 + 15%, which is provisional:
 tools/meter-limits.mjs replaces it with the built-in theme's PREDICTED p95 + 15%, which cancels the fit's bias.
 
-A board is refused (exit 2, nothing written) with fewer than 3 distinct packs, no alert or no built-in scan frames,
-or both slopes of a fit negative: a bad fit must never reach the designer.
+Refused (exit 2, nothing written): no frames at all; a board with fewer than 3 distinct packs, no alert or no
+built-in scan frames, or a fit whose refitted single term is still negative. A bad fit must never reach the designer.
 """
 import argparse
 import csv
@@ -149,6 +150,9 @@ def main():
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     rows = steady(read_rows(a.csv))
+    if not rows:
+        print("meterfit: no frames in %s" % ", ".join(a.csv), file=sys.stderr)
+        sys.exit(2)
     boards = {}
     try:
         for b in sorted({r["board"] for r in rows}):

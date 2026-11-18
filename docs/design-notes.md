@@ -854,7 +854,8 @@ node tools/meter-crosscheck.mjs web/designer/js/meter-fit.json ws.csv cyd.csv PA
 
 `meterfit.py` fits scan and alert frames separately, leaves out the first frame of every mode run (on the board MED
 and LOW rise over the previous card, which the replay cannot reproduce), clamps a negative slope to 0 and refits the
-other term, and refuses a board with fewer than 3 packs, no alert frames, or both slopes negative. The scan limit it
+other term (refused if that is negative too), and refuses an empty input or a board with fewer than 3 packs or no
+alert frames. The scan limit it
 writes is provisional (the measured built-in p95 + 15%): `meter-limits.mjs` replaces it, and `npm test` fails while
 the shipped file is stale. `meter-crosscheck.mjs` compares predicted with measured p95 frame times on steady frames:
 a scan row more than 15% off fails, alert rows are info. Pixel counts are not compared: the board draws live data the
