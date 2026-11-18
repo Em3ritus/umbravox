@@ -353,7 +353,7 @@ export function draftOther(L, from, to, rules) {
         if (dx <= dy) r.x += (ra.x + ra.w / 2 < rb.x + rb.w / 2 ? -dx : dx);
         else r.y += (ra.y + ra.h / 2 < rb.y + rb.h / 2 ? -dy : dy);
         r.x = Math.max(0, Math.min(T.w - r.w, r.x)); r.y = Math.max(0, Math.min(T.h - r.h, r.y));
-        n.boards[to][a] = { rect: r, hidden: false };
+        n.boards[to][a] = { ...n.boards[to][a], rect: r, hidden: false };   // keep its style and effect (5b minor 4)
         moved = true;
       }
     }

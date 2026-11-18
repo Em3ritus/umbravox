@@ -215,3 +215,11 @@ test('5b minor 3: a malformed alert card is reported as a card, never as a hidde
     assert.equal(L.dropped.some((d) => /is not a piece/.test(d)), false);
   }
 });
+
+test('5b minor 4: a piece nudged apart while drafting keeps its style', () => {
+  let L = setPiece(newLayout(), 'waveshare', 'nav.scan', { x: 200, y: 140, w: 44, h: 44 });
+  L = setPiece(L, 'waveshare', 'nav.domain', { x: 248, y: 140, w: 44, h: 44 });
+  for (const n of ['nav.scan', 'nav.domain']) L = setStyle(L, 'waveshare', n, { ink: '#123456' });
+  const D = draftOther(L, 'waveshare', 'cyd', rules);
+  for (const n of ['nav.scan', 'nav.domain']) assert.equal(D.boards.cyd[n].style?.ink, '#123456', n);
+});
