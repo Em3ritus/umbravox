@@ -78,6 +78,13 @@ sim/test_layout_override
 sim/test_themelayout
 sim/test_engine_pixels
 sim/test_layout_pack
+# plan 4 (fonts, art, styling)
+sim/test_fontpack
+sim/test_text_font
+sim/test_artpack
+sim/test_packassets
+sim/test_style_render
+sim/test_screen_style
 sim/test_ring_gen
 sim/bench_radar
 sim/test_scan_present
