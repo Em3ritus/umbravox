@@ -211,7 +211,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DomainScene& sc) {
         char title[40];snprintf(title,sizeof title,"%.*s",split,name);
         txt(s,cc.x+8,ry+4,title,scale,pal::BRIGHT);
         if(name[split])
-            txt(s,cc.x+8,ry+4+7*scale+2,name+split+(name[split]==' '),scale,pal::BRIGHT);
+            txt(s,cc.x+8,ry+4+scanr::lineH(scale)+2,name+split+(name[split]==' '),scale,pal::BRIGHT);
         txt(s,cc.x+8,ry+rh-20,row.mac?row.mac:"",1,pal::DIM);
         snprintf(buf,sizeof buf,"%s CH%d  %d dBm",row.band==1?"5G":"2.4G",row.chan,row.rssi);
         txt(s,cc.x+8,ry+rh-10,buf,1,bandColor(row.band));

@@ -121,14 +121,15 @@ inline void alertText(Rc& r, const AlertScene& a, uint16_t edge, int age, const 
     const int ny = r.Y + (b.hi ? r.H * 13 / 100 : r.H * 17 / 100);     // HIGH: the name rides the top, the details ride the bottom, the rite owns the middle
     arune(r, 0, cx, ny - (b.hi ? 18 : 12), b.hi ? 4 : 2, edge);                      // the eye
     int n = 0; while (a.label[n]) n++;
-    const int startX = cx - Font::width(a.label, ns) / 2, settle = b.trace;
-    for (int i = 0; i < n; i++) {
-        const int gx = startX + i * Font::ADV * ns, lockAt = settle + i * b.charMs;
-        if (age >= lockAt) { const char ch[2] = { a.label[i], 0 }; if (ny + Font::H * ns > r.s.y0 && ny < r.s.y0 + r.s.h) txt(r.s, gx, ny, ch, ns, pal::BRIGHT); }
-        else arune(r, int(anoise(uint32_t(age / 70), uint32_t(i)) % 16), gx + Font::W * ns / 2, ny + Font::H * ns / 2, std::max(1, ns / 2), edge);
+    const int startX = cx - scanr::textW(a.label, ns) / 2, settle = b.trace;
+    int gx = startX;
+    for (int i = 0; i < n; gx += scanr::charAdv(a.label[i], ns), i++) {
+        const int lockAt = settle + i * b.charMs;
+        if (age >= lockAt) { const char ch[2] = { a.label[i], 0 }; if (ny + scanr::lineH(ns) > r.s.y0 && ny < r.s.y0 + r.s.h) txt(r.s, gx, ny, ch, ns, pal::BRIGHT); }
+        else arune(r, int(anoise(uint32_t(age / 70), uint32_t(i)) % 16), gx + scanr::glyphW(a.label[i], ns) / 2, ny + scanr::lineH(ns) / 2, std::max(1, ns / 2), edge);
     }
-    const int ds = 2, tail = settle + n * b.charMs, step = Font::H * ds + 5;
-    const int y1 = b.hi ? r.Y + r.H - 14 - Font::H * ds - 2 * step : ny + Font::H * ns + 8;
+    const int ds = 2, tail = settle + n * b.charMs, step = scanr::lineH(ds) + 5;
+    const int y1 = b.hi ? r.Y + r.H - 14 - scanr::lineH(ds) - 2 * step : ny + scanr::lineH(ns) + 8;
     if (age > tail)       centered(r.s, cx, y1, a.why, ds, pal::DIM);
     if (age > tail + 80 && a.name[0]) centered(r.s, cx, y1 + step, a.name, fitScale(a.name, r.W - 16, ds), pal::TEXT);
     if (age > tail + 160) centered(r.s, cx, y1 + 2 * step, a.conf == ui::CONF_HIGH ? "HIGH" : a.conf == ui::CONF_MED ? "MED" : "LOW", ds, edge);

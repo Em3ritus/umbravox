@@ -64,7 +64,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const EchoScene& sc) {
       if (sc.clients) snprintf(tb, sizeof tb, "%d MACS", sc.clients);
       else if (sc.total > sc.nRows) snprintf(tb, sizeof tb, "%d", sc.total);
       else tb[0] = 0;
-      if (tb[0]) txt(s, L.title.x + L.title.w - Font::width(tb,1), L.title.y + 4, tb, 1, pal::DIM); }
+      if (tb[0]) txt(s, L.title.x + L.title.w - scanr::textW(tb,1), L.title.y + 4, tb, 1, pal::DIM); }
 
     txt(s,L.header.x+3,L.header.y+2,"REQUESTED SSID / OBSERVED STATION",1,pal::EDGE_LIT);
     box(s,L.list.x,L.list.y,L.list.w,L.list.h,ui::Canvas::mix(pal::VOID,pal::PANEL,1,3));

@@ -100,7 +100,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const DetailScene& sc) {
     txt(s,hd.x+4,hd.y+20,address,1,pal::TEXT);
     txt(s,hd.x+4,hd.y+33,sc.bandChan?sc.bandChan:"",1,bc);
     char rb[40];snprintf(rb,sizeof rb,"%d dBm",sc.rssi);
-    txt(s,hd.x+hd.w-4-Font::width(rb,1),hd.y+33,rb,1,pal::BRIGHT);
+    txt(s,hd.x+hd.w-4-scanr::textW(rb,1),hd.y+33,rb,1,pal::BRIGHT);
 
     if(sc.page==2 && sc.band!=ui::BAND_BLE){
         const auto c=uieng::detailClients(W,H);const auto& list=sc.clients;

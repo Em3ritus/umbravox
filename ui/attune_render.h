@@ -66,7 +66,7 @@ inline void composeStrip(scanr::S& s, int W, int H, const AttuneScene& sc) {
         const int vmax = L.minus[i].x - (r.x + 6) - 6;
         if(sc.rows[i].label && !strcmp(sc.rows[i].label,"RAW PCAP"))
             txt(s,r.x+6,r.y+25,v,1,pal::BRIGHT);
-        else txt(s, L.minus[i].x - 6 - Font::width(v, 1), r.y + 8, v, 1, pal::BRIGHT);
+        else txt(s, L.minus[i].x - 6 - scanr::textW(v, 1), r.y + 8, v, 1, pal::BRIGHT);
         (void)vmax;
         stepBtn(s, L.minus[i], "-");
         stepBtn(s, L.plus[i],  "+");

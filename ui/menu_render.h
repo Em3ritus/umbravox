@@ -64,9 +64,9 @@ inline void composeStrip(scanr::S& s, int W, int H, const MenuScene& sc) {
         const int scale=fitScale(label,t.w-12,2);
         // Center the complete label/subtitle group, not just the heading.
         const bool wide=W>=400;
-        const int groupH=7*scale+(wide?17:0),y=t.y+(t.h-groupH)/2;
+        const int groupH=scanr::lineH(scale)+(wide?17:0),y=t.y+(t.h-groupH)/2;
         centered(s,t.x+t.w/2,y,label,scale,pal::TEXT);
-        if(wide)centered(s,t.x+t.w/2,y+7*scale+10,kMenuDescriptions[i],1,pal::DIM);
+        if(wide)centered(s,t.x+t.w/2,y+scanr::lineH(scale)+10,kMenuDescriptions[i],1,pal::DIM);
     }
 
 }

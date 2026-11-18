@@ -104,8 +104,8 @@ inline void composeStrip(scanr::S& s, int W, int H, const FilesScene& sc) {
             const bool organized=g.name&&strstr(g.name,"umbravox/");
             txt(s,r.x+6,r.y+25,organized?(strstr(g.name,"/captures/")?"CAPTURES":"SESSION FOLDER"):"LEGACY ROOT",1,pal::DIM);
             int rx = r.x + r.w - 6;
-            if (g.size) { rx -= Font::width(g.size, 1); txt(s, rx, r.y + 25, g.size, 1, pal::DIM); }
-            if (g.active) { const char* R = "IN USE"; rx -= Font::width(R, 1) + 8; txt(s, rx, r.y + 25, R, 1, pal::RED); }
+            if (g.size) { rx -= scanr::textW(g.size, 1); txt(s, rx, r.y + 25, g.size, 1, pal::DIM); }
+            if (g.active) { const char* R = "IN USE"; rx -= scanr::textW(R, 1) + 8; txt(s, rx, r.y + 25, R, 1, pal::RED); }
         }
         // scrollbar when there are more logs than fit; thumb tracks firstIndex
         if (sc.total > L.nRows) {

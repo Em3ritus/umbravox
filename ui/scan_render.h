@@ -18,7 +18,9 @@
 #include "palette.h"
 #include "themepack.h"
 #include "font5x7.h"
+#include "fontpack.h"
 #include "gnss.h"
+#include <algorithm>
 #include "canvas.h"
 #include <cmath>
 #include <cstdint>
@@ -206,7 +208,73 @@ inline void box(S& s, int rx, int ry, int rw, int rh, uint16_t c) {
     int y0 = ry<s.y0?s.y0:ry, y1 = (ry+rh>s.y0+s.h)?s.y0+s.h:ry+rh;
     for (int y=y0; y<y1; y++){ uint16_t* r=s.px+(y-s.y0)*s.stride; for (int x=x0;x<x1;x++) r[x-s.lo]=c; }
 }
+// --- text fonts ---------------------------------------------------------------
+// Text is drawn in the built-in 5x7 unless a theme's pack font is active. The active font is the innermost
+// FontScope's (a piece's own font, clipped to the piece), else the font of the current text role (set per
+// screen from the theme's style block), else none. With no pack font every routine below is exactly the 5x7.
+enum TextRole : uint8_t { ROLE_BODY, ROLE_TITLE, ROLE_NUMBERS, ROLE_N };
+namespace textstate {
+inline const fontpack::Font* roleFont[ROLE_N] = {};
+inline TextRole role = ROLE_BODY;
+inline const fontpack::Font* scopeFont = nullptr;
+inline uieng::Rect clip{0, 0, 0x7FFF, 0x7FFF};
+}
+inline void setRoleFonts(const fontpack::Font* const fonts[ROLE_N]) {
+    for (int i = 0; i < ROLE_N; ++i) textstate::roleFont[i] = fonts ? fonts[i] : nullptr;
+}
+inline const fontpack::Font* activeFont() {
+    return textstate::scopeFont ? textstate::scopeFont : textstate::roleFont[textstate::role];
+}
+struct RoleScope {
+    TextRole prev;
+    explicit RoleScope(TextRole r) : prev(textstate::role) { textstate::role = r; }
+    ~RoleScope() { textstate::role = prev; }
+    RoleScope(const RoleScope&) = delete; RoleScope& operator=(const RoleScope&) = delete;
+};
+struct FontScope {
+    const fontpack::Font* prevFont; uieng::Rect prevClip;
+    FontScope(const fontpack::Font* f, uieng::Rect c) : prevFont(textstate::scopeFont), prevClip(textstate::clip) {
+        if (f) textstate::scopeFont = f;
+        textstate::clip = c;
+    }
+    ~FontScope() { textstate::scopeFont = prevFont; textstate::clip = prevClip; }
+    FontScope(const FontScope&) = delete; FontScope& operator=(const FontScope&) = delete;
+};
+inline int lineH(int sc) { const fontpack::Font* f = activeFont(); return (f ? f->h : Font::H) * sc; }
+inline int textW(const char* t, int sc) { const fontpack::Font* f = activeFont(); return f ? fontpack::width(*f, t, sc) : Font::width(t, sc); }
+inline int charAdv(char c, int sc) { const fontpack::Font* f = activeFont(); return (f ? fontpack::advance(*f, c) : Font::ADV) * sc; }
+inline int glyphW(char c, int sc) {
+    const fontpack::Font* f = activeFont();
+    if (!f) return Font::W * sc;
+    const int a = fontpack::advance(*f, c);
+    return (a > 1 ? a - 1 : a) * sc;
+}
+// Pack-font text: proportional glyphs at integer scale, clipped to textstate::clip and to the strip.
+inline void txtPack(S& s, const fontpack::Font& f, int gx, int gy, const char* t, int sc, uint16_t fg) {
+    const uieng::Rect& c = textstate::clip;
+    const int cy0 = std::max({gy, c.y, s.y0}), cy1 = std::min({gy + f.h * sc, c.y + c.h, s.y0 + s.h});
+    if (cy0 >= cy1) return;
+    const int cx0 = std::max(c.x, s.lo), cx1 = std::min(c.x + c.w, s.hi);
+    if (cx0 >= cx1) return;
+    int x = gx;
+    for (int i = 0; t[i] && x < cx1; ++i) {
+        const int adv = fontpack::advance(f, t[i]);
+        if (x + adv * sc > cx0) {
+            for (int y = cy0; y < cy1; ++y) {
+                const int ry = (y - gy) / sc;
+                uint16_t* row = s.px + (y - s.y0) * s.stride;
+                for (int px = 0; px < adv; ++px) {
+                    if (!fontpack::pixel(f, t[i], px, ry)) continue;
+                    const int x0 = std::max(x + px * sc, cx0), x1 = std::min(x + px * sc + sc, cx1);
+                    for (int xx = x0; xx < x1; ++xx) row[xx - s.lo] = fg;
+                }
+            }
+        }
+        x += adv * sc;
+    }
+}
 inline void txt(S& s, int gx, int gy, const char* t, int sc, uint16_t fg) {
+    if (const fontpack::Font* f = activeFont()) { txtPack(s, *f, gx, gy, t, sc, fg); return; }
     if (gy >= s.y0+s.h || gy+Font::H*sc <= s.y0) return;
     if (s.lo > 0 || s.hi < s.W) { int n = 0; while (t[n]) n++; if (gx >= s.hi || gx + n*Font::ADV*sc <= s.lo) return; }   // a window skips whole labels
     for (int i=0;t[i];i++) for (int ry=0;ry<Font::H;ry++){ uint8_t b=Font::row(t[i],ry);
@@ -227,10 +295,10 @@ inline void fmtCount(long v, char* out, int n) {
     else { const long t = v / 100000; snprintf(out, n, "%ld.%ldM", t / 10, t % 10); }
 }
 inline int  fitScale(const char* t, int maxW, int hi) {         // largest scale <= hi that fits
-    for (int s=hi; s>1; --s) if (Font::width(t,s) <= maxW) return s; return 1;
+    for (int s=hi; s>1; --s) if (textW(t,s) <= maxW) return s; return 1;
 }
 inline void centered(S& s, int cx, int gy, const char* t, int sc, uint16_t c) {
-    txt(s, cx - Font::width(t,sc)/2, gy, t, sc, c);
+    txt(s, cx - textW(t,sc)/2, gy, t, sc, c);
 }
 
 // --- field artwork (follows the theme's selection) ----------------------------
@@ -847,9 +915,9 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
       const int limit=(c.wordmark.w-8-badge)/(6*scale);
       if(limit>=3 && int(strlen(clipped))>limit){clipped[limit]=0;clipped[limit-1]=clipped[limit-2]=clipped[limit-3]='.';}
       name=clipped;
-      const int x=c.wordmark.x+(c.wordmark.w-Font::width(name,scale)-badge)/2;
+      const int x=c.wordmark.x+(c.wordmark.w-textW(name,scale)-badge)/2;
       if(badge)diamondInto(s,x+7,wm.y+21,7,pal::WITCH);
-      txt(s,x+badge,wm.y+(wm.h-7*scale)/2,name,scale,pal::BRIGHT);
+      txt(s,x+badge,wm.y+(wm.h-lineH(scale))/2,name,scale,pal::BRIGHT);
     }
     char hb[24];
     const GpsState gst = gpsState(st.gps);
@@ -868,7 +936,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     centered(s,bt.x+bt.w/2,bt.y+10,"BRIDGE",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
     centered(s,bt.x+bt.w/2,bt.y+26,st.bridgeOn?"ON":"OFF",1,st.bridgeOn?pal::BRIGHT:pal::DIM);
     if(st.bridgeOn) {
-        const int width=Font::width("BRIDGE",1);
+        const int width=textW("BRIDGE",1);
         box(s,bt.x+(bt.w-width)/2,bt.y+37,width,2,pal::WITCH_HI);
     }
     // The SD icon draws in the sd piece, the battery in the power piece. Their x offsets
@@ -937,10 +1005,10 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     static const char* const nav[3]={"SCAN","DOMAIN","CODEX"};
     for(int i=0;i<3;++i){
         const auto r=c.navCells[i];
-        const int ns=fitScale(nav[i],r.w-8,2), width=Font::width(nav[i],ns);
+        const int ns=fitScale(nav[i],r.w-8,2), width=textW(nav[i],ns);
         const int lx=r.x+(r.w-width)/2;
         const bool on=activeTab==i;
-        txt(s,lx,r.y+(r.h-7*ns)/2,nav[i],ns,on?pal::BRIGHT:pal::TEXT);
+        txt(s,lx,r.y+(r.h-lineH(ns))/2,nav[i],ns,on?pal::BRIGHT:pal::TEXT);
         if(on)box(s,lx,r.y+r.h-8,width,2,pal::WITCH_HI);
     }
     const auto mark=c.navCells[3];
@@ -957,7 +1025,7 @@ inline void drawChrome(S& s, int W, int H, const uieng::Rect& /*body*/,
     const bool on=st.rec==Rec::On;
     const bool warning=st.rec==Rec::NoCard || st.rec==Rec::Saving || st.rec==Rec::Incomplete;
     const uint16_t ink=on?pal::RED:warning?pal::AMBER:pal::DIM;
-    const int scale=fitScale(label,record.w-8,2),width=Font::width(label,scale);
+    const int scale=fitScale(label,record.w-8,2),width=textW(label,scale);
     const int x=record.x+(record.w-width)/2;
     const int rb=record.y+record.h;
     txt(s,x,rb-30,label,scale,ink);
@@ -1078,7 +1146,7 @@ inline void composeStripScene(S& s, int W, int H, const ScanScene& sc) {
     }
     const int channelScale = W>=400 ? 2 : 1;
     if (chr.w > 0 && chr.h > 0)
-        txt(s, chr.x + chr.w - 4 - Font::width(sc.ch,channelScale), chr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
+        txt(s, chr.x + chr.w - 4 - textW(sc.ch,channelScale), chr.y+4, sc.ch, channelScale, pal::BRIGHT);  // channel, right
 
     // Center between the top inset and spectrum; retain the approved radar sizes.
     const auto radar = radarBounds(W,H);
