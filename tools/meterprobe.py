@@ -7,7 +7,8 @@
 
 Needs an ENGINE build on the board (ws-c5-35-engine, nm-cyd-c5-engine): FRAMELOG is not in the legacy CYD build.
 The built-in theme (THEME 0) is measured first, with no pack. Then, for each pack folder under PACKS, the probe:
-installs it (tools/sdput.py's protocol), reboots, selects the theme by name, turns FRAMELOG on, drops 2 s of
+installs it (tools/sdput.py's protocol; a folder already on the card is overwritten with the probe's copy and
+left there afterwards), reboots, selects the theme by name, turns FRAMELOG on, drops 2 s of
 settling, records the scan screen for --seconds, sends TEST and records the alert steps (HIGH, MED, LOW, ...)
 for 16 s, turns FRAMELOG off, and deletes the pack again. Rows go to --out as CSV:
 
@@ -64,6 +65,30 @@ def theme_range(line):
     return int(m.group(1)) if m else None
 
 
+def sdls_dirs(lines):
+    """Folder names in an SDLS listing ("     <dir>  name/")."""
+    out = set()
+    for line in lines:
+        if "<dir>" in line:
+            name = line.split("<dir>", 1)[1].strip().rstrip("/")
+            if name:
+                out.add(name)
+    return out
+
+
+def themes_on_card(link):
+    link.send("SDLS /themes")
+    body, inside = [], False
+    for line in link.lines(5.0):
+        if line.startswith("=== SDLS END"):
+            break
+        if line.startswith("=== SDLS"):
+            inside = True
+        elif inside:
+            body.append(line)
+    return sdls_dirs(body)
+
+
 def _sdput():
     spec = importlib.util.spec_from_file_location("sdput", Path(__file__).resolve().parent / "sdput.py")
     mod = importlib.util.module_from_spec(spec)
@@ -79,10 +104,12 @@ def collect(link, seconds):
 
 
 def select_theme(link, name):
-    """THEME by name: ask for the range, then walk down from the last id (packs follow the built-ins)."""
+    """THEME by name: ask for the range, then walk down from the last id (packs follow the built-ins). Just after a
+    boot the board answers late (it is still loading pack media), so each request waits for the reply carrying ITS
+    id, and any reply naming the theme is taken at the id it gives, never at the id last sent."""
     link.send("THEME 9999")
     top = None
-    for line in link.lines(3.0):
+    for line in link.lines(6.0):
         top = theme_range(line)
         if top is not None:
             break
@@ -90,11 +117,14 @@ def select_theme(link, name):
         return None
     for k in range(top, -1, -1):
         link.send("THEME %d" % k)
-        for line in link.lines(2.0):
+        for line in link.lines(6.0):
             r = theme_reply(line)
-            if r:
-                if r[1] == name:
-                    return k
+            if r and r[1] == name:
+                link.send("THEME %d" % r[0])       # the walk may have moved on: select it again
+                for _ in link.lines(1.0):
+                    pass
+                return r[0]
+            if r and r[0] == k:
                 break
     return None
 
@@ -124,6 +154,14 @@ def measure(link, board, pack, seconds):
     return csv_rows(board, pack, rows)
 
 
+def save(path, rows):
+    """Written after every pack, so a failure later keeps what was measured."""
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["board", "pack", "mode", "drawn", "pushed", "us", "gap"])
+        w.writerows(rows)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--port", required=True)
@@ -139,9 +177,11 @@ def main():
     if not link.wait_ready():
         sys.exit("the board did not answer on %s" % a.port)
     out = []
+    before = themes_on_card(link)     # folders already on the card are the owner's: measured, never deleted
     try:
         link.send("THEME 0")
         out += measure(link, a.board, "builtin", a.seconds)
+        save(a.out, out)
         for f in folders:
             name = json.loads((f / "theme.json").read_text())["name"]
             folder, files = sd.pack_files(str(f))
@@ -153,6 +193,10 @@ def main():
             if k is None:
                 sys.exit("%s did not load on the board (theme %r not offered)" % (f.name, name))
             out += measure(link, a.board, f.name, a.seconds)
+            save(a.out, out)
+            if folder in before:
+                print("%s was on the card before the probe: left in place" % folder)
+                continue
             for path, _ in files:
                 link.send("SDDEL " + path)
                 link.expect("OK", 5.0)
@@ -161,10 +205,7 @@ def main():
         link.send("REBOOT")              # leave the board without the probe's packs loaded
     finally:
         link.close()
-    with open(a.out, "w", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(["board", "pack", "mode", "drawn", "pushed", "us", "gap"])
-        w.writerows(out)
+    save(a.out, out)
     print("wrote %d frames to %s" % (len(out), os.path.abspath(a.out)))
 
 

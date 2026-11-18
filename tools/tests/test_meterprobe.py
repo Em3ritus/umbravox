@@ -42,5 +42,39 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(mod.theme_range("theme 3 requested (X)"))
 
 
+    def test_sdls_dirs(self):
+        lines = ["     <dir>  alert-fx/", "   1234  theme.json", "     <dir>  ember/", "garbage"]
+        self.assertEqual(mod.sdls_dirs(lines), {"alert-fx", "ember"})
+
+
+
+class LagLink:
+    """A console whose THEME replies arrive one request late, as on a board still loading pack media."""
+    def __init__(self, names):
+        self.names, self.pending, self.out = names, [], []
+
+    def send(self, line):
+        if line == "THEME 9999":
+            self.out.append("THEME 0..%d" % (len(self.names) - 1))
+            return
+        k = int(line.split()[1])
+        self.pending.append("theme %d requested (%s)" % (k, self.names[k]))
+        if len(self.pending) > 1:
+            self.out.append(self.pending.pop(0))
+
+    def lines(self, timeout):
+        while self.out:
+            yield self.out.pop(0)
+        if timeout >= 5.0 and self.pending:     # a long enough wait sees the late reply
+            yield self.pending.pop(0)
+
+
+class SelectThemeTests(unittest.TestCase):
+    def test_finds_the_theme_when_replies_lag(self):
+        names = ["UMBRAVOX", "BAPH0MAU5", "ALERT FX", "METER FULLCARD", "SKULD TEST", "STRESS P4"]
+        self.assertEqual(mod.select_theme(LagLink(names), "METER FULLCARD"), 3)
+        self.assertIsNone(mod.select_theme(LagLink(names), "NOT THERE"))
+
+
 if __name__ == "__main__":
     unittest.main()
