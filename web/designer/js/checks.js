@@ -5,7 +5,8 @@ import { ROLES, isHex, describe, toRgb565, contrastX10, contrastRatio, fmtRatio 
 import { themeJson } from './pack.js';
 import { validateClip } from './radarvideo.js';
 import { validateSounds, hasSounds, soundSeconds, SND_HEADER } from './alertsound.js';
-import { decorNames } from './layout.js';
+import { decorNames, LEVELS, cardOf, rectOf } from './layout.js';
+import { decodeFont } from './fontfmt.js';
 
 const ok = (text) => ({ level: 'ok', text });
 const warn = (text) => ({ level: 'warn', text });
@@ -140,9 +141,38 @@ export function runChecks(theme, emblem, clip = null, sounds = null) {
 // ---- a layout's look (plan 4): what the device would refuse or quietly limit ----
 const MUST_READ = ['menu', 'stop', 'bridge', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi'];
 const BOARD_LABEL = { waveshare: 'Waveshare', cyd: 'CYD' };
-export const ANIM_AREA_MAX = { waveshare: 25600, cyd: 10000 };   // ui/scan_render.h animAreaMax
+import { ANIM_AREA_MAX } from './artfmt.js';
+export { ANIM_AREA_MAX };
 
-export function lookChecks(theme, L, media = null) {
+// Plan 5b: alert cards. A LOW or MED card is dismissed by a tap on it (ui/layout_engine.h scanHits), so one over a
+// control takes that control's taps while it shows; the device allows it (owner, 2026-11-18): a warning only.
+const CONTROLS = ['stop', 'menu', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi'];
+const CARD_FONT_MIN_PX = 7;   // ui/scan_alert.h: the font's own height, scale not counted
+const touches = (a, b) => a && b && a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+function cardChecks(L, b, media, rules, out) {
+  const where = (lv) => `${lv} alert card on the ${BOARD_LABEL[b]} board`;
+  for (const lv of LEVELS) {
+    const c = rules ? cardOf(L, b, lv, rules) : L.cards?.[b]?.[lv] ? { ...L.cards[b][lv], builtin: false } : null;
+    if (!c) continue;
+    if (rules && lv !== 'high') {
+      for (const n of CONTROLS) {
+        if (rules.names && !rules.names.includes(n)) continue;
+        if (touches(c.rect, rectOf(L, b, n, rules))) out.push({ level: 'warn', text: `${where(lv)} covers ${n}: while the alert shows, a tap there dismisses the alert first` });
+      }
+    }
+    const bin = c.font && media?.fonts?.[c.font];
+    if (bin) {
+      let h = null; try { h = decodeFont(bin).h; } catch { h = null; }
+      if (h !== null && h < CARD_FONT_MIN_PX) out.push({ level: 'warn', text: `On the ${BOARD_LABEL[b]} board, the ${lv} alert card font is ${h} px; the device needs ${CARD_FONT_MIN_PX} px and uses its built-in font` });
+    }
+    // An opened pack's picture is kept as it is (an upload is refitted when the pack is built, js/layoutmedia.js).
+    const src = c.pic && c.pic.startsWith('file:') && media?.pictures?.[c.pic];
+    if (src && (src.w > c.rect.w || src.h > c.rect.h || src.w * src.h > ANIM_AREA_MAX[b]))
+      out.push({ level: 'warn', text: `On the ${BOARD_LABEL[b]} board, the ${lv} alert card picture does not fit; the device plays the rite instead` });
+  }
+}
+
+export function lookChecks(theme, L, media = null, rules = null) {
   const out = [], c = (theme && theme.colors) || {};
   const hex = (v, role) => (isHex(v) ? v : c[v || role]);
   for (const b of ['waveshare', 'cyd']) {
@@ -175,5 +205,6 @@ export function lookChecks(theme, L, media = null) {
       else moving = d;
     }
   }
+  for (const b of ['waveshare', 'cyd']) cardChecks(L, b, media, rules, out);
   return out;
 }

@@ -200,3 +200,55 @@ test('lookChecks: STOP\'s fill must read under its red and amber labels, and eve
   c = lookChecks({ colors: { ...theme.colors, bright: '#202020' } }, ss4(nl4(), 'cyd', 'nav.scan', { fill: 'panel' }, r));
   assert.equal(c.length, 1); assert.match(c[0].text, /nav\.scan.*bright/);
 });
+
+// ---- plan 5b: alert card warnings (never errors: the device accepts these and behaves as the text says) ----
+// (lookChecks is imported above)
+import { newLayout, setCard, rectOf } from '../js/layout.js';
+const CNAMES = ['menu', 'stop', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi', 'radar'];
+const CDEF = { waveshare: { menu: { x: 0, y: 0, w: 44, h: 44 }, stop: { x: 384, y: 276, w: 96, h: 44 }, 'nav.scan': { x: 0, y: 276, w: 96, h: 44 },
+  'nav.domain': { x: 96, y: 276, w: 96, h: 44 }, 'nav.codex': { x: 192, y: 276, w: 96, h: 44 }, 'nav.poi': { x: 288, y: 276, w: 96, h: 44 }, radar: { x: 188, y: 56, w: 209, h: 209 } },
+  cyd: { menu: { x: 0, y: 0, w: 44, h: 44 }, stop: { x: 260, y: 196, w: 60, h: 44 }, 'nav.scan': { x: 0, y: 196, w: 65, h: 44 },
+  'nav.domain': { x: 65, y: 196, w: 65, h: 44 }, 'nav.codex': { x: 130, y: 196, w: 65, h: 44 }, 'nav.poi': { x: 195, y: 196, w: 65, h: 44 }, radar: { x: 151, y: 52, w: 115, h: 115 } } };
+const CCARD = { waveshare: { low: { x: 124, y: 52, w: 348, h: 216 }, high: { x: 0, y: 0, w: 480, h: 320 } }, cyd: { low: { x: 104, y: 52, w: 208, h: 136 }, high: { x: 0, y: 0, w: 320, h: 240 } } };
+const crules = { names: CNAMES, defaultRect: (b, n) => CDEF[b][n], cardDefault: (b, l) => CCARD[b][l === 'med' ? 'low' : l] };
+const warns = (L, media = null) => lookChecks({ colors: {} }, L, media, crules).filter((c) => c.level === 'warn').map((c) => c.text);
+const fnt = (h) => Uint8Array.from([0x55, 0x56, 0x46, 0x4e, 1, h, h - 1, 32, 95, 0, 0, 0, ...new Array(380).fill(0).map((_, i) => (i % 4 === 0 ? 4 : 0)), 0]);
+
+test('a MED card over STOP warns that a tap there dismisses the alert first', () => {
+  const L = setCard(newLayout(), 'waveshare', 'med', { rect: { x: 200, y: 160, w: 280, h: 160 } });
+  const w = warns(L);
+  assert.ok(w.some((t) => /med alert card on the Waveshare board covers stop: while the alert shows, a tap there dismisses the alert first/i.test(t)), w.join('\n'));
+  assert.ok(w.some((t) => /covers nav\.poi/.test(t)));
+  assert.ok(!w.some((t) => /covers menu/.test(t)));
+});
+
+test('the CYD cover check uses the CYD rects, built-in card included', () => {
+  const card = CCARD.cyd.low, w = warns(newLayout());
+  for (const n of ['stop', 'menu', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi']) {
+    const r = rectOf(newLayout(), 'cyd', n, crules);
+    const hit = r.x < card.x + card.w && card.x < r.x + r.w && r.y < card.y + card.h && card.y < r.y + r.h;
+    assert.equal(w.some((t) => t.includes('CYD board covers ' + n + ':')), hit, n);
+  }
+});
+
+test('a HIGH card over everything, and a card touching no control, give no cover warning', () => {
+  let L = setCard(newLayout(), 'waveshare', 'high', { rect: CCARD.waveshare.high });
+  L = setCard(L, 'waveshare', 'low', { rect: { x: 124, y: 52, w: 248, h: 150 } });
+  L = setCard(L, 'waveshare', 'med', { rect: { x: 124, y: 52, w: 248, h: 150 } });
+  assert.ok(!warns(L).some((t) => /Waveshare board covers/.test(t)), warns(L).join('\n'));
+});
+
+test('a card font under 7 px warns; 7 px does not', () => {
+  const L = setCard(newLayout(), 'cyd', 'low', { rect: CCARD.cyd.low, font: 'tiny' });
+  assert.ok(warns(L, { fonts: { tiny: fnt(6) }, pictures: {} }).some((t) => /low alert card font is 6 px; the device needs 7 px and uses its built-in font/.test(t)));
+  assert.ok(!warns(L, { fonts: { tiny: fnt(7) }, pictures: {} }).some((t) => /card font/.test(t)));
+});
+
+test('an opened card picture that does not fit warns; an uploaded one is refitted and does not', () => {
+  const pic = (w, h) => ({ w, h, frames: [new Uint8ClampedArray(w * h * 4)], delays: [0] });
+  const L = setCard(newLayout(), 'cyd', 'high', { rect: { x: 0, y: 0, w: 200, h: 120 }, pic: 'file:a3' });
+  assert.ok(warns(L, { fonts: {}, pictures: { 'file:a3': pic(120, 100) } }).some((t) => /high alert card picture does not fit; the device plays the rite instead/.test(t)));
+  assert.ok(!warns(L, { fonts: {}, pictures: { 'file:a3': pic(100, 90) } }).some((t) => /picture does not fit/.test(t)));
+  const U = setCard(newLayout(), 'cyd', 'high', { rect: { x: 0, y: 0, w: 200, h: 120 }, pic: 'pic:1:big.png' });
+  assert.ok(!warns(U, { fonts: {}, pictures: { 'pic:1:big.png': pic(400, 400) } }).some((t) => /picture does not fit/.test(t)));
+});
