@@ -3,6 +3,9 @@
 // installed by pal::setTheme. A bad layout skips only the layout, never the theme.
 #include "packload.h"
 #include "../ui/themelayout.h"
+#include "../ui/packassets.h"
+#include "fontfix.h"
+#include "artfix.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -87,6 +90,44 @@ int main() {
         check("layout theme -> plain pack clears the layout", uieng::activeLayout() == nullptr);
     }
     pal::setTheme(pal::TH_UMBRAVOX);
+    // Plan 4: a styled pack's fonts and art are read with the pack and handed to the registry on selection.
+    {
+        const std::string styled = "{\"format\":1,\"waveshare\":{\"wordmark\":{\"rect\":" +
+            rj(themelayout::defaultRect(themelayout::B_WAVESHARE, themelayout::P_WORDMARK)) +
+            ",\"font\":\"f0\",\"bg\":\"a0\"}},\"cyd\":{\"decor.0\":{\"rect\":[0,60,4,4],\"art\":\"a1\"}}}";
+        const std::string d = pack("styled", "STYLED", styled.c_str());
+        const auto fb = fontfix::make(); const auto a0 = artfix::make(164, 44, 1, true); const auto a1 = artfix::make(4, 4, 2, true);
+        writeFile(d + "/f0.fnt", std::string(fb.begin(), fb.end()));
+        writeFile(d + "/a0.art", std::string(a0.begin(), a0.end()));
+        writeFile(d + "/a1.art", std::string(a1.begin(), a1.end()));
+        const int sid = packload::load(d.c_str(), why, sizeof why);
+        check("styled pack loads with its layout", sid >= 0 && why[0] == 0);
+        if (sid >= 0) {
+            pal::setTheme((uint8_t)sid);
+            check("before useMedia: no font", assets::font(0) == nullptr);
+            check("useMedia installs the set", packload::useMedia(sid) && assets::font(0) != nullptr &&
+                  assets::art(0) != nullptr && assets::art(1) != nullptr && assets::art(1)->frames == 2);
+            check("the look is installed", uieng::activeLook(480) && uieng::activeLook(480)->piece[themelayout::P_WORDMARK].font == 0 &&
+                  uieng::activeLook(320) && uieng::activeLook(320)->decor[0].art == 1);
+        }
+
+        const std::string missing = "{\"format\":1,\"cyd\":{\"style\":{\"title\":\"f5\"}}}";
+        const int mid = packload::load(pack("missing-font", "MISSING", missing.c_str()).c_str(), why, sizeof why);
+        check("missing referenced font: the theme loads", mid >= 0);
+        check("missing referenced font: the layout is skipped with a reason", strstr(why, "f5.fnt") != nullptr);
+        if (mid >= 0) { pal::setTheme((uint8_t)mid); check("missing font: no layout installed", uieng::activeLayout() == nullptr); }
+
+        const std::string bad = "{\"format\":1,\"cyd\":{\"style\":{\"title\":\"f1\"}}}";
+        const std::string bd = pack("bad-font", "BAD FONT", bad.c_str());
+        writeFile(bd + "/f1.fnt", "UVFN not a font");
+        const int bid = packload::load(bd.c_str(), why, sizeof why);
+        check("corrupt font: theme and layout load", bid >= 0 && why[0] == 0);
+        if (bid >= 0) {
+            pal::setTheme((uint8_t)bid);
+            check("corrupt font: layout installed, font absent", uieng::activeLayout() != nullptr && packload::useMedia(bid) && assets::font(1) == nullptr);
+        }
+    }
+
     printf(fails ? "FAILED %d/%d\n" : "PASSED %d checks\n", fails ? fails : checks, checks);
     return fails ? 1 : 0;
 }

@@ -18,6 +18,8 @@
 #include "../../../ui/signatures.h"
 #include "../../../ui/themepack.h"
 #include "../../../ui/themelayout.h"
+#include "../../../ui/packassets.h"
+#include <stdlib.h>
 #include "../../../ui/preview_ws.h"
 #include <emscripten/emscripten.h>
 #include <stdarg.h>
@@ -35,6 +37,7 @@ enum {
     UV_ERR_FULL   = -5,   // pal::addPack refused (cannot happen with one draft)
     UV_ERR_CLIP   = -6,   // radar.vid over-size or refused by parseClip
     UV_ERR_LAYOUT = -7,   // layout.json over-size or refused by themelayout::build (the device would skip the layout)
+    UV_ERR_MEDIA  = -8,   // a font (.fnt) or picture (.art) over-size or refused by its parser
 };
 
 char g_err[128] = "";
@@ -63,6 +66,28 @@ const char* const DRAFT_FOLDER = "draft";
 
 ui::Canvas g_canvas;
 
+// The draft's fonts and pictures (f0..f7.fnt, a0..a15.art), kept as the registry holds pointers into them.
+uint8_t* g_mediaBytes[assets::MAX_FONTS + assets::MAX_ARTS];
+fontpack::Font g_fonts[assets::MAX_FONTS];
+artpack::Art g_arts[assets::MAX_ARTS];
+bool g_fontOk[assets::MAX_FONTS], g_artOk[assets::MAX_ARTS];
+int g_mediaOwner = -1;
+
+void publishMedia() {
+    const fontpack::Font* f[assets::MAX_FONTS] = {};
+    const artpack::Art* a[assets::MAX_ARTS] = {};
+    for (int i = 0; i < assets::MAX_FONTS; i++) if (g_fontOk[i]) f[i] = &g_fonts[i];
+    for (int i = 0; i < assets::MAX_ARTS; i++) if (g_artOk[i]) a[i] = &g_arts[i];
+    if (g_mediaOwner >= 0) assets::set((uint8_t)g_mediaOwner, f, a);
+}
+void clearMedia() {
+    if (g_mediaOwner >= 0) assets::clear((uint8_t)g_mediaOwner);   // before the bytes go
+    for (auto& b : g_mediaBytes) { free(b); b = nullptr; }
+    for (bool& b : g_fontOk) b = false;
+    for (bool& b : g_artOk) b = false;
+    g_mediaOwner = -1;
+}
+
 // sim/png_writer.h's expansion, exactly: what makes byte equality possible.
 inline void rgb565ToRgba(uint16_t c, unsigned char* o) {
     const int r5 = (c >> 11) & 0x1F, g6 = (c >> 5) & 0x3F, b5 = c & 0x1F;
@@ -82,6 +107,7 @@ EMSCRIPTEN_KEEPALIVE const char* uv_error() { return g_err; }
 EMSCRIPTEN_KEEPALIVE int uv_theme_count() { return pal::themeCount(); }
 
 EMSCRIPTEN_KEEPALIVE void uv_clear_packs() {
+    clearMedia();
     pal::clearPacks();
     g_err[0] = 0;
 }
@@ -138,8 +164,9 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
     const Admit a = admit(DRAFT_FOLDER, p, nullptr, 0);
     if (a != ADMIT_OK) return fail(UV_ERR_ADMIT, "%s", admitWhy(a));
 
-    // Accepted: only now touch the live draft.
+    // Accepted: only now touch the live draft. Its fonts and pictures come after, through uv_load_media.
     const Emblem* em = nullptr;
+    clearMedia();
     pal::clearPacks();
     if (p.centre == CENTRE_EMBLEM) {
         memcpy(g_emblemBuf, g_scratch, (size_t)emblem_len);
@@ -164,6 +191,35 @@ EMSCRIPTEN_KEEPALIVE int uv_load_pack(const char* json, int json_len,
         pal::setPackLayout(id, &g_layout.lo);
     }
     return id;
+}
+
+// One font (kind 0, slot 0..7 = fN.fnt) or picture (kind 1, slot 0..15 = aN.art) of the draft loaded as theme
+// `theme`. The bytes are copied. 0, or UV_ERR_INPUT / UV_ERR_MEDIA with the reason in uv_error(); a refused file
+// leaves that slot empty, as the device draws without it.
+EMSCRIPTEN_KEEPALIVE int uv_load_media(int theme, int kind, int slot, const unsigned char* data, int len) {
+    g_err[0] = 0;
+    const bool isFont = kind == 0;
+    if ((kind != 0 && kind != 1) || slot < 0 || slot >= (isFont ? assets::MAX_FONTS : assets::MAX_ARTS))
+        return fail(UV_ERR_INPUT, "no such media slot");
+    if (theme < 0 || theme >= pal::themeCount()) return fail(UV_ERR_INPUT, "no such theme");
+    if (g_mediaOwner != theme) { clearMedia(); g_mediaOwner = theme; }
+    const int k = isFont ? slot : assets::MAX_FONTS + slot;
+    if (isFont) g_fontOk[slot] = false; else g_artOk[slot] = false;
+    publishMedia();                                  // the old bytes are no longer reachable
+    free(g_mediaBytes[k]); g_mediaBytes[k] = nullptr;
+    const size_t cap = isFont ? fontpack::MAX_FONT : artpack::MAX_ART;
+    if (!data || len <= 0) return fail(UV_ERR_INPUT, "empty file");
+    if ((size_t)len > cap) return fail(UV_ERR_MEDIA, "%s%d over %u bytes", isFont ? "f" : "a", slot, (unsigned)cap);
+    g_mediaBytes[k] = (uint8_t*)malloc((size_t)len);
+    if (!g_mediaBytes[k]) return fail(UV_ERR_MEDIA, "out of memory");
+    memcpy(g_mediaBytes[k], data, (size_t)len);
+    const char* why = "";
+    const bool ok = isFont ? fontpack::parse(g_mediaBytes[k], (size_t)len, g_fonts[slot], &why)
+                           : artpack::parse(g_mediaBytes[k], (size_t)len, g_arts[slot], &why);
+    if (!ok) { free(g_mediaBytes[k]); g_mediaBytes[k] = nullptr; return fail(UV_ERR_MEDIA, "%s%d: %s", isFont ? "f" : "a", slot, why); }
+    if (isFont) g_fontOk[slot] = true; else g_artOk[slot] = true;
+    publishMedia();
+    return 0;
 }
 
 // The layout rules, for the designer's Layout step: the device's own names, defaults and verdict.

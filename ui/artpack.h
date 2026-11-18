@@ -16,6 +16,7 @@ namespace artpack {
 
 constexpr size_t MAX_ART        = 196608;
 constexpr int    MAX_ART_FRAMES = 64;
+constexpr size_t MAX_ART_TOTAL  = 393216;   // the art one board's look may reference, read on selection
 constexpr int    MAX_ART_W      = 480;
 constexpr int    MAX_ART_H      = 320;
 constexpr int    HEADER         = 16;

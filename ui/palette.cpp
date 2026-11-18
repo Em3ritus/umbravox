@@ -123,7 +123,11 @@ inline const Row& row(uint8_t id) {
 
 } // namespace
 
+static uint8_t g_current = 0;
+uint8_t currentTheme() { return g_current; }
+
 void setTheme(uint8_t id) {
+    g_current = id;
     const Row& t = row(id);
     { const int s = slotOf(id); uieng::activeLayout() = s >= 0 ? PACK_LAYOUT[s] : nullptr; }
     VOID = t.void_;  PANEL = t.panel;  GRID = t.grid;

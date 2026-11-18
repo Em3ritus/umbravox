@@ -59,7 +59,7 @@ test('Share is refused, with a message, while the theme has a layout', () => {
 });
 
 test('the limits know layout.json and say what a layout changes', () => {
-  assert.equal(limits.MAX_LAYOUT_JSON, 4096);
+  assert.equal(limits.MAX_LAYOUT_JSON, 16384);
   assert.doesNotMatch(limits.limitations.presets.text, /no custom screen layout/);
   assert.match(limits.limitations.layouts.text, /engine screens/);
 });

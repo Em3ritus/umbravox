@@ -68,6 +68,7 @@ enum ThemeId : uint8_t { TH_UMBRAVOX = 0, TH_BAPH0MAU5, TH_COSMICMUFFIN, TH_SLIC
 // back to UMBRAVOX rather than reading off the end of the table -- this is
 // reached from NVS, which can hold anything.
 void setTheme(uint8_t id);
+uint8_t currentTheme();   // the id last passed to setTheme
 const char* themeName(uint8_t id);
 
 // Which sweeps this theme offers, as a bitmask over the Sweep enum. The gaze

@@ -567,3 +567,50 @@ test('layout presets pass the device rules on both boards; drafts of them are ch
   // Radar-left packs the spectrum against the tiles on the smaller screen: a known case the author fixes on that tab.
   assert.deepEqual(draftVerdicts.filter((v) => !v.endsWith(': ok') && !v.startsWith('radar-left ')), [], 'presets draft onto the other board');
 });
+
+// ---- pack fonts and pictures (plan 4) -----------------------------------------
+// The same bytes as sim/fontfix.h and sim/artfix.h (h=8 font; 4x4 picture, 2 frames).
+function fixtureFont() {
+  const head = [0x55, 0x56, 0x46, 0x4e, 1, 8, 7, 32, 95, 0, 0, 0];
+  const A = [0x70, 0x88, 0x88, 0xf8, 0x88, 0x88, 0x88, 0x00];
+  const table = [], bits = [];
+  for (let i = 0; i < 95; i++) {
+    const c = String.fromCharCode(32 + i);
+    const off = bits.length;
+    if (c === 'A') { table.push(6, 5, off & 0xff, off >> 8); bits.push(...A); }
+    else table.push(c === ' ' ? 3 : 4, 0, off & 0xff, off >> 8);
+  }
+  return Uint8Array.from([...head, ...table, ...bits]);
+}
+function fixtureArt(w, h, frames) {
+  const d = [0x55, 0x56, 0x41, 0x52, 1, 1, w & 0xff, w >> 8, h & 0xff, h >> 8, frames & 0xff, frames >> 8, 4, 0, 0, 0];
+  for (const c of [0x0000, 0xf800, 0x07e0, 0x001f]) d.push(c & 0xff, c >> 8);
+  for (let f = 0; f < frames; f++) { const ms = 100 * (f + 1); d.push(ms & 0xff, ms >> 8); }
+  for (let f = 0; f < frames; f++) {
+    const px = new Array(Math.ceil(w * h / 2)).fill(0);
+    for (let i = 0; i < w * h; i++) {
+      const x = i % w, y = Math.floor(i / w), v = x === 0 ? 0 : ((x + y + f) % 3) + 1;
+      px[i >> 1] |= (i & 1) ? v : v << 4;
+    }
+    d.push(...px);
+  }
+  return Uint8Array.from(d);
+}
+
+test('uv_load_media takes the draft\'s fonts and pictures, and refuses bad ones with a reason', () => {
+  M._uv_clear_packs();
+  const id = loadFixture(PACKS[0]);
+  assert.equal(id, BUILTIN_COUNT);
+  const err = () => M.UTF8ToString(M._uv_error());
+  const media = (kind, slot, bytes) => withBytes(bytes, (p, l) => M._uv_load_media(id, kind, slot, p, l));
+  assert.equal(media(0, 0, fixtureFont()), 0, err());
+  assert.equal(media(1, 15, fixtureArt(4, 4, 2)), 0, err());
+  const bad = fixtureFont(); bad[4] = 9;
+  assert.equal(media(0, 1, bad), -8);
+  assert.match(err(), /f1: .*version/);
+  assert.equal(media(1, 0, Uint8Array.from([1, 2, 3])), -8);
+  assert.match(err(), /a0: /);
+  assert.equal(media(0, 8, fixtureFont()), -1, 'f8 is not a slot');
+  assert.equal(media(1, 16, fixtureArt(4, 4, 1)), -1, 'a16 is not a slot');
+  assert.equal(withBytes(fixtureFont(), (p, l) => M._uv_load_media(999, 0, 0, p, l)), -1, 'no such theme');
+});

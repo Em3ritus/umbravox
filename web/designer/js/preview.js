@@ -54,7 +54,8 @@ export function createPreview(M) {
     // previous good draft stays on screen.
     // clip: an optional radar clip (js/radarvideo.js buildClip), loaded with the pack exactly as the board reads radar.vid.
     // layout: optional layout.json text (js/layout.js toJson); refused by the device rules -> {ok:false, error}.
-    loadDraft(theme, emblem, clip = null, layout = null) {
+    // media: { fonts: { f0: Uint8Array, ... }, arts: { a0: Uint8Array, ... } } (the pack's .fnt and .art files).
+    loadDraft(theme, emblem, clip = null, layout = null, media = null) {
       let pack;
       try { pack = buildPack(theme, emblem, clip, null, layout); } catch (e) { return { ok: false, error: e.message }; }   // the clip as the board gets it
       const named = (n) => pack.files.find((f) => f.path.endsWith('/' + n));
@@ -64,10 +65,18 @@ export function createPreview(M) {
       const lay = named('layout.json') ? named('layout.json').data : null;
       const id = withBytes(json, (jp, jl) => withBytes(emb, (ep, el) => withBytes(vid, (cp, cl) => withBytes(lay, (lp, ll) => M._uv_load_pack(jp, jl, ep, el, cp, cl, lp, ll)))));
       if (id < 0) return { ok: false, error: M.UTF8ToString(M._uv_error()) };
+      const mediaErrors = [];
+      for (const [kind, group] of [[0, media && media.fonts], [1, media && media.arts]]) {
+        for (const [name, bytes] of Object.entries(group || {})) {
+          const slot = Number(name.slice(1));
+          const r = withBytes(bytes, (p, l) => M._uv_load_media(id, kind, slot, p, l));
+          if (r < 0) mediaErrors.push(M.UTF8ToString(M._uv_error()));
+        }
+      }
       // Only ever a sweep the pack offers.
       const name = startSweep(theme);
       draft = { id, sweep: name === null ? -1 : sweepId(name) };
-      return { ok: true, id };
+      return { ok: true, id, mediaErrors };
     },
     hasDraft: () => draft !== null,
     // The boards this build of the wasm can draw ('waveshare' needs uv_render_ws).
