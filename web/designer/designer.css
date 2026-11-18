@@ -135,3 +135,25 @@ hr{border:0; border-top:1px solid var(--edge); margin:18px 0}
 .meter-rows li.amber{color:var(--amber)} .meter-rows li.amber::before{content:"!"}
 .meter-rows li.over{color:var(--red)} .meter-rows li.over::before{content:"x"}
 .meter-rows li.uncalibrated{opacity:.7} .meter-rows li.uncalibrated::before{content:"?"}
+
+/* Layout step: folded sections (js/folds.js writes the summary shown while closed) */
+.fold{padding:12px 18px}
+.fold>summary{list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:10px; min-width:0}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:'\25B8'; color:var(--muted); flex:none}
+.fold[open]>summary::before{content:'\25BE'}
+.fold>summary h3{margin:0; flex:none}
+.fold>summary:focus-visible{outline:2px solid var(--violet-hi); outline-offset:2px; border-radius:6px}
+.fold-sum{color:var(--muted); font-size:12px; margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.fold[open]>summary{margin-bottom:6px}
+.grp-h{color:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; margin:12px 0 4px}
+.minis{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px}
+.minis.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.mini{display:flex; flex-direction:column; gap:4px; font-size:12px; min-width:0}
+.mini span{color:var(--muted)}
+.mini input[type=file]{font-size:12px; width:100%; min-width:0}
+.mini input[type=number]{width:5em}
+.preview-pick{flex-direction:row; align-items:center; gap:10px}
+.preview-pick select{width:auto}
+.fold #lb-clear{margin-top:12px}
+@media (max-width:560px){ .minis{grid-template-columns:minmax(0,1fr)} .minis.two{grid-template-columns:minmax(0,1fr)} }

@@ -22,6 +22,7 @@ import { emptySounds, hasSounds, cutSound, decodeToMono16k, playPcm, soundSecond
 import { usbFilters, boardWords, BOARD_INFO } from './boards.js';
 import { shareUrl, renameWarning, THEMES_SITE } from './share.js';
 import { themeParam, fetchGalleryTheme } from './gallery.js';
+import { foldSummaries } from './folds.js';
 import { newLayout, setPiece, showPiece, isEmpty, fromJson, rectOf, draftOther, withDrafts, SCREEN, setStyle, setBoardStyle, addDecor, decorNames, isDecor, setCard, cardOf } from './layout.js';
 import { alertFrame, nextMode, editableRects, effectAllowed } from './layout-alert.js';
 import { packMedia } from './layoutmedia.js';
@@ -927,6 +928,25 @@ function syncLayout() {
     b.addEventListener('click', () => { state.layout = showPiece(state.layout, state.lboard, n); state.lsel = n; layoutChanged(); });
     tray.append(b);
   }
+  syncFolds();
+}
+// The folded sections: what each holds, shown while it is closed (js/folds.js); which are open is remembered per browser.
+function syncFolds() {
+  const fonts = Object.keys(state.media.fonts).filter((k) => !builtinFonts.some((f) => f.id === k)).length;
+  const s = foldSummaries(state.layout, state.lboard, { fonts, names: rules().names, screen: state.lscreen });
+  $('sum-media').textContent = s.media; $('sum-screens').textContent = s.screens; $('sum-hidden').textContent = s.hidden;
+}
+const FOLD_KEY = 'uvx.designer.folds';
+{
+  let open = [];
+  try { open = JSON.parse(localStorage.getItem(FOLD_KEY) || '[]'); } catch { open = []; }
+  for (const d of document.querySelectorAll('details.fold')) {
+    if (Array.isArray(open) && open.includes(d.id)) d.open = true;
+    d.addEventListener('toggle', () => {
+      const ids = [...document.querySelectorAll('details.fold')].filter((x) => x.open).map((x) => x.id);
+      try { localStorage.setItem(FOLD_KEY, JSON.stringify(ids)); } catch { /* private window: not remembered */ }
+    });
+  }
 }
 // ---------------------------------------------------------------- the look: fonts, colours and pictures (plan 4)
 let builtinFonts = [];   // fonts/index.json (tools/bdf2fnt.mjs): [{id, name, px, licence, file}]
@@ -972,6 +992,7 @@ function syncLook() {
   fillSelect($('lb-hifill'), roleOptions(), bs.highlight?.fill); fillSelect($('lb-hiedge'), roleOptions(), bs.highlight?.edge);
   if (bs.panelSlice) $('lb-slice').value = bs.panelSlice[0];
   $('lb-screen').value = state.lscreen;
+  syncFolds();
 }
 // The selected level's card: font, scale, picture, back to built-in, and its warnings.
 function syncCard() {
