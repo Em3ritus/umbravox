@@ -12,7 +12,7 @@ A pack can replace the beeps with its own sounds (`alert.snd`, see `docs/theme-p
 Only a *new* alert sounds (the same device re-detected holds its card and stays quiet, as it does for waking the screen).
 The OMENS test button walks all three levels. Nothing plays when alerts are OFF.
 
-Volume: Settings, recording tab, ALERT SOUND: OFF, QUIET, NORMAL (default), LOUD. Changing it plays a sample. OFF is a mute.
+Volume: Settings, alerts tab, ALERT SOUND: OFF, QUIET, NORMAL (default), LOUD. Changing it plays a sample. OFF is a mute.
 
 ## How it works
 - `ui/alert_tone.h`: the patterns as 16 kHz mono samples, integers only, host-tested by `sim/test_alert_tone.cpp`.

@@ -21,10 +21,14 @@ struct ForgetArm {
  bool armed(uint32_t now)const{return on&&(int32_t)(now-at)<(int32_t)ARM_MS;}
  bool tap(uint32_t now){if(armed(now)){on=false;return true;}on=true;at=now;return false;}
 };
-inline bool validEditor(int id){return id>=0&&id<16&&id!=10&&id!=11&&id!=14&&id!=15;}
-inline int knob(int id){static constexpr int map[]={12,1,2,3,6,13,0,14,8,9,-1,-1,10,11,-1,-1};return id>=0&&id<16?map[id]:-1;}
+inline bool validEditor(int id){return id>=0&&id<17&&id!=10&&id!=11&&id!=14&&id!=15;}
+inline int knob(int id){static constexpr int map[]={12,1,2,3,6,13,0,14,8,9,-1,-1,10,11,-1,-1,15};return id>=0&&id<17?map[id]:-1;}
+// Five tabs of up to four cards: SCANNING, RECORDING, ALERTS, BRIDGE, NODES. Card ids keep their old numbers (the
+// editors, knobs and saved settings key on them); ALERT REPEAT is 16. -1 is an empty slot (no hit, a plain panel).
+constexpr int TABS=5;
+inline int cardId(int tab,int i){static constexpr int ids[TABS][4]={{0,1,2,3},{4,5,-1,-1},{6,7,16,-1},{8,9,10,11},{12,13,14,15}};return tab>=0&&tab<TABS&&i>=0&&i<4?ids[tab][i]:-1;}
 inline displayctl::Layout layout(int w,int h){return displayctl::layout(w,h);}
-inline uieng::Rect tabRect(int w,int i){return {i*w/4,44,(i+1)*w/4-i*w/4,44};}
+inline uieng::Rect tabRect(int w,int i){return {i*w/TABS,44,(i+1)*w/TABS-i*w/TABS,44};}
 inline uieng::HitList hits(int w,int h,const State& v){
  using namespace uieng;HitList out;addChromeHits(out,w,h);auto l=layout(w,h);
  if(validEditor(v.editor)){
@@ -33,12 +37,13 @@ inline uieng::HitList hits(int w,int h,const State& v){
   out.add("setting-default",l.reset,Action::SettingsControl,32,nullptr,"Default for this setting");
   out.add("setting-done",l.done,Action::SettingsControl,33,nullptr,"Return to category");return out;
  }
- static const char* tabs[]={"settings-scanning","settings-recording","settings-bridge","settings-nodes"};
- for(int i=0;i<4;i++)out.add(tabs[i],tabRect(w,i),Action::SettingsControl,i,nullptr,"Settings category");
+ static const char* tabs[]={"settings-scanning","settings-recording","settings-alerts","settings-bridge","settings-nodes"};
+ for(int i=0;i<TABS;i++)out.add(tabs[i],tabRect(w,i),Action::SettingsControl,i,nullptr,"Settings category");
  static const char* cards[]={"setting-card0","setting-card1","setting-card2","setting-card3"};
- const int tab=std::max(0,std::min(3,v.tab));
+ const int tab=std::max(0,std::min(TABS-1,v.tab));
  for(int i=0;i<4;i++){
-  const int id=tab*4+i;
+  const int id=cardId(tab,i);
+  if(id<0)continue;
   if(id==14)out.add(cards[i],l.cards[i],Action::Nav,int(ScreenId::Mesh),nullptr,"Open nodes");
   else if(id==11)out.add(cards[i],l.cards[i],Action::SettingsControl,FORGET_PHONES,nullptr,"Forget paired phones");
   else if(validEditor(id))out.add(cards[i],l.cards[i],Action::SettingsControl,10+id,nullptr,"Open setting editor");
@@ -46,8 +51,8 @@ inline uieng::HitList hits(int w,int h,const State& v){
 }
 // Opening a card is navigation only. Changes reuse the production setting path.
 inline void apply(State& v,ui::Settings& s,int p){
- if(p>=0&&p<4){v.tab=p;v.editor=-1;return;}
- if(p>=10&&p<=25&&validEditor(p-10)){v.editor=p-10;return;}
+ if(p>=0&&p<TABS){v.tab=p;v.editor=-1;return;}
+ if(p>=10&&p<=26&&validEditor(p-10)){v.editor=p-10;return;}
  if(p==33){v.editor=-1;return;}
  if(!validEditor(v.editor))return;
  if(p==30||p==31){ui::applyKnobStep(s,knob(v.editor),p==30?-1:1);return;}
@@ -60,10 +65,11 @@ inline void apply(State& v,ui::Settings& s,int p){
  case 6:s.alertMin=d.alertMin;break;case 7:s.sound=d.sound;break;case 8:s.bleBridge=d.bleBridge;break;
  case 9:s.bridgeApp=d.bridgeApp;if(s.bleBridge)s.bleBridge=s.bridgeApp;break;
  case 12:s.meshProfile=d.meshProfile;break;case 13:s.nodeDwellMs=d.nodeDwellMs;break;
+ case 16:s.alertRepeat=d.alertRepeat;break;
  }
 }
-inline const char* title(int id){static const char* t[]={"DISCOVERY","CHANNEL DWELL","BLE SCAN DUTY","WIFI BANDS","AUTO RECORD","RAW PCAP","ALERT LEVEL","ALERT SOUND","BLE BRIDGE","PHONE APP","LINK STATUS","PAIRED PHONES","SCAN PROFILE","NODE DWELL","NODES","NETWORK"};return t[id];}
-inline const char* hint(int id){static const char* t[]={"Active sends discovery probes","Time on each WiFi channel","Requested BLE scan window","Coordinator radio bands","Record after a stable GPS fix","Raw WiFi frames to SD","On-screen warning threshold","Beep volume (0 is silent)","Advertise to your phone","Changing app disconnects phone","Current phone connection","Tap twice to forget them","Coordinator node policy","Requested remote-node dwell","Status, enrollment, controls","Current node network ID"};return t[id];}
+inline const char* title(int id){static const char* t[]={"DISCOVERY","CHANNEL DWELL","BLE SCAN DUTY","WIFI BANDS","AUTO RECORD","RAW PCAP","ALERT LEVEL","ALERT SOUND","BLE BRIDGE","PHONE APP","LINK STATUS","PAIRED PHONES","SCAN PROFILE","NODE DWELL","NODES","NETWORK","ALERT REPEAT"};return id>=0&&id<17?t[id]:"";}
+inline const char* hint(int id){static const char* t[]={"Active sends discovery probes","Time on each WiFi channel","Requested BLE scan window","Coordinator radio bands","Record after a stable GPS fix","Raw WiFi frames to SD","On-screen warning threshold","Beep volume (0 is silent)","Advertise to your phone","Changing app disconnects phone","Current phone connection","Tap twice to forget them","Coordinator node policy","Requested remote-node dwell","Status, enrollment, controls","Current node network ID","Quiet time before the same device alerts again"};return id>=0&&id<17?t[id]:"";}
 inline void value(const Data& d,int id,char* b,int n){const auto& s=d.settings;
  switch(id){
  case 0:snprintf(b,n,"%s",s.activeDiscovery?(d.paused?"PAUSED REC":"ACTIVE"):"PASSIVE");break;
@@ -78,9 +84,10 @@ inline void value(const Data& d,int id,char* b,int n){const auto& s=d.settings;
  case 12:snprintf(b,n,"%s",s.meshProfile?"DISCOVERY":"TRACKING");break;
  case 13:snprintf(b,n,"%u MS",s.nodeDwellMs);break;case 14:snprintf(b,n,"OPEN NODES");break;
  case 15:if(d.netId)snprintf(b,n,"%u / PRIVATE",d.netId);else snprintf(b,n,"0 / OPEN");break;
+ case 16:snprintf(b,n,"%s",s.alertRepeat==0?"1 MIN":s.alertRepeat==2?"1 HOUR":s.alertRepeat==3?"UNTIL REBOOT":"10 MIN");break;
  }
 }
-inline bool sameSettings(const ui::Settings& a,const ui::Settings& b){return a.activeDiscovery==b.activeDiscovery&&a.dwellMs==b.dwellMs&&a.bleDuty==b.bleDuty&&a.bands==b.bands&&a.autoLog==b.autoLog&&a.pcapEnabled==b.pcapEnabled&&a.alertMin==b.alertMin&&a.sound==b.sound&&a.bleBridge==b.bleBridge&&a.bridgeApp==b.bridgeApp&&a.meshProfile==b.meshProfile&&a.nodeDwellMs==b.nodeDwellMs;}
+inline bool sameSettings(const ui::Settings& a,const ui::Settings& b){return a.activeDiscovery==b.activeDiscovery&&a.dwellMs==b.dwellMs&&a.bleDuty==b.bleDuty&&a.bands==b.bands&&a.autoLog==b.autoLog&&a.pcapEnabled==b.pcapEnabled&&a.alertMin==b.alertMin&&a.sound==b.sound&&a.alertRepeat==b.alertRepeat&&a.bleBridge==b.bleBridge&&a.bridgeApp==b.bridgeApp&&a.meshProfile==b.meshProfile&&a.nodeDwellMs==b.nodeDwellMs;}
 inline bool same(const Data& a,const Data& b){return a.view.tab==b.view.tab&&a.view.editor==b.view.editor&&sameSettings(a.settings,b.settings)&&a.connected==b.connected&&a.paused==b.paused&&a.streaming==b.streaming&&a.pin==b.pin&&a.phones==b.phones&&a.forgetArmed==b.forgetArmed&&a.netId==b.netId&&!strcmp(a.name,b.name)&&!strcmp(a.pcap,b.pcap);}
 inline void draw(scanr::S& s,int w,int h,const Data& d){
  using namespace scanr;const auto l=layout(w,h);const int ed=d.view.editor;
@@ -92,9 +99,9 @@ inline void draw(scanr::S& s,int w,int h,const Data& d){
   subr::stepBtn(s,l.minus,"-",true);subr::stepBtn(s,l.plus,"+",true);
   for(int i=0;i<2;i++){auto r=i?l.done:l.reset;frame(s,r.x,r.y,r.w,r.h,pal::EDGE_LIT);centered(s,r.x+r.w/2,r.y+17,i?"DONE":"DEFAULT",1,pal::BRIGHT);}return;
  }
- const char* tabs[]={"SCANNING","RECORDING","BRIDGE","NODES"};const int tab=std::max(0,std::min(3,d.view.tab));
- for(int i=0;i<4;i++){auto r=tabRect(w,i);box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==tab?pal::BRIGHT:pal::DIM);if(i==tab)box(s,r.x+8,84,r.w-16,2,scanr::highlightEdge(s.W,pal::WITCH_HI));}
- for(int i=0;i<4;i++){auto r=l.cards[i];int id=tab*4+i;bool live=validEditor(id)||id==7||id==11||id==14;char v[32];value(d,id,v,sizeof v);
+ const char* tabs[]={"SCANNING","RECORDING","ALERTS","BRIDGE","NODES"};const int tab=std::max(0,std::min(TABS-1,d.view.tab));
+ for(int i=0;i<TABS;i++){auto r=tabRect(w,i);box(s,r.x,r.y,r.w,r.h,pal::PANEL);centered(s,r.x+r.w/2,61,tabs[i],1,i==tab?pal::BRIGHT:pal::DIM);if(i==tab)box(s,r.x+8,84,r.w-16,2,scanr::highlightEdge(s.W,pal::WITCH_HI));}
+ for(int i=0;i<4;i++){auto r=l.cards[i];int id=cardId(tab,i);if(id<0){box(s,r.x,r.y,r.w,r.h,pal::PANEL);continue;}bool live=validEditor(id)||id==7||id==11||id==14;char v[32];value(d,id,v,sizeof v);
   box(s,r.x,r.y,r.w,r.h,pal::PANEL);frame(s,r.x,r.y,r.w,r.h,pal::EDGE);txt(s,r.x+8,r.y+7,title(id),1,pal::DIM);
   txt(s,r.x+8,r.y+(r.h>=70?28:24),v,fitScale(v,r.w-16,2),(id==10&&d.settings.bleBridge&&d.pin>=0)||(id==11&&d.forgetArmed)?pal::AMBER:!live?pal::DIM:id==0&&d.settings.activeDiscovery&&!d.paused?pal::AMBER:id==8&&d.settings.bleBridge?pal::GREEN:pal::BRIGHT);
   if(r.h>=70){const char* hn=(id==8&&d.settings.bleBridge&&d.name[0])?d.name:hint(id);txt(s,r.x+8,r.y+r.h-21,hn,fitScale(hn,r.w-16,1),pal::DIM);}

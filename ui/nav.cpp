@@ -403,6 +403,7 @@ void applyKnobStep(Settings& st, int knob, int dir) {
         case 11: st.nodeDwellMs = (uint16_t)(dir<0?(st.nodeDwellMs<=110?100:st.nodeDwellMs-10):(st.nodeDwellMs>=590?600:st.nodeDwellMs+10)); break;
         case 7: flipOrient(st); break;                     // ORIENT
         case 14: st.sound = (uint16_t)(dir < 0 ? (st.sound > 0 ? st.sound - 1 : 0) : (st.sound < 3 ? st.sound + 1 : 3)); break;   // ALERT SOUND
+        case 15: st.alertRepeat = (uint16_t)(dir < 0 ? (st.alertRepeat > 0 ? st.alertRepeat - 1 : 0) : (st.alertRepeat < 3 ? st.alertRepeat + 1 : 3)); break;   // ALERT REPEAT
         default: adjust(st, knob, dir); break;             // 0..5 map 1:1 to adjust()
     }
 }
@@ -422,6 +423,7 @@ void clampSettings(Settings& s) {
     if (s.bridgeApp<1 || s.bridgeApp>2)s.bridgeApp=1;
     if (s.bleBridge > 2) s.bleBridge = 0;
     if (s.sound > 3) s.sound = 2;
+    if (s.alertRepeat > 3) s.alertRepeat = 1;
     if (s.bleDuty > 100) s.bleDuty = 100;
     if (s.bands > 2)     s.bands = 0;
     if (s.idleIdx >= IDLE_N) s.idleIdx = 2;
@@ -447,7 +449,7 @@ void setPortraitAllowed(bool ok) { g_portraitOk = ok; }
 bool portraitAllowed() { return g_portraitOk; }
 
 bool settingsEqual(const Settings& a, const Settings& b) {
-    return a.pcapEnabled==b.pcapEnabled && a.activeDiscovery==b.activeDiscovery && a.nodeDwellMs==b.nodeDwellMs && a.meshProfile==b.meshProfile && a.alertMin == b.alertMin && a.sound == b.sound && a.bright  == b.bright  &&
+    return a.pcapEnabled==b.pcapEnabled && a.activeDiscovery==b.activeDiscovery && a.nodeDwellMs==b.nodeDwellMs && a.meshProfile==b.meshProfile && a.alertMin == b.alertMin && a.sound == b.sound && a.alertRepeat == b.alertRepeat && a.bright  == b.bright  &&
            a.bridgeApp == b.bridgeApp && a.bleBridge == b.bleBridge && a.dwellMs  == b.dwellMs  && a.bleDuty == b.bleDuty &&
            a.bands    == b.bands    && a.idleIdx == b.idleIdx &&
            a.theme    == b.theme    && a.sweep   == b.sweep   &&

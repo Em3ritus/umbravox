@@ -7,7 +7,7 @@ using namespace settingsctl;
 static bool overlap(uieng::Rect a,uieng::Rect b){return a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;}
 static std::vector<uint16_t> render(int w,int h,const atnr::AttuneScene& sc){std::vector<uint16_t> p(w*h);for(int y=0;y<h;y+=16){scanr::S s{p.data()+y*w,w,y,std::min(16,h-y)};atnr::composeStrip(s,w,h,sc);}return p;}
 int main(int argc,char**argv){
- pal::setTheme(0);const char* names[]={"scanning","recording","bridge","nodes"};
+ pal::setTheme(0);const char* names[]={"scanning","recording","alerts","bridge","nodes"};
  { // DISCOVERY card: a saved ACTIVE setting reads PAUSED REC while a session records.
   Data d;char b[32];d.settings.activeDiscovery=1;value(d,0,b,sizeof b);assert(!strcmp(b,"ACTIVE"));
   d.paused=true;value(d,0,b,sizeof b);assert(!strcmp(b,"PAUSED REC"));
@@ -21,10 +21,10 @@ int main(int argc,char**argv){
   d.phones=1;value(d,11,b,sizeof b);assert(!strcmp(b,"1 PHONE"));
   d.phones=3;value(d,11,b,sizeof b);assert(!strcmp(b,"3 PHONES"));
   d.forgetArmed=true;value(d,11,b,sizeof b);assert(!strcmp(b,"TAP AGAIN"));      // armed beats the count
-  for(int w:{320,480}){State v{2,-1};auto hs=hits(w,w==320?240:320,v);int found=0;
+  for(int w:{320,480}){State v{3,-1};auto hs=hits(w,w==320?240:320,v);int found=0;
    for(int i=0;i<hs.count;i++)if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload==FORGET_PHONES){found++;assert(hs.items[i].rect.w>=44&&hs.items[i].rect.h>=44);}
    assert(found==1);                                                           // exactly one forget target, on the bridge tab
-   for(int tab:{0,1,3}){State o{tab,-1};auto oh=hits(w,w==320?240:320,o);for(int i=0;i<oh.count;i++)assert(!(oh.items[i].payload==FORGET_PHONES&&oh.items[i].action==uieng::Action::SettingsControl));}}
+   for(int tab:{0,1,2,4}){State o{tab,-1};auto oh=hits(w,w==320?240:320,o);for(int i=0;i<oh.count;i++)assert(!(oh.items[i].payload==FORGET_PHONES&&oh.items[i].action==uieng::Action::SettingsControl));}}
   // Two-tap confirm: the first tap arms, a second inside ARM_MS forgets; a late second tap only re-arms.
   ForgetArm a;assert(!a.armed(1000));
   assert(!a.tap(1000)&&a.armed(1000)&&a.armed(1000+ARM_MS-1)&&!a.armed(1000+ARM_MS));
@@ -51,18 +51,33 @@ int main(int argc,char**argv){
   ui::applyKnobStep(s,14,-1);ui::applyKnobStep(s,14,-1);ui::applyKnobStep(s,14,-1);assert(s.sound==0);ui::applyKnobStep(s,14,-1);assert(s.sound==0);   // and at OFF
   State v;v.editor=7;s.sound=0;apply(v,s,32);assert(s.sound==2);                                // the card's own default
   s.sound=9;ui::clampSettings(s);assert(s.sound==2);                                            // junk from flash
-  State t{1,-1};auto hs=hits(480,320,t);int found=0;for(int i=0;i<hs.count;i++)found+=hs.items[i].payload==17&&hs.items[i].action==uieng::Action::SettingsControl;assert(found==1);   // the card opens its editor
+  State t{2,-1};auto hs=hits(480,320,t);int found=0;for(int i=0;i<hs.count;i++)found+=hs.items[i].payload==17&&hs.items[i].action==uieng::Action::SettingsControl;assert(found==1);   // the card opens its editor
+ }
+ { // ALERTS tab (third): ALERT LEVEL, ALERT SOUND, ALERT REPEAT and an empty slot; RECORDING keeps 2 cards.
+  for(int w:{320,480}){auto hs=hits(w,w==320?240:320,State{});int tabs=0;bool alertsThird=false;
+   for(int i=0;i<hs.count;i++)if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload<5){tabs++;if(hs.items[i].payload==2&&!strcmp(hs.items[i].slot,"settings-alerts"))alertsThird=true;}
+   assert(tabs==5&&alertsThird);}
+  State al{2,-1};auto hs=hits(480,320,al);std::vector<int> cards;
+  for(int i=0;i<hs.count;i++)if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload>=10&&hs.items[i].payload<30)cards.push_back(hs.items[i].payload);
+  assert((cards==std::vector<int>{16,17,26}));
+  assert(validEditor(16)&&knob(16)==15&&!strcmp(title(16),"ALERT REPEAT"));
+  Data d;char b[32];const char* want[]={"1 MIN","10 MIN","1 HOUR","UNTIL REBOOT"};
+  for(int k=0;k<4;k++){d.settings.alertRepeat=(uint16_t)k;value(d,16,b,sizeof b);assert(!strcmp(b,want[k]));}
+  State v;ui::Settings s;apply(v,s,26);assert(v.editor==16);apply(v,s,31);assert(s.alertRepeat==2);
+  value(Data{v,s},16,b,sizeof b);assert(!strcmp(b,"1 HOUR"));
+  apply(v,s,32);assert(s.alertRepeat==1);
+  Data x,y;y.settings.alertRepeat=3;assert(!same(x,y));
  }
  for(int w:{320,480}){int h=w==320?240:320;
-  for(int tab=0;tab<4;tab++)for(int ed=-1;ed<16;ed++){
+  for(int tab=0;tab<5;tab++)for(int ed=-1;ed<17;ed++){
    if(ed>=0&&!validEditor(ed))continue;
    State v{tab,ed};auto hs=hits(w,h,v);int cards=0;
    for(int i=0;i<hs.count;i++){auto r=hs.items[i].rect;assert(r.w>=44&&r.h>=44&&r.x>=0&&r.y>=0&&r.x+r.w<=w&&r.y+r.h<=h);
     for(int j=0;j<i;j++)assert(!overlap(r,hs.items[j].rect));
     assert(hs.items[i].action!=uieng::Action::SettingReset);
-    if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload>=10&&hs.items[i].payload<=25)cards++;
+    if(hs.items[i].action==uieng::Action::SettingsControl&&hs.items[i].payload>=10&&hs.items[i].payload<=26)cards++;
    }
-   if(ed<0)assert(cards==(tab==0?4:tab==1?4:2));
+   if(ed<0)assert(cards==(tab==0?4:tab==1?2:tab==2?3:2));
    Data d;d.view=v;d.settings.activeDiscovery=1;d.settings.dwellMs=150;d.settings.bleBridge=1;strcpy(d.name,"Umbravox-C55C");
    atnpres::AttuneStore store;store.begin(0,0);store.header(true,true,false);store.gps({true,3,12,300});store.storage(ui::StorageState::Ready);store.controls(d);auto a=store.scene();auto b=a;b.control.view.editor=ed<0?0:-1;b.control.connected=true;
    bool status=false,body=false;atnpres::sceneDirty(a,b,status,body);assert(body&&!status);
@@ -72,7 +87,7 @@ int main(int argc,char**argv){
    if(argc==2&&tab==0&&ed==9){auto p=render(w,h,a);std::string file=std::string(argv[1])+"/app-editor-"+std::to_string(w)+".png";assert(png::write(file.c_str(),p.data(),w,h,1));}
   }
  }
- for(int id=0;id<16;id++)if(validEditor(id)){
+ for(int id=0;id<17;id++)if(validEditor(id)){
   State v;ui::Settings s,original=s;apply(v,s,10+id);assert(v.editor==id&&ui::settingsEqual(s,original));
   for(int dir:{-1,1}){auto expected=s;ui::applyKnobStep(expected,knob(id),dir);apply(v,s,dir<0?30:31);assert(ui::settingsEqual(s,expected));}
   s.bright=37;s.theme=1;s.idleIdx=1;apply(v,s,32);assert(s.bright==37&&s.theme==1&&s.idleIdx==1);

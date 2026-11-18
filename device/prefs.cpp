@@ -33,6 +33,7 @@ void write(const ui::Settings& s) {
     nvs.putUChar("bands",   s.bands);
     nvs.putUChar("alertmin", s.alertMin);
     nvs.putUChar("sound",   (uint8_t)s.sound);
+    nvs.putUChar("alertrep", (uint8_t)s.alertRepeat);
     nvs.putUChar("idle",    s.idleIdx);
     nvs.putUChar("idlemode", s.idleMode);
     nvs.putUChar("autolog", s.autoLog);
@@ -84,6 +85,7 @@ bool load(ui::Settings& s) {
     in.bands   = nvs.getUChar("bands",   s.bands);
     in.alertMin = nvs.getUChar("alertmin", s.alertMin);
     in.sound    = nvs.getUChar("sound",    (uint8_t)s.sound);   // absent on older stores -> NORMAL
+    in.alertRepeat = nvs.getUChar("alertrep", (uint8_t)s.alertRepeat);   // absent on older stores -> 10 MIN
     in.idleIdx  = nvs.getUChar("idle",     s.idleIdx);
     in.idleMode = nvs.getUChar("idlemode", s.idleMode);   // absent on older stores -> DIM
     in.autoLog  = nvs.getUChar("autolog",  s.autoLog);    // absent on older stores -> OFF
@@ -112,8 +114,8 @@ bool load(ui::Settings& s) {
     stored = in;
     lastSeen = in;
 
-    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u, theme %u (%s), sweep %u, %s\n",
-                  in.bright, in.dwellMs, in.bleDuty, in.bands, in.alertMin,
+    Serial.printf("prefs: loaded bright %u%%, dwell %ums, ble %u%%, bands %u, alert %u, repeat %u, theme %u (%s), sweep %u, %s\n",
+                  in.bright, in.dwellMs, in.bleDuty, in.bands, in.alertMin, in.alertRepeat,
                   in.theme, pal::themeName(in.theme), in.sweep,
                   in.orient == ui::ORIENT_PORTRAIT ? "portrait" : "landscape");
     return true;
