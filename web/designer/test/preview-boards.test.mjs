@@ -135,3 +135,17 @@ test('the device accepts the cards and effects the layout model writes, and refu
   assert.equal(r.ok, false);
   assert.match(r.why, /too many pieces with an effect \(at most 2\)/);
 });
+
+test('final review I2: the default LOW/MED card follows the hero of the draft, which moves with the radar group', () => {
+  const t = makeTemplate('umbravox').theme;
+  const lay = '{"format":1,"waveshare":{"radar":[300,60,150,150],"spectrum":"hidden","channel":"hidden","badge":"hidden"},"cyd":{}}';
+  const r = preview.loadDraft(t, null, null, lay);
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(preview.cardDefault('waveshare', 'low'), { x: 300, y: 60, w: 150, h: 150 });
+  assert.deepEqual(preview.cardDefault('waveshare', 'high'), { x: 0, y: 0, w: 480, h: 320 });
+  // a theme card does not change the default (cardDefault is what "Use the built-in card" gives back)
+  const withCard = lay.replace('"badge":"hidden"', '"badge":"hidden","alert.card.low":{"rect":[0,0,300,200]}');
+  assert.equal(preview.loadDraft(t, null, null, withCard).ok, true);
+  assert.deepEqual(preview.cardDefault('waveshare', 'low'), { x: 300, y: 60, w: 150, h: 150 });
+  preview.loadDraft(t, null);
+});

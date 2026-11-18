@@ -358,6 +358,18 @@ export function draftOther(L, from, to, rules) {
     }
     if (!moved) break;
   }
+  // The target board's effect cap (rules.fxCap, the device's): keep the first pieces with an effect, in the device's
+  // order, and drop the effect from the rest, so a drafted board is never refused for it.
+  if (rules.fxCap) {
+    let left = rules.fxCap(to);
+    for (const name of rules.names) {
+      const p = n.boards[to][name];
+      if (!p || !p.style?.effect) continue;
+      if (p.hidden || left-- > 0) continue;
+      const { effect, speed, ...rest } = p.style;
+      n.boards[to][name] = { ...p, style: rest };
+    }
+  }
   if (!n.master) n.master = from;
   return n;
 }

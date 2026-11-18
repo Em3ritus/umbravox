@@ -192,3 +192,15 @@ test('draftOther gives the CYD a card at least 160x96 and on screen', () => {
   assert.ok(c.w >= 160 && c.h >= 96, JSON.stringify(c));
   assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.w <= 320 && c.y + c.h <= 240, JSON.stringify(c));
 });
+
+test('final review I1: draftOther keeps at most the target board\'s effect cap (the first pieces in device order)', () => {
+  const fr = { ...crules, fxCap: (b) => (b === 'waveshare' ? 4 : 2) };
+  let L = newLayout();
+  for (const n of ['menu', 'nav.scan', 'nav.domain', 'stop']) L = setStyle(L, 'waveshare', n, { effect: 'pulse' }, { x: 0, y: 0, w: 44, h: 44 });
+  assert.equal(fxCount(L, 'waveshare'), 4);
+  const D = draftOther(L, 'waveshare', 'cyd', fr);
+  assert.equal(fxCount(D, 'cyd'), 2);
+  const kept = NAMES.filter((n) => D.boards.cyd[n]?.style?.effect);
+  assert.deepEqual(kept, ['menu', 'nav.scan']);
+  assert.equal(fxCount(D, 'waveshare'), 4, 'the source board is untouched');
+});

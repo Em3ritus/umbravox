@@ -115,7 +115,7 @@ export function createPreview(M) {
       if (b < 0 || c === undefined) throw new Error(`unknown board or level: ${board} ${level}`);
       const p = M._malloc(16);
       try {
-        M._uv_card_default(b, c, p);
+        M._uv_card_default(draft ? draft.id : 0, b, c, p);   // the draft's hero (it moves with the radar group)
         const v = new Int32Array(M.HEAPU8.buffer.slice(p, p + 16));
         return { x: v[0], y: v[1], w: v[2], h: v[3] };
       } finally { M._free(p); }
