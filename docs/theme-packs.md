@@ -231,6 +231,10 @@ Each board may also have a `style` block for every other screen, and up to eight
   tab; `icons` up to six pictures, one per Menu entry in order (`null` for none), shown above the label when the
   tile has room.
 - `decor.0` to `decor.7` are drawn in that order, under every other piece, at exactly their rect's size.
+  Pictures cost drawing time, and the Waveshare redraws the radar and an animated decor every frame. Whatever an
+  opaque decor (or an opaque background) fully covers is not drawn, so it costs nothing; a transparent picture
+  costs its whole area every time the part of the screen under it is redrawn. A pack at every art limit at once
+  (`tools/stress-pack.mjs`) runs the Waveshare's Scan screen at about 11 frames a second.
 - Fonts and pictures are read from the card when the theme is selected. Until they have loaded, and if one cannot
   be read, the theme draws with the built-in font and no picture. A font or picture the layout names that is missing
   from the folder, or over its limit (a font 12,800 bytes, a picture 196,608 bytes, one board's pictures together
