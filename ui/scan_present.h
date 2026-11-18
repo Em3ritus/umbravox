@@ -445,7 +445,7 @@ public:
         } else if (wholeOld || wholeNew) {
             const ScanScene& pa = store_[cur_].scene();
             if (wholeOld && wholeNew && !wasPending && sameAlert(pa.alert, nw.alert) && scanr::alertSettled(pa.alert) && scanr::alertSettled(nw.alert)) {
-                uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8);      // settled: only the rite square and border move
+                uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8, W_);      // settled: only the rite square and border move
                 for (int i = 0; i < n; i++) { reg_[nreg_++] = rg[i]; sched_.invalidate(rg[i].y, rg[i].y + rg[i].h); }
             } else sched_.invalidateAll();             // a HIGH alert owns the whole screen, header and nav included: repaint it all
         } else if (W_ >= 400 && !wasPending) {
@@ -466,7 +466,7 @@ public:
             };
             if (p.alert) {                             // a card on, off or animating: its rect (old and new), or once settled only what still moves
                 if (lvOld && lvNew && cardOld == cardNew && sameAlert(pv.alert, nw.alert) && scanr::alertSettled(pv.alert) && scanr::alertSettled(nw.alert)) {
-                    uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8);
+                    uieng::Rect rg[8]; const int n = scanr::alertRegions(cardNew, nw.alert, nw.theme, rg, 8, W_);
                     for (int i = 0; i < n; i++) add(rg[i]);
                 } else { add(cardOld); if (!(cardNew == cardOld)) add(cardNew); }
             }

@@ -296,15 +296,30 @@ inline bool alertSettled(const AlertScene& a) {
     const Beat b = beatFor(alertLevel(a) == 2); int n = 0; while (a.label[n]) n++;
     return int(a.age) >= std::max(b.trace + 300, b.trace + n * b.charMs + 260);
 }
-// The rectangles that can still change once the alert has settled: the rite square and four border bands.
-inline int alertRegions(const uieng::Rect& area, const AlertScene& a, uint8_t theme, uieng::Rect* out, int cap) {
+// The card's picture (plan 5a), played in place of the rite: loaded, no larger than the card, and its area within
+// the animation cap; else null (the rite plays). Never scaled. Its rect: centred on the rite, kept inside the card.
+inline const artpack::Art* alertClip(int W, uint8_t conf, const uieng::Rect& card) {
+    const uieng::AlertCard* c = alertCard(W, conf);
+    const artpack::Art* a = c && c->clip >= 0 ? assets::art(c->clip) : nullptr;
+    if (!a || a->w > card.w || a->h > card.h || (int)a->w * a->h > animAreaMax(W)) return nullptr;
+    return a;
+}
+inline uieng::Rect alertClipRect(const artpack::Art& a, const uieng::Rect& card, bool hi) {
+    const AlertGeom g = alertGeom(card, hi);
+    const int x = std::max(card.x, std::min(g.mx - a.w / 2, card.x + card.w - a.w)), y = std::max(card.y, std::min(g.my - a.h / 2, card.y + card.h - a.h));
+    return {x, y, a.w, a.h};
+}
+// The rectangles that can still change once the alert has settled: the rite square (or the card's picture) and four
+// border bands. W (0 = unknown) finds the card's picture.
+inline int alertRegions(const uieng::Rect& area, const AlertScene& a, uint8_t theme, uieng::Rect* out, int cap, int W = 0) {
     if (cap < 5) { out[0] = area; return 1; }
     const bool hi = alertLevel(a) == 2; const AlertGeom g = alertGeom(area, hi);
+    const artpack::Art* clipArt = W ? alertClip(W, a.conf, area) : nullptr;
     const int band = riteFor(theme, a.style) == RITE_WARD ? (hi ? 20 : 14) : 6;     // only the ward walks runes along the border; the rest draw a thin frame
     auto clip = [&](int x, int y, int w, int h) { const int x0 = std::max(x, area.x), y0 = std::max(y, area.y), x1 = std::min(x + w, area.x + area.w), y1 = std::min(y + h, area.y + area.h);
         return (x1 > x0 && y1 > y0) ? uieng::Rect{ x0, y0, x1 - x0, y1 - y0 } : uieng::Rect{ 0, 0, 0, 0 }; };
     int n = 0; uieng::Rect r;
-    r = clip(g.mx - g.R - 3, g.my - g.R - 3, 2 * g.R + 7, 2 * g.R + 7); if (r.w) out[n++] = r;
+    r = clipArt ? alertClipRect(*clipArt, area, hi) : clip(g.mx - g.R - 3, g.my - g.R - 3, 2 * g.R + 7, 2 * g.R + 7); if (r.w) out[n++] = r;
     r = clip(area.x, area.y, area.w, band);                              if (r.w) out[n++] = r;
     r = clip(area.x, area.y + area.h - band, area.w, band);              if (r.w) out[n++] = r;
     r = clip(area.x, area.y + band, band, area.h - 2 * band);            if (r.w) out[n++] = r;
@@ -324,7 +339,10 @@ inline void drawAlertTakeover(S& s, const ScanScene& sc, const uieng::Rect& area
     const AlertGeom gm = alertGeom(area, hi); const int mx = gm.mx, my = gm.my, R = gm.R;
     const bool strobe = hi && age < 360 && ((age / 60) & 1) == 0;
     afill(r, area.x, area.y, area.w, area.h, strobe ? ui::Canvas::mix(pal::VOID, edge, 1, 4) : pal::VOID);
-    switch (riteFor(sc.theme, a.style)) {
+    if (const artpack::Art* pic = alertClip(s.W, a.conf, area)) {     // the theme's picture plays instead of the rite
+        const uieng::Rect pr = alertClipRect(*pic, area, hi);
+        artInto(s, *pic, pr.x, pr.y, decorFrame(*pic, (uint32_t)age, s.W));
+    } else switch (riteFor(sc.theme, a.style)) {
         case RITE_SUMMON: riteSummon(r, sc, edge, age, b, mx, my, R); break;
         case RITE_SUPERNOVA: riteSupernova(r, sc, edge, age, b, mx, my, R); break;
         case RITE_VORTEX: riteVortex(r, sc, edge, age, b, mx, my, R); break;

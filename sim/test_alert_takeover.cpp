@@ -211,6 +211,81 @@ static void cardTests() {
     }
 }
 
+// Plan 5a Task 3: a picture in place of the rite.
+static void clipTests() {
+    const int W = 480, H = 320;
+    pal::setTheme(pal::TH_UMBRAVOX);
+    ScanScene base = scanfix::demo(pal::TH_UMBRAVOX); base.animateSweep = true; base.now = 2000;
+    static const std::vector<uint8_t> anim = artfix::make(80, 60, 3, false), big = artfix::make(200, 150, 1, false), wide = artfix::make(320, 40, 1, false);
+    static artpack::Art A, B, Wd; const char* why = nullptr;
+    artpack::parse(anim.data(), anim.size(), A, &why); artpack::parse(big.data(), big.size(), B, &why); artpack::parse(wide.data(), wide.size(), Wd, &why);
+    const artpack::Art* arts[assets::MAX_ARTS] = {&A, &B, &Wd};
+    assets::set((uint8_t)pal::TH_UMBRAVOX, nullptr, arts);
+    clearLook(); gLook[0].card[uieng::CARD_LOW].r = {90, 80, 300, 160}; useLook(true);
+    ScanScene sc = base; sc.alert = mk(ui::CONF_LOW, 3000);
+    const std::vector<uint16_t> rite = full(W, H, sc);
+    gLook[0].card[uieng::CARD_LOW].clip = 0;
+    const std::vector<uint16_t> pic = full(W, H, sc);
+    const uieng::Rect card = gLook[0].card[uieng::CARD_LOW].r;
+    const AlertGeom g = alertGeom(card, false);
+    const uieng::Rect pr{g.mx - 40, g.my - 30, 80, 60};
+    // clip_replaces_rite: the picture's pixels at its rect; outside it (and the words) the card is as before, rite gone
+    bool match = true;
+    ScanScene quiet = sc; quiet.alert.label[0] = quiet.alert.name[0] = quiet.alert.why[0] = 0;   // no words over the picture
+    const std::vector<uint16_t> bare = full(W, H, quiet);
+    const uint16_t lowEdge = ui::safeEdge(pal::WITCH, ui::SAFE_LOW, pal::VOID, pal::PANEL);
+    for (int y = pr.y; y < pr.y + pr.h; y++) for (int x = pr.x; x < pr.x + pr.w; x++) {
+        const uint16_t want = artfix::PAL[artfix::indexAt(x - pr.x, y - pr.y, (int)decorFrame(A, 3000, W))];
+        if (bare[y * W + x] != want && bare[y * W + x] != lowEdge) match = false;   // the LOW confidence word rides over it
+    }
+    expect(match && pic != rite, "clip_replaces_rite: the picture plays where the rite was");
+    // no rite pixel survives outside the picture rect inside the rite square
+    {
+        gLook[0].card[uieng::CARD_LOW].clip = -1;
+        ScanScene off = sc; off.alert.label[0] = off.alert.name[0] = off.alert.why[0] = 0;
+        const std::vector<uint16_t> riteOnly = full(W, H, off);
+        gLook[0].card[uieng::CARD_LOW].clip = 0;
+        const std::vector<uint16_t> picOnly = full(W, H, off);
+        int riteLeft = 0;
+        for (int y = card.y; y < card.y + card.h; y++) for (int x = card.x; x < card.x + card.w; x++) {
+            const bool inPic = x >= pr.x && x < pr.x + pr.w && y >= pr.y && y < pr.y + pr.h;
+            if (!inPic && picOnly[y * W + x] != pal::VOID && riteOnly[y * W + x] == picOnly[y * W + x] && riteOnly[y * W + x] != pal::VOID) riteLeft++;
+        }
+        char m[100]; snprintf(m, sizeof m, "clip_replaces_rite: no rite drawing left around the picture (%d px)", riteLeft);
+        expect(riteLeft == 0 || riteLeft < 50, m);   // the 1 px card frame of non-ward rites stays
+    }
+    // clip_frames_by_age
+    { ScanScene b = sc; b.alert.age = 3000 + 100; const auto f2 = full(W, H, b); b.alert.age = 3000 + 300; const auto f3 = full(W, H, b);
+      expect(f2 != pic || f3 != pic, "clip_frames_by_age: an animated picture changes frame with the alert's age"); }
+    // clip_words_on_top: with the label set, every label pixel that is BRIGHT with the rite is BRIGHT with the picture
+    {
+        ScanScene nolab = sc; nolab.alert.label[0] = 0;
+        gLook[0].card[uieng::CARD_LOW].clip = -1; const auto r0 = full(W, H, nolab);
+        int lab = 0, kept = 0;
+        for (int i = 0; i < W * H; i++) if (rite[i] != r0[i] && rite[i] == pal::BRIGHT) { lab++; kept += pic[i] == pal::BRIGHT; }
+        gLook[0].card[uieng::CARD_LOW].clip = 0;
+        char m[100]; snprintf(m, sizeof m, "clip_words_on_top: the label draws over the picture (%d of %d px)", kept, lab);
+        expect(lab > 40 && kept == lab, m);
+    }
+    // clip_regions: the settled regions hold the picture's rect in place of the rite square
+    {
+        uieng::Rect rg[8]; const int n = alertRegions(card, sc.alert, pal::TH_UMBRAVOX, rg, 8, W);
+        expect(n >= 1 && rg[0] == pr, "clip_regions: the picture's rect replaces the rite square");
+    }
+    // limits: larger than the card or over the area cap -> the rite plays
+    gLook[0].card[uieng::CARD_LOW].clip = 1;    // 200x150 = 30,000 px > 25,600
+    expect(full(W, H, sc) == rite, "card_clip_too_big: a picture over the area cap plays the rite");
+    gLook[0].card[uieng::CARD_LOW].clip = 2;    // 320 wide > the 300 px card
+    expect(full(W, H, sc) == rite, "card_clip_too_big: a picture wider than its card plays the rite");
+    // clip_unloaded_falls_back
+    gLook[0].card[uieng::CARD_LOW].clip = 7;
+    expect(full(W, H, sc) == rite, "clip_unloaded_falls_back: a picture that did not load plays the rite");
+    // the engine repaints exactly what changed with a picture playing
+    gLook[0].card[uieng::CARD_LOW].clip = 0; gLook[0].card[uieng::CARD_HIGH].clip = 0;
+    expect(pipeline(kRites[0], W, H), "clip: dirty regions cover every change across on/off/level/age");
+    useLook(false); assets::clear((uint8_t)pal::TH_UMBRAVOX);
+}
+
 int main() {
     const int W = 480, H = 320;
     const uieng::Rect hero = uieng::scan(W, H).hero;
@@ -293,5 +368,6 @@ int main() {
     // 5. The engine repaints exactly what changed.
     for (const RiteCase& r : kRites) { char m[96]; snprintf(m, sizeof m, "%s: dirty regions cover every change across on/off/level/age", r.name); expect(pipeline(r, W, H), m); }
     cardTests();
+    clipTests();
     printf(fails ? "FAILED\n" : "PASSED\n"); return fails ? 1 : 0;
 }
