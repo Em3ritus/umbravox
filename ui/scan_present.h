@@ -493,7 +493,7 @@ public:
             if (__builtin_strcmp(ra, rb) || pv.poi != nw.poi) add({0, B.navTop, W_, B.navBottom - B.navTop});   // REC/STOP and POI live on the nav
             if (lvOld || lvNew) {                      // plan 5a effects: every alert frame, and once after it ends
                 uieng::Rect fx[uieng::PIECE_SLOTS]; bool shake[uieng::PIECE_SLOTS] = {};
-                const int nf = scanr::effectRects(W_, H_, fx, shake);
+                const int nf = scanr::effectRects(W_, H_, fx, shake, lvOld ? &cardOld : nullptr, lvNew ? &cardNew : nullptr);
                 for (int i = 0; i < nf; i++) add(fx[i]);
                 for (int i = 0; i < nf; i++) {         // a shake reads its whole row span: a region touching it takes its columns
                     if (!shake[i]) continue;
@@ -564,7 +564,7 @@ public:
             const bool decorDirty = sp.decor && scanr::animatedDecor(W_, &dr);
             if (decorDirty) sched_.invalidate(dr.y, dr.y + dr.h);
             uieng::Rect fx[uieng::PIECE_SLOTS];        // plan 5a effects: their rows, every alert frame and once after
-            const int nf = (lvOld || lvNew) ? scanr::effectRects(W_, H_, fx) : 0;
+            const int nf = (lvOld || lvNew) ? scanr::effectRects(W_, H_, fx, nullptr, lvOld ? &cardOld : nullptr, lvNew ? &cardNew : nullptr) : 0;
             for (int i = 0; i < nf; i++) sched_.invalidate(fx[i].y, fx[i].y + fx[i].h);
             if (!st && bd && fieldOnly && !navDirty && !decorDirty && !nf && !alertRows && (!wasPending || wasWin)) {   // radar only: narrow the redraw to its columns
                 win_ = true; wlo_ = box.x < 0 ? 0 : box.x; whi_ = box.x + box.w > W_ ? W_ : box.x + box.w;

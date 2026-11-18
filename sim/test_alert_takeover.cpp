@@ -388,6 +388,57 @@ static void effectTests() {
         useLayout(nullptr); delete pl;
         expect(ok, "a shake next to another dirty region sharing its strip rows repaints correctly (review I1)");
     }
+    // plan 5b (5a M3): an effect piece wholly under a non-whole card is never seen, so it is not repainted
+    for (int inside = 1; inside >= 0; inside--) {
+        const uieng::Rect ble = uieng::scan(W, H).tiles[2];   // count.ble where the built-in layout puts it
+        const int ch = std::max(120, ble.h + 16), cy = std::max(0, std::min(ble.y - 8, H - ch));
+        const uieng::Rect card = inside ? uieng::Rect{0, cy, 300, ch} : uieng::Rect{ble.x + 10, cy, 300, ch};
+        char js[320];
+        snprintf(js, sizeof js, "{\"format\":1,\"waveshare\":{\"alert.card.med\":{\"rect\":[%d,%d,%d,%d]},"
+                 "\"count.ble\":{\"rect\":[%d,%d,%d,%d],\"effect\":\"pulse\"}}}", card.x, card.y, card.w, card.h, ble.x, ble.y, ble.w, ble.h);
+        themelayout::PackLayout* pl = new themelayout::PackLayout(); char why[96];
+        const bool built = themelayout::build(js, strlen(js), *pl, why, sizeof why);
+        if (!built) printf("    build: %s\n", why);
+        pal::setTheme(pal::TH_UMBRAVOX); useLayout(&pl->lo);
+        uieng::Rect fx[uieng::PIECE_SLOTS];
+        const int nf = effectRects(W, H, fx, nullptr, &card);
+        // the engine: a settled MED alert, two frames apart; the second frame's regions
+        scanpres::Engine e; e.reset(W, H); e.enter();
+        bool hasBle = false;
+        for (int k = 0; k < 2; k++) {
+            fill(e.back(), pal::TH_UMBRAVOX, 5000 + k * 97, mk(ui::CONF_MED, 4000 + k * 97));
+            e.commit();
+            uieng::Rect rg[scanpres::Engine::kMaxRegions]; const int nr = e.regions(rg, scanpres::Engine::kMaxRegions);
+            if (k == 1) for (int i = 0; i < nr; i++) hasBle |= rg[i].x == ble.x && rg[i].y == ble.y && rg[i].w == ble.w && rg[i].h == ble.h;
+            while (e.pending()) e.nextSlice(64);
+        }
+        const bool ok = built && pipeline(kRites[0], W, H);
+        useLayout(nullptr); delete pl;
+        if (inside) expect(built && nf == 0 && !hasBle && ok, "an effect wholly under a MED card is not repainted");
+        else expect(built && nf == 1 && hasBle && ok, "an effect partly outside the card still repaints");
+    }
+}
+
+// plan 5b (5a M4): a commit while a frame is still pending falls back to rows, and those rows cover the new card.
+static void pendingTests() {
+    const int W = 480, H = 320;
+    const char* js = "{\"format\":1,\"waveshare\":{\"alert.card.med\":{\"rect\":[90,80,300,160]}}}";
+    themelayout::PackLayout* pl = new themelayout::PackLayout(); char why[96];
+    const bool built = themelayout::build(js, strlen(js), *pl, why, sizeof why);
+    pal::setTheme(pal::TH_UMBRAVOX); useLayout(&pl->lo);
+    scanpres::Engine e; e.reset(W, H); e.enter();
+    fill(e.back(), pal::TH_UMBRAVOX, 1000, AlertScene{}); e.commit();
+    while (e.pending()) e.nextSlice(64);                       // the first frame, served
+    fill(e.back(), pal::TH_UMBRAVOX, 1097, AlertScene{}); e.commit();
+    e.nextSlice(1);                                            // part of a scan frame
+    const bool wasPending = e.pending();
+    fill(e.back(), pal::TH_UMBRAVOX, 1194, mk(ui::CONF_MED, 0)); e.commit();
+    uieng::Rect rg[scanpres::Engine::kMaxRegions]; const int nr = e.regions(rg, scanpres::Engine::kMaxRegions);
+    bool rows[320] = {};
+    while (e.pending()) { const auto sl = e.nextSlice(1); for (int y = sl.y0; y < sl.y1; y++) rows[y] = true; }
+    bool cover = true; for (int y = 80; y < 240; y++) cover &= rows[y];
+    useLayout(nullptr); delete pl;
+    expect(built && wasPending && nr == 0 && cover, "a commit while a frame is pending dirties the card rows");
 }
 
 // Plan 5a Task 5: the CYD engine build (320x240) gets the takeover.
@@ -533,5 +584,6 @@ int main() {
     cardTests();
     clipTests();
     effectTests();
+    pendingTests();
     printf(fails ? "FAILED\n" : "PASSED\n"); return fails ? 1 : 0;
 }

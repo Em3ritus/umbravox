@@ -405,8 +405,10 @@ inline uieng::Rect pieceRect(int W, int H, int p) {
     }
 }
 inline int shakeDx(int phase) { static const int8_t D[8] = {-2, -1, 0, 1, 2, 1, 0, -1}; return D[(phase * 8 / 1024) & 7]; }
-// The rects of the pieces that show an effect during an alert on this board (at most uieng::PIECE_SLOTS).
-inline int effectRects(int W, int H, uieng::Rect* out, bool* shake = nullptr) {
+inline bool rectWithin(const uieng::Rect& r, const uieng::Rect& c) { return r.x >= c.x && r.y >= c.y && r.x + r.w <= c.x + c.w && r.y + r.h <= c.y + c.h; }
+// The rects of the pieces that show an effect during an alert on this board (at most uieng::PIECE_SLOTS). A piece
+// wholly inside every given card (cardA, cardB: the cards on screen, null for none) is never seen and is left out.
+inline int effectRects(int W, int H, uieng::Rect* out, bool* shake = nullptr, const uieng::Rect* cardA = nullptr, const uieng::Rect* cardB = nullptr) {
     const uieng::BoardLook* k = uieng::activeLook(W);
     if (!k) return 0;
     int n = 0;
@@ -414,6 +416,7 @@ inline int effectRects(int W, int H, uieng::Rect* out, bool* shake = nullptr) {
         if (k->piece[p].effect == uieng::FX_NONE) continue;
         const uieng::Rect r = pieceRect(W, H, p);
         if (r.w <= 0 || r.h <= 0) continue;
+        if ((cardA || cardB) && (!cardA || rectWithin(r, *cardA)) && (!cardB || rectWithin(r, *cardB))) continue;
         if (shake) shake[n] = k->piece[p].effect == uieng::FX_SHAKE;
         out[n++] = r;
     }
@@ -423,11 +426,12 @@ inline void drawEffects(S& s, int W, int H, const AlertScene& a) {
     const uieng::BoardLook* k = uieng::activeLook(W);
     if (!k || !a.active) return;
     const uint16_t col = alertEdge(a.conf);
+    const uieng::Rect card = alertCardRect(W, H, a.conf);   // the card draws over it: a piece wholly under it is skipped
     for (int p = 0; p < uieng::PIECE_SLOTS; p++) {
         const uieng::PieceStyle& st = k->piece[p];
         if (st.effect == uieng::FX_NONE) continue;
         const uieng::Rect r = pieceRect(W, H, p);
-        if (r.w <= 0 || r.h <= 0 || r.y >= s.y0 + s.h || r.y + r.h <= s.y0) continue;
+        if (r.w <= 0 || r.h <= 0 || r.y >= s.y0 + s.h || r.y + r.h <= s.y0 || rectWithin(r, card)) continue;
         const int ph = fxPhase(a.age, st.speed);
         switch (st.effect) {
         case uieng::FX_FLASH: if (ph < 512) tintRect(s, r, col, 1, 2); break;

@@ -714,7 +714,7 @@ bool checkLook(const uieng::BoardLook& k, Board b, const uint16_t* colors, char*
     // Effects cost a repaint of the piece every alert frame: capped per board.
     int fx = 0;
     for (int p = 0; p < P_N; p++) fx += k.piece[p].effect != uieng::FX_NONE;
-    if (fx > (b == B_WAVESHARE ? 4 : 2)) return say(why, whyCap, "too many pieces with an effect (at most %s)", b == B_WAVESHARE ? "4" : "2");
+    if (fx > fxCap(b)) { const char n[2] = {char('0' + fxCap(b)), 0}; return say(why, whyCap, "too many pieces with an effect (at most %s)", n); }
     // Text on the pieces that have no other route must stay readable against their fill.
     static const int MUST_READ[] = {P_MENU, P_STOP, P_NAV_SCAN, P_NAV_DOMAIN, P_NAV_CODEX, P_NAV_POI, P_BRIDGE};
     for (int p : MUST_READ) {

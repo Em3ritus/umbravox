@@ -20,6 +20,8 @@ constexpr size_t MAX_JSON = 16384;   // limits.json MAX_LAYOUT_JSON
 constexpr int MAX_FONT_REFS = 8, MAX_ART_REFS = 16;   // f0..f7.fnt, a0..a15.art
 
 enum Board : uint8_t { B_WAVESHARE, B_CYD, B_N };   // 480x320, 320x240
+// Pieces that may carry an alert effect on a board (each costs a repaint every alert frame).
+constexpr int fxCap(Board b) { return b == B_WAVESHARE ? 4 : 2; }
 
 enum Piece : uint8_t {
     P_MENU, P_WORDMARK, P_GPS, P_NODES, P_POWER, P_BRIDGE, P_SD,
