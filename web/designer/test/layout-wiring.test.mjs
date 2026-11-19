@@ -53,7 +53,7 @@ test('the Start page lists every starting layout', () => {
 
 test('review fixes: the Install step, Download and the opened-pack path all respect the layout verdict', () => {
   assert.match(app, /installGate\(currentTheme\(\), state\.emblem, state\.clip, state\.sounds, layoutText\(\), preview \? \(t\) => preview\.checkLayout\(t\) : null, meter\.verdict\)/);
-  assert.match(app, /function download\(\) \{\n  const m = \$\('action-msg'\);\n  if \(checksNow\.some\(\(c\) => c\.level === 'error'\)\)/);
+  assert.match(app, /function download\(\) \{\n  meterNow\(\);\n  const m = \$\('action-msg'\);\n  if \(checksNow\.some\(\(c\) => c\.level === 'error'\)\)/);
   assert.match(app, /function adoptLayout\(text\) \{\n  state\.layout = newLayout\(\);/, 'an opened pack never keeps the Start page preset');
   assert.match(app, /The device would refuse this layout/, 'the Layout step says why');
   assert.match(app, /withDrafts\(state\.layout, rules\(\), state\.lvisited\)/);

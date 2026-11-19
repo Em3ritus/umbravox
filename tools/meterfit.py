@@ -17,6 +17,7 @@ tools/meter-limits.mjs replaces it with the built-in theme's PREDICTED p95 + 15%
 
 Refused (exit 2, nothing written): no frames at all; a board with fewer than 3 distinct packs, no alert or no
 built-in scan frames, or a fit whose refitted single term is still negative. A bad fit must never reach the designer.
+Also refused: a run that would drop a board the existing --out file has (pass every board's CSV, or --drop-missing).
 """
 import argparse
 import csv
@@ -148,6 +149,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("csv", nargs="+")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--drop-missing", action="store_true",
+                    help="allow writing a fit without a board the existing --out file has")
     a = ap.parse_args()
     rows = steady(read_rows(a.csv))
     if not rows:
@@ -160,6 +163,16 @@ def main():
     except ValueError as e:
         print("meterfit: %s" % e, file=sys.stderr)
         sys.exit(2)
+    if not a.drop_missing and Path(a.out).exists():
+        try:
+            had = set(json.loads(Path(a.out).read_text()).get("boards", {}))
+        except (ValueError, AttributeError):
+            had = set()
+        lost = sorted(had - set(boards))
+        if lost:
+            print("meterfit: %s has a fit for %s, which this run did not measure; pass every board's CSV, or "
+                  "--drop-missing to write without it" % (a.out, ", ".join(lost)), file=sys.stderr)
+            sys.exit(2)
     out = {"version": 2, "measured": datetime.date.today().isoformat(), "firmware": git_sha(), "boards": boards}
     Path(a.out).write_text(json.dumps(out, indent=2) + "\n")
     for b, f in boards.items():

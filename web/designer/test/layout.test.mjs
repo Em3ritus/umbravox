@@ -204,3 +204,29 @@ test('final review I1: draftOther keeps at most the target board\'s effect cap (
   assert.deepEqual(kept, ['menu', 'nav.scan']);
   assert.equal(fxCount(D, 'waveshare'), 4, 'the source board is untouched');
 });
+
+test('5b minor 3: a malformed alert card is reported as a card, never as a hidden piece', () => {
+  for (const names of [NAMES, null]) {
+    const L = fromJson('{"format":1,"waveshare":{"alert.card.med":"hidden","alert.card.low":{"rect":[1,2,3]}}}', names);
+    assert.deepEqual(L.boards.waveshare['alert.card.med'], undefined);
+    assert.equal(L.cards.waveshare.med, undefined);
+    assert.ok(L.dropped.includes('waveshare: "alert.card.med" needs {"rect": [x, y, w, h]}'), L.dropped.join('\n'));
+    assert.ok(L.dropped.includes('waveshare: "alert.card.low" needs {"rect": [x, y, w, h]}'), L.dropped.join('\n'));
+    assert.equal(L.dropped.some((d) => /is not a piece/.test(d)), false);
+  }
+});
+
+test('5b minor 4: a piece nudged apart while drafting keeps its style', () => {
+  let L = setPiece(newLayout(), 'waveshare', 'nav.scan', { x: 200, y: 140, w: 44, h: 44 });
+  L = setPiece(L, 'waveshare', 'nav.domain', { x: 248, y: 140, w: 44, h: 44 });
+  for (const n of ['nav.scan', 'nav.domain']) L = setStyle(L, 'waveshare', n, { ink: '#123456' });
+  const D = draftOther(L, 'waveshare', 'cyd', rules);
+  for (const n of ['nav.scan', 'nav.domain']) assert.equal(D.boards.cyd[n].style?.ink, '#123456', n);
+});
+
+test('5b minor 5: a card that owns the whole screen still owns it on the other board', () => {
+  const L = setCard(newLayout(), 'waveshare', 'high', { rect: { x: 0, y: 0, w: 480, h: 320 } });
+  assert.deepEqual(draftOther(L, 'waveshare', 'cyd', crules).cards.cyd.high.rect, { x: 0, y: 0, w: 320, h: 240 });
+  const M = setCard(newLayout(), 'cyd', 'low', { rect: { x: 0, y: 0, w: 320, h: 240 } });
+  assert.deepEqual(draftOther(M, 'cyd', 'waveshare', crules).cards.waveshare.low.rect, { x: 0, y: 0, w: 480, h: 320 });
+});

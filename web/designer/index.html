@@ -247,42 +247,43 @@
           <button type="button" id="ls-clear" class="btn small">Clear the look</button>
         </div>
       </div>
-      <div class="card">
-        <h3>Fonts and pictures</h3>
+      <details class="card fold" id="fold-media">
+        <summary><h3>Fonts and pictures</h3><span class="fold-sum" id="sum-media"></span></summary>
         <div class="row">
           <label class="field"><span>Upload a font (TTF/OTF)</span><input id="lf-file" type="file" accept=".ttf,.otf,font/ttf,font/otf"></label>
           <label class="field small"><span>at px</span><input id="lf-px" type="number" min="6" max="32" value="12"></label>
         </div>
         <label class="field"><span>Add a picture to this board (PNG or GIF)</span><input id="ld-file" type="file" accept="image/png,image/gif"></label>
         <p id="lf-msg" class="tiny muted">Pictures sit under every piece and are drawn at exactly the size you give them. One per board may move (an animated GIF).</p>
-      </div>
-      <div class="card">
-        <h3>Other screens</h3>
-        <div class="row">
-          <label class="field"><span>Titles</span><select id="lb-title" data-fontpick></select></label>
-          <label class="field"><span>Text</span><select id="lb-body" data-fontpick></select></label>
-          <label class="field"><span>Numbers</span><select id="lb-numbers" data-fontpick></select></label>
+      </details>
+      <details class="card fold" id="fold-screens">
+        <summary><h3>Other screens</h3><span class="fold-sum" id="sum-screens"></span></summary>
+        <label class="mini preview-pick"><span>Preview</span><select id="lb-screen"><option value="scan">Scan</option><option value="mesh">Mesh</option><option value="menu">Menu</option><option value="aspect">Aspect</option></select></label>
+        <p class="grp-h">Fonts</p>
+        <div class="minis">
+          <label class="mini"><span>Titles</span><select id="lb-title" data-fontpick></select></label>
+          <label class="mini"><span>Text</span><select id="lb-body" data-fontpick></select></label>
+          <label class="mini"><span>Numbers</span><select id="lb-numbers" data-fontpick></select></label>
         </div>
-        <div class="row">
-          <label class="field small"><span>Highlight fill</span><select id="lb-hifill" data-rolepick></select></label>
-          <label class="field small"><span>Highlight edge</span><select id="lb-hiedge" data-rolepick></select></label>
+        <p class="grp-h">Highlight</p>
+        <div class="minis two">
+          <label class="mini"><span>Fill</span><select id="lb-hifill" data-rolepick></select></label>
+          <label class="mini"><span>Edge</span><select id="lb-hiedge" data-rolepick></select></label>
         </div>
-        <label class="field"><span>Background picture</span><input id="lb-bg" type="file" accept="image/png,image/gif"></label>
-        <div class="row">
-          <label class="field"><span>Panel picture</span><input id="lb-panel" type="file" accept="image/png,image/gif"></label>
-          <label class="field small"><span>Panel border (px)</span><input id="lb-slice" type="number" min="0" max="30" value="4"></label>
+        <p class="grp-h">Pictures</p>
+        <div class="minis two">
+          <label class="mini"><span>Background</span><input id="lb-bg" type="file" accept="image/png,image/gif"></label>
+          <label class="mini"><span>Menu icons (up to six, in menu order)</span><input id="lb-icons" type="file" accept="image/png,image/gif" multiple></label>
+          <label class="mini"><span>Panel</span><input id="lb-panel" type="file" accept="image/png,image/gif"></label>
+          <label class="mini"><span>Panel border (px)</span><input id="lb-slice" type="number" min="0" max="30" value="4"></label>
         </div>
-        <label class="field"><span>Menu icons (up to six, in menu order)</span><input id="lb-icons" type="file" accept="image/png,image/gif" multiple></label>
-        <div class="row">
-          <label class="field"><span>Preview</span><select id="lb-screen"><option value="scan">Scan</option><option value="mesh">Mesh</option><option value="menu">Menu</option><option value="aspect">Aspect</option></select></label>
-          <button type="button" id="lb-clear" class="btn small">Clear this board's screen style</button>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Hidden pieces</h3>
+        <button type="button" id="lb-clear" class="btn small">Clear this board's screen style</button>
+      </details>
+      <details class="card fold" id="fold-hidden">
+        <summary><h3>Hidden pieces</h3><span class="fold-sum" id="sum-hidden"></span></summary>
         <div id="layout-tray" class="tabs"></div>
         <p class="tiny muted">Click a hidden piece to show it again where it was.</p>
-      </div>
+      </details>
     </div>
   </div>
 </section>

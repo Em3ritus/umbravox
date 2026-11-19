@@ -203,12 +203,14 @@ test('lookChecks: STOP\'s fill must read under its red and amber labels, and eve
 
 // ---- plan 5b: alert card warnings (never errors: the device accepts these and behaves as the text says) ----
 // (lookChecks is imported above)
-import { newLayout, setCard, rectOf } from '../js/layout.js';
-const CNAMES = ['menu', 'stop', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi', 'radar'];
+import { newLayout, setCard, setPiece, rectOf } from '../js/layout.js';
+const CNAMES = ['menu', 'stop', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi', 'radar', 'count.ble', 'status.gps'];
 const CDEF = { waveshare: { menu: { x: 0, y: 0, w: 44, h: 44 }, stop: { x: 384, y: 276, w: 96, h: 44 }, 'nav.scan': { x: 0, y: 276, w: 96, h: 44 },
-  'nav.domain': { x: 96, y: 276, w: 96, h: 44 }, 'nav.codex': { x: 192, y: 276, w: 96, h: 44 }, 'nav.poi': { x: 288, y: 276, w: 96, h: 44 }, radar: { x: 188, y: 56, w: 209, h: 209 } },
+  'nav.domain': { x: 96, y: 276, w: 96, h: 44 }, 'nav.codex': { x: 192, y: 276, w: 96, h: 44 }, 'nav.poi': { x: 288, y: 276, w: 96, h: 44 }, radar: { x: 188, y: 56, w: 209, h: 209 },
+    'count.ble': { x: 0, y: 200, w: 120, h: 60 }, 'status.gps': { x: 300, y: 0, w: 40, h: 44 } },
   cyd: { menu: { x: 0, y: 0, w: 44, h: 44 }, stop: { x: 260, y: 196, w: 60, h: 44 }, 'nav.scan': { x: 0, y: 196, w: 65, h: 44 },
-  'nav.domain': { x: 65, y: 196, w: 65, h: 44 }, 'nav.codex': { x: 130, y: 196, w: 65, h: 44 }, 'nav.poi': { x: 195, y: 196, w: 65, h: 44 }, radar: { x: 151, y: 52, w: 115, h: 115 } } };
+  'nav.domain': { x: 65, y: 196, w: 65, h: 44 }, 'nav.codex': { x: 130, y: 196, w: 65, h: 44 }, 'nav.poi': { x: 195, y: 196, w: 65, h: 44 }, radar: { x: 151, y: 52, w: 115, h: 115 },
+    'count.ble': { x: 0, y: 150, w: 100, h: 40 }, 'status.gps': { x: 200, y: 0, w: 30, h: 44 } } };
 const CCARD = { waveshare: { low: { x: 124, y: 52, w: 348, h: 216 }, high: { x: 0, y: 0, w: 480, h: 320 } }, cyd: { low: { x: 104, y: 52, w: 208, h: 136 }, high: { x: 0, y: 0, w: 320, h: 240 } } };
 const crules = { names: CNAMES, defaultRect: (b, n) => CDEF[b][n], cardDefault: (b, l) => CCARD[b][l === 'med' ? 'low' : l] };
 const warns = (L, media = null) => lookChecks({ colors: {} }, L, media, crules).filter((c) => c.level === 'warn').map((c) => c.text);
@@ -222,9 +224,24 @@ test('a MED card over STOP warns that a tap there dismisses the alert first', ()
   assert.ok(!w.some((t) => /covers menu/.test(t)));
 });
 
-test('the CYD cover check uses the CYD rects, built-in card included', () => {
-  const card = CCARD.cyd.low, w = warns(newLayout());
-  for (const n of ['stop', 'menu', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi']) {
+test('5b minor 1: a built-in card never warns about covering a control (the device hits the chrome first)', () => {
+  const over = { ...crules, cardDefault: () => ({ x: 0, y: 0, w: 480, h: 320 }) };   // a built-in LOW/MED card over everything
+  const w = lookChecks({ colors: {} }, newLayout(), null, over).filter((c) => c.level === 'warn').map((c) => c.text);
+  assert.ok(!w.some((t) => /covers/.test(t)), w.join('\n'));
+});
+
+test('5b minor 2: a theme card warns over every control it takes taps from: count tiles, status cells, bridge', () => {
+  const L = setCard(newLayout(), 'waveshare', 'low', { rect: { x: 0, y: 0, w: 480, h: 270 } });
+  const w = warns(L);
+  assert.ok(w.some((t) => /low alert card on the Waveshare board covers count\.ble:/.test(t)), w.join('\n'));
+  assert.ok(w.some((t) => /covers status\.gps:/.test(t)), w.join('\n'));
+  assert.ok(!w.some((t) => /covers radar/.test(t)), 'the radar is not a control');
+});
+
+test('the CYD cover check uses the CYD rects', () => {
+  const card = CCARD.cyd.low;
+  const w = warns(setCard(newLayout(), 'cyd', 'low', { rect: card }));
+  for (const n of ['stop', 'menu', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi', 'count.ble', 'status.gps']) {
     const r = rectOf(newLayout(), 'cyd', n, crules);
     const hit = r.x < card.x + card.w && card.x < r.x + r.w && r.y < card.y + card.h && card.y < r.y + r.h;
     assert.equal(w.some((t) => t.includes('CYD board covers ' + n + ':')), hit, n);
@@ -251,4 +268,11 @@ test('an opened card picture that does not fit warns; an uploaded one is refitte
   assert.ok(!warns(L, { fonts: {}, pictures: { 'file:a3': pic(100, 90) } }).some((t) => /picture does not fit/.test(t)));
   const U = setCard(newLayout(), 'cyd', 'high', { rect: { x: 0, y: 0, w: 200, h: 120 }, pic: 'pic:1:big.png' });
   assert.ok(!warns(U, { fonts: {}, pictures: { 'pic:1:big.png': pic(400, 400) } }).some((t) => /picture does not fit/.test(t)));
+});
+
+test('review: a theme card over a hidden control does not warn about it', () => {
+  let L = setCard(newLayout(), 'waveshare', 'low', { rect: { x: 200, y: 160, w: 280, h: 160 } });
+  L = setPiece(L, 'waveshare', 'stop', 'hidden');
+  assert.ok(!warns(L).some((t) => /covers stop:/.test(t)), warns(L).join('\n'));
+  assert.ok(warns(L).some((t) => /covers nav\.poi:/.test(t)), 'other controls still warn');
 });

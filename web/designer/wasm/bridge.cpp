@@ -247,7 +247,7 @@ EMSCRIPTEN_KEEPALIVE void uv_layout_default(int board, int piece, int* out) {
     const uieng::Rect r = themelayout::defaultRect((themelayout::Board)board, (themelayout::Piece)piece);
     out[0] = r.x; out[1] = r.y; out[2] = r.w; out[3] = r.h;
 }
-// Plan 5b: how many pieces may carry an alert effect on a board (0 Waveshare, 1 CYD); -1 for a bad board.
+// Plan 5b: how many pieces may carry an alert effect on a board (the board argument: 0 Waveshare, 1 CYD); returns -1 for a bad board.
 EMSCRIPTEN_KEEPALIVE int uv_fx_cap(int board) {
     return board >= 0 && board < themelayout::B_N ? themelayout::fxCap((themelayout::Board)board) : -1;
 }

@@ -241,6 +241,7 @@ export function fromJson(text, names = null) {
         L.cards[b][lv[1]] = c;
         continue;
       }
+      if (lv) { L.dropped.push(`${b}: "${n}" needs {"rect": [x, y, w, h]}`); continue; }   // 5b minor 3
       if (isDecor(n) && PLAIN(v) && isRect(v.rect) && typeof v.art === 'string') { L.boards[b][n] = { rect: toRect(v.rect), hidden: false, pic: file(v.art) }; continue; }
       if (BAD_KEYS.has(n) || (names && !names.includes(n))) { L.dropped.push(`${b}: "${n}" is not a piece`); continue; }
       if (v === 'hidden') L.boards[b][n] = { rect: null, hidden: true };
@@ -331,6 +332,7 @@ export function draftOther(L, from, to, rules) {
     const c = L.cards?.[from]?.[lv];
     if (!c) continue;
     const r = c.rect, m = CARD_MIN[to];
+    if (r.x === 0 && r.y === 0 && r.w === F.w && r.h === F.h) { n.cards[to][lv] = { ...c, rect: { x: 0, y: 0, w: T.w, h: T.h } }; continue; }   // a whole card stays whole (5b minor 5)
     const w = Math.min(T.w, Math.max(m.w, Math.round(r.w * k))), h = Math.min(T.h, Math.max(m.h, Math.round(r.h * k)));
     const x = Math.max(0, Math.min(T.w - w, anchor(r.x, r.w, w, F.w, T.w, k)));
     const y = Math.max(0, Math.min(T.h - h, anchor(r.y, r.h, h, F.h, T.h, k)));
@@ -352,7 +354,7 @@ export function draftOther(L, from, to, rules) {
         if (dx <= dy) r.x += (ra.x + ra.w / 2 < rb.x + rb.w / 2 ? -dx : dx);
         else r.y += (ra.y + ra.h / 2 < rb.y + rb.h / 2 ? -dy : dy);
         r.x = Math.max(0, Math.min(T.w - r.w, r.x)); r.y = Math.max(0, Math.min(T.h - r.h, r.y));
-        n.boards[to][a] = { rect: r, hidden: false };
+        n.boards[to][a] = { ...n.boards[to][a], rect: r, hidden: false };   // keep its style and effect (5b minor 4)
         moved = true;
       }
     }

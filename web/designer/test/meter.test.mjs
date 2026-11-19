@@ -147,3 +147,24 @@ test('meter-limits writes the scan limits and --check catches a stale one', () =
   for (const b of Object.keys(out.boards)) assert.ok(out.boards[b].limits.scanMs < 999, b);
   assert.equal(spawnSync('node', [tool, f, '--check'], { encoding: 'utf8' }).status, 0);
 });
+
+test('5c minor 3: a board measured with no frames is never shown as 0 ms', () => {
+  const v = meterRows(FIT, { waveshare: { scan: fr(99999, 99999), low: [], med: [], high: [] } });
+  const rows = v.rows.filter((r) => r.board === 'waveshare');
+  assert.equal(rows.length, 2);
+  for (const r of rows) { assert.equal(r.state, 'uncalibrated'); assert.equal(r.ms, null); assert.equal(/0 ms/.test(meterText(r)), false); }
+  assert.equal(v.over, false);
+  // one alert level with frames is still judged; the empty ones are skipped
+  const w = meterRows(FIT, { waveshare: { scan: [...fr(99999, 99999), ...many(20, 1000)], low: [], med: fr(1000), high: [] } }).rows;
+  const alert = w.find((r) => r.board === 'waveshare' && r.kind === 'alert');
+  assert.equal(alert.level, 'med'); assert.equal(alert.ms, 2);
+});
+
+test('review: a calibrated board that returned no frames says so, and an empty alert row names no level', () => {
+  const rows = meterRows(FIT, { waveshare: { scan: fr(99999, 99999), low: [], med: [], high: [] } }).rows;
+  const scan = rows.find((r) => r.kind === 'scan'), alert = rows.find((r) => r.kind === 'alert');
+  assert.equal(meterText(scan), 'Waveshare scan: no frames measured');
+  assert.equal(meterText(alert), 'Waveshare alert: no frames measured');
+  const none = meterRows(null, { waveshare: { scan: fr(1), low: fr(1), med: fr(1), high: fr(1) } }).rows;
+  assert.equal(meterText(none.find((r) => r.kind === 'scan')), 'Waveshare scan: not calibrated');
+});

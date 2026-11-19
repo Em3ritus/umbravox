@@ -144,9 +144,11 @@ const BOARD_LABEL = { waveshare: 'Waveshare', cyd: 'CYD' };
 import { ANIM_AREA_MAX } from './artfmt.js';
 export { ANIM_AREA_MAX };
 
-// Plan 5b: alert cards. A LOW or MED card is dismissed by a tap on it (ui/layout_engine.h scanHits), so one over a
-// control takes that control's taps while it shows; the device allows it (owner, 2026-11-18): a warning only.
-const CONTROLS = ['stop', 'menu', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi'];
+// Plan 5b: alert cards. A theme's LOW or MED card is dismissed by a tap on it and is hit before the chrome and the
+// count tiles (ui/layout_engine.h scanHits), so one over any of them takes their taps while it shows; the device allows
+// it (owner, 2026-11-18): a warning only. A built-in card is hit after them, so it never warns (5b minors 1 and 2).
+const CONTROLS = ['stop', 'menu', 'bridge', 'nav.scan', 'nav.domain', 'nav.codex', 'nav.poi', 'status.gps', 'status.nodes',
+  'status.power', 'count.wifi', 'count.5g', 'count.ble'];
 const CARD_FONT_MIN_PX = 7;   // ui/scan_alert.h: the font's own height, scale not counted
 const touches = (a, b) => a && b && a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 function cardChecks(L, b, media, rules, out) {
@@ -154,7 +156,7 @@ function cardChecks(L, b, media, rules, out) {
   for (const lv of LEVELS) {
     const c = rules ? cardOf(L, b, lv, rules) : L.cards?.[b]?.[lv] ? { ...L.cards[b][lv], builtin: false } : null;
     if (!c) continue;
-    if (rules && lv !== 'high') {
+    if (rules && lv !== 'high' && !c.builtin) {
       for (const n of CONTROLS) {
         if (rules.names && !rules.names.includes(n)) continue;
         if (touches(c.rect, rectOf(L, b, n, rules))) out.push({ level: 'warn', text: `${where(lv)} covers ${n}: while the alert shows, a tap there dismisses the alert first` });
